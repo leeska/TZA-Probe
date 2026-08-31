@@ -1,0 +1,62 @@
+name: Build TZA Probe frontend
+description: Build the TZA Probe web application for embedding in Core and optional artifact upload.
+
+inputs:
+  node-version:
+    description: Node.js version used to build TZA Probe Web.
+    default: "23"
+  repository:
+    description: TZA Probe Web repository URL.
+    default: https://github.com/leeska/komari-web
+  ref:
+    description: TZA Probe Web ref to build.
+    default: radix
+  artifact-name:
+    description: Optional artifact name for the packed frontend theme.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Clone and build frontend
+      shell: bash
+      run: |
+        set -euxo pipefail
+        rm -rf tza-probe-web
+        if [ -n "${{ inputs.ref }}" ]; then
+          git clone --depth=1 --branch "${{ inputs.ref }}" "${{ inputs.repository }}" tza-probe-web
+        else
+          git clone --depth=1 "${{ inputs.repository }}" tza-probe-web
+        fi
+        cd tza-probe-web
+        npm ci
+        npm run build
+        cd ..
+
+        mkdir -p web/public/defaultTheme/dist
+        rm -rf web/public/defaultTheme/dist/*
+        cp -r tza-probe-web/dist/* web/public/defaultTheme/dist/
+        cp -f tza-probe-web/komari-theme.json web/public/defaultTheme/
+        if [ -f tza-probe-web/preview.png ]; then cp -f tza-probe-web/preview.png web/public/defaultTheme/; fi
+        if [ -f tza-probe-web/perview.png ]; then cp -f tza-probe-web/perview.png web/public/defaultTheme/; fi
+        if [ -f web/public/defaultTheme/preview.png ] && [ ! -f web/public/defaultTheme/perview.png ]; then cp -f web/public/defaultTheme/preview.png web/public/defaultTheme/perview.png; fi
+        if [ -f web/public/defaultTheme/perview.png ] && [ ! -f web/public/defaultTheme/preview.png ]; then cp -f web/public/defaultTheme/perview.png web/public/defaultTheme/preview.png; fi
+
+    - name: Pack frontend artifact
+      if: ${{ inputs.artifact-name != '' }}
+      shell: bash
+      run: |
+        set -euxo pipefail
+        tar -czf "$RUNNER_TEMP/${{ inputs.artifact-name }}.tar.gz" -C web/public/defaultTheme .
+
+    - name: Upload frontend artifact
+      if: ${{ inputs.artifact-name != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/${{ inputs.artifact-name }}.tar.gz
