@@ -7,7 +7,7 @@ inputs:
     default: "23"
   repository:
     description: TZA Probe Web repository URL.
-    default: https://github.com/leeska/komari-web
+    default: https://github.com/leeska/TZA-Web
   ref:
     description: TZA Probe Web ref to build.
     default: main

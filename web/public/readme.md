@@ -2,7 +2,7 @@
 
 Core embeds the TZA Probe administration frontend from:
 
-<https://github.com/leeska/komari-web/tree/radix>
+<https://github.com/leeska/TZA-Web/tree/main>
 
 The release workflows build that repository and copy these files before compiling Core:
 
@@ -17,7 +17,7 @@ web/public/defaultTheme/
 For a local integration build:
 
 ```bash
-cd /path/to/komari-web
+cd /path/to/TZA-Web
 npm ci
 npm run build
 

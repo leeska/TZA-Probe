@@ -23,7 +23,7 @@ TZA Probe 是一套自托管的主机状态、三网延迟与回程线路监控�
 | 组件 | 仓库 | 职责 |
 | --- | --- | --- |
 | Core | [leeska/TZA-Probe](https://github.com/leeska/TZA-Probe) | 管理后台、节点状态、调度、结果与公开 API |
-| Web | [leeska/komari-web](https://github.com/leeska/komari-web) | TZA Probe Core 内置前端与探针中心 |
+| Web | [leeska/TZA-Web](https://github.com/leeska/TZA-Web) | TZA Probe Core 内置前端与探针中心 |
 | Agent | [leeska/TZA-Probe-Agent](https://github.com/leeska/TZA-Probe-Agent) | 主机指标、延迟和受限回程探测 |
 | Glassmorphism | [leeska/komari-theme-Glassmorphism](https://github.com/leeska/komari-theme-Glassmorphism) | 可选公开展示主题 |
 

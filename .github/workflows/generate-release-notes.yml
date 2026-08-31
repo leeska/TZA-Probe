@@ -32,7 +32,7 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const webRepo = { owner: "leeska", repo: "komari-web" };
+            const webRepo = { owner: "leeska", repo: "TZA-Web" };
 
             const AI_CONTEXT_CHAR_LIMIT = 120000;
             const AI_MAX_COMMITS = 160;
