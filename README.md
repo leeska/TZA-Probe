@@ -29,7 +29,7 @@ TZA Probe 是一套自托管的主机状态、三网延迟与回程线路监控�
 
 ## 本地开发
 
-Core 使用 Go 1.25。构建前需要把前端产物放入 `web/public/defaultTheme/`；GitHub Actions 会自动从 TZA Probe Web 仓库的 `radix` 分支构建并嵌入。
+Core 使用 Go 1.25。构建前需要把前端产物放入 `web/public/defaultTheme/`；GitHub Actions 会自动从 TZA Probe Web 仓库的 `main` 分支构建并嵌入。
 
 ```bash
 go test ./internal/probe ./database/tasks ./web/rpc/jsonrpc ./internal/server
@@ -42,7 +42,7 @@ go build -o tza-probe .
 Linux 可以直接使用仓库内安装器；新安装会使用 `/opt/tza-probe`、`tza-probe.service` 和 `data/tza-probe.db`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/feature/carrier-route/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/install.sh | bash
 ```
 
 ## 兼容性
