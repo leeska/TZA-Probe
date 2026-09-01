@@ -47,7 +47,7 @@ import (
 //	                                      into every text/html response:
 //	                                      head before </head>, body before
 //	                                      </body> (all pages, including the
-//	                                      admin and terminal pages)
+//	                                      admin pages)
 //	server.call(method, params...)        call a registered RPC method with
 //	                                      admin authority; resolves to the RPC
 //	                                      result or rejects with an Error

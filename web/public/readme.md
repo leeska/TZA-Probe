@@ -26,4 +26,4 @@ cp -R dist/. /path/to/TZA-Probe/web/public/defaultTheme/dist/
 cp komari-theme.json /path/to/TZA-Probe/web/public/defaultTheme/
 ```
 
-The built-in frontend owns `/admin`, `/admin/monitoring` (with `/admin/probes` kept as a compatibility route), `/terminal`, and the installation/recovery routes. Optional display themes only own public presentation routes.
+The built-in frontend owns `/admin`, `/admin/monitoring` (with `/admin/probes` kept as a compatibility route), and the installation/recovery routes. Optional display themes only own public presentation routes.
