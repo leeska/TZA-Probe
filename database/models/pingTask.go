@@ -26,6 +26,7 @@ type PingTask struct {
 	Region     string      `json:"region,omitempty" gorm:"type:varchar(100)"`
 	Carrier    string      `json:"carrier,omitempty" gorm:"type:varchar(32)"`
 	Family     string      `json:"family,omitempty" gorm:"type:varchar(8)"`
+	Category   string      `json:"category,omitempty" gorm:"type:varchar(64)"`
 }
 
 // AppliesToClient 判断当前 PingTask 是否适用于指定服务器。

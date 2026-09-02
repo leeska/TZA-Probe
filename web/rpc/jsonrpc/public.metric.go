@@ -104,6 +104,7 @@ type publicPingMetricTaskStats struct {
 	Region          string            `json:"region,omitempty"`
 	Carrier         string            `json:"carrier,omitempty"`
 	Family          string            `json:"family,omitempty"`
+	Category        string            `json:"category,omitempty"`
 	Tags            map[string]string `json:"tags,omitempty"`
 	Total           int               `json:"total"`
 	Valid           int               `json:"valid"`
@@ -927,6 +928,7 @@ func publicPingStatsFromAggregateGroups(entityID string, groups publicPingMetric
 			stat.Region = task.Region
 			stat.Carrier = task.Carrier
 			stat.Family = task.Family
+			stat.Category = task.Category
 		}
 		if p50 != nil && p99 != nil && *p50 > 0 && *p99 >= *p50 {
 			adjustedBase := math.Max(math.Min(*p50, 50.0), 10.0)

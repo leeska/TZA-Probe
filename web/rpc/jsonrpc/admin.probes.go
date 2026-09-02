@@ -10,6 +10,14 @@ import (
 )
 
 func init() {
+	RegisterWithGroupAndMeta("getCarrierMonitorTasks", rpc.RoleAdmin, adminGetCarrierMonitorTasks, &rpc.MethodMeta{
+		Name: "admin:getCarrierMonitorTasks", Summary: "Get unified latency and optional return-route monitoring tasks",
+		Returns: "{ tasks: CarrierMonitorTask[], options: CatalogOption[], minimum_ping_interval_seconds: number, minimum_route_interval_seconds: number }",
+	})
+	RegisterWithGroupAndMeta("setCarrierMonitorTasks", rpc.RoleAdmin, adminSetCarrierMonitorTasks, &rpc.MethodMeta{
+		Name: "admin:setCarrierMonitorTasks", Summary: "Replace unified latency and optional return-route monitoring tasks",
+		Returns: "{ tasks: CarrierMonitorTask[] }",
+	})
 	RegisterWithGroupAndMeta("getCarrierRouteOptions", rpc.RoleAdmin, adminGetCarrierRouteOptions, &rpc.MethodMeta{
 		Name:    "admin:getCarrierRouteOptions",
 		Summary: "Get the embedded probe catalogue and independent latency/route settings",
@@ -30,6 +38,36 @@ func init() {
 		Summary: "Replace independently assigned carrier route tasks",
 		Returns: "{ tasks: CarrierRouteTask[] }",
 	})
+}
+
+func adminGetCarrierMonitorTasks(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	if err := probe.MigrateLegacyMonitorTasks(); err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, "Failed to migrate carrier monitor tasks: "+err.Error(), nil)
+	}
+	return map[string]any{
+		"tasks": probe.CurrentMonitorTasks(), "options": probe.CatalogOptions(),
+		"minimum_ping_interval_seconds":  probe.MinimumPingIntervalSeconds(),
+		"minimum_route_interval_seconds": probe.MinimumIntervalSeconds(),
+	}, nil
+}
+
+func adminSetCarrierMonitorTasks(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	var params struct {
+		Tasks []probe.CarrierMonitorTask `json:"tasks"`
+	}
+	if err := req.BindParams(&params); err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid carrier monitor tasks: "+err.Error(), nil)
+	}
+	normalized, err := probe.NormalizeMonitorTasks(params.Tasks)
+	if err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, err.Error(), nil)
+	}
+	if err := probe.SyncManagedMonitorTasks(normalized); err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, "Failed to save carrier monitor tasks: "+err.Error(), nil)
+	}
+	actor, ip := auditActor(ctx)
+	auditlog.Log(ip, actor, "update carrier monitor tasks", "info")
+	return map[string]any{"tasks": normalized}, nil
 }
 
 func adminGetCarrierRouteOptions(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

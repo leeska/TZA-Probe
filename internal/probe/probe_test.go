@@ -41,8 +41,8 @@ func TestManagedPingTasksUseIndependentFamiliesAndLocalAddresses(t *testing.T) {
 
 func TestCatalogContainsEveryRegionCarrierFamilyCombination(t *testing.T) {
 	options := CatalogOptions()
-	if len(options) != 186 {
-		t.Fatalf("catalog options = %d, want 186", len(options))
+	if len(options) != 196 {
+		t.Fatalf("catalog options = %d, want 196", len(options))
 	}
 	seen := make(map[string]struct{}, len(options))
 	regions := make(map[string]struct{})
@@ -53,8 +53,34 @@ func TestCatalogContainsEveryRegionCarrierFamilyCombination(t *testing.T) {
 		seen[option.ID] = struct{}{}
 		regions[option.Region] = struct{}{}
 	}
-	if len(regions) != 31 {
-		t.Fatalf("catalog regions = %d, want 31", len(regions))
+	if len(regions) != 38 {
+		t.Fatalf("catalog regions = %d, want 38", len(regions))
+	}
+}
+
+func TestCatalogContainsInternationalBGPTargets(t *testing.T) {
+	options := CatalogOptions()
+	count := 0
+	for _, option := range options {
+		if option.Category == "international_bgp" {
+			count++
+			if option.Carrier != "international" || option.DisplayName == "" || !strings.Contains(option.Host, ".") {
+				t.Fatalf("invalid international option: %#v", option)
+			}
+		}
+	}
+	if count != 10 {
+		t.Fatalf("international options = %d, want 10", count)
+	}
+}
+
+func TestNormalizeMonitorTasksDisablesInternationalRoute(t *testing.T) {
+	tasks, err := NormalizeMonitorTasks([]CarrierMonitorTask{{ID: "intl", Name: "Tokyo", Clients: []string{"node"}, Enabled: true, RouteEnabled: true, Region: "日本东京", Carrier: "international", Family: "ipv4", Host: "speedtest.tokyo2.linode.com", PingIntervalSeconds: 60, RouteIntervalSeconds: 900}})
+	if err != nil {
+		t.Fatalf("NormalizeMonitorTasks() error = %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].RouteEnabled || tasks[0].Category != "international_bgp" {
+		t.Fatalf("normalized international task = %#v", tasks)
 	}
 }
 

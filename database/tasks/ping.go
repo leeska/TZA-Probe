@@ -87,6 +87,7 @@ func EditPingTask(tasks []*models.PingTask) error {
 			"region":      task.Region,
 			"carrier":     task.Carrier,
 			"family":      task.Family,
+			"category":    task.Category,
 		}
 		result := db.Model(&models.PingTask{}).Where("id = ?", task.Id).Updates(updates)
 		if result.RowsAffected == 0 {
@@ -159,18 +160,17 @@ func SyncManagedPingTasks(managedBy string, desired []models.PingTask) error {
 		if err := tx.Model(&models.PingTask{}).Select("COALESCE(MAX(weight), 0)").Scan(&maxWeight).Error; err != nil {
 			return err
 		}
-		keys := make([]string, 0, len(desiredByKey))
-		for key := range desiredByKey {
-			keys = append(keys, key)
+		keys := make([]string, 0, len(desired))
+		for _, task := range desired {
+			keys = append(keys, task.ManagedKey)
 		}
-		sort.Strings(keys)
 		for _, key := range keys {
 			task := desiredByKey[key]
 			if current, exists := existingByKey[key]; exists {
 				updates := map[string]interface{}{
 					"name": task.Name, "clients": task.Clients, "all_clients": task.DefaultOn,
 					"type": task.Type, "target": task.Target, "interval": task.Interval,
-					"region": task.Region, "carrier": task.Carrier, "family": task.Family,
+					"region": task.Region, "carrier": task.Carrier, "family": task.Family, "category": task.Category,
 				}
 				if err := tx.Model(&models.PingTask{}).Where("id = ?", current.Id).Updates(updates).Error; err != nil {
 					return err

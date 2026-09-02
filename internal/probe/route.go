@@ -19,15 +19,15 @@ import (
 )
 
 const (
-	defaultInterval    = time.Hour
-	minimumInterval    = 15 * time.Minute
-	maxStoredResultAge = 72 * time.Hour
-	maxTargetsPerJob   = 12
+	defaultInterval            = time.Hour
+	minimumInterval            = 15 * time.Minute
+	maxStoredResultAge         = 72 * time.Hour
+	maxTargetsPerJob           = 12
 	carrierRouteProbeTimeoutMs = 30_000
 	carrierRouteProbeMaxHops   = 30
-	enabledKey         = "carrier_route_enabled"
-	intervalKey        = "carrier_route_interval_seconds"
-	selectionsKey      = "carrier_route_selections"
+	enabledKey                 = "carrier_route_enabled"
+	intervalKey                = "carrier_route_interval_seconds"
+	selectionsKey              = "carrier_route_selections"
 
 	CarrierRouteEnabledKey    = enabledKey
 	CarrierRouteIntervalKey   = intervalKey
@@ -50,6 +50,8 @@ type embeddedTarget struct {
 	Family       string `json:"family"`
 	Region       string `json:"region"`
 	Carrier      string `json:"carrier"`
+	Category     string `json:"category,omitempty"`
+	DisplayName  string `json:"display_name,omitempty"`
 	Host         string `json:"host"`
 	IP           string `json:"ip"`
 	Port         int    `json:"port"`
@@ -85,14 +87,16 @@ var (
 // CatalogOption is the stable option contract used by an administration UI.
 // One option represents exactly one region/carrier/family combination.
 type CatalogOption struct {
-	ID         string `json:"id"`
-	Region     string `json:"region"`
-	Carrier    string `json:"carrier"`
-	Family     string `json:"family"`
-	Host       string `json:"host"`
-	BackupHost string `json:"backup_host,omitempty"`
-	IP         string `json:"ip"`
-	Port       int    `json:"port"`
+	ID          string `json:"id"`
+	Region      string `json:"region"`
+	Carrier     string `json:"carrier"`
+	Family      string `json:"family"`
+	Category    string `json:"category,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Host        string `json:"host"`
+	BackupHost  string `json:"backup_host,omitempty"`
+	IP          string `json:"ip"`
+	Port        int    `json:"port"`
 }
 
 func loadEmbeddedCatalog() embeddedCatalog {
@@ -124,14 +128,16 @@ func CatalogOptions() []CatalogOption {
 			backupHost = strings.TrimSpace(target.BackupHost)
 		}
 		options = append(options, CatalogOption{
-			ID:         selectionID(target.Region, carrier, family),
-			Region:     target.Region,
-			Carrier:    carrier,
-			Family:     family,
-			Host:       host,
-			BackupHost: backupHost,
-			IP:         target.IP,
-			Port:       target.Port,
+			ID:          selectionID(target.Region, carrier, family),
+			Region:      target.Region,
+			Carrier:     carrier,
+			Family:      family,
+			Category:    strings.TrimSpace(target.Category),
+			DisplayName: strings.TrimSpace(target.DisplayName),
+			Host:        host,
+			BackupHost:  backupHost,
+			IP:          target.IP,
+			Port:        target.Port,
 		})
 	}
 	return options
@@ -504,6 +510,8 @@ func normalizeCarrier(value string) string {
 		return "unicom"
 	case strings.Contains(lower, "移动"), strings.Contains(lower, "mobile"), strings.Contains(lower, "cmcc"), strings.Contains(lower, "cmi"):
 		return "mobile"
+	case strings.Contains(lower, "international"), strings.Contains(lower, "国际"), strings.Contains(lower, "bgp"):
+		return "international"
 	default:
 		return lower
 	}

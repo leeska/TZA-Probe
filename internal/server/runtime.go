@@ -189,6 +189,9 @@ func registerScheduledWork() {
 	if err := probe.MigrateLegacyRouteTasks(); err != nil {
 		logger.ErrorArgs("server", "Failed to migrate legacy carrier route settings:", err)
 	}
+	if err := probe.MigrateLegacyMonitorTasks(); err != nil {
+		logger.ErrorArgs("server", "Failed to migrate unified carrier monitor settings:", err)
+	}
 	if err := tasks.ReloadPingSchedule(); err != nil {
 		logger.ErrorArgs("server", "Failed to reload ping schedule:", err)
 	}

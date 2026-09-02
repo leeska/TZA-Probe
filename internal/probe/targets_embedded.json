@@ -2606,6 +2606,126 @@
       "backup_ip": "2409:8c44:2:ff16:8000:0:b00:87",
       "backup_port": 80,
       "backup_target": "cq-cm-v6.ip.zstaticcdn.com"
+    },
+    {
+      "id": "intl-us-west-v4.leaseweb.net",
+      "family": "ipv4",
+      "region": "美国西海岸",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "美国西海岸（国际 BGP）",
+      "host": "speedtest.lax12.us.leaseweb.net",
+      "ip": "23.105.41.222",
+      "port": 80,
+      "target": "speedtest.lax12.us.leaseweb.net"
+    },
+    {
+      "id": "intl-us-east-v4.leaseweb.net",
+      "family": "ipv4",
+      "region": "美国东海岸",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "美国东海岸（国际 BGP）",
+      "host": "speedtest.nyc1.us.leaseweb.net",
+      "ip": "108.62.52.129",
+      "port": 80,
+      "target": "speedtest.nyc1.us.leaseweb.net"
+    },
+    {
+      "id": "intl-amsterdam-v4.leaseweb.net",
+      "family": "ipv4",
+      "region": "荷兰阿姆斯特丹",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "荷兰阿姆斯特丹（国际 BGP）",
+      "host": "speedtest.ams1.nl.leaseweb.net",
+      "ip": "95.211.20.80",
+      "port": 80,
+      "target": "speedtest.ams1.nl.leaseweb.net"
+    },
+    {
+      "id": "intl-frankfurt-v4.leaseweb.net",
+      "family": "ipv4",
+      "region": "德国法兰克福",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "德国法兰克福（国际 BGP）",
+      "host": "speedtest.fra1.de.leaseweb.net",
+      "ip": "178.162.226.176",
+      "port": 80,
+      "target": "speedtest.fra1.de.leaseweb.net"
+    },
+    {
+      "id": "intl-singapore-v4.leaseweb.net",
+      "family": "ipv4",
+      "region": "新加坡",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "新加坡（国际 BGP）",
+      "host": "speedtest.sin1.sg.leaseweb.net",
+      "ip": "23.108.99.54",
+      "port": 80,
+      "target": "speedtest.sin1.sg.leaseweb.net"
+    },
+    {
+      "id": "intl-tokyo-v4.linode.com",
+      "family": "ipv4",
+      "region": "日本东京",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "日本东京（国际 BGP）",
+      "host": "speedtest.tokyo2.linode.com",
+      "ip": "139.162.65.37",
+      "port": 80,
+      "target": "speedtest.tokyo2.linode.com"
+    },
+    {
+      "id": "intl-sydney-v4.linode.com",
+      "family": "ipv4",
+      "region": "澳大利亚悉尼",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "澳大利亚悉尼（国际 BGP）",
+      "host": "speedtest.syd1.linode.com",
+      "ip": "192.53.169.225",
+      "port": 80,
+      "target": "speedtest.syd1.linode.com"
+    },
+    {
+      "id": "intl-singapore-v6.leaseweb.net",
+      "family": "ipv6",
+      "region": "新加坡",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "新加坡（国际 BGP）",
+      "host": "speedtest.sin1.sg.leaseweb.net",
+      "ip": "2402:a7c0:8100:a013::77",
+      "port": 80,
+      "target": "speedtest.sin1.sg.leaseweb.net"
+    },
+    {
+      "id": "intl-tokyo-v6.linode.com",
+      "family": "ipv6",
+      "region": "日本东京",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "日本东京（国际 BGP）",
+      "host": "speedtest.tokyo2.linode.com",
+      "ip": "2400:8902::f03c:91ff:fe16:ffaa",
+      "port": 80,
+      "target": "speedtest.tokyo2.linode.com"
+    },
+    {
+      "id": "intl-sydney-v6.linode.com",
+      "family": "ipv6",
+      "region": "澳大利亚悉尼",
+      "carrier": "international",
+      "category": "international_bgp",
+      "display_name": "澳大利亚悉尼（国际 BGP）",
+      "host": "speedtest.syd1.linode.com",
+      "ip": "2400:8907::f03c:94ff:feb8:a695",
+      "port": 80,
+      "target": "speedtest.syd1.linode.com"
     }
   ]
 }
