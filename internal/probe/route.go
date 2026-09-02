@@ -23,6 +23,8 @@ const (
 	minimumInterval    = 15 * time.Minute
 	maxStoredResultAge = 72 * time.Hour
 	maxTargetsPerJob   = 12
+	carrierRouteProbeTimeoutMs = 30_000
+	carrierRouteProbeMaxHops   = 30
 	enabledKey         = "carrier_route_enabled"
 	intervalKey        = "carrier_route_interval_seconds"
 	selectionsKey      = "carrier_route_selections"
@@ -379,8 +381,8 @@ func dispatchRouteProbe(task CarrierRouteTask, target v2.CarrierRouteTarget, uui
 	}
 	params := v2.CarrierRouteProbeParams{
 		JobID: newJobID(), Family: task.Family,
-		Targets: []v2.CarrierRouteTarget{target}, TimeoutMs: 8000,
-		MaxHops: 24, MaxConcurrency: 1,
+		Targets: []v2.CarrierRouteTarget{target}, TimeoutMs: carrierRouteProbeTimeoutMs,
+		MaxHops: carrierRouteProbeMaxHops, MaxConcurrency: 1,
 	}
 	_ = agent_runtime.DispatchV2Event(uuid, v2.MethodAgentCarrierRouteProbe, params)
 }
