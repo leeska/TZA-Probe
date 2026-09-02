@@ -3,7 +3,9 @@ package probe
 import (
 	"errors"
 	"fmt"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/komari-monitor/komari/database/clients"
@@ -139,7 +141,7 @@ func NormalizeRouteTasks(items []CarrierRouteTask) ([]CarrierRouteTask, error) {
 		item.Region = strings.TrimSpace(item.Region)
 		item.Carrier = normalizeCarrier(item.Carrier)
 		item.Family = normalizeFamily(item.Family)
-		item.Host = normalizeProbeHost(item.Host)
+		item.Host, item.Port = normalizeProbeEndpoint(item.Host, item.Port)
 		item.BackupHost = normalizeProbeHost(item.BackupHost)
 		item.CatalogID = strings.TrimSpace(item.CatalogID)
 		if item.Name == "" || item.Host == "" || item.Family == "" {
@@ -163,6 +165,31 @@ func NormalizeRouteTasks(items []CarrierRouteTask) ([]CarrierRouteTask, error) {
 
 func normalizeProbeHost(value string) string {
 	return strings.Trim(strings.TrimSpace(value), "[]")
+}
+
+// normalizeProbeEndpoint accepts the structured host/port fields used by the
+// API while remaining compatible with older callers that submitted a single
+// endpoint string such as example.com:443 or [2001:db8::1]:443.
+func normalizeProbeEndpoint(value string, port int) (string, int) {
+	raw := strings.TrimSpace(value)
+	host := normalizeProbeHost(raw)
+	if parsedHost, parsedPort, err := net.SplitHostPort(raw); err == nil {
+		if number, parseErr := strconv.Atoi(parsedPort); parseErr == nil && number > 0 && number <= 65535 {
+			host = normalizeProbeHost(parsedHost)
+			if port <= 0 || port == 80 {
+				port = number
+			}
+		}
+	} else if strings.Count(raw, ":") == 1 {
+		parts := strings.SplitN(raw, ":", 2)
+		if number, parseErr := strconv.Atoi(parts[1]); parseErr == nil && number > 0 && number <= 65535 {
+			host = normalizeProbeHost(parts[0])
+			if port <= 0 || port == 80 {
+				port = number
+			}
+		}
+	}
+	return host, port
 }
 
 func normalizeTaskClients(values []string) []string {

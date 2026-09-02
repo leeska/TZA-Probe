@@ -69,7 +69,7 @@ func NormalizeMonitorTasks(items []CarrierMonitorTask) ([]CarrierMonitorTask, er
 		item.Region = strings.TrimSpace(item.Region)
 		item.Carrier = normalizeCarrier(item.Carrier)
 		item.Family = normalizeFamily(item.Family)
-		item.Host = normalizeProbeHost(item.Host)
+		item.Host, item.Port = normalizeProbeEndpoint(item.Host, item.Port)
 		item.BackupHost = normalizeProbeHost(item.BackupHost)
 		item.CatalogID = strings.TrimSpace(item.CatalogID)
 		item.Category = strings.TrimSpace(item.Category)

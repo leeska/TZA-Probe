@@ -84,6 +84,28 @@ func TestNormalizeMonitorTasksDisablesInternationalRoute(t *testing.T) {
 	}
 }
 
+func TestNormalizeProbeEndpointParsesLegacyPort(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		input    string
+		port     int
+		wantHost string
+		wantPort int
+	}{
+		{name: "hostname", input: "example.com:443", port: 80, wantHost: "example.com", wantPort: 443},
+		{name: "ipv6", input: "[2001:db8::1]:8443", port: 80, wantHost: "2001:db8::1", wantPort: 8443},
+		{name: "ipv6 without port", input: "2001:db8::1", port: 443, wantHost: "2001:db8::1", wantPort: 443},
+		{name: "explicit structured port wins", input: "example.com:443", port: 8080, wantHost: "example.com", wantPort: 8080},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			host, port := normalizeProbeEndpoint(test.input, test.port)
+			if host != test.wantHost || port != test.wantPort {
+				t.Fatalf("normalizeProbeEndpoint(%q, %d) = (%q, %d), want (%q, %d)", test.input, test.port, host, port, test.wantHost, test.wantPort)
+			}
+		})
+	}
+}
+
 func TestNormalizeRouteTasksKeepsExplicitClientsAndHostname(t *testing.T) {
 	tasks, err := NormalizeRouteTasks([]CarrierRouteTask{{
 		ID: "route-1", Name: "湖南电信", Clients: []string{"node-b", "node-a", "node-a"},
