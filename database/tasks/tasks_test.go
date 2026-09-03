@@ -148,3 +148,28 @@ func TestSyncManagedPingTasksDoesNotTouchManualTasks(t *testing.T) {
 		t.Fatalf("task counts manual=%d stale=%d managed=%d", manualCount, staleCount, managedCount)
 	}
 }
+
+func TestSyncManagedPingTasksPersistsDesiredOrder(t *testing.T) {
+	flags.DatabaseType = flags.DatabaseTypeSQLite
+	flags.DatabaseFile = "file:managed_ping_order?mode=memory&cache=shared"
+	db := dbcore.GetDBInstance()
+
+	initial := []models.PingTask{
+		{Name: "first", Type: "tcp", Target: "first.example:80", Interval: 60, ManagedKey: "first"},
+		{Name: "second", Type: "tcp", Target: "second.example:80", Interval: 60, ManagedKey: "second"},
+	}
+	if err := SyncManagedPingTasks("order-owner", initial); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+	if err := SyncManagedPingTasks("order-owner", []models.PingTask{initial[1], initial[0]}); err != nil {
+		t.Fatalf("reorder sync: %v", err)
+	}
+
+	var got []models.PingTask
+	if err := db.Where("managed_by = ?", "order-owner").Order("weight ASC").Find(&got).Error; err != nil {
+		t.Fatalf("load managed tasks: %v", err)
+	}
+	if len(got) != 2 || got[0].ManagedKey != "second" || got[0].Weight != 0 || got[1].ManagedKey != "first" || got[1].Weight != 1 {
+		t.Fatalf("managed order = %#v", got)
+	}
+}

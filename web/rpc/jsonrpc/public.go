@@ -271,6 +271,7 @@ func publicGetPublicPingTasks(_ context.Context, _ *rpc.JsonRpcRequest) (any, *r
 		Carrier   string   `json:"carrier,omitempty"`
 		Family    string   `json:"family,omitempty"`
 		Category  string   `json:"category,omitempty"`
+		ManagedBy string   `json:"managed_by,omitempty"`
 	}
 	out := make([]publicPingTask, len(pingTasks))
 	for i, task := range pingTasks {
@@ -286,6 +287,7 @@ func publicGetPublicPingTasks(_ context.Context, _ *rpc.JsonRpcRequest) (any, *r
 			Carrier:   task.Carrier,
 			Family:    task.Family,
 			Category:  task.Category,
+			ManagedBy: task.ManagedBy,
 		}
 	}
 	return out, nil

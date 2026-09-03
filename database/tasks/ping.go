@@ -132,7 +132,7 @@ func SyncManagedPingTasks(managedBy string, desired []models.PingTask) error {
 		return fmt.Errorf("managed ping task owner is required")
 	}
 	desiredByKey := make(map[string]models.PingTask, len(desired))
-	for _, task := range desired {
+	for index, task := range desired {
 		if task.ManagedKey == "" {
 			return fmt.Errorf("managed ping task key is required")
 		}
@@ -141,6 +141,9 @@ func SyncManagedPingTasks(managedBy string, desired []models.PingTask) error {
 		}
 		task.ManagedBy = managedBy
 		task.Clients = normalizePingClients(task.Clients)
+		// Managed task order is controlled by the unified Monitoring Center.
+		// Preserve it in the public Ping task weight for theme consumers.
+		task.Weight = index
 		desiredByKey[task.ManagedKey] = task
 	}
 
@@ -168,7 +171,8 @@ func SyncManagedPingTasks(managedBy string, desired []models.PingTask) error {
 			task := desiredByKey[key]
 			if current, exists := existingByKey[key]; exists {
 				updates := map[string]interface{}{
-					"name": task.Name, "clients": task.Clients, "all_clients": task.DefaultOn,
+					"weight": task.Weight,
+					"name":   task.Name, "clients": task.Clients, "all_clients": task.DefaultOn,
 					"type": task.Type, "target": task.Target, "interval": task.Interval,
 					"region": task.Region, "carrier": task.Carrier, "family": task.Family, "category": task.Category,
 				}
