@@ -1,0 +1,19 @@
+[Unit]
+Description=TZA Probe Server
+After=network.target
+
+[Service]
+User=tza-probe
+Group=tza-probe
+ExecStart=/usr/local/bin/tza-server --listen 127.0.0.1:25774 --data /var/lib/tza-probe
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tza-probe
+
+[Install]
+WantedBy=multi-user.target

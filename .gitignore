@@ -1,0 +1,11 @@
+/data/
+/bin/
+*.db
+*.db-shm
+*.db-wal
+agent.json
+coverage.out
+.DS_Store
+
+__pycache__/
+*.pyc

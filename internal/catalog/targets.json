@@ -1,0 +1,1867 @@
+{
+  "source": "https://tcpquality.ibsgss.uk/getNodes?format=tsv&scope=cdn",
+  "snapshot_date": "2026-09-18",
+  "verification": "Source-provided literal public IPs with validated address family; reachability and ASN are determined by each Agent.",
+  "targets": [
+    {
+      "id": "he-ct-v4",
+      "family": "ipv4",
+      "region": "河北",
+      "carrier": "电信",
+      "host": "219.148.62.1",
+      "ip": "219.148.62.1",
+      "port": 80,
+      "source_host": "he-ct-v4"
+    },
+    {
+      "id": "he-ct-v6",
+      "family": "ipv6",
+      "region": "河北",
+      "carrier": "电信",
+      "host": "240e:b1:c802:0:8000:0:b00:98",
+      "ip": "240e:b1:c802:0:8000:0:b00:98",
+      "port": 80,
+      "source_host": "he-ct-v6"
+    },
+    {
+      "id": "he-cu-v4",
+      "family": "ipv4",
+      "region": "河北",
+      "carrier": "联通",
+      "host": "110.249.198.60",
+      "ip": "110.249.198.60",
+      "port": 80,
+      "source_host": "he-cu-v4"
+    },
+    {
+      "id": "he-cu-v6",
+      "family": "ipv6",
+      "region": "河北",
+      "carrier": "联通",
+      "host": "2408:871a:4800:40f::b00:99",
+      "ip": "2408:871a:4800:40f::b00:99",
+      "port": 80,
+      "source_host": "he-cu-v6"
+    },
+    {
+      "id": "he-cm-v4",
+      "family": "ipv4",
+      "region": "河北",
+      "carrier": "移动",
+      "host": "111.62.113.2",
+      "ip": "111.62.113.2",
+      "port": 80,
+      "source_host": "he-cm-v4"
+    },
+    {
+      "id": "he-cm-v6",
+      "family": "ipv6",
+      "region": "河北",
+      "carrier": "移动",
+      "host": "2409:8c04:1003:206:8000:0:b00:86",
+      "ip": "2409:8c04:1003:206:8000:0:b00:86",
+      "port": 80,
+      "source_host": "he-cm-v6"
+    },
+    {
+      "id": "sx-ct-v4",
+      "family": "ipv4",
+      "region": "山西",
+      "carrier": "电信",
+      "host": "113.24.210.59",
+      "ip": "113.24.210.59",
+      "port": 80,
+      "source_host": "sx-ct-v4"
+    },
+    {
+      "id": "sx-ct-v6",
+      "family": "ipv6",
+      "region": "山西",
+      "carrier": "电信",
+      "host": "240e:925:2:400:8000:0:b00:99",
+      "ip": "240e:925:2:400:8000:0:b00:99",
+      "port": 80,
+      "source_host": "sx-ct-v6"
+    },
+    {
+      "id": "sx-cu-v4",
+      "family": "ipv4",
+      "region": "山西",
+      "carrier": "联通",
+      "host": "121.30.176.154",
+      "ip": "121.30.176.154",
+      "port": 80,
+      "source_host": "sx-cu-v4"
+    },
+    {
+      "id": "sx-cu-v6",
+      "family": "ipv6",
+      "region": "山西",
+      "carrier": "联通",
+      "host": "2408:8726:5400:100:8000:0:b00:86",
+      "ip": "2408:8726:5400:100:8000:0:b00:86",
+      "port": 80,
+      "source_host": "sx-cu-v6"
+    },
+    {
+      "id": "sx-cm-v4",
+      "family": "ipv4",
+      "region": "山西",
+      "carrier": "移动",
+      "host": "183.201.125.189",
+      "ip": "183.201.125.189",
+      "port": 80,
+      "source_host": "sx-cm-v4"
+    },
+    {
+      "id": "sx-cm-v6",
+      "family": "ipv6",
+      "region": "山西",
+      "carrier": "移动",
+      "host": "2409:8c0c:310:2401::b00:65",
+      "ip": "2409:8c0c:310:2401::b00:65",
+      "port": 80,
+      "source_host": "sx-cm-v6"
+    },
+    {
+      "id": "ln-ct-v4",
+      "family": "ipv4",
+      "region": "辽宁",
+      "carrier": "电信",
+      "host": "42.202.219.238",
+      "ip": "42.202.219.238",
+      "port": 80,
+      "source_host": "ln-ct-v4"
+    },
+    {
+      "id": "ln-ct-v6",
+      "family": "ipv6",
+      "region": "辽宁",
+      "carrier": "电信",
+      "host": "240e:90c:a201:100:8000:0:b00:45",
+      "ip": "240e:90c:a201:100:8000:0:b00:45",
+      "port": 80,
+      "source_host": "ln-ct-v6"
+    },
+    {
+      "id": "ln-cu-v4",
+      "family": "ipv4",
+      "region": "辽宁",
+      "carrier": "联通",
+      "host": "42.59.0.146",
+      "ip": "42.59.0.146",
+      "port": 80,
+      "source_host": "ln-cu-v4"
+    },
+    {
+      "id": "ln-cu-v6",
+      "family": "ipv6",
+      "region": "辽宁",
+      "carrier": "联通",
+      "host": "2408:8630:20b0:3:8000:0:b00:227",
+      "ip": "2408:8630:20b0:3:8000:0:b00:227",
+      "port": 80,
+      "source_host": "ln-cu-v6"
+    },
+    {
+      "id": "ln-cm-v4",
+      "family": "ipv4",
+      "region": "辽宁",
+      "carrier": "移动",
+      "host": "120.201.244.217",
+      "ip": "120.201.244.217",
+      "port": 80,
+      "source_host": "ln-cm-v4"
+    },
+    {
+      "id": "ln-cm-v6",
+      "family": "ipv6",
+      "region": "辽宁",
+      "carrier": "移动",
+      "host": "2409:8c15:2011:1101:8000:0:b00:217",
+      "ip": "2409:8c15:2011:1101:8000:0:b00:217",
+      "port": 80,
+      "source_host": "ln-cm-v6"
+    },
+    {
+      "id": "jl-ct-v4",
+      "family": "ipv4",
+      "region": "吉林",
+      "carrier": "电信",
+      "host": "36.104.133.170",
+      "ip": "36.104.133.170",
+      "port": 80,
+      "source_host": "jl-ct-v4"
+    },
+    {
+      "id": "jl-ct-v6",
+      "family": "ipv6",
+      "region": "吉林",
+      "carrier": "电信",
+      "host": "240e:910:e000:201:8000:0:b00:98",
+      "ip": "240e:910:e000:201:8000:0:b00:98",
+      "port": 80,
+      "source_host": "jl-ct-v6"
+    },
+    {
+      "id": "jl-cu-v4",
+      "family": "ipv4",
+      "region": "吉林",
+      "carrier": "联通",
+      "host": "119.51.251.185",
+      "ip": "119.51.251.185",
+      "port": 80,
+      "source_host": "jl-cu-v4"
+    },
+    {
+      "id": "jl-cu-v6",
+      "family": "ipv6",
+      "region": "吉林",
+      "carrier": "联通",
+      "host": "2408:8735:0:c:8000:0:b00:62",
+      "ip": "2408:8735:0:c:8000:0:b00:62",
+      "port": 80,
+      "source_host": "jl-cu-v6"
+    },
+    {
+      "id": "jl-cm-v4",
+      "family": "ipv4",
+      "region": "吉林",
+      "carrier": "移动",
+      "host": "111.26.55.239",
+      "ip": "111.26.55.239",
+      "port": 80,
+      "source_host": "jl-cm-v4"
+    },
+    {
+      "id": "jl-cm-v6",
+      "family": "ipv6",
+      "region": "吉林",
+      "carrier": "移动",
+      "host": "2409:8c18:700:1002:8000:0:b00:226",
+      "ip": "2409:8c18:700:1002:8000:0:b00:226",
+      "port": 80,
+      "source_host": "jl-cm-v6"
+    },
+    {
+      "id": "hl-ct-v4",
+      "family": "ipv4",
+      "region": "黑龙江",
+      "carrier": "电信",
+      "host": "42.101.49.95",
+      "ip": "42.101.49.95",
+      "port": 80,
+      "source_host": "hl-ct-v4"
+    },
+    {
+      "id": "hl-ct-v6",
+      "family": "ipv6",
+      "region": "黑龙江",
+      "carrier": "电信",
+      "host": "240e:908:8106:2:8000:0:b00:33",
+      "ip": "240e:908:8106:2:8000:0:b00:33",
+      "port": 80,
+      "source_host": "hl-ct-v6"
+    },
+    {
+      "id": "hl-cu-v4",
+      "family": "ipv4",
+      "region": "黑龙江",
+      "carrier": "联通",
+      "host": "221.207.117.203",
+      "ip": "221.207.117.203",
+      "port": 80,
+      "source_host": "hl-cu-v4"
+    },
+    {
+      "id": "hl-cu-v6",
+      "family": "ipv6",
+      "region": "黑龙江",
+      "carrier": "联通",
+      "host": "2408:8738:4000:4::b00:77",
+      "ip": "2408:8738:4000:4::b00:77",
+      "port": 80,
+      "source_host": "hl-cu-v6"
+    },
+    {
+      "id": "hl-cm-v4",
+      "family": "ipv4",
+      "region": "黑龙江",
+      "carrier": "移动",
+      "host": "111.42.192.157",
+      "ip": "111.42.192.157",
+      "port": 80,
+      "source_host": "hl-cm-v4"
+    },
+    {
+      "id": "hl-cm-v6",
+      "family": "ipv6",
+      "region": "黑龙江",
+      "carrier": "移动",
+      "host": "2409:801a:3006:1a:8000:0:b00:90",
+      "ip": "2409:801a:3006:1a:8000:0:b00:90",
+      "port": 80,
+      "source_host": "hl-cm-v6"
+    },
+    {
+      "id": "js-ct-v4",
+      "family": "ipv4",
+      "region": "江苏",
+      "carrier": "电信",
+      "host": "180.102.49.190",
+      "ip": "180.102.49.190",
+      "port": 80,
+      "source_host": "js-ct-v4"
+    },
+    {
+      "id": "js-ct-v6",
+      "family": "ipv6",
+      "region": "江苏",
+      "carrier": "电信",
+      "host": "240e:978:1226:0:8000:0:b00:85",
+      "ip": "240e:978:1226:0:8000:0:b00:85",
+      "port": 80,
+      "source_host": "js-ct-v6"
+    },
+    {
+      "id": "js-cu-v4",
+      "family": "ipv4",
+      "region": "江苏",
+      "carrier": "联通",
+      "host": "112.86.231.205",
+      "ip": "112.86.231.205",
+      "port": 80,
+      "source_host": "js-cu-v4"
+    },
+    {
+      "id": "js-cu-v6",
+      "family": "ipv6",
+      "region": "江苏",
+      "carrier": "联通",
+      "host": "2408:873c:6810:5:8000:0:b00:34",
+      "ip": "2408:873c:6810:5:8000:0:b00:34",
+      "port": 80,
+      "source_host": "js-cu-v6"
+    },
+    {
+      "id": "js-cm-v4",
+      "family": "ipv4",
+      "region": "江苏",
+      "carrier": "移动",
+      "host": "36.155.213.76",
+      "ip": "36.155.213.76",
+      "port": 80,
+      "source_host": "js-cm-v4"
+    },
+    {
+      "id": "js-cm-v6",
+      "family": "ipv6",
+      "region": "江苏",
+      "carrier": "移动",
+      "host": "2409:8c20:6ed1:10c:8000:0:b00:137",
+      "ip": "2409:8c20:6ed1:10c:8000:0:b00:137",
+      "port": 80,
+      "source_host": "js-cm-v6"
+    },
+    {
+      "id": "zj-ct-v4",
+      "family": "ipv4",
+      "region": "浙江",
+      "carrier": "电信",
+      "host": "183.131.147.4",
+      "ip": "183.131.147.4",
+      "port": 80,
+      "source_host": "zj-ct-v4"
+    },
+    {
+      "id": "zj-ct-v6",
+      "family": "ipv6",
+      "region": "浙江",
+      "carrier": "电信",
+      "host": "240e:f7:c000:30f:8000:0:b00:216",
+      "ip": "240e:f7:c000:30f:8000:0:b00:216",
+      "port": 80,
+      "source_host": "zj-ct-v6"
+    },
+    {
+      "id": "zj-cu-v4",
+      "family": "ipv4",
+      "region": "浙江",
+      "carrier": "联通",
+      "host": "60.12.119.66",
+      "ip": "60.12.119.66",
+      "port": 80,
+      "source_host": "zj-cu-v4"
+    },
+    {
+      "id": "zj-cu-v6",
+      "family": "ipv6",
+      "region": "浙江",
+      "carrier": "联通",
+      "host": "2408:873c:6810:5:8000:0:b00:221",
+      "ip": "2408:873c:6810:5:8000:0:b00:221",
+      "port": 80,
+      "source_host": "zj-cu-v6"
+    },
+    {
+      "id": "zj-cm-v4",
+      "family": "ipv4",
+      "region": "浙江",
+      "carrier": "移动",
+      "host": "112.13.92.194",
+      "ip": "112.13.92.194",
+      "port": 80,
+      "source_host": "zj-cm-v4"
+    },
+    {
+      "id": "zj-cm-v6",
+      "family": "ipv6",
+      "region": "浙江",
+      "carrier": "移动",
+      "host": "2409:8c28:c05:41:8000:0:b00:57",
+      "ip": "2409:8c28:c05:41:8000:0:b00:57",
+      "port": 80,
+      "source_host": "zj-cm-v6"
+    },
+    {
+      "id": "ah-ct-v4",
+      "family": "ipv4",
+      "region": "安徽",
+      "carrier": "电信",
+      "host": "117.68.18.76",
+      "ip": "117.68.18.76",
+      "port": 80,
+      "source_host": "ah-ct-v4"
+    },
+    {
+      "id": "ah-ct-v6",
+      "family": "ipv6",
+      "region": "安徽",
+      "carrier": "电信",
+      "host": "240e:958:2004:1:8000:0:b00:98",
+      "ip": "240e:958:2004:1:8000:0:b00:98",
+      "port": 80,
+      "source_host": "ah-ct-v6"
+    },
+    {
+      "id": "ah-cu-v4",
+      "family": "ipv4",
+      "region": "安徽",
+      "carrier": "联通",
+      "host": "112.132.39.253",
+      "ip": "112.132.39.253",
+      "port": 80,
+      "source_host": "ah-cu-v4"
+    },
+    {
+      "id": "ah-cu-v6",
+      "family": "ipv6",
+      "region": "安徽",
+      "carrier": "联通",
+      "host": "2406:8880:0:4:8000:0:b00:90",
+      "ip": "2406:8880:0:4:8000:0:b00:90",
+      "port": 80,
+      "source_host": "ah-cu-v6"
+    },
+    {
+      "id": "ah-cm-v4",
+      "family": "ipv4",
+      "region": "安徽",
+      "carrier": "移动",
+      "host": "39.145.18.64",
+      "ip": "39.145.18.64",
+      "port": 80,
+      "source_host": "ah-cm-v4"
+    },
+    {
+      "id": "ah-cm-v6",
+      "family": "ipv6",
+      "region": "安徽",
+      "carrier": "移动",
+      "host": "2409:8c30:1000:1a01:8000:0:b00:223",
+      "ip": "2409:8c30:1000:1a01:8000:0:b00:223",
+      "port": 80,
+      "source_host": "ah-cm-v6"
+    },
+    {
+      "id": "fj-ct-v4",
+      "family": "ipv4",
+      "region": "福建",
+      "carrier": "电信",
+      "host": "106.126.9.196",
+      "ip": "106.126.9.196",
+      "port": 80,
+      "source_host": "fj-ct-v4"
+    },
+    {
+      "id": "fj-ct-v6",
+      "family": "ipv6",
+      "region": "福建",
+      "carrier": "电信",
+      "host": "240e:d6:6666:25:8000:0:b00:95",
+      "ip": "240e:d6:6666:25:8000:0:b00:95",
+      "port": 80,
+      "source_host": "fj-ct-v6"
+    },
+    {
+      "id": "fj-cu-v4",
+      "family": "ipv4",
+      "region": "福建",
+      "carrier": "联通",
+      "host": "36.248.48.211",
+      "ip": "36.248.48.211",
+      "port": 80,
+      "source_host": "fj-cu-v4"
+    },
+    {
+      "id": "fj-cu-v6",
+      "family": "ipv6",
+      "region": "福建",
+      "carrier": "联通",
+      "host": "2408:8748:a101:218:8000:0:b00:83",
+      "ip": "2408:8748:a101:218:8000:0:b00:83",
+      "port": 80,
+      "source_host": "fj-cu-v6"
+    },
+    {
+      "id": "fj-cm-v4",
+      "family": "ipv4",
+      "region": "福建",
+      "carrier": "移动",
+      "host": "112.48.186.65",
+      "ip": "112.48.186.65",
+      "port": 80,
+      "source_host": "fj-cm-v4"
+    },
+    {
+      "id": "fj-cm-v6",
+      "family": "ipv6",
+      "region": "福建",
+      "carrier": "移动",
+      "host": "2409:8c34:2220:54:8000:0:b00:54",
+      "ip": "2409:8c34:2220:54:8000:0:b00:54",
+      "port": 80,
+      "source_host": "fj-cm-v6"
+    },
+    {
+      "id": "jx-ct-v4",
+      "family": "ipv4",
+      "region": "江西",
+      "carrier": "电信",
+      "host": "117.21.179.2",
+      "ip": "117.21.179.2",
+      "port": 80,
+      "source_host": "jx-ct-v4"
+    },
+    {
+      "id": "jx-ct-v6",
+      "family": "ipv6",
+      "region": "江西",
+      "carrier": "电信",
+      "host": "240e:960:3601:1:8000:0:b00:43",
+      "ip": "240e:960:3601:1:8000:0:b00:43",
+      "port": 80,
+      "source_host": "jx-ct-v6"
+    },
+    {
+      "id": "jx-cu-v4",
+      "family": "ipv4",
+      "region": "江西",
+      "carrier": "联通",
+      "host": "116.153.32.148",
+      "ip": "116.153.32.148",
+      "port": 80,
+      "source_host": "jx-cu-v4"
+    },
+    {
+      "id": "jx-cu-v6",
+      "family": "ipv6",
+      "region": "江西",
+      "carrier": "联通",
+      "host": "2408:874c:1ff:100:8000:0:b00:87",
+      "ip": "2408:874c:1ff:100:8000:0:b00:87",
+      "port": 80,
+      "source_host": "jx-cu-v6"
+    },
+    {
+      "id": "jx-cm-v4",
+      "family": "ipv4",
+      "region": "江西",
+      "carrier": "移动",
+      "host": "117.169.96.226",
+      "ip": "117.169.96.226",
+      "port": 80,
+      "source_host": "jx-cm-v4"
+    },
+    {
+      "id": "jx-cm-v6",
+      "family": "ipv6",
+      "region": "江西",
+      "carrier": "移动",
+      "host": "2409:8c38:80:201:8000:0:b00:95",
+      "ip": "2409:8c38:80:201:8000:0:b00:95",
+      "port": 80,
+      "source_host": "jx-cm-v6"
+    },
+    {
+      "id": "sd-ct-v4",
+      "family": "ipv4",
+      "region": "山东",
+      "carrier": "电信",
+      "host": "140.249.80.214",
+      "ip": "140.249.80.214",
+      "port": 80,
+      "source_host": "sd-ct-v4"
+    },
+    {
+      "id": "sd-ct-v6",
+      "family": "ipv6",
+      "region": "山东",
+      "carrier": "电信",
+      "host": "240e:946:3009:0:8000:0:b00:87",
+      "ip": "240e:946:3009:0:8000:0:b00:87",
+      "port": 80,
+      "source_host": "sd-ct-v6"
+    },
+    {
+      "id": "sd-cu-v4",
+      "family": "ipv4",
+      "region": "山东",
+      "carrier": "联通",
+      "host": "61.179.132.225",
+      "ip": "61.179.132.225",
+      "port": 80,
+      "source_host": "sd-cu-v4"
+    },
+    {
+      "id": "sd-cu-v6",
+      "family": "ipv6",
+      "region": "山东",
+      "carrier": "联通",
+      "host": "2408:8719:64:73:8000:0:b00:63",
+      "ip": "2408:8719:64:73:8000:0:b00:63",
+      "port": 80,
+      "source_host": "sd-cu-v6"
+    },
+    {
+      "id": "sd-cm-v4",
+      "family": "ipv4",
+      "region": "山东",
+      "carrier": "移动",
+      "host": "120.221.173.226",
+      "ip": "120.221.173.226",
+      "port": 80,
+      "source_host": "sd-cm-v4"
+    },
+    {
+      "id": "sd-cm-v6",
+      "family": "ipv6",
+      "region": "山东",
+      "carrier": "移动",
+      "host": "2409:8c3c:900:200:8000:0:b00:89",
+      "ip": "2409:8c3c:900:200:8000:0:b00:89",
+      "port": 80,
+      "source_host": "sd-cm-v6"
+    },
+    {
+      "id": "ha-ct-v4",
+      "family": "ipv4",
+      "region": "河南",
+      "carrier": "电信",
+      "host": "171.15.110.253",
+      "ip": "171.15.110.253",
+      "port": 80,
+      "source_host": "ha-ct-v4"
+    },
+    {
+      "id": "ha-ct-v6",
+      "family": "ipv6",
+      "region": "河南",
+      "carrier": "电信",
+      "host": "240e:93c:209:2:8000:0:b00:59",
+      "ip": "240e:93c:209:2:8000:0:b00:59",
+      "port": 80,
+      "source_host": "ha-ct-v6"
+    },
+    {
+      "id": "ha-cu-v4",
+      "family": "ipv4",
+      "region": "河南",
+      "carrier": "联通",
+      "host": "221.15.71.2",
+      "ip": "221.15.71.2",
+      "port": 80,
+      "source_host": "ha-cu-v4"
+    },
+    {
+      "id": "ha-cu-v6",
+      "family": "ipv6",
+      "region": "河南",
+      "carrier": "联通",
+      "host": "2408:8720:806:100:8000:0:b00:224",
+      "ip": "2408:8720:806:100:8000:0:b00:224",
+      "port": 80,
+      "source_host": "ha-cu-v6"
+    },
+    {
+      "id": "ha-cm-v4",
+      "family": "ipv4",
+      "region": "河南",
+      "carrier": "移动",
+      "host": "111.6.167.130",
+      "ip": "111.6.167.130",
+      "port": 80,
+      "source_host": "ha-cm-v4"
+    },
+    {
+      "id": "ha-cm-v6",
+      "family": "ipv6",
+      "region": "河南",
+      "carrier": "移动",
+      "host": "2409:8c44:2:ff16:8000:0:b00:86",
+      "ip": "2409:8c44:2:ff16:8000:0:b00:86",
+      "port": 80,
+      "source_host": "ha-cm-v6"
+    },
+    {
+      "id": "hb-ct-v4",
+      "family": "ipv4",
+      "region": "湖北",
+      "carrier": "电信",
+      "host": "111.172.211.216",
+      "ip": "111.172.211.216",
+      "port": 80,
+      "source_host": "hb-ct-v4"
+    },
+    {
+      "id": "hb-ct-v6",
+      "family": "ipv6",
+      "region": "湖北",
+      "carrier": "电信",
+      "host": "240e:95c:601:400:8000:0:b00:74",
+      "ip": "240e:95c:601:400:8000:0:b00:74",
+      "port": 80,
+      "source_host": "hb-ct-v6"
+    },
+    {
+      "id": "hb-cu-v4",
+      "family": "ipv4",
+      "region": "湖北",
+      "carrier": "联通",
+      "host": "220.202.13.176",
+      "ip": "220.202.13.176",
+      "port": 80,
+      "source_host": "hb-cu-v4"
+    },
+    {
+      "id": "hb-cu-v6",
+      "family": "ipv6",
+      "region": "湖北",
+      "carrier": "联通",
+      "host": "2408:874f:a000:1:8000:0:b00:90",
+      "ip": "2408:874f:a000:1:8000:0:b00:90",
+      "port": 80,
+      "source_host": "hb-cu-v6"
+    },
+    {
+      "id": "hb-cm-v4",
+      "family": "ipv4",
+      "region": "湖北",
+      "carrier": "移动",
+      "host": "111.48.110.69",
+      "ip": "111.48.110.69",
+      "port": 80,
+      "source_host": "hb-cm-v4"
+    },
+    {
+      "id": "hb-cm-v6",
+      "family": "ipv6",
+      "region": "湖北",
+      "carrier": "移动",
+      "host": "2409:8c4c:e00:210:8000:0:b00:87",
+      "ip": "2409:8c4c:e00:210:8000:0:b00:87",
+      "port": 80,
+      "source_host": "hb-cm-v6"
+    },
+    {
+      "id": "hn-ct-v4",
+      "family": "ipv4",
+      "region": "湖南",
+      "carrier": "电信",
+      "host": "202.103.124.48",
+      "ip": "202.103.124.48",
+      "port": 80,
+      "source_host": "hn-ct-v4"
+    },
+    {
+      "id": "hn-ct-v6",
+      "family": "ipv6",
+      "region": "湖南",
+      "carrier": "电信",
+      "host": "240e:c2:1800:19b:8000:0:b00:41",
+      "ip": "240e:c2:1800:19b:8000:0:b00:41",
+      "port": 80,
+      "source_host": "hn-ct-v6"
+    },
+    {
+      "id": "hn-cu-v4",
+      "family": "ipv4",
+      "region": "湖南",
+      "carrier": "联通",
+      "host": "42.49.82.120",
+      "ip": "42.49.82.120",
+      "port": 80,
+      "source_host": "hn-cu-v4"
+    },
+    {
+      "id": "hn-cu-v6",
+      "family": "ipv6",
+      "region": "湖南",
+      "carrier": "联通",
+      "host": "2408:8752:700:3:8000:0:b00:94",
+      "ip": "2408:8752:700:3:8000:0:b00:94",
+      "port": 80,
+      "source_host": "hn-cu-v6"
+    },
+    {
+      "id": "hn-cm-v4",
+      "family": "ipv4",
+      "region": "湖南",
+      "carrier": "移动",
+      "host": "36.133.12.20",
+      "ip": "36.133.12.20",
+      "port": 80,
+      "source_host": "hn-cm-v4"
+    },
+    {
+      "id": "hn-cm-v6",
+      "family": "ipv6",
+      "region": "湖南",
+      "carrier": "移动",
+      "host": "2409:8c50:a00:2084:8000:0:b00:86",
+      "ip": "2409:8c50:a00:2084:8000:0:b00:86",
+      "port": 80,
+      "source_host": "hn-cm-v6"
+    },
+    {
+      "id": "gd-ct-v4",
+      "family": "ipv4",
+      "region": "广东",
+      "carrier": "电信",
+      "host": "14.22.119.34",
+      "ip": "14.22.119.34",
+      "port": 80,
+      "source_host": "gd-ct-v4"
+    },
+    {
+      "id": "gd-ct-v6",
+      "family": "ipv6",
+      "region": "广东",
+      "carrier": "电信",
+      "host": "240e:97c:39:f80::b00:228",
+      "ip": "240e:97c:39:f80::b00:228",
+      "port": 80,
+      "source_host": "gd-ct-v6"
+    },
+    {
+      "id": "gd-cu-v4",
+      "family": "ipv4",
+      "region": "广东",
+      "carrier": "联通",
+      "host": "122.13.24.8",
+      "ip": "122.13.24.8",
+      "port": 80,
+      "source_host": "gd-cu-v4"
+    },
+    {
+      "id": "gd-cu-v6",
+      "family": "ipv6",
+      "region": "广东",
+      "carrier": "联通",
+      "host": "2408:8756:dcff:e001:8000:0:b00:98",
+      "ip": "2408:8756:dcff:e001:8000:0:b00:98",
+      "port": 80,
+      "source_host": "gd-cu-v6"
+    },
+    {
+      "id": "gd-cm-v4",
+      "family": "ipv4",
+      "region": "广东",
+      "carrier": "移动",
+      "host": "211.139.145.129",
+      "ip": "211.139.145.129",
+      "port": 80,
+      "source_host": "gd-cm-v4"
+    },
+    {
+      "id": "gd-cm-v6",
+      "family": "ipv6",
+      "region": "广东",
+      "carrier": "移动",
+      "host": "2409:8c54:810:a36:8000:0:b00:60",
+      "ip": "2409:8c54:810:a36:8000:0:b00:60",
+      "port": 80,
+      "source_host": "gd-cm-v6"
+    },
+    {
+      "id": "hi-ct-v4",
+      "family": "ipv4",
+      "region": "海南",
+      "carrier": "电信",
+      "host": "113.219.195.99",
+      "ip": "113.219.195.99",
+      "port": 80,
+      "source_host": "hi-ct-v4"
+    },
+    {
+      "id": "hi-ct-v6",
+      "family": "ipv6",
+      "region": "海南",
+      "carrier": "电信",
+      "host": "240e:914:15:8000::b00:224",
+      "ip": "240e:914:15:8000::b00:224",
+      "port": 80,
+      "source_host": "hi-ct-v6"
+    },
+    {
+      "id": "hi-cu-v4",
+      "family": "ipv4",
+      "region": "海南",
+      "carrier": "联通",
+      "host": "116.162.51.223",
+      "ip": "116.162.51.223",
+      "port": 80,
+      "source_host": "hi-cu-v4"
+    },
+    {
+      "id": "hi-cu-v6",
+      "family": "ipv6",
+      "region": "海南",
+      "carrier": "联通",
+      "host": "2408:8748:a101:217:8000:0:b00:79",
+      "ip": "2408:8748:a101:217:8000:0:b00:79",
+      "port": 80,
+      "source_host": "hi-cu-v6"
+    },
+    {
+      "id": "hi-cm-v4",
+      "family": "ipv4",
+      "region": "海南",
+      "carrier": "移动",
+      "host": "111.29.49.161",
+      "ip": "111.29.49.161",
+      "port": 80,
+      "source_host": "hi-cm-v4"
+    },
+    {
+      "id": "hi-cm-v6",
+      "family": "ipv6",
+      "region": "海南",
+      "carrier": "移动",
+      "host": "2409:8c5e:5000:b0:8000:0:b00:90",
+      "ip": "2409:8c5e:5000:b0:8000:0:b00:90",
+      "port": 80,
+      "source_host": "hi-cm-v6"
+    },
+    {
+      "id": "sc-ct-v4",
+      "family": "ipv4",
+      "region": "四川",
+      "carrier": "电信",
+      "host": "118.112.1.144",
+      "ip": "118.112.1.144",
+      "port": 80,
+      "source_host": "sc-ct-v4"
+    },
+    {
+      "id": "sc-ct-v6",
+      "family": "ipv6",
+      "region": "四川",
+      "carrier": "电信",
+      "host": "240e:974:ecff:20:8000:0:b00:98",
+      "ip": "240e:974:ecff:20:8000:0:b00:98",
+      "port": 80,
+      "source_host": "sc-ct-v6"
+    },
+    {
+      "id": "sc-cu-v4",
+      "family": "ipv4",
+      "region": "四川",
+      "carrier": "联通",
+      "host": "119.6.217.13",
+      "ip": "119.6.217.13",
+      "port": 80,
+      "source_host": "sc-cu-v4"
+    },
+    {
+      "id": "sc-cu-v6",
+      "family": "ipv6",
+      "region": "四川",
+      "carrier": "联通",
+      "host": "2408:8766:0:1002:8000:0:b00:3",
+      "ip": "2408:8766:0:1002:8000:0:b00:3",
+      "port": 80,
+      "source_host": "sc-cu-v6"
+    },
+    {
+      "id": "sc-cm-v4",
+      "family": "ipv4",
+      "region": "四川",
+      "carrier": "移动",
+      "host": "36.133.60.2",
+      "ip": "36.133.60.2",
+      "port": 80,
+      "source_host": "sc-cm-v4"
+    },
+    {
+      "id": "sc-cm-v6",
+      "family": "ipv6",
+      "region": "四川",
+      "carrier": "移动",
+      "host": "2409:8c62:e10:32:8000:0:b00:99",
+      "ip": "2409:8c62:e10:32:8000:0:b00:99",
+      "port": 80,
+      "source_host": "sc-cm-v6"
+    },
+    {
+      "id": "gz-ct-v4",
+      "family": "ipv4",
+      "region": "贵州",
+      "carrier": "电信",
+      "host": "45.251.95.99",
+      "ip": "45.251.95.99",
+      "port": 80,
+      "source_host": "gz-ct-v4"
+    },
+    {
+      "id": "gz-ct-v6",
+      "family": "ipv6",
+      "region": "贵州",
+      "carrier": "电信",
+      "host": "240e:980:1200:607::b00:215",
+      "ip": "240e:980:1200:607::b00:215",
+      "port": 80,
+      "source_host": "gz-ct-v6"
+    },
+    {
+      "id": "gz-cu-v4",
+      "family": "ipv4",
+      "region": "贵州",
+      "carrier": "联通",
+      "host": "59.80.45.90",
+      "ip": "59.80.45.90",
+      "port": 80,
+      "source_host": "gz-cu-v4"
+    },
+    {
+      "id": "gz-cu-v6",
+      "family": "ipv6",
+      "region": "贵州",
+      "carrier": "联通",
+      "host": "2408:877f:30:7:8000:0:b00:225",
+      "ip": "2408:877f:30:7:8000:0:b00:225",
+      "port": 80,
+      "source_host": "gz-cu-v6"
+    },
+    {
+      "id": "gz-cm-v4",
+      "family": "ipv4",
+      "region": "贵州",
+      "carrier": "移动",
+      "host": "120.226.150.252",
+      "ip": "120.226.150.252",
+      "port": 80,
+      "source_host": "gz-cm-v4"
+    },
+    {
+      "id": "gz-cm-v6",
+      "family": "ipv6",
+      "region": "贵州",
+      "carrier": "移动",
+      "host": "2409:8c5c:110:27:8000:0:b00:99",
+      "ip": "2409:8c5c:110:27:8000:0:b00:99",
+      "port": 80,
+      "source_host": "gz-cm-v6"
+    },
+    {
+      "id": "yn-ct-v4",
+      "family": "ipv4",
+      "region": "云南",
+      "carrier": "电信",
+      "host": "106.60.4.70",
+      "ip": "106.60.4.70",
+      "port": 80,
+      "source_host": "yn-ct-v4"
+    },
+    {
+      "id": "yn-ct-v6",
+      "family": "ipv6",
+      "region": "云南",
+      "carrier": "电信",
+      "host": "240e:94c:4000:313:8000:0:b00:84",
+      "ip": "240e:94c:4000:313:8000:0:b00:84",
+      "port": 80,
+      "source_host": "yn-ct-v6"
+    },
+    {
+      "id": "yn-cu-v4",
+      "family": "ipv4",
+      "region": "云南",
+      "carrier": "联通",
+      "host": "119.62.43.2",
+      "ip": "119.62.43.2",
+      "port": 80,
+      "source_host": "yn-cu-v4"
+    },
+    {
+      "id": "yn-cu-v6",
+      "family": "ipv6",
+      "region": "云南",
+      "carrier": "联通",
+      "host": "2408:8766:0:1002:8000:0:b00:4",
+      "ip": "2408:8766:0:1002:8000:0:b00:4",
+      "port": 80,
+      "source_host": "yn-cu-v6"
+    },
+    {
+      "id": "yn-cm-v4",
+      "family": "ipv4",
+      "region": "云南",
+      "carrier": "移动",
+      "host": "218.202.0.254",
+      "ip": "218.202.0.254",
+      "port": 80,
+      "source_host": "yn-cm-v4"
+    },
+    {
+      "id": "yn-cm-v6",
+      "family": "ipv6",
+      "region": "云南",
+      "carrier": "移动",
+      "host": "2409:8c6c:550:1614:8000:0:b00:8",
+      "ip": "2409:8c6c:550:1614:8000:0:b00:8",
+      "port": 80,
+      "source_host": "yn-cm-v6"
+    },
+    {
+      "id": "sn-ct-v4",
+      "family": "ipv4",
+      "region": "陕西",
+      "carrier": "电信",
+      "host": "113.141.78.120",
+      "ip": "113.141.78.120",
+      "port": 80,
+      "source_host": "sn-ct-v4"
+    },
+    {
+      "id": "sn-ct-v6",
+      "family": "ipv6",
+      "region": "陕西",
+      "carrier": "电信",
+      "host": "240e:bf:b800:4115:8000:0:b00:94",
+      "ip": "240e:bf:b800:4115:8000:0:b00:94",
+      "port": 80,
+      "source_host": "sn-ct-v6"
+    },
+    {
+      "id": "sn-cu-v4",
+      "family": "ipv4",
+      "region": "陕西",
+      "carrier": "联通",
+      "host": "124.89.67.172",
+      "ip": "124.89.67.172",
+      "port": 80,
+      "source_host": "sn-cu-v4"
+    },
+    {
+      "id": "sn-cu-v6",
+      "family": "ipv6",
+      "region": "陕西",
+      "carrier": "联通",
+      "host": "2408:8766:0:1002:8000:0:b00:3",
+      "ip": "2408:8766:0:1002:8000:0:b00:3",
+      "port": 80,
+      "source_host": "sn-cu-v6"
+    },
+    {
+      "id": "sn-cm-v4",
+      "family": "ipv4",
+      "region": "陕西",
+      "carrier": "移动",
+      "host": "218.200.36.30",
+      "ip": "218.200.36.30",
+      "port": 80,
+      "source_host": "sn-cm-v4"
+    },
+    {
+      "id": "sn-cm-v6",
+      "family": "ipv6",
+      "region": "陕西",
+      "carrier": "移动",
+      "host": "2409:8c70:3a10:2:8000:0:b00:73",
+      "ip": "2409:8c70:3a10:2:8000:0:b00:73",
+      "port": 80,
+      "source_host": "sn-cm-v6"
+    },
+    {
+      "id": "gs-ct-v4",
+      "family": "ipv4",
+      "region": "甘肃",
+      "carrier": "电信",
+      "host": "113.142.39.64",
+      "ip": "113.142.39.64",
+      "port": 80,
+      "source_host": "gs-ct-v4"
+    },
+    {
+      "id": "gs-ct-v6",
+      "family": "ipv6",
+      "region": "甘肃",
+      "carrier": "电信",
+      "host": "240e:bf:c800:2904:8000:0:b00:77",
+      "ip": "240e:bf:c800:2904:8000:0:b00:77",
+      "port": 80,
+      "source_host": "gs-ct-v6"
+    },
+    {
+      "id": "gs-cu-v4",
+      "family": "ipv4",
+      "region": "甘肃",
+      "carrier": "联通",
+      "host": "116.176.34.50",
+      "ip": "116.176.34.50",
+      "port": 80,
+      "source_host": "gs-cu-v4"
+    },
+    {
+      "id": "gs-cu-v6",
+      "family": "ipv6",
+      "region": "甘肃",
+      "carrier": "联通",
+      "host": "2408:8001:c01d:7:8000:0:b00:34",
+      "ip": "2408:8001:c01d:7:8000:0:b00:34",
+      "port": 80,
+      "source_host": "gs-cu-v6"
+    },
+    {
+      "id": "gs-cm-v4",
+      "family": "ipv4",
+      "region": "甘肃",
+      "carrier": "移动",
+      "host": "117.156.11.228",
+      "ip": "117.156.11.228",
+      "port": 80,
+      "source_host": "gs-cm-v4"
+    },
+    {
+      "id": "gs-cm-v6",
+      "family": "ipv6",
+      "region": "甘肃",
+      "carrier": "移动",
+      "host": "2409:8c74:f100:404:8000:0:b00:98",
+      "ip": "2409:8c74:f100:404:8000:0:b00:98",
+      "port": 80,
+      "source_host": "gs-cm-v6"
+    },
+    {
+      "id": "qh-ct-v4",
+      "family": "ipv4",
+      "region": "青海",
+      "carrier": "电信",
+      "host": "118.213.159.254",
+      "ip": "118.213.159.254",
+      "port": 80,
+      "source_host": "qh-ct-v4"
+    },
+    {
+      "id": "qh-ct-v6",
+      "family": "ipv6",
+      "region": "青海",
+      "carrier": "电信",
+      "host": "240e:90:2006:2:8000:0:b00:84",
+      "ip": "240e:90:2006:2:8000:0:b00:84",
+      "port": 80,
+      "source_host": "qh-ct-v6"
+    },
+    {
+      "id": "qh-cu-v4",
+      "family": "ipv4",
+      "region": "青海",
+      "carrier": "联通",
+      "host": "43.242.183.150",
+      "ip": "43.242.183.150",
+      "port": 80,
+      "source_host": "qh-cu-v4"
+    },
+    {
+      "id": "qh-cu-v6",
+      "family": "ipv6",
+      "region": "青海",
+      "carrier": "联通",
+      "host": "2408:8776:1:13:8000:0:b00:223",
+      "ip": "2408:8776:1:13:8000:0:b00:223",
+      "port": 80,
+      "source_host": "qh-cu-v6"
+    },
+    {
+      "id": "qh-cm-v4",
+      "family": "ipv4",
+      "region": "青海",
+      "carrier": "移动",
+      "host": "111.44.158.48",
+      "ip": "111.44.158.48",
+      "port": 80,
+      "source_host": "qh-cm-v4"
+    },
+    {
+      "id": "qh-cm-v6",
+      "family": "ipv6",
+      "region": "青海",
+      "carrier": "移动",
+      "host": "2409:8c78:100:30:8000:0:b00:98",
+      "ip": "2409:8c78:100:30:8000:0:b00:98",
+      "port": 80,
+      "source_host": "qh-cm-v6"
+    },
+    {
+      "id": "nm-ct-v4",
+      "family": "ipv4",
+      "region": "内蒙古",
+      "carrier": "电信",
+      "host": "219.148.161.68",
+      "ip": "219.148.161.68",
+      "port": 80,
+      "source_host": "nm-ct-v4"
+    },
+    {
+      "id": "nm-ct-v6",
+      "family": "ipv6",
+      "region": "内蒙古",
+      "carrier": "电信",
+      "host": "240e:918:8011:8000::b00:80",
+      "ip": "240e:918:8011:8000::b00:80",
+      "port": 80,
+      "source_host": "nm-ct-v6"
+    },
+    {
+      "id": "nm-cu-v4",
+      "family": "ipv4",
+      "region": "内蒙古",
+      "carrier": "联通",
+      "host": "116.95.24.2",
+      "ip": "116.95.24.2",
+      "port": 80,
+      "source_host": "nm-cu-v4"
+    },
+    {
+      "id": "nm-cu-v6",
+      "family": "ipv6",
+      "region": "内蒙古",
+      "carrier": "联通",
+      "host": "2408:872b:e02:12:8000:0:b00:8",
+      "ip": "2408:872b:e02:12:8000:0:b00:8",
+      "port": 80,
+      "source_host": "nm-cu-v6"
+    },
+    {
+      "id": "nm-cm-v4",
+      "family": "ipv4",
+      "region": "内蒙古",
+      "carrier": "移动",
+      "host": "218.202.107.179",
+      "ip": "218.202.107.179",
+      "port": 80,
+      "source_host": "nm-cm-v4"
+    },
+    {
+      "id": "nm-cm-v6",
+      "family": "ipv6",
+      "region": "内蒙古",
+      "carrier": "移动",
+      "host": "2409:8c10:c00:1b:8000:0:b00:181",
+      "ip": "2409:8c10:c00:1b:8000:0:b00:181",
+      "port": 80,
+      "source_host": "nm-cm-v6"
+    },
+    {
+      "id": "gx-ct-v4",
+      "family": "ipv4",
+      "region": "广西",
+      "carrier": "电信",
+      "host": "171.111.157.173",
+      "ip": "171.111.157.173",
+      "port": 80,
+      "source_host": "gx-ct-v4"
+    },
+    {
+      "id": "gx-ct-v6",
+      "family": "ipv6",
+      "region": "广西",
+      "carrier": "电信",
+      "host": "240e:951:2c10:5800:8000:0:b00:7",
+      "ip": "240e:951:2c10:5800:8000:0:b00:7",
+      "port": 80,
+      "source_host": "gx-ct-v6"
+    },
+    {
+      "id": "gx-cu-v4",
+      "family": "ipv4",
+      "region": "广西",
+      "carrier": "联通",
+      "host": "58.144.112.204",
+      "ip": "58.144.112.204",
+      "port": 80,
+      "source_host": "gx-cu-v4"
+    },
+    {
+      "id": "gx-cu-v6",
+      "family": "ipv6",
+      "region": "广西",
+      "carrier": "联通",
+      "host": "2408:8763:0:2c5:8000:0:b00:71",
+      "ip": "2408:8763:0:2c5:8000:0:b00:71",
+      "port": 80,
+      "source_host": "gx-cu-v6"
+    },
+    {
+      "id": "gx-cm-v4",
+      "family": "ipv4",
+      "region": "广西",
+      "carrier": "移动",
+      "host": "36.136.125.170",
+      "ip": "36.136.125.170",
+      "port": 80,
+      "source_host": "gx-cm-v4"
+    },
+    {
+      "id": "gx-cm-v6",
+      "family": "ipv6",
+      "region": "广西",
+      "carrier": "移动",
+      "host": "2409:8c5c:110:27:8000:0:b00:98",
+      "ip": "2409:8c5c:110:27:8000:0:b00:98",
+      "port": 80,
+      "source_host": "gx-cm-v6"
+    },
+    {
+      "id": "xz-ct-v4",
+      "family": "ipv4",
+      "region": "西藏",
+      "carrier": "电信",
+      "host": "222.210.38.245",
+      "ip": "222.210.38.245",
+      "port": 80,
+      "source_host": "xz-ct-v4"
+    },
+    {
+      "id": "xz-ct-v6",
+      "family": "ipv6",
+      "region": "西藏",
+      "carrier": "电信",
+      "host": "240e:974:ecff:20:8000:0:b00:96",
+      "ip": "240e:974:ecff:20:8000:0:b00:96",
+      "port": 80,
+      "source_host": "xz-ct-v6"
+    },
+    {
+      "id": "xz-cu-v4",
+      "family": "ipv4",
+      "region": "西藏",
+      "carrier": "联通",
+      "host": "116.172.153.99",
+      "ip": "116.172.153.99",
+      "port": 80,
+      "source_host": "xz-cu-v4"
+    },
+    {
+      "id": "xz-cu-v6",
+      "family": "ipv6",
+      "region": "西藏",
+      "carrier": "联通",
+      "host": "2408:876e:3:0:8000:0:b00:228",
+      "ip": "2408:876e:3:0:8000:0:b00:228",
+      "port": 80,
+      "source_host": "xz-cu-v6"
+    },
+    {
+      "id": "xz-cm-v4",
+      "family": "ipv4",
+      "region": "西藏",
+      "carrier": "移动",
+      "host": "117.180.231.227",
+      "ip": "117.180.231.227",
+      "port": 80,
+      "source_host": "xz-cm-v4"
+    },
+    {
+      "id": "xz-cm-v6",
+      "family": "ipv6",
+      "region": "西藏",
+      "carrier": "移动",
+      "host": "2409:8c7e:0:18:8000:0:b00:227",
+      "ip": "2409:8c7e:0:18:8000:0:b00:227",
+      "port": 80,
+      "source_host": "xz-cm-v6"
+    },
+    {
+      "id": "nx-ct-v4",
+      "family": "ipv4",
+      "region": "宁夏",
+      "carrier": "电信",
+      "host": "222.75.44.146",
+      "ip": "222.75.44.146",
+      "port": 80,
+      "source_host": "nx-ct-v4"
+    },
+    {
+      "id": "nx-ct-v6",
+      "family": "ipv6",
+      "region": "宁夏",
+      "carrier": "电信",
+      "host": "240e:91c:0:5:8000:0:b00:227",
+      "ip": "240e:91c:0:5:8000:0:b00:227",
+      "port": 80,
+      "source_host": "nx-ct-v6"
+    },
+    {
+      "id": "nx-cu-v4",
+      "family": "ipv4",
+      "region": "宁夏",
+      "carrier": "联通",
+      "host": "42.63.59.199",
+      "ip": "42.63.59.199",
+      "port": 80,
+      "source_host": "nx-cu-v4"
+    },
+    {
+      "id": "nx-cu-v6",
+      "family": "ipv6",
+      "region": "宁夏",
+      "carrier": "联通",
+      "host": "2408:8778:109:2:8000:0:b00:94",
+      "ip": "2408:8778:109:2:8000:0:b00:94",
+      "port": 80,
+      "source_host": "nx-cu-v6"
+    },
+    {
+      "id": "nx-cm-v4",
+      "family": "ipv4",
+      "region": "宁夏",
+      "carrier": "移动",
+      "host": "111.51.76.215",
+      "ip": "111.51.76.215",
+      "port": 80,
+      "source_host": "nx-cm-v4"
+    },
+    {
+      "id": "nx-cm-v6",
+      "family": "ipv6",
+      "region": "宁夏",
+      "carrier": "移动",
+      "host": "2409:8c7a:a01:70:8000:0:b00:87",
+      "ip": "2409:8c7a:a01:70:8000:0:b00:87",
+      "port": 80,
+      "source_host": "nx-cm-v6"
+    },
+    {
+      "id": "xj-ct-v4",
+      "family": "ipv4",
+      "region": "新疆",
+      "carrier": "电信",
+      "host": "113.142.39.73",
+      "ip": "113.142.39.73",
+      "port": 80,
+      "source_host": "xj-ct-v4"
+    },
+    {
+      "id": "xj-ct-v6",
+      "family": "ipv6",
+      "region": "新疆",
+      "carrier": "电信",
+      "host": "240e:bf:c800:2904:8000:0:b00:85",
+      "ip": "240e:bf:c800:2904:8000:0:b00:85",
+      "port": 80,
+      "source_host": "xj-ct-v6"
+    },
+    {
+      "id": "xj-cu-v4",
+      "family": "ipv4",
+      "region": "新疆",
+      "carrier": "联通",
+      "host": "116.178.158.248",
+      "ip": "116.178.158.248",
+      "port": 80,
+      "source_host": "xj-cu-v4"
+    },
+    {
+      "id": "xj-cu-v6",
+      "family": "ipv6",
+      "region": "新疆",
+      "carrier": "联通",
+      "host": "2408:8001:c01d:7:8000:0:b00:35",
+      "ip": "2408:8001:c01d:7:8000:0:b00:35",
+      "port": 80,
+      "source_host": "xj-cu-v6"
+    },
+    {
+      "id": "xj-cm-v4",
+      "family": "ipv4",
+      "region": "新疆",
+      "carrier": "移动",
+      "host": "36.189.227.78",
+      "ip": "36.189.227.78",
+      "port": 80,
+      "source_host": "xj-cm-v4"
+    },
+    {
+      "id": "xj-cm-v6",
+      "family": "ipv6",
+      "region": "新疆",
+      "carrier": "移动",
+      "host": "2409:8c70:3a08:7:8000:0:b00:38",
+      "ip": "2409:8c70:3a08:7:8000:0:b00:38",
+      "port": 80,
+      "source_host": "xj-cm-v6"
+    },
+    {
+      "id": "bj-ct-v4",
+      "family": "ipv4",
+      "region": "北京",
+      "carrier": "电信",
+      "host": "106.37.68.13",
+      "ip": "106.37.68.13",
+      "port": 80,
+      "source_host": "bj-ct-v4"
+    },
+    {
+      "id": "bj-ct-v6",
+      "family": "ipv6",
+      "region": "北京",
+      "carrier": "电信",
+      "host": "240e:904:800:1f80::b00:137",
+      "ip": "240e:904:800:1f80::b00:137",
+      "port": 80,
+      "source_host": "bj-ct-v6"
+    },
+    {
+      "id": "bj-cu-v4",
+      "family": "ipv4",
+      "region": "北京",
+      "carrier": "联通",
+      "host": "221.222.185.232",
+      "ip": "221.222.185.232",
+      "port": 80,
+      "source_host": "bj-cu-v4"
+    },
+    {
+      "id": "bj-cu-v6",
+      "family": "ipv6",
+      "region": "北京",
+      "carrier": "联通",
+      "host": "2408:8706:0:dd80::b00:95",
+      "ip": "2408:8706:0:dd80::b00:95",
+      "port": 80,
+      "source_host": "bj-cu-v6"
+    },
+    {
+      "id": "bj-cm-v4",
+      "family": "ipv4",
+      "region": "北京",
+      "carrier": "移动",
+      "host": "211.136.25.153",
+      "ip": "211.136.25.153",
+      "port": 80,
+      "source_host": "bj-cm-v4"
+    },
+    {
+      "id": "bj-cm-v6",
+      "family": "ipv6",
+      "region": "北京",
+      "carrier": "移动",
+      "host": "2409:8c04:1003:206:8000:0:b00:86",
+      "ip": "2409:8c04:1003:206:8000:0:b00:86",
+      "port": 80,
+      "source_host": "bj-cm-v6"
+    },
+    {
+      "id": "tj-ct-v4",
+      "family": "ipv4",
+      "region": "天津",
+      "carrier": "电信",
+      "host": "123.151.109.108",
+      "ip": "123.151.109.108",
+      "port": 80,
+      "source_host": "tj-ct-v4"
+    },
+    {
+      "id": "tj-ct-v6",
+      "family": "ipv6",
+      "region": "天津",
+      "carrier": "电信",
+      "host": "240e:904:800:1f80::b00:137",
+      "ip": "240e:904:800:1f80::b00:137",
+      "port": 80,
+      "source_host": "tj-ct-v6"
+    },
+    {
+      "id": "tj-cu-v4",
+      "family": "ipv4",
+      "region": "天津",
+      "carrier": "联通",
+      "host": "117.8.227.168",
+      "ip": "117.8.227.168",
+      "port": 80,
+      "source_host": "tj-cu-v4"
+    },
+    {
+      "id": "tj-cu-v6",
+      "family": "ipv6",
+      "region": "天津",
+      "carrier": "联通",
+      "host": "2408:871a:4800:40f::b00:97",
+      "ip": "2408:871a:4800:40f::b00:97",
+      "port": 80,
+      "source_host": "tj-cu-v6"
+    },
+    {
+      "id": "tj-cm-v4",
+      "family": "ipv4",
+      "region": "天津",
+      "carrier": "移动",
+      "host": "211.103.90.101",
+      "ip": "211.103.90.101",
+      "port": 80,
+      "source_host": "tj-cm-v4"
+    },
+    {
+      "id": "tj-cm-v6",
+      "family": "ipv6",
+      "region": "天津",
+      "carrier": "移动",
+      "host": "2409:8c10:c00:1b:8000:0:b00:181",
+      "ip": "2409:8c10:c00:1b:8000:0:b00:181",
+      "port": 80,
+      "source_host": "tj-cm-v6"
+    },
+    {
+      "id": "sh-ct-v4",
+      "family": "ipv4",
+      "region": "上海",
+      "carrier": "电信",
+      "host": "101.226.94.50",
+      "ip": "101.226.94.50",
+      "port": 80,
+      "source_host": "sh-ct-v4"
+    },
+    {
+      "id": "sh-ct-v6",
+      "family": "ipv6",
+      "region": "上海",
+      "carrier": "电信",
+      "host": "240e:96c:1100:6a80::b00:95",
+      "ip": "240e:96c:1100:6a80::b00:95",
+      "port": 80,
+      "source_host": "sh-ct-v6"
+    },
+    {
+      "id": "sh-cu-v4",
+      "family": "ipv4",
+      "region": "上海",
+      "carrier": "联通",
+      "host": "58.246.163.108",
+      "ip": "58.246.163.108",
+      "port": 80,
+      "source_host": "sh-cu-v4"
+    },
+    {
+      "id": "sh-cu-v6",
+      "family": "ipv6",
+      "region": "上海",
+      "carrier": "联通",
+      "host": "2408:873c:6810:5:8000:0:b00:220",
+      "ip": "2408:873c:6810:5:8000:0:b00:220",
+      "port": 80,
+      "source_host": "sh-cu-v6"
+    },
+    {
+      "id": "sh-cm-v4",
+      "family": "ipv4",
+      "region": "上海",
+      "carrier": "移动",
+      "host": "117.185.117.117",
+      "ip": "117.185.117.117",
+      "port": 80,
+      "source_host": "sh-cm-v4"
+    },
+    {
+      "id": "sh-cm-v6",
+      "family": "ipv6",
+      "region": "上海",
+      "carrier": "移动",
+      "host": "2409:8c1e:75b0:2003:8000:0:b00:62",
+      "ip": "2409:8c1e:75b0:2003:8000:0:b00:62",
+      "port": 80,
+      "source_host": "sh-cm-v6"
+    },
+    {
+      "id": "cq-ct-v4",
+      "family": "ipv4",
+      "region": "重庆",
+      "carrier": "电信",
+      "host": "119.84.169.8",
+      "ip": "119.84.169.8",
+      "port": 80,
+      "source_host": "cq-ct-v4"
+    },
+    {
+      "id": "cq-ct-v6",
+      "family": "ipv6",
+      "region": "重庆",
+      "carrier": "电信",
+      "host": "240e:933:8001:480::b00:97",
+      "ip": "240e:933:8001:480::b00:97",
+      "port": 80,
+      "source_host": "cq-ct-v6"
+    },
+    {
+      "id": "cq-cu-v4",
+      "family": "ipv4",
+      "region": "重庆",
+      "carrier": "联通",
+      "host": "58.144.112.204",
+      "ip": "58.144.112.204",
+      "port": 80,
+      "source_host": "cq-cu-v4"
+    },
+    {
+      "id": "cq-cu-v6",
+      "family": "ipv6",
+      "region": "重庆",
+      "carrier": "联通",
+      "host": "2408:8763:0:2c5:8000:0:b00:71",
+      "ip": "2408:8763:0:2c5:8000:0:b00:71",
+      "port": 80,
+      "source_host": "cq-cu-v6"
+    },
+    {
+      "id": "cq-cm-v4",
+      "family": "ipv4",
+      "region": "重庆",
+      "carrier": "移动",
+      "host": "112.30.217.226",
+      "ip": "112.30.217.226",
+      "port": 80,
+      "source_host": "cq-cm-v4"
+    },
+    {
+      "id": "cq-cm-v6",
+      "family": "ipv6",
+      "region": "重庆",
+      "carrier": "移动",
+      "host": "2409:8c30:1000:1a01:8000:0:b00:223",
+      "ip": "2409:8c30:1000:1a01:8000:0:b00:223",
+      "port": 80,
+      "source_host": "cq-cm-v6"
+    }
+  ]
+}

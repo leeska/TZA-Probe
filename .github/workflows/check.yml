@@ -1,0 +1,61 @@
+name: Check and build
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+      - run: go vet ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: for file in web/*.js; do node --input-type=module --check < "$file" || exit 1; done
+      - run: node scripts/presentation-test.mjs
+      - name: Exercise new UI against disposable Server
+        run: |
+          npm install --prefix /tmp/tza-ui-deps --no-audit --no-fund jsdom@26.1.0 esbuild@0.25.10
+          go build -o /tmp/tza-ui-server ./cmd/server
+          /tmp/tza-ui-server --listen 127.0.0.1:25874 --data /tmp/tza-ui-data &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:25874/healthz >/dev/null; then break; fi
+            sleep 1
+          done
+          TZA_UI_DEPS=/tmp/tza-ui-deps TZA_TEST_URL=http://127.0.0.1:25874 TZA_TEST_ADMIN_FILE=/tmp/tza-ui-data/admin-token node scripts/ui-smoke.mjs
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build independent binaries
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags='-s -w' -o dist/tza-server ./cmd/server
+          go build -trimpath -ldflags='-s -w' -o dist/tza-agent ./cmd/agent
+          cp README.md LICENSE dist/
+          cp -r deploy docs dist/
+          tar -czf tza-probe-linux-${{ matrix.arch }}.tar.gz -C dist .
+          sha256sum tza-probe-linux-${{ matrix.arch }}.tar.gz > tza-probe-linux-${{ matrix.arch }}.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tza-probe-linux-${{ matrix.arch }}
+          path: tza-probe-linux-${{ matrix.arch }}.tar.gz*

@@ -1,0 +1,345 @@
+/* Shared presentation layer: public dashboard, administration and dialogs. */
+:root {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Segoe UI", "PingFang SC", sans-serif;
+  --ink: #18243c;
+  --muted: #596b84;
+  --line: rgba(255, 255, 255, 0.65);
+  --teal: #007aff;
+  --soft: rgba(0, 122, 255, 0.09);
+  --orange: #b56b16;
+  --glass: rgba(255, 255, 255, 0.58);
+  --glass-shadow:
+    0 12px 40px rgba(38, 64, 112, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.35);
+  background: #edf2fb;
+  color: var(--ink);
+}
+body {
+  background: transparent;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse at 12% 12%,
+      rgba(116, 190, 255, 0.44),
+      transparent 48%
+    ),
+    radial-gradient(
+      ellipse at 88% 30%,
+      rgba(181, 162, 248, 0.34),
+      transparent 48%
+    ),
+    radial-gradient(
+      ellipse at 60% 95%,
+      rgba(127, 221, 210, 0.36),
+      transparent 55%
+    ),
+    linear-gradient(125deg, #f0f5ff, #f5effa 65%, #eef8fa);
+}
+.public-header,
+.sidebar,
+.admin-top,
+.panel,
+.node-card,
+.overview,
+.admin-stats > div,
+.login-panel,
+dialog,
+.toolbar,
+.notice,
+.hero-meta,
+.segmented {
+  background: var(--glass);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(155%);
+  backdrop-filter: blur(24px) saturate(155%);
+}
+.public-header {
+  margin: 16px 24px 0;
+  border-radius: 24px;
+}
+.admin-layout,
+.admin-main,
+.public-main,
+.login-layout {
+  background: transparent;
+}
+.sidebar {
+  margin: 16px 0 16px 16px;
+  border-radius: 26px;
+  height: calc(100vh - 32px);
+}
+.admin-top {
+  margin: 16px 20px 0;
+  border-radius: 22px;
+}
+.panel,
+.node-card,
+.overview,
+.login-panel {
+  border-radius: 24px;
+  overflow: hidden;
+}
+.node-card {
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+.node-card:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 20px 50px rgba(38, 64, 112, 0.14),
+    inset 0 1px 0 white;
+}
+.toolbar {
+  padding: 14px 18px;
+  border-radius: 22px;
+}
+.hero-meta,
+.notice {
+  border-radius: 18px;
+}
+.overview > div,
+.admin-stats > div {
+  background: transparent;
+  border-color: rgba(95, 120, 163, 0.14);
+}
+.admin-stats > div {
+  border-radius: 20px;
+  background: var(--glass);
+}
+h1,
+h2,
+h3,
+.node-name,
+.brand,
+.page-heading h1,
+.hero h1 {
+  color: var(--ink);
+  letter-spacing: -0.035em;
+}
+.eyebrow,
+.sidebar-caption,
+.muted,
+.hint,
+.route-heading,
+label,
+.page-heading p,
+.hero p {
+  color: var(--muted) !important;
+}
+.brand-mark {
+  background: linear-gradient(135deg, #71baff, #007aff 60%, #7065ee);
+  box-shadow:
+    0 6px 18px #007aff33,
+    inset 0 1px 1px #ffffffa0;
+  border-radius: 14px;
+}
+button,
+.button,
+input,
+select {
+  border-radius: 12px;
+}
+button,
+.button {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 3px 9px rgba(38, 64, 112, 0.05),
+    inset 0 1px 0 #ffffffb3;
+  color: var(--ink);
+}
+button:hover,
+.button:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+button.primary,
+.primary {
+  background: linear-gradient(160deg, #43a1ff, #007aff);
+  border-color: rgba(0, 110, 245, 0.25);
+  color: white;
+  box-shadow:
+    0 5px 15px #007aff2b,
+    inset 0 1px 0 #ffffff66;
+}
+button.primary:hover {
+  background: linear-gradient(160deg, #218fff, #006ce5);
+}
+input,
+select {
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(104, 127, 170, 0.22);
+  color: var(--ink);
+}
+input:focus,
+select:focus {
+  outline: 2px solid #007aff88;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #007affaa;
+}
+input[type="checkbox"] {
+  accent-color: #007aff;
+}
+.segmented {
+  padding: 4px;
+  border-radius: 14px;
+}
+.segmented button.active,
+.sidebar nav button.active {
+  background: rgba(255, 255, 255, 0.85);
+  color: #0069db;
+  box-shadow:
+    0 2px 8px #24477912,
+    inset 0 1px 0 white;
+  border-radius: 11px;
+}
+.sidebar nav button {
+  color: var(--muted);
+}
+.sidebar nav button:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+.admin-top,
+.panel-head,
+.card-bottom,
+td,
+th,
+.form-section,
+.form-footer,
+.sidebar-bottom {
+  border-color: rgba(95, 120, 163, 0.14);
+}
+th {
+  background: rgba(232, 239, 252, 0.45);
+  color: var(--muted);
+}
+tbody tr:hover {
+  background: rgba(255, 255, 255, 0.36);
+}
+.card-bottom,
+.network-summary,
+.metrics-grid,
+.route-label,
+.catalog-picker,
+.detail-meta,
+.trace {
+  background: rgba(241, 246, 255, 0.44);
+}
+.route-label,
+.trace,
+.catalog-option {
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+}
+.catalog-option:has(input:checked) {
+  background: rgba(0, 122, 255, 0.1);
+  border-color: #007aff66;
+}
+.teal-text {
+  color: #0074d9;
+}
+.pill.good {
+  background: #def5ed;
+  color: #176444;
+}
+.pill.warn,
+.warning {
+  background: #fff0d9;
+  color: #865109;
+}
+.danger {
+  color: #b32938;
+}
+dialog {
+  background: rgba(248, 251, 255, 0.88);
+  border-radius: 28px;
+  box-shadow:
+    0 32px 100px #18284c35,
+    inset 0 1px 0 white;
+}
+dialog::backdrop {
+  background: rgba(29, 43, 74, 0.22);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+.login-story {
+  background: transparent;
+  color: var(--ink);
+}
+#toast {
+  background: rgba(27, 43, 68, 0.92);
+  border: 1px solid #ffffff40;
+  border-radius: 16px;
+  backdrop-filter: blur(20px);
+}
+[hidden] {
+  display: none !important;
+}
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  :root {
+    --glass: #f6f8fd;
+  }
+  dialog {
+    background: #f6f8fd;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass: #f6f8fd;
+  }
+  dialog {
+    background: #f6f8fd;
+  }
+  .public-header,
+  .sidebar,
+  .admin-top,
+  .panel,
+  .node-card,
+  dialog {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .node-card {
+    transition: none;
+  }
+  .node-card:hover {
+    transform: none;
+  }
+}
+@media (max-width: 760px) {
+  .public-header {
+    margin: 8px 8px 0;
+    border-radius: 18px;
+  }
+  .sidebar {
+    margin: 8px;
+    height: auto;
+    border-radius: 18px;
+  }
+  .admin-top {
+    margin: 8px;
+    border-radius: 18px;
+  }
+  .toolbar {
+    padding: 12px;
+  }
+  dialog {
+    border-radius: 22px;
+  }
+}

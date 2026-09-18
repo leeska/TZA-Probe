@@ -1,0 +1,285 @@
+package storage
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/leeska/TZA-Probe/internal/model"
+)
+
+func openTest(t *testing.T) *Store {
+	t.Helper()
+	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+func makeNode(t *testing.T, s *Store) (string, string) {
+	t.Helper()
+	token, err := s.SaveNode(context.Background(), model.Node{Name: "node", BillingDay: 1, TrafficMode: "sum"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Authenticate(context.Background(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id, token
+}
+func metrics() model.Metrics {
+	return model.Metrics{CPU: 12, MemoryUsed: 10, MemoryTotal: 100, DiskUsed: 20, DiskTotal: 100, NetIn: 1000, NetOut: 2000, Uptime: 100}
+}
+func TestReportingTrafficRestartAndRetention(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, _ := makeNode(t, s)
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	m := metrics()
+	if err := s.Report(ctx, id, m, now); err != nil {
+		t.Fatal(err)
+	}
+	m.NetIn += 500
+	m.NetOut += 700
+	m.Uptime += 5
+	if err := s.Report(ctx, id, m, now.Add(5*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	views, err := s.Nodes(ctx, now.Add(6*time.Second))
+	if err != nil || views[0].TrafficUsed != 1200 || !views[0].Online {
+		t.Fatalf("views=%+v, %v", views, err)
+	}
+	if err = s.Report(ctx, id, m, now.Add(6*time.Second)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("frequent report: %v", err)
+	}
+	m.NetIn = 5
+	m.NetOut = 6
+	m.Uptime = 1
+	if err = s.Report(ctx, id, m, now.Add(10*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	views, _ = s.Nodes(ctx, now.Add(60*time.Second))
+	if views[0].TrafficUsed != 1200 || views[0].Online {
+		t.Fatalf("reboot counter or offline wrong: %+v", views[0])
+	}
+	history, err := s.History(ctx, id, 24, now.Add(time.Minute))
+	if err != nil || len(history) != 1 {
+		t.Fatalf("history %d %v", len(history), err)
+	}
+	if err = s.Clean(ctx, now.Add(31*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err = s.db.QueryRow("SELECT count(*) FROM samples").Scan(&count); err != nil || count != 0 {
+		t.Fatal("samples not cleaned", err)
+	}
+	if err = s.db.QueryRow("SELECT count(*) FROM traffic").Scan(&count); err != nil || count != 1 {
+		t.Fatal("billing ledger must outlive sample retention", err)
+	}
+}
+func TestExplicitBindingLeaseOwnershipAndEdit(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	a, _ := makeNode(t, s)
+	b, _ := makeNode(t, s)
+	now := time.Now()
+	task := model.Task{Name: "route", Kind: "route", Host: "example.com", Family: "ipv4", Port: 80, Interval: 900, Enabled: true, Region: "上海", Carrier: "电信"}
+	if err := s.SaveTask(ctx, task, true); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := s.Lease(ctx, a, now)
+	if err != nil || len(jobs) != 0 {
+		t.Fatal("empty binding dispatched", jobs, err)
+	}
+	tasks, _ := s.Tasks(ctx)
+	task = tasks[0]
+	task.NodeIDs = []string{a}
+	if err = s.SaveTask(ctx, task, false); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err = s.Lease(ctx, a, now)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("jobs=%v err=%v", jobs, err)
+	}
+	duplicate, err := s.Lease(ctx, a, now.Add(time.Second))
+	if err != nil || len(duplicate) != 0 {
+		t.Fatal("duplicate lease")
+	}
+	other, err := s.Lease(ctx, b, now)
+	if err != nil || len(other) != 0 {
+		t.Fatal("wrong node leased")
+	}
+	latency := 1.0
+	r := model.Result{JobID: jobs[0].ID, Status: "ok", Sent: 1, Received: 1, Latency: &latency}
+	if err = s.Finish(ctx, b, r, now); !errors.Is(err, ErrConflict) {
+		t.Fatal("cross-node result accepted", err)
+	}
+	if err = s.Finish(ctx, a, r, now); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Finish(ctx, a, r, now); !errors.Is(err, ErrConflict) {
+		t.Fatal("duplicate result accepted")
+	}
+	task.Enabled = false
+	if err = s.SaveTask(ctx, task, false); err != nil {
+		t.Fatal(err)
+	}
+	obs, err := s.Observations(ctx, a, now)
+	if err != nil || len(obs) != 0 {
+		t.Fatal("edited task retains stale observations")
+	}
+	task.NodeIDs = []string{"missing"}
+	if err = s.SaveTask(ctx, task, false); err == nil {
+		t.Fatal("accepted missing node")
+	}
+}
+func TestTokenRotationDeletionAndPersistence(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, old := makeNode(t, s)
+	token, err := s.Rotate(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Authenticate(ctx, old); err == nil {
+		t.Fatal("old token valid")
+	}
+	if got, err := s.Authenticate(ctx, token); err != nil || got != id {
+		t.Fatal("new token invalid")
+	}
+	if err = s.DeleteNode(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Authenticate(ctx, token); err == nil {
+		t.Fatal("deleted node authenticates")
+	}
+	path := filepath.Join(t.TempDir(), "persistent.db")
+	first, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token = makeNode(t, first)
+	first.Close()
+	second, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if _, err = second.Authenticate(ctx, token); err != nil {
+		t.Fatal("state lost across restart")
+	}
+}
+func TestLegacyDatabaseRejected(t *testing.T) {
+	s := openTest(t)
+	if _, err := s.db.Exec("PRAGMA user_version=0"); err != nil {
+		t.Fatal(err)
+	}
+	var path string
+	if err := s.db.QueryRow("SELECT file FROM pragma_database_list WHERE name='main'").Scan(&path); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	other, err := Open(path)
+	if err == nil {
+		other.Close()
+		t.Fatal("legacy database accepted")
+	}
+}
+
+func TestCounterSourceChangeDoesNotBillAnotherInterface(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, _ := makeNode(t, s)
+	now := time.Now()
+	m := metrics()
+	m.CounterID = "boot-a/eth0"
+	if err := s.Report(ctx, id, m, now); err != nil {
+		t.Fatal(err)
+	}
+	// A new NIC can have much larger counters and the same/increasing uptime.
+	m.CounterID = "boot-a/eth1"
+	m.NetIn = 9_000_000
+	m.NetOut = 8_000_000
+	m.Uptime += 5
+	if err := s.Report(ctx, id, m, now.Add(5*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	m.NetIn += 100
+	m.NetOut += 200
+	m.Uptime += 5
+	if err := s.Report(ctx, id, m, now.Add(10*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	views, err := s.Nodes(ctx, now.Add(10*time.Second))
+	if err != nil || views[0].TrafficUsed != 300 {
+		t.Fatalf("source switch falsely billed: %+v %v", views, err)
+	}
+}
+
+func TestCombinedTaskIndependentProbes(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	node, _ := makeNode(t, s)
+	now := time.Now()
+	task := model.Task{Name: "combined", Checks: []string{"tcp", "route"}, Targets: []model.Target{
+		{Host: "127.0.0.1", Port: 80, Family: "ipv4", Region: "本地", Carrier: "其他"},
+		{Host: "::1", Port: 80, Family: "ipv6", Region: "本地", Carrier: "其他"},
+	}, Interval: 30, RouteInterval: 900, Enabled: true, NodeIDs: []string{node}}
+	if err := s.SaveTask(ctx, task, true); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	finish := func(jobs []model.Job, at time.Time) {
+		t.Helper()
+		for _, j := range jobs {
+			if len(j.Task.Checks) != 0 || len(j.Task.Targets) != 0 {
+				t.Fatal("job must be scalar")
+			}
+			if err := s.Finish(ctx, node, model.Result{JobID: j.ID, Status: "failed"}, at); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for i := 0; i < 2; i++ {
+		at := now.Add(time.Duration(i) * 10 * time.Second)
+		jobs, err := s.Lease(ctx, node, at)
+		if err != nil || len(jobs) != 2 {
+			t.Fatalf("lease: %+v %v", jobs, err)
+		}
+		for _, j := range jobs {
+			if seen[j.Task.ProbeKey()] {
+				t.Fatal("duplicate probe")
+			}
+			seen[j.Task.ProbeKey()] = true
+		}
+		// Repeated polling cannot bypass active lease limits.
+		blocked, err := s.Lease(ctx, node, at)
+		if err != nil || len(blocked) != 0 {
+			t.Fatal("active lease bypass")
+		}
+		finish(jobs, at)
+	}
+	observations, err := s.Observations(ctx, node, now.Add(20*time.Second))
+	if err != nil || len(observations) != 4 {
+		t.Fatalf("observations: %+v %v", observations, err)
+	}
+	jobs, err := s.Lease(ctx, node, now.Add(31*time.Second))
+	if err != nil || len(jobs) != 1 || jobs[0].Task.Kind != "tcp" || jobs[0].Task.Family != "ipv4" {
+		t.Fatalf("independent cadence: %+v %v", jobs, err)
+	}
+	finish(jobs, now.Add(31*time.Second))
+	tasks, _ := s.Tasks(ctx)
+	task = tasks[0]
+	task.NodeIDs = nil
+	if err := s.SaveTask(ctx, task, false); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err = s.Lease(ctx, node, now.Add(time.Hour))
+	if err != nil || len(jobs) != 0 {
+		t.Fatal("empty bindings executed")
+	}
+}
