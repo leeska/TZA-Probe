@@ -40,6 +40,15 @@ export function modal(title, body) {
   delete d.dataset.nodeId;
   d.innerHTML = `<div class="modal-head"><h2 id="dialog-title">${esc(title)}</h2><button type="button" class="icon close" aria-label="关闭">×</button></div>${body}`;
   d.querySelector(".close").onclick = () => d.close();
+  d.onclick = (e) => {
+    const rect = d.getBoundingClientRect();
+    const isInDialog =
+      rect.top <= e.clientY &&
+      e.clientY <= rect.top + rect.height &&
+      rect.left <= e.clientX &&
+      e.clientX <= rect.left + rect.width;
+    if (!isInDialog) d.close();
+  };
   if (!d.open) d.showModal();
   return d;
 }

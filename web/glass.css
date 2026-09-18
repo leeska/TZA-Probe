@@ -1,49 +1,151 @@
-/* Shared presentation layer: public dashboard, administration and dialogs. */
+/* ==========================================================================
+   TZA Probe · Liquid Glass 设计系统
+   玻璃质感（毛玻璃、半透明描边与高光）界面规范
+   ========================================================================== */
+
 :root {
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-    "Segoe UI", "PingFang SC", sans-serif;
-  --ink: #18243c;
-  --muted: #596b84;
-  --line: rgba(255, 255, 255, 0.65);
-  --teal: #007aff;
-  --soft: rgba(0, 122, 255, 0.09);
-  --orange: #b56b16;
-  --glass: rgba(255, 255, 255, 0.58);
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "SF Pro Text",
+    "SF Pro",
+    "Segoe UI",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+
+  /* Apple System Palette (Light Mode) */
+  --ink: #1d1d1f;
+  --muted: #86868b;
+  --subtle: #aeaeb2;
+  --separator: rgba(60, 60, 67, 0.12);
+
+  --blue: #0071e3;
+  --blue-rgb: 0, 113, 227;
+  --cyan: #00c7be;
+  --cyan-rgb: 0, 199, 190;
+  --green: #34c759;
+  --green-rgb: 52, 199, 89;
+  --orange: #ff9500;
+  --orange-rgb: 255, 149, 0;
+  --red: #ff3b30;
+  --red-rgb: 255, 59, 48;
+  --purple: #af52de;
+  --purple-rgb: 175, 82, 222;
+  --indigo: #5856d6;
+
+  /* Apple Liquid Glass Material Tokens (Light Mode) */
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-bg-subtle: rgba(255, 255, 255, 0.42);
+  --glass-bg-elevated: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.75);
+  --glass-border-subtle: rgba(255, 255, 255, 0.45);
+  --glass-inner-rim:
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 1px 0 rgba(255, 255, 255, 0.25);
   --glass-shadow:
-    0 12px 40px rgba(38, 64, 112, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.35);
-  background: #edf2fb;
-  color: var(--ink);
+    0 16px 36px -8px rgba(35, 55, 95, 0.08),
+    0 4px 12px -2px rgba(35, 55, 95, 0.04);
+  --glass-shadow-hover:
+    0 24px 52px -10px rgba(35, 55, 95, 0.15),
+    0 8px 22px -4px rgba(35, 55, 95, 0.07);
+  --blur-surface: blur(32px) saturate(190%) contrast(102%);
 }
+
+/* ==========================================================================
+   Dark Mode: Obsidian Liquid Glass (Deep Space & Jewel Tones)
+   ========================================================================== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f5f5f7;
+    --muted: #98989d;
+    --subtle: #636366;
+    --separator: rgba(255, 255, 255, 0.12);
+
+    --blue: #0a84ff;
+    --cyan: #64d2ff;
+    --green: #30d158;
+    --orange: #ff9f0a;
+    --red: #ff453a;
+    --purple: #bf5af2;
+    --indigo: #5e5ce6;
+
+    --glass-bg: rgba(26, 32, 44, 0.68);
+    --glass-bg-subtle: rgba(18, 23, 34, 0.52);
+    --glass-bg-elevated: rgba(36, 44, 60, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.16);
+    --glass-border-subtle: rgba(255, 255, 255, 0.08);
+    --glass-inner-rim:
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.25),
+      inset 0 -1px 1px 0 rgba(0, 0, 0, 0.5);
+    --glass-shadow:
+      0 18px 44px -10px rgba(0, 0, 0, 0.55),
+      0 6px 14px -2px rgba(0, 0, 0, 0.35);
+    --glass-shadow-hover:
+      0 28px 64px -12px rgba(0, 0, 0, 0.72),
+      0 10px 26px -4px rgba(0, 0, 0, 0.48);
+  }
+}
+
+/* ==========================================================================
+   Dynamic Fluid Ambient Canvas (Apple Aurora / Caustics)
+   ========================================================================== */
 body {
-  background: transparent;
+  background: #f4f6fc;
+  color: var(--ink);
+  position: relative;
+  overflow-x: hidden;
 }
+
 body::before {
   content: "";
   position: fixed;
-  inset: 0;
+  inset: -15%;
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(
-      ellipse at 12% 12%,
-      rgba(116, 190, 255, 0.44),
-      transparent 48%
-    ),
-    radial-gradient(
-      ellipse at 88% 30%,
-      rgba(181, 162, 248, 0.34),
-      transparent 48%
-    ),
-    radial-gradient(
-      ellipse at 60% 95%,
-      rgba(127, 221, 210, 0.36),
-      transparent 55%
-    ),
-    linear-gradient(125deg, #f0f5ff, #f5effa 65%, #eef8fa);
+    radial-gradient(ellipse at 15% 15%, rgba(100, 190, 255, 0.42), transparent 45%),
+    radial-gradient(ellipse at 85% 25%, rgba(180, 155, 255, 0.36), transparent 48%),
+    radial-gradient(ellipse at 50% 85%, rgba(110, 235, 215, 0.34), transparent 50%),
+    radial-gradient(ellipse at 80% 85%, rgba(255, 195, 140, 0.28), transparent 45%),
+    linear-gradient(135deg, #f0f4fc 0%, #f6f1fa 45%, #ecf7f9 100%);
+  animation: glass-fluid-drift 22s ease-in-out infinite alternate;
+  will-change: transform;
 }
+
+@keyframes glass-fluid-drift {
+  0% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: scale(1.06) translate3d(15px, -18px, 0);
+  }
+  100% {
+    transform: scale(1.02) translate3d(-12px, 12px, 0);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #090c13;
+  }
+  body::before {
+    background:
+      radial-gradient(ellipse at 15% 15%, rgba(20, 100, 240, 0.26), transparent 46%),
+      radial-gradient(ellipse at 85% 25%, rgba(140, 50, 255, 0.22), transparent 48%),
+      radial-gradient(ellipse at 50% 85%, rgba(0, 210, 190, 0.18), transparent 50%),
+      radial-gradient(ellipse at 80% 85%, rgba(240, 70, 120, 0.16), transparent 46%),
+      linear-gradient(145deg, #090c14 0%, #0d121c 50%, #080b12 100%);
+  }
+}
+
+/* ==========================================================================
+   Liquid Glass Components (Surface, Rim, Specular Occlusion)
+   ========================================================================== */
 .public-header,
 .sidebar,
 .admin-top,
@@ -56,290 +158,757 @@ dialog,
 .toolbar,
 .notice,
 .hero-meta,
-.segmented {
-  background: var(--glass);
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  box-shadow: var(--glass-shadow);
-  -webkit-backdrop-filter: blur(24px) saturate(155%);
-  backdrop-filter: blur(24px) saturate(155%);
+.catalog-picker,
+.webhook-panel,
+.detail-stats > div {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--glass-inner-rim);
+  -webkit-backdrop-filter: var(--blur-surface);
+  backdrop-filter: var(--blur-surface);
 }
-.public-header {
-  margin: 16px 24px 0;
-  border-radius: 24px;
-}
+
+.public-layout,
 .admin-layout,
 .admin-main,
 .public-main,
 .login-layout {
   background: transparent;
 }
-.sidebar {
-  margin: 16px 0 16px 16px;
-  border-radius: 26px;
-  height: calc(100vh - 32px);
-}
-.admin-top {
-  margin: 16px 20px 0;
-  border-radius: 22px;
-}
-.panel,
-.node-card,
-.overview,
-.login-panel {
+
+/* ==========================================================================
+   Public Header (Floating Glass Island)
+   ========================================================================== */
+.public-header {
+  margin: 18px 32px 0;
   border-radius: 24px;
+  height: 84px;
+  padding: 0 32px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.brand-mark {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #3694ff 0%, #0071e3 60%, #6854ee 100%);
+  color: #fff;
+  padding: 6px 12px 7px 10px;
+  box-shadow:
+    0 4px 14px rgba(var(--blue-rgb), 0.35),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.brand-mark span {
+  color: #82e2ff;
+}
+
+.brand > span:last-child {
+  font-size: 14px;
+  letter-spacing: 2px;
+  font-weight: 750;
+  color: var(--ink);
+}
+
+.brand small {
+  color: var(--muted);
+}
+
+/* Apple Radar Breathing Status Light */
+.live-label {
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.node-dot,
+.live-label i,
+.overview .dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 10px rgba(var(--green-rgb), 0.7);
+}
+
+.node-dot::after,
+.live-label i::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid var(--green);
+  animation: apple-radar 2.2s cubic-bezier(0.2, 0.9, 0.3, 1) infinite;
+}
+
+.node-dot.offline {
+  background: var(--subtle);
+  box-shadow: none;
+}
+
+.node-dot.offline::after {
+  display: none;
+}
+
+@keyframes apple-radar {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.95;
+  }
+  60% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+/* ==========================================================================
+   Hero Section & Headlines
+   ========================================================================== */
+.hero {
+  padding: 40px 0 34px;
+}
+
+.eyebrow,
+.sidebar-caption {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--blue);
+  font-weight: 700;
+}
+
+h1 {
+  font-size: 42px;
+  letter-spacing: -0.038em;
+  font-weight: 750;
+  color: var(--ink);
+}
+
+h1 span {
+  background: linear-gradient(135deg, #0071e3 0%, #a259ff 65%, #ff9500 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero p {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.hero-meta {
+  border-radius: 18px;
+  padding: 12px 20px;
+  box-shadow: var(--glass-shadow), var(--glass-inner-rim);
+}
+
+.hero-meta strong {
+  color: var(--ink);
+  font-size: 20px;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+/* ==========================================================================
+   Overview Bar (Floating Quad Island)
+   ========================================================================== */
+.overview {
+  border-radius: 22px;
+  padding: 24px 10px;
+  margin-bottom: 28px;
+}
+
+.overview > div {
+  border-right: 1px solid var(--glass-border-subtle);
+}
+
+.overview span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.overview strong {
+  color: var(--ink);
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.overview strong small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* ==========================================================================
+   Toolbar & Segmented Control (Apple iOS/macOS HIG Slider)
+   ========================================================================== */
+.toolbar {
+  padding: 12px 18px;
+  border-radius: 20px;
+  margin: 28px 0 24px;
+}
+
+.search {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.search input {
+  color: var(--ink);
+}
+
+.search input::placeholder {
+  color: var(--muted);
+}
+
+/* iOS/macOS Segmented Control */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  background: rgba(120, 120, 128, 0.14);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-radius: 11px;
+  gap: 2px;
+  border: 0.5px solid rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.segmented button {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: none;
+}
+
+.segmented button:hover {
+  color: var(--ink);
+}
+
+.segmented button.active {
+  background: #ffffff;
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .segmented {
+    background: rgba(120, 120, 128, 0.26);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+  .segmented button.active {
+    background: rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+    box-shadow:
+      0 3px 8px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0.5px rgba(255, 255, 255, 0.35);
+  }
+}
+
+/* ==========================================================================
+   Node Cards (Liquid Crystal Optical Lenses)
+   ========================================================================== */
+.node-card {
+  border-radius: 24px;
+  padding: 24px 24px 0;
+  overflow: hidden;
+  transition:
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.node-card:hover {
+  transform: translateY(-4px) scale(1.006);
+  box-shadow: var(--glass-shadow-hover), var(--glass-inner-rim);
+  border-color: rgba(255, 255, 255, 0.95);
+}
+
+@media (prefers-color-scheme: dark) {
+  .node-card:hover {
+    border-color: rgba(255, 255, 255, 0.32);
+  }
+}
+
+.node-name {
+  color: var(--ink);
+  font-weight: 650;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  transition: color 0.18s ease;
+}
+
+.node-name:hover {
+  color: var(--blue);
+}
+
+.os-tag {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 8px;
+  color: var(--muted);
+  font-weight: 550;
+}
+
+/* ==========================================================================
+   Apple Watch / Health Capsule Progress Bars
+   ========================================================================== */
+.metric progress {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.16);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.08);
+  border: none;
   overflow: hidden;
 }
-.node-card {
-  transition:
-    transform 0.2s,
-    box-shadow 0.2s;
-}
-.node-card:hover {
-  transform: translateY(-3px);
-  box-shadow:
-    0 20px 50px rgba(38, 64, 112, 0.14),
-    inset 0 1px 0 white;
-}
-.toolbar {
-  padding: 14px 18px;
-  border-radius: 22px;
-}
-.hero-meta,
-.notice {
-  border-radius: 18px;
-}
-.overview > div,
-.admin-stats > div {
+
+.metric progress::-webkit-progress-bar {
   background: transparent;
-  border-color: rgba(95, 120, 163, 0.14);
+  border-radius: 999px;
 }
-.admin-stats > div {
-  border-radius: 20px;
-  background: var(--glass);
+
+.metric progress::-webkit-progress-value {
+  border-radius: 999px;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
-h1,
-h2,
-h3,
-.node-name,
-.brand,
-.page-heading h1,
-.hero h1 {
-  color: var(--ink);
-  letter-spacing: -0.035em;
+
+.metric progress::-moz-progress-bar {
+  border-radius: 999px;
 }
-.eyebrow,
-.sidebar-caption,
-.muted,
-.hint,
-.route-heading,
-label,
-.page-heading p,
-.hero p {
-  color: var(--muted) !important;
+
+/* CPU: Apple Cyan to Blue */
+.metrics-grid .metric:nth-child(1) progress::-webkit-progress-value {
+  background: linear-gradient(90deg, var(--cyan), var(--blue));
+  box-shadow: 0 0 8px rgba(var(--blue-rgb), 0.45);
 }
-.brand-mark {
-  background: linear-gradient(135deg, #71baff, #007aff 60%, #7065ee);
-  box-shadow:
-    0 6px 18px #007aff33,
-    inset 0 1px 1px #ffffffa0;
-  border-radius: 14px;
+.metrics-grid .metric:nth-child(1) progress::-moz-progress-bar {
+  background: linear-gradient(90deg, var(--cyan), var(--blue));
 }
-button,
-.button,
-input,
-select {
+
+/* Memory: Apple Purple to Indigo */
+.metrics-grid .metric:nth-child(2) progress::-webkit-progress-value {
+  background: linear-gradient(90deg, var(--purple), var(--indigo));
+  box-shadow: 0 0 8px rgba(var(--purple-rgb), 0.45);
+}
+.metrics-grid .metric:nth-child(2) progress::-moz-progress-bar {
+  background: linear-gradient(90deg, var(--purple), var(--indigo));
+}
+
+/* Disk: Apple Amber to Orange */
+.metrics-grid .metric:nth-child(3) progress::-webkit-progress-value {
+  background: linear-gradient(90deg, #ffb340, var(--orange));
+  box-shadow: 0 0 8px rgba(var(--orange-rgb), 0.45);
+}
+.metrics-grid .metric:nth-child(3) progress::-moz-progress-bar {
+  background: linear-gradient(90deg, #ffb340, var(--orange));
+}
+
+/* Traffic: Apple Emerald to Mint */
+.metrics-grid .metric:nth-child(4) progress::-webkit-progress-value {
+  background: linear-gradient(90deg, var(--green), #30d158);
+  box-shadow: 0 0 8px rgba(var(--green-rgb), 0.45);
+}
+.metrics-grid .metric:nth-child(4) progress::-moz-progress-bar {
+  background: linear-gradient(90deg, var(--green), #30d158);
+}
+
+/* Speeds */
+.speeds {
+  border-bottom: 1px solid var(--glass-border-subtle);
+}
+
+.teal-text {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.orange-text {
+  color: var(--orange);
+  font-weight: 700;
+}
+
+.network-summary {
+  background: var(--glass-bg-subtle);
   border-radius: 12px;
+  padding: 12px 14px;
+  margin: 14px 0 10px;
 }
+
+/* Three-Carrier Route Badges */
+.route-label {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.02),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.65);
+  border-radius: 12px;
+  padding: 8px 6px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.route-label:hover {
+  background: rgba(255, 255, 255, 0.88);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 12px rgba(var(--blue-rgb), 0.16);
+  border-color: rgba(var(--blue-rgb), 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  .route-label:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+.route-label strong {
+  color: var(--blue);
+  font-weight: 650;
+}
+
+.route-label strong.muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.card-bottom {
+  background: var(--glass-bg-subtle);
+  border-top: 1px solid var(--glass-border-subtle);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  font-weight: 550;
+}
+
+/* ==========================================================================
+   Buttons & Apple Haptic Interactions
+   ========================================================================== */
 button,
 .button {
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.85);
+  background: var(--glass-bg-elevated);
+  border: 1px solid var(--glass-border);
   box-shadow:
-    0 3px 9px rgba(38, 64, 112, 0.05),
-    inset 0 1px 0 #ffffffb3;
+    0 3px 8px rgba(0, 0, 0, 0.04),
+    inset 0 1px 1px rgba(255, 255, 255, 0.85);
   color: var(--ink);
+  border-radius: 12px;
+  font-weight: 550;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 button:hover,
 .button:hover {
-  background: rgba(255, 255, 255, 0.9);
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow:
+    0 5px 14px rgba(0, 0, 0, 0.08),
+    inset 0 1px 1px #ffffff;
 }
+
+button:active,
+.button:active {
+  transform: scale(0.97);
+}
+
 button.primary,
 .primary {
-  background: linear-gradient(160deg, #43a1ff, #007aff);
-  border-color: rgba(0, 110, 245, 0.25);
+  background: linear-gradient(180deg, #0077ed 0%, #0066cc 100%);
+  border-color: rgba(0, 90, 200, 0.3);
   color: white;
   box-shadow:
-    0 5px 15px #007aff2b,
-    inset 0 1px 0 #ffffff66;
+    0 4px 14px rgba(var(--blue-rgb), 0.32),
+    inset 0 1px 1px rgba(255, 255, 255, 0.4);
 }
-button.primary:hover {
-  background: linear-gradient(160deg, #218fff, #006ce5);
+
+button.primary:hover,
+.primary:hover {
+  background: linear-gradient(180deg, #1184ff 0%, #0071e3 100%);
+  box-shadow:
+    0 6px 18px rgba(var(--blue-rgb), 0.45),
+    inset 0 1px 1px rgba(255, 255, 255, 0.5);
 }
+
+.quiet {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.quiet:hover {
+  background: var(--glass-bg-subtle);
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   Inputs & Form Controls
+   ========================================================================== */
 input,
 select {
-  background: rgba(255, 255, 255, 0.64);
-  border: 1px solid rgba(104, 127, 170, 0.22);
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
   color: var(--ink);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 input:focus,
 select:focus {
-  outline: 2px solid #007aff88;
+  background: var(--glass-bg-elevated);
+  border-color: var(--blue);
+  outline: none;
+  box-shadow: 0 0 0 3.5px rgba(var(--blue-rgb), 0.28);
 }
-button:focus-visible,
-a:focus-visible {
-  outline: 3px solid #007affaa;
-}
+
 input[type="checkbox"] {
-  accent-color: #007aff;
+  accent-color: var(--blue);
 }
-.segmented {
-  padding: 4px;
-  border-radius: 14px;
+
+/* ==========================================================================
+   Admin Console (macOS Sequoia Finder Style)
+   ========================================================================== */
+.sidebar {
+  margin: 18px 0 18px 18px;
+  border-radius: 24px;
+  height: calc(100vh - 36px);
+  padding: 28px 16px;
 }
-.segmented button.active,
-.sidebar nav button.active {
-  background: rgba(255, 255, 255, 0.85);
-  color: #0069db;
-  box-shadow:
-    0 2px 8px #24477912,
-    inset 0 1px 0 white;
-  border-radius: 11px;
-}
+
 .sidebar nav button {
   color: var(--muted);
-}
-.sidebar nav button:hover {
-  background: rgba(255, 255, 255, 0.45);
-}
-.admin-top,
-.panel-head,
-.card-bottom,
-td,
-th,
-.form-section,
-.form-footer,
-.sidebar-bottom {
-  border-color: rgba(95, 120, 163, 0.14);
-}
-th {
-  background: rgba(232, 239, 252, 0.45);
-  color: var(--muted);
-}
-tbody tr:hover {
-  background: rgba(255, 255, 255, 0.36);
-}
-.card-bottom,
-.network-summary,
-.metrics-grid,
-.route-label,
-.catalog-picker,
-.detail-meta,
-.trace {
-  background: rgba(241, 246, 255, 0.44);
-}
-.route-label,
-.trace,
-.catalog-option {
-  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 12px;
+  padding: 10px 14px;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.catalog-option:has(input:checked) {
-  background: rgba(0, 122, 255, 0.1);
-  border-color: #007aff66;
-}
-.teal-text {
-  color: #0074d9;
-}
-.pill.good {
-  background: #def5ed;
-  color: #176444;
-}
-.pill.warn,
-.warning {
-  background: #fff0d9;
-  color: #865109;
-}
-.danger {
-  color: #b32938;
-}
-dialog {
-  background: rgba(248, 251, 255, 0.88);
-  border-radius: 28px;
-  box-shadow:
-    0 32px 100px #18284c35,
-    inset 0 1px 0 white;
-}
-dialog::backdrop {
-  background: rgba(29, 43, 74, 0.22);
-  backdrop-filter: blur(7px);
-  -webkit-backdrop-filter: blur(7px);
-}
-.login-story {
-  background: transparent;
+
+.sidebar nav button:hover {
+  background: var(--glass-bg-subtle);
   color: var(--ink);
 }
+
+.sidebar nav button.active {
+  background: var(--blue);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow:
+    0 4px 14px rgba(var(--blue-rgb), 0.35),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.4);
+}
+
+.admin-top {
+  margin: 18px 24px 0;
+  border-radius: 20px;
+  height: 72px;
+  padding: 0 32px;
+}
+
+.admin-stats > div {
+  border-radius: 20px;
+}
+
+.panel {
+  border-radius: 22px;
+}
+
+.panel-head {
+  border-bottom: 1px solid var(--glass-border-subtle);
+}
+
+th {
+  background: var(--glass-bg-subtle);
+  color: var(--muted);
+}
+
+td {
+  border-color: var(--glass-border-subtle);
+}
+
+tbody tr {
+  transition: background 0.15s ease;
+}
+
+tbody tr:hover {
+  background: var(--glass-bg-subtle);
+}
+
+.pill {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.pill.good {
+  background: rgba(var(--green-rgb), 0.16);
+  color: #1a7f37;
+}
+
+.pill.warn {
+  background: rgba(var(--orange-rgb), 0.16);
+  color: #b36200;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pill.good {
+    color: #30d158;
+  }
+  .pill.warn {
+    color: #ff9f0a;
+  }
+}
+
+/* ==========================================================================
+   Modal Dialog (Floating Sheet)
+   ========================================================================== */
+dialog {
+  border-radius: 28px;
+  box-shadow:
+    0 36px 88px -12px rgba(15, 30, 60, 0.32),
+    0 12px 28px -4px rgba(15, 30, 60, 0.14),
+    var(--glass-inner-rim);
+  border: 1px solid var(--glass-border);
+}
+
+dialog::backdrop {
+  background: rgba(15, 25, 45, 0.32);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+.modal-head .close {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  color: var(--muted);
+  transition: all 0.18s ease;
+}
+
+.modal-head .close:hover {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  transform: scale(1.08);
+}
+
+/* Apple Stocks / Health Chart */
+.chart {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.chart-line.teal {
+  stroke: var(--blue);
+  filter: drop-shadow(0 2px 6px rgba(var(--blue-rgb), 0.35));
+}
+
+.chart-line.orange {
+  stroke: var(--orange);
+  filter: drop-shadow(0 2px 6px rgba(var(--orange-rgb), 0.35));
+}
+
+.chart .gridline {
+  stroke: var(--separator);
+}
+
+/* Trace Hops */
+.trace {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 14px;
+}
+
+.trace summary:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* ==========================================================================
+   Toast Notification (Apple Dynamic Island / HUD)
+   ========================================================================== */
 #toast {
-  background: rgba(27, 43, 68, 0.92);
-  border: 1px solid #ffffff40;
-  border-radius: 16px;
-  backdrop-filter: blur(20px);
+  background: rgba(20, 24, 34, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  backdrop-filter: blur(28px) saturate(190%);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.28),
+    inset 0 1px 1px rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  padding: 11px 26px;
+  letter-spacing: -0.01em;
 }
-[hidden] {
-  display: none !important;
+
+/* ==========================================================================
+   macOS Custom Scrollbar
+   ========================================================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
-@supports not (
-  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
-) {
-  :root {
-    --glass: #f6f8fd;
-  }
-  dialog {
-    background: #f6f8fd;
-  }
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-@media (prefers-reduced-transparency: reduce) {
-  :root {
-    --glass: #f6f8fd;
-  }
-  dialog {
-    background: #f6f8fd;
-  }
-  .public-header,
-  .sidebar,
-  .admin-top,
-  .panel,
-  .node-card,
-  dialog {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
+
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 130, 0.25);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
-@media (prefers-reduced-motion: reduce) {
-  .node-card {
-    transition: none;
-  }
-  .node-card:hover {
-    transform: none;
-  }
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 130, 0.45);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
+
+/* ==========================================================================
+   Responsive Breakpoints
+   ========================================================================== */
 @media (max-width: 760px) {
   .public-header {
-    margin: 8px 8px 0;
+    margin: 8px 12px 0;
     border-radius: 18px;
+    height: 72px;
+    padding: 0 18px;
   }
   .sidebar {
-    margin: 8px;
+    margin: 8px 12px;
     height: auto;
     border-radius: 18px;
   }
   .admin-top {
-    margin: 8px;
+    margin: 8px 12px 0;
     border-radius: 18px;
   }
   .toolbar {
     padding: 12px;
+    border-radius: 16px;
   }
   dialog {
-    border-radius: 22px;
+    border-radius: 24px;
   }
 }
