@@ -4,91 +4,67 @@
    ========================================================================== */
 
 :root {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-    "SF Pro", "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-
-  /* Apple System Palette (Light Mode) */
-  --ink: #1d1d1f;
-  --muted: #86868b;
-  --subtle: #aeaeb2;
-  --separator: rgba(60, 60, 67, 0.12);
-
-  --blue: #0071e3;
-  --blue-rgb: 0, 113, 227;
-  --cyan: #00c7be;
-  --cyan-rgb: 0, 199, 190;
-  --green: #34c759;
-  --green-rgb: 52, 199, 89;
-  --orange: #ff9500;
-  --orange-rgb: 255, 149, 0;
-  --red: #ff3b30;
-  --red-rgb: 255, 59, 48;
-  --purple: #af52de;
-  --purple-rgb: 175, 82, 222;
-  --indigo: #5856d6;
-
-  /* Apple Liquid Glass Material Tokens (Light Mode) */
-  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.45) 100%);
   --glass-bg-subtle: rgba(255, 255, 255, 0.42);
   --glass-bg-elevated: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.75);
-  --glass-border-subtle: rgba(255, 255, 255, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.82);
+  --glass-border-subtle: rgba(255, 255, 255, 0.5);
   --glass-inner-rim:
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -1px 1px 0 rgba(255, 255, 255, 0.25);
+    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 1px 0 rgba(255, 255, 255, 0.3);
   --glass-shadow:
-    0 16px 36px -8px rgba(35, 55, 95, 0.08),
-    0 4px 12px -2px rgba(35, 55, 95, 0.04);
-  --glass-shadow-hover:
-    0 24px 52px -10px rgba(35, 55, 95, 0.15),
-    0 8px 22px -4px rgba(35, 55, 95, 0.07);
-  --blur-surface: blur(32px) saturate(190%) contrast(102%);
+    0 16px 38px -8px rgba(25, 45, 85, 0.08),
+    0 4px 12px -2px rgba(25, 45, 85, 0.03);
+  --glass-shadow-lg:
+    0 24px 54px -10px rgba(25, 45, 85, 0.15),
+    0 8px 20px -4px rgba(25, 45, 85, 0.06);
+  --blur: blur(32px) saturate(190%) contrast(102%);
+  --progress-track: rgba(120, 120, 128, 0.12);
 }
 
-/* ==========================================================================
-   Dark Mode: Obsidian Liquid Glass (Deep Space & Jewel Tones)
-   ========================================================================== */
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #f5f5f7;
     --muted: #98989d;
     --subtle: #636366;
-    --separator: rgba(255, 255, 255, 0.12);
-
-    --blue: #0a84ff;
-    --cyan: #64d2ff;
+    --line: rgba(255, 255, 255, 0.12);
+    --accent: #0a84ff;
+    --accent-rgb: 10, 132, 255;
     --green: #30d158;
+    --green-rgb: 48, 209, 88;
     --orange: #ff9f0a;
+    --orange-rgb: 255, 159, 10;
     --red: #ff453a;
     --purple: #bf5af2;
+    --purple-rgb: 191, 90, 242;
+    --cyan: #64d2ff;
+    --cyan-rgb: 100, 210, 255;
     --indigo: #5e5ce6;
 
-    --glass-bg: rgba(26, 32, 44, 0.68);
-    --glass-bg-subtle: rgba(18, 23, 34, 0.52);
-    --glass-bg-elevated: rgba(36, 44, 60, 0.85);
+    --glass-bg: linear-gradient(135deg, rgba(30, 36, 50, 0.72) 0%, rgba(18, 23, 34, 0.55) 100%);
+    --glass-bg-subtle: rgba(20, 25, 36, 0.48);
+    --glass-bg-elevated: rgba(38, 46, 64, 0.85);
     --glass-border: rgba(255, 255, 255, 0.16);
     --glass-border-subtle: rgba(255, 255, 255, 0.08);
     --glass-inner-rim:
-      inset 0 1px 1px 0 rgba(255, 255, 255, 0.25),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.22),
       inset 0 -1px 1px 0 rgba(0, 0, 0, 0.5);
     --glass-shadow:
-      0 18px 44px -10px rgba(0, 0, 0, 0.55), 0 6px 14px -2px rgba(0, 0, 0, 0.35);
-    --glass-shadow-hover:
+      0 18px 44px -10px rgba(0, 0, 0, 0.55),
+      0 6px 14px -2px rgba(0, 0, 0, 0.35);
+    --glass-shadow-lg:
       0 28px 64px -12px rgba(0, 0, 0, 0.72),
-      0 10px 26px -4px rgba(0, 0, 0, 0.48);
+      0 10px 24px -4px rgba(0, 0, 0, 0.45);
+    --blur: blur(32px) saturate(200%);
+    --progress-track: rgba(120, 120, 128, 0.25);
   }
 }
 
 /* ==========================================================================
-   Dynamic Fluid Ambient Canvas (Apple Aurora / Caustics)
+   Fluid Ambient Canvas Background (Luminous Light Refraction)
    ========================================================================== */
 body {
-  background: #f4f6fc;
-  color: var(--ink);
+  background: #f0f3fa;
   position: relative;
   overflow-x: hidden;
 }
@@ -100,84 +76,45 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(
-      ellipse at 15% 15%,
-      rgba(100, 190, 255, 0.42),
-      transparent 45%
-    ),
-    radial-gradient(
-      ellipse at 85% 25%,
-      rgba(180, 155, 255, 0.36),
-      transparent 48%
-    ),
-    radial-gradient(
-      ellipse at 50% 85%,
-      rgba(110, 235, 215, 0.34),
-      transparent 50%
-    ),
-    radial-gradient(
-      ellipse at 80% 85%,
-      rgba(255, 195, 140, 0.28),
-      transparent 45%
-    ),
-    linear-gradient(135deg, #f0f4fc 0%, #f6f1fa 45%, #ecf7f9 100%);
-  animation: glass-fluid-drift 22s ease-in-out infinite alternate;
+    radial-gradient(ellipse at 15% 15%, rgba(0, 122, 255, 0.38) 0%, rgba(0, 199, 190, 0.2) 35%, transparent 60%),
+    radial-gradient(ellipse at 85% 20%, rgba(175, 82, 222, 0.35) 0%, rgba(88, 86, 214, 0.18) 35%, transparent 60%),
+    radial-gradient(ellipse at 50% 85%, rgba(255, 149, 0, 0.28) 0%, rgba(255, 45, 85, 0.12) 35%, transparent 60%),
+    radial-gradient(ellipse at 80% 80%, rgba(52, 199, 89, 0.3) 0%, transparent 50%),
+    linear-gradient(135deg, #eef3fc 0%, #f6effa 45%, #ecf7f9 100%);
+  animation: glass-fluid-drift 24s ease-in-out infinite alternate;
   will-change: transform;
 }
 
 @keyframes glass-fluid-drift {
-  0% {
-    transform: scale(1) translate3d(0, 0, 0);
-  }
-  50% {
-    transform: scale(1.06) translate3d(15px, -18px, 0);
-  }
-  100% {
-    transform: scale(1.02) translate3d(-12px, 12px, 0);
-  }
+  0% { transform: scale(1) translate3d(0, 0, 0); }
+  50% { transform: scale(1.06) translate3d(18px, -20px, 0); }
+  100% { transform: scale(1.02) translate3d(-14px, 14px, 0); }
 }
 
 @media (prefers-color-scheme: dark) {
   body {
-    background: #090c13;
+    background: #080b12;
   }
   body::before {
     background:
-      radial-gradient(
-        ellipse at 15% 15%,
-        rgba(20, 100, 240, 0.26),
-        transparent 46%
-      ),
-      radial-gradient(
-        ellipse at 85% 25%,
-        rgba(140, 50, 255, 0.22),
-        transparent 48%
-      ),
-      radial-gradient(
-        ellipse at 50% 85%,
-        rgba(0, 210, 190, 0.18),
-        transparent 50%
-      ),
-      radial-gradient(
-        ellipse at 80% 85%,
-        rgba(240, 70, 120, 0.16),
-        transparent 46%
-      ),
-      linear-gradient(145deg, #090c14 0%, #0d121c 50%, #080b12 100%);
+      radial-gradient(ellipse at 15% 15%, rgba(10, 132, 255, 0.28) 0%, transparent 50%),
+      radial-gradient(ellipse at 85% 20%, rgba(191, 90, 242, 0.24) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 85%, rgba(48, 209, 88, 0.2) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(255, 159, 10, 0.16) 0%, transparent 50%),
+      linear-gradient(145deg, #080b12 0%, #0d121c 50%, #06090f 100%);
   }
 }
 
 /* ==========================================================================
-   Liquid Glass Components (Surface, Rim, Specular Occlusion)
+   Liquid Glass Surfaces
    ========================================================================== */
 .public-header,
 .sidebar,
 .admin-top,
 .panel,
 .node-card,
-.overview,
+.overview-tile,
 .admin-stats > div,
-.login-panel,
 dialog,
 .toolbar,
 .notice,
@@ -188,92 +125,69 @@ dialog,
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow), var(--glass-inner-rim);
-  -webkit-backdrop-filter: var(--blur-surface);
-  backdrop-filter: var(--blur-surface);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
 }
 
 .public-layout,
 .admin-layout,
 .admin-main,
 .public-main,
-.login-layout {
+.login-layout,
+.login-story,
+.login-panel {
   background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.login-panel form {
+  width: 420px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-lg), var(--glass-inner-rim);
+  border-radius: 28px;
+  padding: 44px 38px;
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
 }
 
 /* ==========================================================================
    Public Header (Floating Glass Island)
    ========================================================================== */
 .public-header {
-  margin: 18px 32px 0;
-  border-radius: 24px;
-  height: 84px;
-  padding: 0 32px;
+  border-radius: 22px;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  text-decoration: none;
-}
-
+/* Brand Mark */
 .brand-mark {
-  font-size: 21px;
-  font-weight: 800;
-  letter-spacing: -1.5px;
-  border-radius: 12px;
   background: linear-gradient(145deg, #3694ff 0%, #0071e3 60%, #6854ee 100%);
-  color: #fff;
-  padding: 6px 12px 7px 10px;
-  box-shadow:
-    0 4px 14px rgba(var(--blue-rgb), 0.35),
-    inset 0 1px 1.5px rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.35), inset 0 1px 1.5px rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
-.brand-mark span {
-  color: #82e2ff;
-}
-
-.brand > span:last-child {
-  font-size: 14px;
-  letter-spacing: 2px;
-  font-weight: 750;
-  color: var(--ink);
-}
-
-.brand small {
-  color: var(--muted);
-}
-
-/* Apple Radar Breathing Status Light */
-.live-label {
-  font-size: 11px;
-  letter-spacing: 1.4px;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.node-dot,
+/* Live Status Breathing Beacon */
 .live-label i,
+.node-dot,
 .overview .dot {
   position: relative;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--green);
   box-shadow: 0 0 10px rgba(var(--green-rgb), 0.7);
 }
 
-.node-dot::after,
-.live-label i::after {
+.live-label i::after,
+.node-dot:not(.offline)::after,
+.overview .dot.active::after {
   content: "";
   position: absolute;
   inset: -3px;
   border-radius: 50%;
   border: 1.5px solid var(--green);
-  animation: apple-radar 2.2s cubic-bezier(0.2, 0.9, 0.3, 1) infinite;
+  animation: radar-pulse 2.2s cubic-bezier(0.2, 0.9, 0.3, 1) infinite;
 }
 
 .node-dot.offline {
@@ -281,184 +195,129 @@ dialog,
   box-shadow: none;
 }
 
-.node-dot.offline::after {
-  display: none;
-}
-
-@keyframes apple-radar {
-  0% {
-    transform: scale(0.6);
-    opacity: 0.95;
-  }
-  60% {
-    transform: scale(2.2);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(2.4);
-    opacity: 0;
-  }
+@keyframes radar-pulse {
+  0% { transform: scale(0.6); opacity: 0.95; }
+  60% { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
 }
 
 /* ==========================================================================
    Hero Section & Headlines
    ========================================================================== */
-.hero {
-  padding: 40px 0 34px;
-}
-
 .eyebrow,
 .sidebar-caption {
-  font-size: 11px;
-  letter-spacing: 2px;
-  color: var(--blue);
-  font-weight: 700;
+  color: var(--accent);
 }
 
 h1 {
-  font-size: 42px;
-  letter-spacing: -0.038em;
-  font-weight: 750;
   color: var(--ink);
+  letter-spacing: -0.038em;
 }
 
-h1 span {
-  background: linear-gradient(135deg, #0071e3 0%, #a259ff 65%, #ff9500 100%);
+.hero h1 span,
+.login-story h1 span {
+  background: linear-gradient(135deg, #0071e3 0%, #af52de 55%, #ff9500 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-.hero p {
-  color: var(--muted);
-  font-size: 15px;
+.page-heading h1 span {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0;
+  -webkit-text-fill-color: var(--accent);
+  -webkit-background-clip: unset;
+  background-clip: unset;
 }
 
+/* Hero Meta Chip */
 .hero-meta {
   border-radius: 18px;
-  padding: 12px 20px;
-  box-shadow: var(--glass-shadow), var(--glass-inner-rim);
 }
 
 .hero-meta strong {
   color: var(--ink);
-  font-size: 20px;
-  letter-spacing: 0.5px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 650;
 }
 
 /* ==========================================================================
-   Overview Bar (Floating Quad Island)
+   Overview Bar (4 Modular Glass Control Deck Tiles)
    ========================================================================== */
-.overview {
-  border-radius: 22px;
-  padding: 24px 10px;
-  margin-bottom: 28px;
+.overview-tile {
+  border-radius: 20px;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
 }
 
-.overview > div {
-  border-right: 1px solid var(--glass-border-subtle);
+.overview-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glass-shadow-lg), var(--glass-inner-rim);
 }
 
-.overview span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
+.teal-badge {
+  background: rgba(var(--cyan-rgb), 0.15);
+  color: var(--cyan);
 }
 
-.overview strong {
-  color: var(--ink);
-  font-size: 28px;
-  font-weight: 650;
-  letter-spacing: -0.03em;
+.orange-badge {
+  background: rgba(var(--orange-rgb), 0.15);
+  color: var(--orange);
 }
 
-.overview strong small {
-  color: var(--muted);
-  font-weight: 400;
+.purple-badge {
+  background: rgba(var(--purple-rgb), 0.15);
+  color: var(--purple);
 }
 
 /* ==========================================================================
-   Toolbar & Segmented Control (Apple iOS/macOS HIG Slider)
+   Toolbar & Segmented Control
    ========================================================================== */
 .toolbar {
-  padding: 12px 18px;
   border-radius: 20px;
-  margin: 28px 0 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
 }
 
 .search {
-  display: flex;
-  flex: 1 1 360px;
-  flex-direction: row;
-  align-items: center;
-  min-width: 0;
-  gap: 10px;
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 12px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
 }
 
-.search span {
-  flex: 0 0 auto;
-}
-
-.search input {
-  flex: 1 1 auto;
-  width: auto;
-  color: var(--ink);
-}
-
-.filter-controls {
-  display: flex;
-  flex: 1 1 520px;
-  min-width: 0;
-  align-items: center;
-  gap: 12px;
+.search:focus-within {
+  background: var(--glass-bg-elevated);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25);
 }
 
 .filter-controls select {
-  flex: 0 0 150px;
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+  color: var(--ink);
+  transition: all 0.2s ease;
 }
 
-.toolbar > .segmented {
-  flex: 0 0 auto;
+.filter-controls select:focus {
+  background: var(--glass-bg-elevated);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25);
 }
 
-.search input::placeholder {
-  color: var(--muted);
-}
-
-/* iOS/macOS Segmented Control */
+/* Segmented Control */
 .segmented {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px;
   background: rgba(120, 120, 128, 0.14);
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
-  border-radius: 11px;
-  gap: 2px;
-  border: 0.5px solid rgba(0, 0, 0, 0.04);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  border: 0.5px solid rgba(0, 0, 0, 0.03);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .segmented button {
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  padding: 6px 16px;
-  font-size: 12px;
-  font-weight: 500;
   color: var(--muted);
-  cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: none;
 }
 
 .segmented button:hover {
@@ -469,22 +328,18 @@ h1 span {
   background: #ffffff;
   color: var(--ink);
   font-weight: 600;
-  box-shadow:
-    0 3px 8px rgba(0, 0, 0, 0.12),
-    0 1px 2px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
   .segmented {
     background: rgba(120, 120, 128, 0.26);
-    border-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.06);
   }
   .segmented button.active {
     background: rgba(255, 255, 255, 0.22);
     color: #ffffff;
-    box-shadow:
-      0 3px 8px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0.5px rgba(255, 255, 255, 0.35);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4), inset 0 1px 0.5px rgba(255, 255, 255, 0.3);
   }
 }
 
@@ -492,18 +347,15 @@ h1 span {
    Node Cards (Liquid Crystal Optical Lenses)
    ========================================================================== */
 .node-card {
-  border-radius: 24px;
-  padding: 24px 24px 0;
-  overflow: hidden;
   transition:
     transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    border-color 0.28s ease;
 }
 
 .node-card:hover {
   transform: translateY(-4px) scale(1.006);
-  box-shadow: var(--glass-shadow-hover), var(--glass-inner-rim);
+  box-shadow: var(--glass-shadow-lg), var(--glass-inner-rim);
   border-color: rgba(255, 255, 255, 0.95);
 }
 
@@ -513,62 +365,33 @@ h1 span {
   }
 }
 
-.node-name {
-  color: var(--ink);
-  font-weight: 650;
-  font-size: 17px;
-  letter-spacing: -0.02em;
-  transition: color 0.18s ease;
-}
-
 .node-name:hover {
-  color: var(--blue);
+  color: var(--accent);
 }
 
 .os-tag {
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 8px;
-  color: var(--muted);
-  font-weight: 550;
 }
 
 /* ==========================================================================
-   Apple Watch / Health Capsule Progress Bars
+   Capsule Progress Bars
    ========================================================================== */
 .metric progress {
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(120, 120, 128, 0.16);
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.08);
-  border: none;
-  overflow: hidden;
+  background: var(--progress-track);
+  box-shadow: inset 0 0.5px 1px rgba(0, 0, 0, 0.08);
 }
 
-.metric progress::-webkit-progress-bar {
-  background: transparent;
-  border-radius: 999px;
-}
-
-.metric progress::-webkit-progress-value {
-  border-radius: 999px;
-  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.metric progress::-moz-progress-bar {
-  border-radius: 999px;
-}
-
-/* CPU: Apple Cyan to Blue */
+/* CPU: Cyan to Blue */
 .metrics-grid .metric:nth-child(1) progress::-webkit-progress-value {
-  background: linear-gradient(90deg, var(--cyan), var(--blue));
-  box-shadow: 0 0 8px rgba(var(--blue-rgb), 0.45);
+  background: linear-gradient(90deg, var(--cyan), var(--accent));
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.45);
 }
 .metrics-grid .metric:nth-child(1) progress::-moz-progress-bar {
-  background: linear-gradient(90deg, var(--cyan), var(--blue));
+  background: linear-gradient(90deg, var(--cyan), var(--accent));
 }
 
-/* Memory: Apple Purple to Indigo */
+/* Memory: Purple to Indigo */
 .metrics-grid .metric:nth-child(2) progress::-webkit-progress-value {
   background: linear-gradient(90deg, var(--purple), var(--indigo));
   box-shadow: 0 0 8px rgba(var(--purple-rgb), 0.45);
@@ -577,7 +400,7 @@ h1 span {
   background: linear-gradient(90deg, var(--purple), var(--indigo));
 }
 
-/* Disk: Apple Amber to Orange */
+/* Disk: Amber to Sunset Orange */
 .metrics-grid .metric:nth-child(3) progress::-webkit-progress-value {
   background: linear-gradient(90deg, #ffb340, var(--orange));
   box-shadow: 0 0 8px rgba(var(--orange-rgb), 0.45);
@@ -586,7 +409,7 @@ h1 span {
   background: linear-gradient(90deg, #ffb340, var(--orange));
 }
 
-/* Traffic: Apple Emerald to Mint */
+/* Traffic: Emerald Green to Mint */
 .metrics-grid .metric:nth-child(4) progress::-webkit-progress-value {
   background: linear-gradient(90deg, var(--green), #30d158);
   box-shadow: 0 0 8px rgba(var(--green-rgb), 0.45);
@@ -595,45 +418,42 @@ h1 span {
   background: linear-gradient(90deg, var(--green), #30d158);
 }
 
-/* Speeds */
-.speeds {
-  border-bottom: 1px solid var(--glass-border-subtle);
+/* ==========================================================================
+   Speeds (Twin Telemetry Pods)
+   ========================================================================== */
+.speed-box {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
 }
 
-.teal-text {
-  color: var(--blue);
-  font-weight: 700;
+.teal-icon {
+  background: rgba(var(--cyan-rgb), 0.15);
+  color: var(--cyan);
 }
 
-.orange-text {
+.orange-icon {
+  background: rgba(var(--orange-rgb), 0.15);
   color: var(--orange);
-  font-weight: 700;
 }
 
+/* Network Summary Strip */
 .network-summary {
   background: var(--glass-bg-subtle);
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin: 14px 0 10px;
+  border: 1px solid var(--glass-border-subtle);
 }
 
-/* Three-Carrier Route Badges */
+/* Route Labels (Carrier Badges) */
 .route-label {
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.02),
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.65);
-  border-radius: 12px;
-  padding: 8px 6px;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.7);
 }
 
 .route-label:hover {
   background: rgba(255, 255, 255, 0.88);
   transform: translateY(-2px);
-  box-shadow: 0 5px 12px rgba(var(--blue-rgb), 0.16);
-  border-color: rgba(var(--blue-rgb), 0.4);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.16);
+  border-color: rgba(var(--accent-rgb), 0.4);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -642,197 +462,534 @@ h1 span {
   }
 }
 
-.route-label strong {
-  color: var(--blue);
-  font-weight: 650;
+.route-heading b {
+  background: rgba(0, 0, 0, 0.05);
 }
 
-.route-label strong.muted {
-  color: var(--muted);
-  font-weight: 400;
+@media (prefers-color-scheme: dark) {
+  .route-heading b {
+    background: rgba(255, 255, 255, 0.1);
+  }
 }
 
+/* Card Bottom */
 .card-bottom {
   background: var(--glass-bg-subtle);
   border-top: 1px solid var(--glass-border-subtle);
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
-  font-weight: 550;
+}
+
+.expiry-pill {
+  background: rgba(var(--green-rgb), 0.12);
+  color: #1a7f37;
+}
+
+.expiry-pill.warning {
+  background: rgba(var(--orange-rgb), 0.15);
+  color: #b36200;
+}
+
+@media (prefers-color-scheme: dark) {
+  .expiry-pill {
+    color: var(--green);
+  }
+  .expiry-pill.warning {
+    color: var(--orange);
+  }
 }
 
 /* ==========================================================================
-   Buttons & Apple Haptic Interactions
+   Buttons & Press Feedback
    ========================================================================== */
-button,
-.button {
+/* ==========================================================================
+   Liquid Glass Push Buttons
+   ========================================================================== */
+.button,
+button.primary,
+button.danger,
+.form-footer button,
+.page-heading button,
+.panel-head button:not(.quiet),
+.webhook-actions button,
+.catalog-toolbar button,
+details > button {
   background: var(--glass-bg-elevated);
   border: 1px solid var(--glass-border);
-  box-shadow:
-    0 3px 8px rgba(0, 0, 0, 0.04),
-    inset 0 1px 1px rgba(255, 255, 255, 0.85);
-  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.85);
   border-radius: 12px;
   font-weight: 550;
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-button:hover,
-.button:hover {
+.button:hover,
+button.primary:not(:disabled):hover,
+button.danger:not(:disabled):hover,
+.form-footer button:not(:disabled):hover,
+.page-heading button:not(:disabled):hover,
+.panel-head button:not(.quiet):not(:disabled):hover,
+.webhook-actions button:not(:disabled):hover,
+.catalog-toolbar button:not(:disabled):hover,
+details > button:not(:disabled):hover {
   background: #ffffff;
   transform: translateY(-1px);
-  box-shadow:
-    0 5px 14px rgba(0, 0, 0, 0.08),
-    inset 0 1px 1px #ffffff;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.08), inset 0 1px 1px #ffffff;
 }
 
-button:active,
-.button:active {
-  transform: scale(0.97);
+@media (prefers-color-scheme: dark) {
+  .button,
+  button.primary,
+  button.danger,
+  .form-footer button,
+  .page-heading button,
+  .panel-head button:not(.quiet),
+  .webhook-actions button,
+  .catalog-toolbar button,
+  details > button {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), inset 0 1px 0.5px rgba(255, 255, 255, 0.15);
+  }
+
+  .button:hover,
+  .form-footer button:not(.primary):hover,
+  .page-heading button:not(.primary):hover,
+  .panel-head button:not(.quiet):hover,
+  .webhook-actions button:not(.primary):hover,
+  .catalog-toolbar button:hover,
+  details > button:hover {
+    background: rgba(255, 255, 255, 0.18);
+    box-shadow: 0 5px 14px rgba(0, 0, 0, 0.4), inset 0 1px 0.5px rgba(255, 255, 255, 0.25);
+  }
 }
 
 button.primary,
 .primary {
-  background: linear-gradient(180deg, #0077ed 0%, #0066cc 100%);
-  border-color: rgba(0, 90, 200, 0.3);
-  color: white;
-  box-shadow:
-    0 4px 14px rgba(var(--blue-rgb), 0.32),
-    inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  background: linear-gradient(180deg, #0077ed 0%, #0066cc 100%) !important;
+  border-color: rgba(0, 90, 200, 0.3) !important;
+  color: white !important;
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.32), inset 0 1px 1px rgba(255, 255, 255, 0.4) !important;
 }
 
 button.primary:hover,
 .primary:hover {
-  background: linear-gradient(180deg, #1184ff 0%, #0071e3 100%);
-  box-shadow:
-    0 6px 18px rgba(var(--blue-rgb), 0.45),
-    inset 0 1px 1px rgba(255, 255, 255, 0.5);
+  background: linear-gradient(180deg, #1184ff 0%, #0071e3 100%) !important;
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
 }
 
-.quiet {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
+.quiet,
+button.quiet {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
 }
 
-.quiet:hover {
-  background: var(--glass-bg-subtle);
-  box-shadow: none;
+.quiet:hover,
+button.quiet:hover {
+  background: var(--glass-bg-subtle) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* ==========================================================================
+   Zero-Leak Protections (Text buttons, Node names, Row actions, Logout)
+   ========================================================================== */
+.text-button,
+td .text-button,
+.node-name,
+button.node-name,
+.row-actions button,
+.sidebar-bottom button,
+#logout {
+  background: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  transform: none !important;
+  outline: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+.text-button:hover,
+td .text-button:hover,
+.node-name:hover,
+button.node-name:hover {
+  background: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  color: var(--accent) !important;
+}
+
+.row-actions button:hover {
+  background: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  text-decoration: underline;
+}
+
+.row-actions button.danger:hover {
+  color: var(--red) !important;
+}
+
+.sidebar-bottom button:hover,
+#logout:hover {
+  background: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  color: var(--ink) !important;
 }
 
 /* ==========================================================================
    Inputs & Form Controls
    ========================================================================== */
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 select {
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
   color: var(--ink);
-  border-radius: 12px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-input:focus,
+input:not([type="checkbox"]):not([type="radio"]):focus,
 select:focus {
   background: var(--glass-bg-elevated);
-  border-color: var(--blue);
-  outline: none;
-  box-shadow: 0 0 0 3.5px rgba(var(--blue-rgb), 0.28);
-}
-
-input[type="checkbox"] {
-  accent-color: var(--blue);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25);
 }
 
 /* ==========================================================================
-   Admin Console (macOS Sequoia Finder Style)
+   Admin Console (Overlay Panels)
    ========================================================================== */
 .sidebar {
   margin: 18px 0 18px 18px;
   border-radius: 24px;
   height: calc(100vh - 36px);
-  padding: 28px 16px;
 }
 
 .sidebar nav button {
-  color: var(--muted);
-  border-radius: 12px;
-  padding: 10px 14px;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 14px !important;
+  transform: none !important;
+  transition: all 0.18s ease;
+}
+
+.sidebar nav button .nav-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: block;
+  opacity: 0.8;
+  transition: all 0.18s ease;
 }
 
 .sidebar nav button:hover {
-  background: var(--glass-bg-subtle);
+  background: var(--glass-bg-subtle) !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.sidebar nav button:hover .nav-icon {
+  opacity: 1;
   color: var(--ink);
 }
 
 .sidebar nav button.active {
-  background: var(--blue);
-  color: #ffffff;
-  font-weight: 600;
-  box-shadow:
-    0 4px 14px rgba(var(--blue-rgb), 0.35),
-    inset 0 1px 0.5px rgba(255, 255, 255, 0.4);
+  background: var(--accent) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.35), inset 0 1px 0.5px rgba(255, 255, 255, 0.4) !important;
+  transform: none !important;
+}
+
+.sidebar nav button.active .nav-icon {
+  opacity: 1;
+  color: #fff;
+  stroke: #fff;
 }
 
 .admin-top {
-  margin: 18px 24px 0;
-  border-radius: 20px;
-  height: 72px;
-  padding: 0 32px;
-}
-
-.admin-stats > div {
+  margin: 18px 28px 0;
   border-radius: 20px;
 }
 
-.panel {
-  border-radius: 22px;
+.admin-top .pill {
+  color: var(--green);
+  background: rgba(var(--green-rgb), 0.12);
+  border: 1px solid rgba(var(--green-rgb), 0.25);
 }
 
-.panel-head {
-  border-bottom: 1px solid var(--glass-border-subtle);
+/* ==========================================================================
+   Pill Status Badges
+   ========================================================================== */
+.pill {
+  background: var(--glass-bg-subtle);
+  color: var(--muted);
+  border: 1px solid var(--glass-border-subtle);
+}
+
+.pill.good {
+  background: rgba(var(--green-rgb), 0.15);
+  color: #166534;
+  border-color: rgba(var(--green-rgb), 0.25);
+}
+
+.pill.warn {
+  background: rgba(var(--orange-rgb), 0.15);
+  color: #9a3412;
+  border-color: rgba(var(--orange-rgb), 0.25);
+}
+
+@media (prefers-color-scheme: dark) {
+  .pill.good {
+    background: rgba(var(--green-rgb), 0.2);
+    color: var(--green);
+    border-color: rgba(var(--green-rgb), 0.35);
+  }
+
+  .pill.warn {
+    background: rgba(var(--orange-rgb), 0.2);
+    color: var(--orange);
+    border-color: rgba(var(--orange-rgb), 0.35);
+  }
 }
 
 th {
   background: var(--glass-bg-subtle);
-  color: var(--muted);
-}
-
-td {
-  border-color: var(--glass-border-subtle);
-}
-
-tbody tr {
-  transition: background 0.15s ease;
 }
 
 tbody tr:hover {
   background: var(--glass-bg-subtle);
 }
 
-.pill {
-  border-radius: 999px;
+/* ==========================================================================
+   Notice Banner (Admin & Task Editor)
+   ========================================================================== */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: var(--glass-inner-rim);
+}
+
+.notice strong {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+  display: block;
+}
+
+.notice span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   Webhook & Notification Panel
+   ========================================================================== */
+.webhook-panel {
+  padding: 24px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+}
+
+.webhook-panel h3 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+
+.webhook-panel p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+
+.webhook-panel small {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.webhook-actions {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+/* ==========================================================================
+   Catalog Picker & Task Form Components
+   ========================================================================== */
+.catalog-filters {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.catalog-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.catalog-toolbar button {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 10px;
+}
+
+.catalog-results {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 14px;
+  padding: 10px;
+  background: var(--glass-bg-subtle);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.catalog-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border-subtle);
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.catalog-option:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.catalog-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.catalog-option strong {
+  font-size: 12px;
   font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.pill.good {
-  background: rgba(var(--green-rgb), 0.16);
-  color: #1a7f37;
+.catalog-option small {
+  font-size: 10px;
+  color: var(--muted);
 }
 
-.pill.warn {
-  background: rgba(var(--orange-rgb), 0.16);
-  color: #b36200;
+.task-options {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
-@media (prefers-color-scheme: dark) {
-  .pill.good {
-    color: #30d158;
-  }
-  .pill.warn {
-    color: #ff9f0a;
-  }
+.node-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 14px;
+  padding: 10px;
+  background: var(--glass-bg-subtle);
+  margin-bottom: 12px;
+}
+
+.selected-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.selected-targets button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.selected-targets button:hover {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--red);
+  border-color: rgba(255, 59, 48, 0.3);
+}
+
+details {
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin: 14px 0;
+  background: var(--glass-bg-subtle);
+}
+
+details summary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+details[open] summary {
+  margin-bottom: 14px;
+}
+
+pre,
+#agent-config {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 14px;
+  padding: 16px 20px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 16px 0;
 }
 
 /* ==========================================================================
@@ -844,7 +1001,6 @@ dialog {
     0 36px 88px -12px rgba(15, 30, 60, 0.32),
     0 12px 28px -4px rgba(15, 30, 60, 0.14),
     var(--glass-inner-rim);
-  border: 1px solid var(--glass-border);
 }
 
 dialog::backdrop {
@@ -866,62 +1022,58 @@ dialog::backdrop {
   transform: scale(1.08);
 }
 
-/* Apple Stocks / Health Chart */
+/* Charts */
 .chart {
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 18px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
-.chart-line.teal {
-  stroke: var(--blue);
-  filter: drop-shadow(0 2px 6px rgba(var(--blue-rgb), 0.35));
+.chart-line.teal,
+.chart polyline.teal,
+.chart polyline {
+  stroke: var(--accent);
+  filter: drop-shadow(0 2px 6px rgba(var(--accent-rgb), 0.35));
 }
 
-.chart-line.orange {
+.chart-line.orange,
+.chart polyline.orange {
   stroke: var(--orange);
   filter: drop-shadow(0 2px 6px rgba(var(--orange-rgb), 0.35));
 }
 
 .chart .gridline {
-  stroke: var(--separator);
+  stroke: var(--line);
 }
 
 /* Trace Hops */
 .trace {
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 14px;
 }
 
 .trace summary:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.35);
 }
 
 /* ==========================================================================
-   Toast Notification (Apple Dynamic Island / HUD)
+   Toast (Dynamic Island HUD)
    ========================================================================== */
 #toast {
   background: rgba(20, 24, 34, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 999px;
   -webkit-backdrop-filter: blur(28px) saturate(190%);
   backdrop-filter: blur(28px) saturate(190%);
   box-shadow:
     0 16px 40px rgba(0, 0, 0, 0.28),
     inset 0 1px 1px rgba(255, 255, 255, 0.3);
-  color: #ffffff;
-  padding: 11px 26px;
-  letter-spacing: -0.01em;
 }
 
 /* ==========================================================================
-   macOS Custom Scrollbar
+   Overlay Scrollbar
    ========================================================================== */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
@@ -930,26 +1082,70 @@ dialog::backdrop {
 
 ::-webkit-scrollbar-thumb {
   background: rgba(120, 120, 130, 0.25);
-  border-radius: 999px;
+  border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(120, 120, 130, 0.45);
+  background: rgba(120, 120, 128, 0.45);
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 /* ==========================================================================
-   Responsive Breakpoints
+   Accessibility Fallbacks
+   ========================================================================== */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-bg: rgba(246, 248, 253, 0.96);
+  }
+  dialog {
+    background: #f6f8fd;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-bg: #f6f8fd;
+  }
+  dialog {
+    background: #f6f8fd;
+  }
+  .public-header,
+  .sidebar,
+  .admin-top,
+  .panel,
+  .node-card,
+  dialog {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
+  }
+  .node-card {
+    transition: none;
+  }
+  .node-card:hover {
+    transform: none;
+  }
+  .live-label i::after,
+  .node-dot::after {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Responsive Glass Adjustments
    ========================================================================== */
 @media (max-width: 760px) {
   .public-header {
     margin: 8px 12px 0;
     border-radius: 18px;
-    height: 72px;
-    padding: 0 18px;
   }
   .sidebar {
     margin: 8px 12px;
@@ -961,19 +1157,9 @@ dialog::backdrop {
     border-radius: 18px;
   }
   .toolbar {
-    padding: 12px;
     border-radius: 16px;
-    align-items: stretch;
-  }
-
-  .filter-controls {
-    flex-basis: 100%;
-  }
-
-  .toolbar > .segmented {
-    align-self: flex-start;
   }
   dialog {
-    border-radius: 24px;
+    border-radius: 22px;
   }
 }
