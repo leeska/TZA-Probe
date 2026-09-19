@@ -70,12 +70,32 @@ async function shot(page, name, fullPage = true) {
   await page.click("#login button");
   await page.waitForSelector(".admin-layout");
   await shot(page, "admin-nodes");
+  // 弹窗：只打开并截图，随后按 Esc 关闭，不提交任何表单。
+  const dialog = async (opener, name) => {
+    await page.click(opener);
+    await page.waitForSelector("#dialog[open]");
+    await page.waitForTimeout(600);
+    await shot(page, name, false);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector("#dialog").open);
+  };
+  await dialog("[data-edit]", "modal-node-edit");
+  await dialog("[data-token]", "modal-token-confirm");
   await page.click("[data-tab=tasks]");
   await shot(page, "admin-tasks");
+  await dialog("#add-task", "modal-task-new");
+  if (await page.$("[data-edit-task]")) {
+    await dialog("[data-edit-task]", "modal-task-edit");
+    await dialog("[data-runs-task]", "modal-task-runs");
+    await dialog("[data-bind-task]", "modal-task-bind");
+  }
   await page.click("[data-tab=alerts]");
   await shot(page, "admin-alerts");
+  await dialog("#configure-webhook", "modal-webhook");
   await page.setViewportSize({ width: 390, height: 844 });
   await shot(page, "admin-mobile-alerts");
+  await page.click("[data-tab=tasks]");
+  await dialog("#add-task", "modal-task-new-mobile");
   await page.click("[data-tab=nodes]");
   await shot(page, "admin-mobile");
   await page.click("[data-tab=tasks]");
@@ -135,4 +155,4 @@ if (errors.length) {
   console.error("浏览器错误：\n" + errors.join("\n"));
   process.exit(1);
 }
-console.log(`PASS: 16 张截图写入 ${out}，主题切换与保持正常，无页面脚本错误。请人工查看排版。`);
+console.log(`PASS: 24 张截图写入 ${out}，主题切换与保持正常，无页面脚本错误。请人工查看排版。`);

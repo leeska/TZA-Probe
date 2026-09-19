@@ -1374,8 +1374,19 @@ input[type="checkbox"]:disabled {
     flex-direction: column;
     align-items: flex-start;
   }
+  /* 任务编辑器：搜索占整行，地区/运营商并排；目录两列并加高滚动区 */
   .catalog-filters {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
+  }
+  .catalog-filters > :first-child {
+    grid-column: 1 / -1;
+  }
+  .catalog-results {
+    max-height: 320px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .catalog-option {
+    padding: 8px 6px;
   }
 }
 

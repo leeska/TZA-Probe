@@ -9,7 +9,7 @@ export async function controlTask(id, action, refresh) {
 
 export function bindTasks(tasks, nodes, refresh) {
   const selected = new Set(tasks.length === 1 ? tasks[0].node_ids.filter((id) => nodes.some((n) => n.id === id)) : []);
-  const d = modal("批量绑定节点", `<form><p>为 ${tasks.length} 个任务设置相同的节点列表，将替换原绑定。取消全部选择会停止这些任务的调度。</p><label>搜索节点<input id="node-search" type="search" placeholder="名称 / 分组 / 地区"></label><div><button type="button" id="select-visible">选中筛选结果</button><button type="button" id="clear-nodes">清空选择</button></div><div id="binding-nodes"></div><p id="binding-count"></p><div class="form-footer"><button type="submit" class="primary">保存绑定</button></div></form>`);
+  const d = modal("批量绑定节点", `<form><p>为 ${tasks.length} 个任务设置相同的节点列表，将替换原绑定。取消全部选择会停止这些任务的调度。</p><label>搜索节点<input id="node-search" type="search" placeholder="名称 / 分组 / 地区"></label><div class="catalog-toolbar"><button type="button" id="select-visible">选中筛选结果</button><button type="button" id="clear-nodes">清空选择</button></div><div id="binding-nodes"></div><p id="binding-count"></p><div class="form-footer"><button type="submit" class="primary">保存绑定</button></div></form>`);
   let query = "";
   const matches = () => nodes.filter((n) => [n.name,n.group,n.region].join(" ").toLowerCase().includes(query));
   const render = () => {
@@ -46,7 +46,7 @@ export async function taskRuns(task) {
   const render = async () => {
     const runs = await api(`/admin/tasks/${task.id}/runs`);
     if (!d.open) return;
-    const body = `<p class="hint">显示当前绑定节点各目标的最近一次执行，记录最多保留 7 天。暂停不会取消已领取的探测。</p><button id="refresh-runs">刷新状态</button><div class="table-scroll"><table class="stack"><thead><tr><th>节点</th><th>目标</th><th>最近执行</th><th>结果 / 原因</th></tr></thead><tbody>${runs.map((r) => `<tr><td data-label="节点">${esc(r.node_name)}</td><td data-label="目标">${esc([r.family,r.region,r.carrier,r.host,r.port || ""].filter(Boolean).join(" · "))}<small>${r.kind === "route" ? "回程" : r.kind === "tcp" ? "TCP 延迟" : "尚未领取"}</small></td><td data-label="最近执行">${r.issued ? date(r.issued) : "尚未执行"}<small>${r.finished ? "完成 " + date(r.finished) : ""}</small></td><td data-label="结果 / 原因">${esc(statusName[r.status] || "尚未执行")}<small>${esc(reasonName[r.reason] || r.reason || "")}</small></td></tr>`).join("") || '<tr><td colspan="4">未绑定节点，请先设置节点绑定。</td></tr>'}</tbody></table></div>`;
+    const body = `<p class="hint">显示当前绑定节点各目标的最近一次执行，记录最多保留 7 天。暂停不会取消已领取的探测。</p><div class="catalog-toolbar"><button type="button" id="refresh-runs">↻ 刷新状态</button></div><div class="table-scroll"><table class="stack"><thead><tr><th>节点</th><th>目标</th><th>最近执行</th><th>结果 / 原因</th></tr></thead><tbody>${runs.map((r) => `<tr><td data-label="节点">${esc(r.node_name)}</td><td data-label="目标">${esc([r.family,r.region,r.carrier,r.host,r.port || ""].filter(Boolean).join(" · "))}<small>${r.kind === "route" ? "回程" : r.kind === "tcp" ? "TCP 延迟" : "尚未领取"}</small></td><td data-label="最近执行">${r.issued ? date(r.issued) : "尚未执行"}<small>${r.finished ? "完成 " + date(r.finished) : ""}</small></td><td data-label="结果 / 原因">${esc(statusName[r.status] || "尚未执行")}<small>${esc(reasonName[r.reason] || r.reason || "")}</small></td></tr>`).join("") || '<tr><td colspan="4">未绑定节点，请先设置节点绑定。</td></tr>'}</tbody></table></div>`;
     const head = d.querySelector(".modal-head"); d.replaceChildren(head); d.insertAdjacentHTML("beforeend",body);
     d.querySelector("#refresh-runs").onclick = guard(render);
   };

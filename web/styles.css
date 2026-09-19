@@ -1834,7 +1834,6 @@ pre,
   dialog {
     padding: 20px;
   }
-
   /* 窄屏下把表格行堆叠成“标签 : 值”卡片，避免横向滚动 */
   table.stack thead {
     display: none;
