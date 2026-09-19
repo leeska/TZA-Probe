@@ -77,6 +77,11 @@ async function shot(page, name, fullPage = true) {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click("[data-tab=nodes]");
   await shot(page, "admin-mobile");
+  await page.click("[data-tab=tasks]");
+  await shot(page, "admin-mobile-tasks");
+  // 窄屏表格应堆叠而非横向滚动
+  const overflow = await page.evaluate(() => [...document.querySelectorAll(".table-scroll")].some((el) => el.scrollWidth > el.clientWidth + 1));
+  if (overflow) throw new Error("手机宽度下后台表格仍需横向滚动");
   await ctx.close();
 }
 // 深色主题：公开页与后台各一张，并验证切换按钮循环与刷新后保持。
@@ -115,4 +120,4 @@ if (errors.length) {
   console.error("浏览器错误：\n" + errors.join("\n"));
   process.exit(1);
 }
-console.log(`PASS: 12 张截图写入 ${out}，主题切换与保持正常，无页面脚本错误。请人工查看排版。`);
+console.log(`PASS: 13 张截图写入 ${out}，主题切换与保持正常，无页面脚本错误。请人工查看排版。`);

@@ -1785,7 +1785,38 @@ pre,
     position: static;
     width: 100%;
     height: auto;
-    padding: 16px;
+    padding: 14px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+  }
+  .sidebar .brand {
+    margin-right: auto;
+  }
+  .sidebar-caption,
+  .sidebar-bottom small {
+    display: none;
+  }
+  .sidebar nav {
+    flex-direction: row;
+    width: 100%;
+    gap: 4px;
+  }
+  .sidebar nav button {
+    flex: 1;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 8px;
+    font-size: 13px;
+  }
+  .sidebar-bottom {
+    width: 100%;
+    margin: 0;
+    padding: 0 6px;
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
   }
   .login-layout {
     display: block;
@@ -1802,5 +1833,63 @@ pre,
   }
   dialog {
     padding: 20px;
+  }
+
+  /* 窄屏下把表格行堆叠成“标签 : 值”卡片，避免横向滚动 */
+  table.stack thead {
+    display: none;
+  }
+  table.stack,
+  table.stack tbody {
+    display: block;
+  }
+  table.stack tr {
+    display: block;
+    padding: 12px 16px;
+    border-top: 1px solid var(--line);
+  }
+  table.stack tr:first-child {
+    border-top: 0;
+  }
+  /* 标签占首列并跨行；文本、small 等子项自动落入第二列逐行堆叠 */
+  table.stack td {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    column-gap: 12px;
+    align-items: start;
+    padding: 6px 0;
+    border: 0;
+    white-space: normal;
+    text-align: left;
+  }
+  table.stack td::before {
+    content: attr(data-label);
+    grid-row: 1 / span 8;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    padding-top: 2px;
+  }
+  table.stack td > * {
+    justify-self: start;
+  }
+  table.stack td:first-child {
+    font-weight: 600;
+  }
+  table.stack td small {
+    margin-top: 2px;
+  }
+  table.stack td .row-actions {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  table.stack td.empty-cell {
+    display: block;
+    text-align: center;
+    padding: 24px 0;
+  }
+  table.stack td.empty-cell::before {
+    content: none;
   }
 }
