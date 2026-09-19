@@ -1,3 +1,4 @@
+import { controlTask, bindTasks, taskRuns } from "./task-controls.js";
 import { installationScript } from "./agent-setup.js";
 import { taskEditor, taskSummary } from "./task-editor.js";
 import { api, send, esc, toast, modal, guard } from "./api.js";
@@ -270,7 +271,24 @@ function confirmAction(title, message, action) {
   });
 }
 function renderTasks() {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">NETWORK OBSERVABILITY</div><h1>网络探测<span>${tasks.length}</span></h1><p>每个任务独立配置目标、协议、频率和参与节点。</p></div><button id="add-task" class="primary">＋ 创建任务</button></section><div class="notice"><strong>回程标签由实际路径决定</strong><span>卡片使用节点指定的代表地区。IPv4 / IPv6 独立检测；空节点绑定不会执行。</span></div><section class="panel"><div class="table-scroll"><table><thead><tr><th>任务</th><th>目标</th><th>地区 / 运营商</th><th>间隔</th><th>节点</th><th>操作</th></tr></thead><tbody>${tasks.map((t) => `<tr><td>${esc(t.name)}<small>${t.enabled ? "已启用" : "已停用"} · ${esc(taskSummary(t).checks)}</small></td><td>${taskSummary(t).count} 个地址<small>${esc(taskSummary(t).families)}</small></td><td>${esc(taskSummary(t).targets)}<small></small></td><td>${esc(taskSummary(t).intervals)}</td><td>${t.node_ids?.filter((id) => nodes.some((n) => n.id === id)).length || 0} 个</td><td><div class="row-actions"><button data-edit-task="${t.id}">编辑</button><button class="danger" data-delete-task="${t.id}">删除</button></div></td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">暂无任务。可从内置三网目标目录选择，也可填写自定义目标。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">NETWORK OBSERVABILITY</div><h1>网络探测<span>${tasks.length}</span></h1><p>每个任务独立配置目标、协议、频率和参与节点。</p></div><div class="row-actions"><button id="bind-selected">批量绑定节点</button><button id="add-task" class="primary">＋ 创建任务</button></div></section><div class="notice"><strong>回程标签由实际路径决定</strong><span>卡片使用节点指定的代表地区。IPv4 / IPv6 独立检测；空节点绑定不会执行。</span></div><section class="panel"><div class="table-scroll"><table><thead><tr><th><input id="select-tasks" type="checkbox" aria-label="选择全部任务"></th><th>任务</th><th>目标</th><th>地区 / 运营商</th><th>间隔</th><th>节点</th><th>操作</th></tr></thead><tbody>${tasks.map((t) => `<tr><td><input type="checkbox" data-select-task="${t.id}" aria-label="选择 ${esc(t.name)}"></td><td>${esc(t.name)}<small>${t.enabled ? "已启用" : "已停用"} · ${esc(taskSummary(t).checks)}</small></td><td>${taskSummary(t).count} 个地址<small>${esc(taskSummary(t).families)}</small></td><td>${esc(taskSummary(t).targets)}<small></small></td><td>${esc(taskSummary(t).intervals)}</td><td>${t.node_ids?.filter((id) => nodes.some((n) => n.id === id)).length || 0} 个</td><td><div class="row-actions"><button data-edit-task="${t.id}">编辑</button><button data-control="${t.enabled ? "pause" : "resume"}" data-task="${t.id}">${t.enabled ? "暂停" : "恢复"}</button><button data-control="run" data-task="${t.id}" ${!t.enabled || !t.node_ids?.length ? "disabled" : ""}>立即执行</button><button data-copy-task="${t.id}">复制</button><button data-bind-task="${t.id}">绑定</button><button data-runs-task="${t.id}">执行记录</button><button class="danger" data-delete-task="${t.id}">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">暂无任务。可从内置三网目标目录选择，也可填写自定义目标。</td></tr>'}</tbody></table></div></section>`;
+  content().querySelector("#select-tasks").onchange = (e) => content().querySelectorAll("[data-select-task]").forEach((b) => b.checked = e.target.checked);
+  content().querySelector("#bind-selected").onclick = () => {
+    const ids = new Set([...content().querySelectorAll("[data-select-task]:checked")].map((b) => b.dataset.selectTask));
+    if (!ids.size) { toast("请先选择任务"); return; }
+    bindTasks(tasks.filter((t) => ids.has(t.id)), nodes, render);
+  };
+  content().querySelectorAll("[data-control]").forEach((b) => b.onclick = guard(async () => {
+    b.disabled = true;
+    try { await controlTask(b.dataset.task, b.dataset.control, render); } finally { b.disabled = false; }
+  }));
+  content().querySelectorAll("[data-bind-task]").forEach((b) => b.onclick = () => bindTasks([tasks.find((t) => t.id === b.dataset.bindTask)], nodes, render));
+  content().querySelectorAll("[data-runs-task]").forEach((b) => b.onclick = guard(() => taskRuns(tasks.find((t) => t.id === b.dataset.runsTask))));
+  content().querySelectorAll("[data-copy-task]").forEach((b) => b.onclick = guard(async () => {
+    const copy = structuredClone(tasks.find((t) => t.id === b.dataset.copyTask));
+    delete copy.id; copy.name = copy.name.slice(0, 20) + " 副本"; copy.enabled = false;
+    await taskForm(copy);
+  }));
   content().querySelector("#add-task").onclick = guard(() => taskForm());
   content()
     .querySelectorAll("[data-edit-task]")

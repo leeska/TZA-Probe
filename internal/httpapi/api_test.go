@@ -48,6 +48,14 @@ func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 	if code, _ := request("GET", "/api/v1/admin/nodes", "", nil); code != 401 {
 		t.Fatal(code)
 	}
+	for _, token := range []string{"", model.Secret()} {
+		if code, _ := request("POST", "/api/v1/admin/tasks/example/control", token, model.TaskAction{Action: "run"}); code != 401 {
+			t.Fatal("task control authentication", code)
+		}
+		if code, _ := request("GET", "/api/v1/admin/tasks/example/runs", token, nil); code != 401 {
+			t.Fatal("task history authentication", code)
+		}
+	}
 	node := model.Node{Name: "private", BillingDay: 1, TrafficMode: "sum"}
 	code, data := request("POST", "/api/v1/admin/nodes", admin, node)
 	if code != 200 {

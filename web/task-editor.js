@@ -66,7 +66,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     else selected.set(selectionKey, [target(x)]);
   }
   const d = modal(
-    existing ? "编辑网络任务" : "创建网络任务",
+    existing?.id ? "编辑网络任务" : "创建网络任务",
     `
     <form id="task-form">
       <section class="form-section"><h3>1. 选择目标</h3>
@@ -242,8 +242,8 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         (selected.size > 2 ? " 等" : "")
       ).slice(0, 100);
     await send(
-      "/admin/tasks" + (existing ? "/" + existing.id : ""),
-      existing ? "PUT" : "POST",
+      "/admin/tasks" + (existing?.id ? "/" + existing.id : ""),
+      existing?.id ? "PUT" : "POST",
       {
         name,
         checks,

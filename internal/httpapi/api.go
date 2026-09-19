@@ -23,6 +23,8 @@ import (
 )
 
 type Repository interface {
+	ControlTask(context.Context, string, model.TaskAction, time.Time) error
+	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
 	CorrectTraffic(context.Context, string, int64, int64, time.Time) error
 	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
 	IsPublic(context.Context, string) (bool, error)
@@ -106,6 +108,21 @@ func (a *API) Handler() http.Handler {
 			return
 		}
 		write(w, 200, tasks)
+	}))
+	mux.HandleFunc("POST /api/v1/admin/tasks/{id}/control", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		var v model.TaskAction
+		if !decode(w, r, &v) {
+			return
+		}
+		respond(w, a.Store.ControlTask(r.Context(), r.PathValue("id"), v, time.Now()))
+	}))
+	mux.HandleFunc("GET /api/v1/admin/tasks/{id}/runs", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		out, err := a.Store.TaskRuns(r.Context(), r.PathValue("id"), time.Now())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, out)
 	}))
 	mux.HandleFunc("POST /api/v1/admin/tasks", a.admin(a.saveTask))
 	mux.HandleFunc("PUT /api/v1/admin/tasks/{id}", a.admin(a.saveTask))

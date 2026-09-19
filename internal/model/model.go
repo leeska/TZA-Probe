@@ -363,3 +363,22 @@ type NetworkSeries struct {
 	Carrier string          `json:"carrier"`
 	Samples []NetworkSample `json:"samples"`
 }
+
+type TaskAction struct {
+	Action  string   `json:"action"`
+	NodeIDs []string `json:"node_ids"`
+}
+type TaskRun struct {
+	NodeID   string `json:"node_id"`
+	NodeName string `json:"node_name"`
+	Kind     string `json:"kind"`
+	Family   string `json:"family"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Region   string `json:"region"`
+	Carrier  string `json:"carrier"`
+	Issued   int64  `json:"issued"`
+	Finished int64  `json:"finished"`
+	Status   string `json:"status"`
+	Reason   string `json:"reason"`
+}

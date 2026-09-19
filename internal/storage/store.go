@@ -378,15 +378,17 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, "SELECT t.config FROM bindings b JOIN tasks t ON t.id=b.task_id WHERE b.node_id=? ORDER BY t.id", node)
+	rows, err := tx.QueryContext(ctx, "SELECT t.config,b.due FROM bindings b JOIN tasks t ON t.id=b.task_id WHERE b.node_id=? ORDER BY t.id", node)
 	if err != nil {
 		return nil, err
 	}
 	candidates := []model.Task{}
+	requested := map[string]int64{}
 	for rows.Next() {
 		var data string
 		var t model.Task
-		if err = rows.Scan(&data); err != nil {
+		var requestAt int64
+		if err = rows.Scan(&data, &requestAt); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -394,6 +396,7 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 			rows.Close()
 			return nil, err
 		}
+		requested[t.ID] = requestAt
 		if t.Enabled {
 			candidates = append(candidates, t.Leaves()...)
 		}
@@ -440,6 +443,9 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 	}
 	// Oldest due first prevents starvation when many targets share a node.
 	due := func(t model.Task) int64 {
+		if requested[t.ID] > last[t.ProbeKey()] {
+			return requested[t.ID]
+		}
 		if at, ok := last[t.ProbeKey()]; ok {
 			return at + int64(t.Interval)
 		}
