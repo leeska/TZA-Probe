@@ -1,3 +1,5 @@
+import { esc, modal, guard, toast } from "./api.js";
+
 // Generates an offline installation script. No downloads or remote shell execution.
 export function installationScript(config) {
   const json = JSON.stringify(config, null, 2);
@@ -37,4 +39,36 @@ systemctl enable tza-agent
 systemctl restart tza-agent
 systemctl --no-pager status tza-agent
 `;
+}
+
+export function showToken(token) {
+  const config = {
+    endpoint: location.origin,
+    token,
+    interfaces: [],
+    mount: "/",
+    nexttrace: "",
+    allow_http: location.protocol === "http:",
+  };
+  const d = modal(
+    "节点接入配置",
+    `<p>密钥仅在此处显示。将配置保存到 Agent 主机，文件权限设为 600。</p><pre id="agent-config">${esc(JSON.stringify(config, null, 2))}</pre><p class="hint">填写需要统计的公网网卡；三网回程需安装 NextTrace 并填写其绝对路径。生产环境使用 HTTPS。</p><p class="hint">Linux systemd：将对应架构的 tza-agent 与安装脚本放在同一目录，先按需修改脚本中的网卡和 NextTrace 路径，再执行下方命令。脚本包含密钥，请私密保存，安装后删除。</p><pre>sudo sh install-agent.sh</pre><div class="form-footer"><button id="download-install">下载安装脚本</button><button id="copy-config">复制配置</button><button id="download-config" class="primary">下载 agent.json</button></div>`,
+  );
+  d.querySelector("#download-install").onclick = () =>
+    download("install-agent.sh", installationScript(config), "text/plain");
+  d.querySelector("#copy-config").onclick = guard(async () => {
+    await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+    toast("配置已复制");
+  });
+  d.querySelector("#download-config").onclick = () =>
+    download("agent.json", JSON.stringify(config, null, 2), "application/json");
+}
+
+function download(filename, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
