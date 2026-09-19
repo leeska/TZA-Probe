@@ -102,5 +102,5 @@ node scripts/ui-smoke.mjs
 - 节点、任务、事件三张后台表和任务执行记录表加 `class="stack"`，每个单元格带 `data-label`。≤760px 时表头隐藏，每行堆叠为“标签 : 值”卡片：标签占首列并跨行，文本、`small`、徽标、操作链接自动落入第二列逐行排列，不再需要横向滚动即可看到操作列。桌面宽度下样式不变。
 - 手机宽度下后台侧栏由约 360px 的纵向块压缩为约 150px：品牌一行、三个导航按钮等宽横排、底部链接与主题按钮横排，隐藏 WORKSPACE 标题和版本小字。
 - `scripts/visual-check.mjs` 新增手机宽度任务页截图，并断言所有 `.table-scroll` 在 390px 宽度下 `scrollWidth` 不超过 `clientWidth`。13 张截图通过；DOM 集成检查与图表测试通过。
-- 修正过程记录：单元格最初用 flex 布局，`td small`（`display:block`）变成横排的 flex 项把主机名和副标题挤在一行；改为 grid 后解决，并用 `justify-self: start` 防止徽标被拉伸到整��。
+- 修正过程记录：单元格最初用 flex 布局，`td small`（`display:block`）变成横排的 flex 项把主机名和副标题挤在一行；改为 grid 后解决，并用 `justify-self: start` 防止徽标被拉伸到整行。
 
