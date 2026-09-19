@@ -104,3 +104,9 @@ node scripts/ui-smoke.mjs
 - `scripts/visual-check.mjs` 新增手机宽度任务页截图，并断言所有 `.table-scroll` 在 390px 宽度下 `scrollWidth` 不超过 `clientWidth`。13 张截图通过；DOM 集成检查与图表测试通过。
 - 修正过程记录：单元格最初用 flex 布局，`td small`（`display:block`）变成横排的 flex 项把主机名和副标题挤在一行；改为 grid 后解决，并用 `justify-self: start` 防止徽标被拉伸到整行。
 
+## 2026-09-19 减少透明度回退
+
+- `scripts/visual-check.mjs` 通过 CDP `Emulation.setEmulatedMedia` 模拟 `prefers-reduced-transparency: reduce`，浅色与深色主题各截一张公开页，并断言 `matchMedia` 命中且节点卡片的 `backdrop-filter` 计算值为 `none`。
+- 两种主题下头部、概览格、工具条、节点卡片均退化为不透明面板，文字对比度不依赖背景模糊；卡片内部的次级半透明块位于不透明面板之上，不影响可读性。15 张截图通过。
+- 本��临时环境的 loopback TCP 任务已有结果，卡片显示 `TCP 延迟 0 ms · 连接失败率 0.0%`，验证了公开卡片的 TCP 汇总渲染路径。
+

@@ -114,10 +114,24 @@ async function shot(page, name, fullPage = true) {
   await shot(page, "admin-detail-dark", false);
   await ctx.close();
 }
+// 减少透明度偏好：玻璃层应退化为不透明面板，文字对比度不依赖背景模糊。
+for (const theme of ["light", "dark"]) {
+  const { ctx, page } = await open({ width: 1440, height: 1000 }, theme);
+  const cdp = await ctx.newCDPSession(page);
+  await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
+  await page.goto(base + "/");
+  await page.waitForSelector(".node-card");
+  const matched = await page.evaluate(() => matchMedia("(prefers-reduced-transparency: reduce)").matches);
+  if (!matched) throw new Error("浏览器未应用 prefers-reduced-transparency 模拟");
+  const blurred = await page.evaluate(() => getComputedStyle(document.querySelector(".node-card")).backdropFilter);
+  if (blurred && blurred !== "none") throw new Error("减少透明度下节点卡片仍有 backdrop-filter: " + blurred);
+  await shot(page, `public-reduced-${theme}`);
+  await ctx.close();
+}
 await browser.close();
 
 if (errors.length) {
   console.error("浏览器错误：\n" + errors.join("\n"));
   process.exit(1);
 }
-console.log(`PASS: 13 张截图写入 ${out}，主题切换与保持正常，无页面脚本错误。请人工查看排版。`);
+console.log(`PASS: 15 张截图写入 ${out}，主题切换与保持正常，无页面脚本错误。请人工查看排版。`);
