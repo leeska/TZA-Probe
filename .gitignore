@@ -9,3 +9,4 @@ coverage.out
 
 __pycache__/
 *.pyc
+gui-test-screenshots/
