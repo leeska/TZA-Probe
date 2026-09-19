@@ -116,3 +116,57 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 		t.Fatal("disabled rules did not clear state", events)
 	}
 }
+
+func TestOfflineGraceAndRecovery(t *testing.T) {
+	ctx := context.Background()
+	s, err := storage.Open(filepath.Join(t.TempDir(), "offline.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	token, err := s.SaveNode(ctx, model.Node{Name: "grace", BillingDay: 1, TrafficMode: "sum", Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Authenticate(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	m := model.Metrics{MemoryTotal: 100}
+	if err = s.Report(ctx, id, m, now); err != nil {
+		t.Fatal(err)
+	}
+	engine := Engine{Repository: s}
+	for _, sec := range []int{60, 90, 119} {
+		if err = engine.Tick(ctx, now.Add(time.Duration(sec)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, _ := s.Events(ctx, false, now)
+	if len(events) != 0 {
+		t.Fatal("alert during grace")
+	}
+	for _, sec := range []int{120, 135} {
+		if err = engine.Tick(ctx, now.Add(time.Duration(sec)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, _ = s.Events(ctx, false, now)
+	if len(events) != 1 || !events[0].Active {
+		t.Fatal(events)
+	}
+	if err = s.Report(ctx, id, m, now.Add(140*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err = engine.Tick(ctx, now.Add(140*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err = engine.Tick(ctx, now.Add(150*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	events, _ = s.Events(ctx, false, now)
+	if len(events) != 2 || events[0].Active {
+		t.Fatal("recovery must occur once", events)
+	}
+}

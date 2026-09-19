@@ -23,6 +23,8 @@ const Protocol = 1
 const OfflineAfter = 45 * time.Second
 
 type Alerts struct {
+	OfflineSeconds int     `json:"offline_seconds"`
+	RepeatSeconds  int     `json:"repeat_seconds"`
 	Offline        bool    `json:"offline"`
 	Renewal        bool    `json:"renewal"`
 	RenewalDays    int     `json:"renewal_days"`
@@ -34,22 +36,24 @@ type Alerts struct {
 	HoldSeconds    int     `json:"hold_seconds"`
 }
 type Node struct {
-	ID             string  `json:"id"`
-	Name           string  `json:"name"`
-	Group          string  `json:"group"`
-	Region         string  `json:"region"`
-	Order          int     `json:"order"`
-	Public         bool    `json:"public"`
-	Representative string  `json:"representative"`
-	TrafficLimit   int64   `json:"traffic_limit"`
-	TrafficMode    string  `json:"traffic_mode"`
-	BillingDay     int     `json:"billing_day"`
-	Price          float64 `json:"price"`
-	Currency       string  `json:"currency"`
-	PricePeriod    string  `json:"price_period"`
-	ExpiresAt      string  `json:"expires_at"`
-	Alerts         Alerts  `json:"alerts"`
-	CreatedAt      int64   `json:"created_at"`
+	TrafficAdjustment int64   `json:"traffic_adjustment"`
+	AdjustmentCycle   int64   `json:"adjustment_cycle"`
+	ID                string  `json:"id"`
+	Name              string  `json:"name"`
+	Group             string  `json:"group"`
+	Region            string  `json:"region"`
+	Order             int     `json:"order"`
+	Public            bool    `json:"public"`
+	Representative    string  `json:"representative"`
+	TrafficLimit      int64   `json:"traffic_limit"`
+	TrafficMode       string  `json:"traffic_mode"`
+	BillingDay        int     `json:"billing_day"`
+	Price             float64 `json:"price"`
+	Currency          string  `json:"currency"`
+	PricePeriod       string  `json:"price_period"`
+	ExpiresAt         string  `json:"expires_at"`
+	Alerts            Alerts  `json:"alerts"`
+	CreatedAt         int64   `json:"created_at"`
 }
 
 func (n Node) Validate() error {
@@ -68,6 +72,9 @@ func (n Node) Validate() error {
 		}
 	}
 	a := n.Alerts
+	if a.OfflineSeconds < 0 || a.OfflineSeconds > 86400 || a.RepeatSeconds < 0 || a.RepeatSeconds > 604800 || (a.RepeatSeconds > 0 && a.RepeatSeconds < 300) || n.TrafficAdjustment < -1e16 || n.TrafficAdjustment > 1e16 {
+		return errors.New("离线等待须为 0–86400 秒，重复间隔为 0 或 300–604800 秒，用量校正超出范围")
+	}
 	if a.RenewalDays < 0 || a.RenewalDays > 365 || !percent(a.TrafficPercent) || !percent(a.CPUPercent) || !percent(a.MemoryPercent) || a.HoldSeconds < 0 || a.HoldSeconds > 86400 {
 		return errors.New("告警阈值须在 0–100，持续时间须在 0–86400 秒")
 	}
@@ -292,6 +299,7 @@ type Observation struct {
 	Stale  bool   `json:"stale"`
 }
 type Event struct {
+	LastError string `json:"last_error"`
 	ID        int64  `json:"id"`
 	NodeID    string `json:"node_id"`
 	NodeName  string `json:"node_name"`
@@ -339,4 +347,19 @@ func Traffic(in, out int64, mode string) int64 {
 	default:
 		return in + out
 	}
+}
+
+type NetworkSample struct {
+	At      int64    `json:"at"`
+	Latency *float64 `json:"latency"`
+	Failure *float64 `json:"failure"`
+}
+type NetworkSeries struct {
+	Name    string          `json:"name"`
+	Family  string          `json:"family"`
+	Host    string          `json:"host"`
+	Port    int             `json:"port"`
+	Region  string          `json:"region"`
+	Carrier string          `json:"carrier"`
+	Samples []NetworkSample `json:"samples"`
 }

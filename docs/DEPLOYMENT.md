@@ -58,3 +58,9 @@ docker run -d --name tza-server --restart unless-stopped \
 最简单可靠的方式是**停止 Server 后**复制整个数据目录，再启动服务。不能只复制运行中的 `tza-v2.db`；WAL 中可能有未合并事务。如果以后需要不停机备份，可单独实现 SQLite Backup API 适配器，不能用文件复制替代。
 
 备份包含管理密钥和 Webhook 地址，应维持私有权限。恢复演练应在单独目录和端口进行，避免旧版或生产库被意外打开。
+
+## 后台生成 Agent 安装脚本
+
+添加节点或更换节点密钥后，接入窗口可下载配置及 `install-agent.sh`。将自行构建的、与目标 Linux 架构相符的 `tza-agent` 二进制和脚本放在同一目录，按需修改脚本内网卡、挂载点和 NextTrace 绝对路径，然后运行 `sudo sh install-agent.sh`。脚本安装本地二进制、私有配置与 systemd 服务，不下载程序、不从服务端接收任意命令。
+
+脚本包含节点密钥，安装后删除副本。生产环境接入地址使用 HTTPS；从 HTTP 面板生成的配置会显式开启 HTTP，部署到公网前应改为 HTTPS 并关闭 `allow_http`。NextTrace 仍需单独安装。后台节点列表显示 Agent 版本、架构和最后上报时间。

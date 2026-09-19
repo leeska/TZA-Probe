@@ -1,3 +1,4 @@
+import { installationScript } from "./agent-setup.js";
 import { taskEditor, taskSummary } from "./task-editor.js";
 import { api, send, esc, toast, modal, guard } from "./api.js";
 import { bytes, date, days, kindName } from "./format.js";
@@ -24,6 +25,8 @@ const defaults = {
   expires_at: "",
   alerts: {
     offline: false,
+    offline_seconds: 60,
+    repeat_seconds: 0,
     renewal: false,
     renewal_days: 7,
     traffic: false,
@@ -96,7 +99,18 @@ async function render() {
 }
 const content = () => container.querySelector("#admin-content");
 function renderNodes() {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${nodes.filter((n) => n.expires_at && days(n.expires_at) <= 7).length}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table><thead><tr><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${nodes.map((n) => `<tr><td><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 代表地区 ${esc(n.representative || "未设置")}</small></td><td><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span></td><td>${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td>${bytes(n.traffic_used)}<small>${n.traffic_limit ? "/ " + bytes(n.traffic_limit) : "未设置额度"}</small></td><td>${n.expires_at ? esc(n.expires_at.slice(0, 10)) : "—"}</td><td><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}">接入</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${nodes.filter((n) => n.expires_at && days(n.expires_at) <= 7).length}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table><thead><tr><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${nodes.map((n) => `<tr><td><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 代表地区 ${esc(n.representative || "未设置")}</small></td><td><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><small>Agent ${esc(n.metrics?.version || "未接入")} · ${esc(n.metrics?.arch || "")}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td>${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td>${bytes(n.traffic_used)}<small>${n.traffic_limit ? "/ " + bytes(n.traffic_limit) : "未设置额度"}</small></td><td>${n.expires_at ? esc(n.expires_at.slice(0, 10)) : "—"}</td><td><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}">接入</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
+  content().querySelectorAll("[data-billing]").forEach((b) => {
+    b.onclick = () => {
+      const n = nodes.find((x) => x.id === b.dataset.billing);
+      const d = modal("校正本周期用量", `<form><p>将当前周期总用量校正为指定值；后续采集继续累加，下个周期自动失效。</p>${field("实际已用流量（GB）", "used", n.traffic_used / 1e9, "number", 'min="0" max="10000000" step="any" required')}<p class="hint">当前周期：${date(n.cycle_start)} — ${date(n.cycle_end)}。修改计费方向或重置日会清除校正。</p><div class="form-footer"><button class="primary" type="submit">保存校正</button></div></form>`);
+      d.querySelector("form").onsubmit = guard(async (e) => {
+        e.preventDefault();
+        await send(`/admin/nodes/${n.id}/traffic`, "POST", {used: Math.round(Number(new FormData(e.target).get("used")) * 1e9), cycle: n.cycle_start});
+        d.close(); await render(); toast("周期用量已校正");
+      });
+    };
+  });
   content().querySelector("#add-node").onclick = () => nodeForm();
   content().querySelector("#refresh-nodes").onclick = guard(render);
   content()
@@ -165,7 +179,7 @@ function nodeForm(existing) {
         ["out", "仅上传"],
       ],
       n.traffic_mode,
-    )}${field("每月重置日（UTC）", "billing_day", n.billing_day, "number", 'min="1" max="31" required')}${field("价格", "price", n.price, "number", 'min="0" step="0.01"')}${field("货币", "currency", n.currency, "text", 'maxlength="12"')}${field("价格周期", "price_period", n.price_period, "text", 'maxlength="30"')}${field("到期日期（UTC 当日 00:00）", "expires", n.expires_at?.slice(0, 10) || "", "date")}</div><p class="hint">月底不足指定日期时取当月最后一天。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费", "renewal_days", a.renewal_days, "number", 'min="0" max="365"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比", "traffic_percent", a.traffic_percent, "number", 'min="1" max="100"')}</div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %", "cpu_percent", a.cpu_percent, "number", 'min="1" max="100"')}${field("内存阈值 %", "memory_percent", a.memory_percent, "number", 'min="1" max="100"')}${field("负载持续秒数", "hold_seconds", a.hold_seconds, "number", 'min="30" max="86400"')}</div></div><p class="hint">触发和恢复各记录一次。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+    )}${field("每月重置日（UTC）", "billing_day", n.billing_day, "number", 'min="1" max="31" required')}${field("价格", "price", n.price, "number", 'min="0" step="0.01"')}${field("货币", "currency", n.currency, "text", 'maxlength="12"')}${field("价格周期", "price_period", n.price_period, "text", 'maxlength="30"')}${field("到期日期（UTC 当日 00:00）", "expires", n.expires_at?.slice(0, 10) || "", "date")}</div><p class="hint">月底不足指定日期时取当月最后一天。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数", "offline_seconds", a.offline_seconds || 0, "number", 'min="0" max="86400"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费", "renewal_days", a.renewal_days, "number", 'min="0" max="365"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比", "traffic_percent", a.traffic_percent, "number", 'min="1" max="100"')}</div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %", "cpu_percent", a.cpu_percent, "number", 'min="1" max="100"')}${field("内存阈值 %", "memory_percent", a.memory_percent, "number", 'min="1" max="100"')}${field("负载持续秒数", "hold_seconds", a.hold_seconds, "number", 'min="30" max="86400"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5"')}<p class="hint">45 秒未上报判定离线，再按设置等待后通知；恢复通知一次。重复间隔至少 5 分钟。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
   d.querySelector("form").onsubmit = guard(async (e) => {
     e.preventDefault();
@@ -189,6 +203,8 @@ function nodeForm(existing) {
       expires_at: get("expires") ? get("expires") + "T00:00:00Z" : "",
       alerts: {
         offline: f.has("offline"),
+        offline_seconds: num("offline_seconds"),
+        repeat_seconds: num("repeat_minutes") * 60,
         renewal: f.has("renewal"),
         renewal_days: num("renewal_days"),
         traffic: f.has("traffic"),
@@ -217,12 +233,17 @@ function showToken(token) {
     interfaces: [],
     mount: "/",
     nexttrace: "",
-    allow_http: false,
+    allow_http: location.protocol === "http:",
   };
   const d = modal(
     "节点接入配置",
-    `<p>密钥仅在此处显示。将配置保存到 Agent 主机，文件权限设为 600。</p><pre id="agent-config">${esc(JSON.stringify(config, null, 2))}</pre><p class="hint">填写需要统计的公网网卡；三网回程需安装 NextTrace 并填写其绝对路径。生产环境使用 HTTPS。</p><div class="form-footer"><button id="copy-config">复制配置</button><button id="download-config" class="primary">下载 agent.json</button></div>`,
+    `<p>密钥仅在此处显示。将配置保存到 Agent 主机，文件权限设为 600。</p><pre id="agent-config">${esc(JSON.stringify(config, null, 2))}</pre><p class="hint">填写需要统计的公网网卡；三网回程需安装 NextTrace 并填写其绝对路径。生产环境使用 HTTPS。</p><p class="hint">Linux systemd：将对应架构的 tza-agent 与安装脚本放在同一目录，先按需修改脚本中的网卡和 NextTrace 路径，再执行下方命令。脚本包含密钥，请私密保存，安装后删除。</p><pre>sudo sh install-agent.sh</pre><div class="form-footer"><button id="download-install">下载安装脚本</button><button id="copy-config">复制配置</button><button id="download-config" class="primary">下载 agent.json</button></div>`,
   );
+  d.querySelector("#download-install").onclick = () => {
+    const url = URL.createObjectURL(new Blob([installationScript(config)], {type: "text/plain"}));
+    const link = document.createElement("a"); link.href = url; link.download = "install-agent.sh"; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   d.querySelector("#copy-config").onclick = guard(async () => {
     await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
     toast("配置已复制");
@@ -290,7 +311,7 @@ async function renderAlerts() {
     : settings.webhook_configured
       ? "Webhook"
       : "尚未配置";
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>按节点配置提醒阈值，在这里管理统一通知出口和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section><section class="panel"><div class="panel-head"><h3>最近事件</h3><span class="muted">最多 100 条 · 保存 90 天</span></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody>${events.map((e) => `<tr><td>${date(e.at)}</td><td>${esc(e.node_name)}</td><td>${esc(kindName[e.kind] || e.kind)}</td><td><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td>${esc(e.message)}</td><td>${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : configured ? "待发送 / 重试" : "未配置出口"}<small>${e.attempts} 次尝试</small></td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">暂无事件。提醒规则可在节点编辑页单独开启。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>按节点配置提醒阈值，在这里管理统一通知出口和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section><section class="panel"><div class="panel-head"><h3>最近事件</h3><span class="muted">最多 100 条 · 保存 90 天</span></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody>${events.map((e) => `<tr><td>${date(e.at)}</td><td>${esc(e.node_name)}</td><td>${esc(kindName[e.kind] || e.kind)}</td><td><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td>${esc(e.message)}</td><td>${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : configured ? "待发送 / 重试" : "未配置出口"}<small>${e.attempts} 次尝试</small>${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">暂无事件。提醒规则可在节点编辑页单独开启。</td></tr>'}</tbody></table></div></section>`;
   content().querySelector("#refresh-events").onclick = guard(renderAlerts);
   content().querySelector("#test-webhook").onclick = guard(async () => {
     await send("/admin/settings/test", "POST");

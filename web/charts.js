@@ -1,9 +1,18 @@
 import { esc } from "./api.js";
+import { bytes } from "./format.js";
 
 export function chart(samples, key, label, color = "teal", hours = 24) {
   if (samples.length < 2)
     return `<div class="chart-empty">${esc(label)} · 历史样本不足，采样后自动显示</div>`;
 
+  const valueOf = (sample) => key === "memory"
+    ? (sample.metrics.memory_used / sample.metrics.memory_total) * 100
+    : sample.metrics[key];
+  const percent = ["cpu", "memory", "failure"].includes(key);
+  const values = samples.map(valueOf).filter((v) => v != null && Number.isFinite(v));
+  if (!values.length) return `<div class="chart-empty">${esc(label)} · 暂无有效样本</div>`;
+  const ceiling = percent ? 100 : Math.max(1, ...values);
+  const scaleLabel = percent ? "100%" : key.startsWith("rate_") ? bytes(ceiling) + "/s" : ceiling.toFixed(1) + " ms";
   const first = samples[0].at;
   const span = Math.max(1, samples.at(-1).at - first);
   const step = Math.max(60, (hours * 3600) / 240);
@@ -11,21 +20,19 @@ export function chart(samples, key, label, color = "teal", hours = 24) {
   let previous;
 
   for (const sample of samples) {
-    const value =
-      key === "memory"
-        ? (sample.metrics.memory_used / sample.metrics.memory_total) * 100
-        : sample.metrics[key];
+    const value = valueOf(sample);
+    if (value == null || !Number.isFinite(value)) { segments.push([]); previous = sample.at; continue; }
     if (previous !== undefined && sample.at - previous > step * 2)
       segments.push([]);
     segments
       .at(-1)
       .push(
-        `${(((sample.at - first) / span) * 680).toFixed(1)},${(110 - Math.min(100, Math.max(0, value)) * 1.02).toFixed(1)}`,
+        `${(((sample.at - first) / span) * 680).toFixed(1)},${(110 - Math.min(ceiling, Math.max(0, value)) / ceiling * 102).toFixed(1)}`,
       );
     previous = sample.at;
   }
 
-  const gradId = `chart-grad-${color}`;
+  const gradId = `chart-grad-${key}-${color}`;
   const gradColor = color === "orange" ? "#ff9500" : "#007aff";
 
   const renderedSegments = segments
@@ -45,7 +52,7 @@ export function chart(samples, key, label, color = "teal", hours = 24) {
     <figure class="chart">
       <figcaption>
         <strong>${esc(label)}</strong>
-        <span>0–100% · ${samples.length} 个历史采样 · 自动聚合</span>
+        <span>0–${esc(scaleLabel)} · ${samples.length} 个历史采样 · 自动聚合</span>
       </figcaption>
       <svg viewBox="0 0 680 120" role="img" aria-label="${esc(label)}历史曲线">
         <defs>

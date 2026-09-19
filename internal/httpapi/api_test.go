@@ -61,7 +61,7 @@ func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 	if code, data = request("GET", "/api/v1/nodes", "", nil); code != 200 || strings.Contains(string(data), "private") {
 		t.Fatal("private node leaked", code, string(data))
 	}
-	for _, suffix := range []string{"history", "observations"} {
+	for _, suffix := range []string{"history", "observations", "network-history"} {
 		if code, _ = request("GET", "/api/v1/nodes/"+id+"/"+suffix, "", nil); code != 404 {
 			t.Fatal("private detail leaked", code)
 		}

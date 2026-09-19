@@ -53,7 +53,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 1 {
+	if version > 2 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -70,6 +70,12 @@ func Open(path string) (*Store, error) {
 		}
 		_, err = db.Exec(schema)
 		if err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 2 {
+		if _, err = db.Exec("BEGIN; ALTER TABLE events ADD COLUMN last_error TEXT NOT NULL DEFAULT ''; CREATE INDEX events_rule_time ON events(node_id,kind,at); PRAGMA user_version=2; COMMIT;"); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -143,6 +149,9 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 			return nil, err
 		}
 		v.TrafficUsed = model.Traffic(in, out, v.TrafficMode)
+		if v.AdjustmentCycle == v.CycleStart {
+			v.TrafficUsed = max(0, v.TrafficUsed+v.TrafficAdjustment)
+		}
 	}
 	return views, nil
 }
@@ -153,6 +162,8 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if create {
+		n.TrafficAdjustment = 0
+		n.AdjustmentCycle = 0
 		n.ID = model.Secret()[:16]
 		n.CreatedAt = time.Now().Unix()
 		token := model.Secret()
@@ -170,6 +181,12 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 		return "", err
 	}
 	n.CreatedAt = prior.CreatedAt
+	n.TrafficAdjustment = prior.TrafficAdjustment
+	n.AdjustmentCycle = prior.AdjustmentCycle
+	if n.BillingDay != prior.BillingDay || n.TrafficMode != prior.TrafficMode {
+		n.TrafficAdjustment = 0
+		n.AdjustmentCycle = 0
+	}
 	_, err := s.db.ExecContext(ctx, "UPDATE nodes SET config=? WHERE id=?", encode(n), n.ID)
 	return "", err
 }
@@ -555,7 +572,15 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind, message stri
 	if _, err = tx.ExecContext(ctx, "INSERT INTO alert_state VALUES(?,?,?,?) ON CONFLICT(node_id,kind) DO UPDATE SET since=excluded.since,active=excluded.active", n.ID, kind, since, active); err != nil {
 		return err
 	}
-	if active != previous {
+	repeat := false
+	if active && previous && n.Alerts.RepeatSeconds > 0 {
+		var last int64
+		if err = tx.QueryRowContext(ctx, "SELECT coalesce(max(at),0) FROM events WHERE node_id=? AND kind=?", n.ID, kind).Scan(&last); err != nil {
+			return err
+		}
+		repeat = now.Unix()-last >= int64(n.Alerts.RepeatSeconds)
+	}
+	if active != previous || repeat {
 		if !active {
 			message = "条件已解除或提醒已关闭"
 		}
@@ -576,7 +601,7 @@ func (s *Store) Events(ctx context.Context, pending bool, now time.Time) ([]mode
 	if pending {
 		args = append(args, now.Unix())
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts FROM events "+where+" ORDER BY id "+order+" LIMIT 100", args...)
+	rows, err := s.db.QueryContext(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts,last_error FROM events "+where+" ORDER BY id "+order+" LIMIT 100", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +609,7 @@ func (s *Store) Events(ctx context.Context, pending bool, now time.Time) ([]mode
 	out := []model.Event{}
 	for rows.Next() {
 		var e model.Event
-		if err = rows.Scan(&e.ID, &e.NodeID, &e.NodeName, &e.Kind, &e.Message, &e.Active, &e.At, &e.Delivered, &e.Attempts); err != nil {
+		if err = rows.Scan(&e.ID, &e.NodeID, &e.NodeName, &e.Kind, &e.Message, &e.Active, &e.At, &e.Delivered, &e.Attempts, &e.LastError); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -592,7 +617,7 @@ func (s *Store) Events(ctx context.Context, pending bool, now time.Time) ([]mode
 	return out, rows.Err()
 }
 func (s *Store) Delivery(ctx context.Context, e model.Event, ok bool, now time.Time) error {
-	_, err := s.db.ExecContext(ctx, "UPDATE events SET delivered=?,attempts=attempts+1,next_attempt=? WHERE id=?", ok, now.Add(time.Duration(min(3600, 30*(1<<min(e.Attempts, 7))))*time.Second).Unix(), e.ID)
+	_, err := s.db.ExecContext(ctx, "UPDATE events SET delivered=?,last_error=?,attempts=attempts+1,next_attempt=? WHERE id=?", ok, e.LastError, now.Add(time.Duration(min(3600, 30*(1<<min(e.Attempts, 7))))*time.Second).Unix(), e.ID)
 	return err
 }
 

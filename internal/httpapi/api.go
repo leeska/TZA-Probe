@@ -23,6 +23,8 @@ import (
 )
 
 type Repository interface {
+	CorrectTraffic(context.Context, string, int64, int64, time.Time) error
+	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
 	IsPublic(context.Context, string) (bool, error)
 	Nodes(context.Context, time.Time) ([]model.NodeView, error)
 	SaveNode(context.Context, model.Node, bool) (string, error)
@@ -71,12 +73,23 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/session", a.admin(func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]bool{"authenticated": true}) }))
 	mux.HandleFunc("GET /api/v1/nodes", a.nodes)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/history", a.history)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/network-history", a.networkHistory)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/observations", a.observations)
 	mux.HandleFunc("GET /api/v1/admin/nodes", a.admin(a.nodes))
 	mux.HandleFunc("POST /api/v1/admin/nodes", a.admin(a.saveNode))
 	mux.HandleFunc("PUT /api/v1/admin/nodes/{id}", a.admin(a.saveNode))
 	mux.HandleFunc("DELETE /api/v1/admin/nodes/{id}", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		respond(w, a.Store.DeleteNode(r.Context(), r.PathValue("id")))
+	}))
+	mux.HandleFunc("POST /api/v1/admin/nodes/{id}/traffic", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			Used  int64 `json:"used"`
+			Cycle int64 `json:"cycle"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		respond(w, a.Store.CorrectTraffic(r.Context(), r.PathValue("id"), v.Used, v.Cycle, time.Now()))
 	}))
 	mux.HandleFunc("POST /api/v1/admin/nodes/{id}/token", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		token, err := a.Store.Rotate(r.Context(), r.PathValue("id"))
@@ -470,4 +483,21 @@ func write(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("response write failed")
 	}
+}
+
+func (a *API) networkHistory(w http.ResponseWriter, r *http.Request) {
+	if !a.visible(r) {
+		write(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	hours, _ := strconv.Atoi(r.URL.Query().Get("hours"))
+	if hours == 0 {
+		hours = 24
+	}
+	out, err := a.Store.NetworkHistory(r.Context(), r.PathValue("id"), hours, time.Now())
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	write(w, 200, out)
 }
