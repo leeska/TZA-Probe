@@ -90,8 +90,10 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         <div id="selected-targets" class="selected-targets"></div>
       </section>
       <section class="form-section"><h3>2. 检测内容</h3>
-        <div class="task-options">${checkbox("TCP 延迟", "tcp", checks.includes("tcp"))}${checkbox("三网 / 海外回程", "route", checks.includes("route"))}</div>
-        <div class="task-options">${checkbox("IPv4", "ipv4", families.has("ipv4"))}${checkbox("IPv6", "ipv6", families.has("ipv6"))}</div>
+        <div class="option-groups">
+          <div class="option-group"><span class="option-label">检测类型</span><div class="option-tiles">${checkbox("TCP 延迟", "tcp", checks.includes("tcp"))}${checkbox("三网 / 海外回程", "route", checks.includes("route"))}</div></div>
+          <div class="option-group"><span class="option-label">IP 协议</span><div class="option-tiles">${checkbox("IPv4", "ipv4", families.has("ipv4"))}${checkbox("IPv6", "ipv6", families.has("ipv6"))}</div></div>
+        </div>
         <details><summary>检测频率</summary><div class="form-grid">
           <label>延迟间隔（秒）<input name="interval" type="number" min="30" max="86400" value="${t.kind === "route" ? 60 : t.interval}"></label>
           <label>回程间隔（秒）<input name="route_interval" type="number" min="900" max="86400" value="${t.route_interval || (t.kind === "route" ? t.interval : 3600)}"></label>
@@ -102,8 +104,9 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         <div class="node-checkboxes">${nodes.map((n) => checkbox(n.name, "node:" + n.id, t.node_ids?.includes(n.id))).join("") || "<p>请先创建节点</p>"}</div>
         <p class="hint">空选表示不执行；每台节点最多同时执行一个延迟和一个回程检测，多目标依次排队。</p>
       </section>
-      <label>任务名称<input name="name" maxlength="100" value="${esc(t.name || "")}" placeholder="留空自动命名"></label>
-      ${checkbox("启用任务", "enabled", t.enabled)}
+      <section class="form-section"><h3>4. 任务设置</h3>
+        <div class="form-grid task-meta"><label>任务名称<input name="name" maxlength="100" value="${esc(t.name || "")}" placeholder="留空自动命名" autocomplete="off"></label><div class="option-tiles">${checkbox("启用任务", "enabled", t.enabled)}</div></div>
+      </section>
       <p id="task-summary" class="notice" aria-live="polite"></p>
       <div class="form-footer"><button type="submit" class="primary">保存任务</button></div>
     </form>`,

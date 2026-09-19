@@ -1303,6 +1303,7 @@ label.checkbox {
 
 .catalog-option {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -1339,17 +1340,64 @@ label.checkbox {
   color: var(--muted);
 }
 
-.task-options {
+/* 任务编辑器：带标题的选项组，每个选项是等高的可点击方块 */
+.option-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.option-group {
   display: flex;
-  gap: 24px;
-  align-items: center;
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.option-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.option-tiles {
+  display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+}
+
+.option-tiles label.checkbox,
+.node-checkboxes label.checkbox {
+  min-height: 40px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  font-size: 13px;
+  color: var(--ink);
+  transition: all 0.16s ease;
+}
+
+.option-tiles label.checkbox:hover,
+.node-checkboxes label.checkbox:hover {
+  border-color: var(--accent);
+}
+
+.option-tiles label.checkbox:has(input:checked),
+.node-checkboxes label.checkbox:has(input:checked) {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.task-meta .option-tiles {
+  align-self: end;
 }
 
 .node-checkboxes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px;
   max-height: 160px;
   overflow-y: auto;
@@ -1358,6 +1406,13 @@ label.checkbox {
   padding: 10px;
   background: rgba(0, 0, 0, 0.02);
   margin-bottom: 12px;
+}
+
+.node-checkboxes > p {
+  grid-column: 1 / -1;
+  margin: 4px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .selected-targets {

@@ -1040,17 +1040,33 @@ tbody tr:hover {
   color: var(--muted);
 }
 
-.task-options {
-  display: flex;
-  gap: 24px;
-  align-items: center;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
+.option-tiles label.checkbox,
+.node-checkboxes label.checkbox {
+  background: var(--glass-bg);
+  border-color: var(--glass-border-subtle);
+}
+
+.option-tiles label.checkbox:hover,
+.node-checkboxes label.checkbox:hover {
+  border-color: var(--accent);
+}
+
+.option-tiles label.checkbox:has(input:checked),
+.node-checkboxes label.checkbox:has(input:checked) {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+/* 任务编辑器最后一节后面紧跟汇总与页脚，不再需要分隔线 */
+#task-form .form-section:last-of-type {
+  border-bottom: 0;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
 }
 
 .node-checkboxes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px;
   max-height: 160px;
   overflow-y: auto;
@@ -1387,6 +1403,14 @@ input[type="checkbox"]:disabled {
   }
   .catalog-option {
     padding: 8px 6px;
+  }
+  .option-groups,
+  .task-meta {
+    grid-template-columns: 1fr;
+  }
+  .node-checkboxes {
+    grid-template-columns: 1fr;
+    max-height: 220px;
   }
 }
 
