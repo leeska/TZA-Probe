@@ -24,8 +24,11 @@ const browser = await chromium.launch(
 );
 const errors = [];
 
-async function open(viewport) {
+async function open(viewport, theme) {
   const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+  // 通过与 theme.js 相同的 localStorage 键预设主题，等价于用户手动切换后的刷新。
+  // 初始化脚本每次导航都会执行，只在尚未设置时写入，以便验证切换后的保持。
+  if (theme) await ctx.addInitScript((t) => localStorage.getItem("tza-theme") || localStorage.setItem("tza-theme", t), theme);
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`[pageerror] ${e.message}`));
   page.on("console", (m) => {
@@ -76,10 +79,40 @@ async function shot(page, name, fullPage = true) {
   await shot(page, "admin-mobile");
   await ctx.close();
 }
+// 深色主题：公开页与后台各一张，并验证切换按钮循环与刷新后保持。
+{
+  const { ctx, page } = await open({ width: 1440, height: 1000 }, "dark");
+  await page.goto(base + "/");
+  await page.waitForSelector(".node-card");
+  const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
+  if ((await theme()) !== "dark") throw new Error("预设深色主题未生效");
+  await shot(page, "public-desktop-dark");
+  await page.click(".public-header [data-theme-toggle]"); // dark -> auto
+  await page.click(".public-header [data-theme-toggle]"); // auto -> light
+  if ((await theme()) !== "light") throw new Error("主题切换按钮未切到浅色");
+  await page.reload();
+  await page.waitForSelector(".node-card");
+  if ((await theme()) !== "light") throw new Error("主题偏好刷新后未保持");
+  await ctx.close();
+}
+{
+  const { ctx, page } = await open({ width: 1440, height: 1000 }, "dark");
+  await page.goto(base + "/admin");
+  await page.waitForSelector("#login");
+  await shot(page, "admin-login-dark", false);
+  await page.fill("#login [name=token]", token);
+  await page.click("#login button");
+  await page.waitForSelector(".admin-layout");
+  await shot(page, "admin-nodes-dark");
+  await page.click(".node-card, [data-inspect]");
+  await page.waitForTimeout(1000);
+  await shot(page, "admin-detail-dark", false);
+  await ctx.close();
+}
 await browser.close();
 
 if (errors.length) {
   console.error("浏览器错误：\n" + errors.join("\n"));
   process.exit(1);
 }
-console.log(`PASS: 8 张截图写入 ${out}，无页面脚本错误。请人工查看排版。`);
+console.log(`PASS: 12 张截图写入 ${out}，主题切换与保持正常，无页面脚本错误。请人工查看排版。`);

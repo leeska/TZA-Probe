@@ -1668,6 +1668,62 @@ pre,
 }
 
 /* Responsive */
+/* Theme Toggle */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.theme-toggle svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: rgba(var(--accent-rgb), 0.35);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+[data-theme="dark"] .theme-toggle {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* 侧栏底部与其他文字链接保持一致 */
+.sidebar-bottom .theme-toggle {
+  height: auto;
+  gap: 6px;
+  font-weight: 400;
+}
+
+.sidebar-bottom .theme-toggle svg {
+  width: 13px;
+  height: 13px;
+}
+
+.login-story-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 @media (max-width: 1150px) {
   .node-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

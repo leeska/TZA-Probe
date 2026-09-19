@@ -89,3 +89,11 @@ node scripts/ui-smoke.mjs
 - 修复截图发现的问题：网络探测页头部按钮组误用表格行内 `.row-actions` 类导致“创建任务”失去主按钮样式；节点表状态列在未接入时留下悬空的 `·` 分隔符；手机宽度下 hero 的“最近同步”卡改为整行横排。
 - 修复后 DOM 集成检查、图表测试和 `go test -race ./...` 全部通过。
 - 未覆盖：暗色模式、`prefers-reduced-transparency`、有真实三网探测结果时的路线格与路径展示（开发机无直接出口），以及手机宽度下后台表格需横向滚动才能看到操作列。
+
+## 2026-09-19 亮暗主题切换
+
+- 原先深色样式只跟随 `prefers-color-scheme`。现改为由 `<html data-theme>` 驱动：`web/theme-boot.js` 在样式表前同步执行，按 `localStorage` 中的 `tza-theme`（`light` / `dark`，缺省跟随系统）设置属性，避免首屏闪烁；`web/theme.js` 提供“跟随系统 → 浅色 → 深色”三态按钮，并在跟随系统时响应系统切换。按钮位于公开页顶栏、后台侧栏底部和登录页。
+- 引导脚本必须是外部文件：Server 的 CSP 为 `script-src 'self'`，内联脚本会被拦截（真实浏览器验收时已实际触发并据此修正）。
+- `glass.css` 的 12 个深色媒体查询块全部改写为 `[data-theme="dark"]` 规则；无 `backdrop-filter` 和 `prefers-reduced-transparency` 的不透明回退补充了深色取值，避免深色页面上出现浅色面板。
+- `scripts/visual-check.mjs` 新增深色截图（公开页、登录、后台、详情）并断言：预设深色生效、按钮两次点击后切到浅色、刷新后保持。12 张截图均无页面脚本错误；DOM 集成检查、图表测试与 `go test -race ./...` 通过。
+
