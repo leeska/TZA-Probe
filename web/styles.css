@@ -894,6 +894,13 @@ button.node-name:hover {
   margin-bottom: 24px;
 }
 
+.heading-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .page-heading h1 {
   font-size: 28px;
   font-weight: 750;
@@ -1689,6 +1696,14 @@ pre,
   }
   .hero h1 {
     font-size: 28px;
+  }
+  .hero-meta {
+    width: 100%;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    text-align: left;
+    gap: 10px;
   }
   .overview {
     grid-template-columns: 1fr 1fr;
