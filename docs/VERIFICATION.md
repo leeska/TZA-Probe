@@ -108,5 +108,5 @@ node scripts/ui-smoke.mjs
 
 - `scripts/visual-check.mjs` 通过 CDP `Emulation.setEmulatedMedia` 模拟 `prefers-reduced-transparency: reduce`，浅色与深色主题各截一张公开页，并断言 `matchMedia` 命中且节点卡片的 `backdrop-filter` 计算值为 `none`。
 - 两种主题下头部、概览格、工具条、节点卡片均退化为不透明面板，文字对比度不依赖背景模糊；卡片内部的次级半透明块位于不透明面板之上，不影响可读性。15 张截图通过。
-- 本��临时环境的 loopback TCP 任务已有结果，卡片显示 `TCP 延迟 0 ms · 连接失败率 0.0%`，验证了公开卡片的 TCP 汇总渲染路径。
+- 本轮临时环境的 loopback TCP 任务已有结果，卡片显示 `TCP 延迟 0 ms · 连接失败率 0.0%`，验证了公开卡片的 TCP 汇总渲染路径。
 
