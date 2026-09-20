@@ -113,7 +113,38 @@ $(`[data-edit="${created.id}"]`).click();
 form = $("#node-form");
 assert.equal(form.elements.name.value, name);
 assert.equal(form.elements.hold_seconds.value, "300");
+// 未启用的规则禁用其阈值：服务端允许这些字段为 0，输入框的 min 不应把这样的节点锁死。
+form.elements.load.checked = false;
+form.elements.load.dispatchEvent(new w.Event("change"));
+assert(form.elements.cpu_percent.disabled && form.elements.hold_seconds.disabled, "disabled rule must not validate its thresholds");
+assert(!form.elements.offline_seconds.disabled === form.elements.offline.checked);
+form.elements.load.checked = true;
+form.elements.load.dispatchEvent(new w.Event("change"));
+assert(!form.elements.cpu_percent.disabled, "enabling a rule must re-enable its thresholds");
 $(".close").click();
+// 通过 API 造一个阈值全 0 的节点（旧数据或脚本创建），编辑表单必须回填可保存的值
+const zeroAlerts = {
+  name: "UI 零阈值 " + Date.now(), group: "", region: "", order: 0, public: false,
+  representative: "", traffic_limit: 0, traffic_mode: "sum", billing_day: 1, price: 0,
+  currency: "CNY", price_period: "月", expires_at: "",
+  alerts: { offline: false, offline_seconds: 0, repeat_seconds: 0, renewal: false, renewal_days: 0, traffic: false, traffic_percent: 0, load: false, cpu_percent: 0, memory_percent: 0, hold_seconds: 0 },
+};
+const zeroResponse = await fetch(base + "/api/v1/admin/nodes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json" }, body: JSON.stringify(zeroAlerts) });
+assert.equal(zeroResponse.status, 200, "server accepts zero thresholds while the rules are off");
+list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
+const zeroNode = list.find((n) => n.name === zeroAlerts.name);
+$("#refresh-nodes").click();
+await until(() => $(`[data-edit="${zeroNode.id}"]`), "node list including the zero-threshold node");
+$(`[data-edit="${zeroNode.id}"]`).click();
+form = $("#node-form");
+// 禁用元素的 checkValidity() 恒为真，所以直接比对值与 min。
+for (const field of ["traffic_percent", "cpu_percent", "memory_percent", "hold_seconds"]) {
+  const el = form.elements[field];
+  assert(Number(el.value) >= Number(el.min), `${field}=${el.value} is below min=${el.min}: the node could never be saved`);
+}
+assert.equal(form.elements.traffic_percent.value, "80");
+$(".close").click();
+await fetch(base + "/api/v1/admin/nodes/" + zeroNode.id, { method: "DELETE", headers: adminHeaders });
 $('[data-tab="tasks"]').click();
 await until(() => $("#add-task"), "task list");
 $("#add-task").click();

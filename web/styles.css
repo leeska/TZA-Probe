@@ -165,6 +165,17 @@ select:focus {
   outline: none;
 }
 
+/* 被禁用的输入（未启用的提醒规则、未勾选的检测类型）整体变淡 */
+label:has(> input:disabled),
+label:has(> select:disabled) {
+  opacity: 0.5;
+}
+
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
 select {
   max-width: 100%;
 }

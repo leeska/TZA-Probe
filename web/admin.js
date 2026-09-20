@@ -169,6 +169,9 @@ function select(label, name, options, value) {
 function nodeForm(existing) {
   const n = existing || structuredClone(defaults),
     a = n.alerts;
+  // 未启用的规则允许存 0（服务端只在启用时要求有效阈值），但 0 不满足输入框的 min，
+  // 直接回填会让这个节点再也保存不了。对必须 ≥1 的阈值退回默认值。
+  const threshold = (key) => a[key] || defaults.alerts[key];
   const d = modal(
     existing ? "编辑节点" : "添加节点",
     `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${field("节点所在地区", "region", n.region)}${field("卡片代表地区（与回程任务一致）", "representative", n.representative)}${field("排序（小的在前）", "order", n.order, "number")}${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.traffic_limit / 1e9, "number", 'min="0" step="0.1"')}${select(
@@ -181,13 +184,30 @@ function nodeForm(existing) {
         ["out", "仅上传"],
       ],
       n.traffic_mode,
-    )}${field("每月重置日（UTC）", "billing_day", n.billing_day, "number", 'min="1" max="31" required')}${field("价格", "price", n.price, "number", 'min="0" step="0.01"')}${field("货币", "currency", n.currency, "text", 'maxlength="12"')}${field("价格周期", "price_period", n.price_period, "text", 'maxlength="30"')}${field("到期日期（UTC 当日 00:00）", "expires", n.expires_at?.slice(0, 10) || "", "date")}</div><p class="hint">月底不足指定日期时取当月最后一天。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数", "offline_seconds", a.offline_seconds || 0, "number", 'min="0" max="86400"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费", "renewal_days", a.renewal_days, "number", 'min="0" max="365"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比", "traffic_percent", a.traffic_percent, "number", 'min="1" max="100"')}</div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %", "cpu_percent", a.cpu_percent, "number", 'min="1" max="100"')}${field("内存阈值 %", "memory_percent", a.memory_percent, "number", 'min="1" max="100"')}${field("负载持续秒数", "hold_seconds", a.hold_seconds, "number", 'min="30" max="86400"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5"')}<p class="hint">45 秒未上报判定离线，再按设置等待后通知；恢复通知一次。重复间隔至少 5 分钟。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+    )}${field("每月重置日（UTC）", "billing_day", n.billing_day, "number", 'min="1" max="31" required')}${field("价格", "price", n.price, "number", 'min="0" step="0.01"')}${field("货币", "currency", n.currency, "text", 'maxlength="12"')}${field("价格周期", "price_period", n.price_period, "text", 'maxlength="30"')}${field("到期日期（UTC 当日 00:00）", "expires", n.expires_at?.slice(0, 10) || "", "date")}</div><p class="hint">月底不足指定日期时取当月最后一天。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数", "offline_seconds", a.offline_seconds || 0, "number", 'min="0" max="86400"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费", "renewal_days", a.renewal_days, "number", 'min="0" max="365"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100"')}</div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100"')}${field("内存阈值 %", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100"')}${field("负载持续秒数", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5"')}<p class="hint">45 秒未上报判定离线，再按设置等待后通知；恢复通知一次。重复间隔至少 5 分钟。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
-  d.querySelector("form").onsubmit = guard(async (e) => {
+  // 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
+  const form = d.querySelector("form"),
+    el = (name) => form.elements.namedItem(name);
+  const rules = {
+    offline: ["offline_seconds"],
+    renewal: ["renewal_days"],
+    traffic: ["traffic_percent"],
+    load: ["cpu_percent", "memory_percent", "hold_seconds"],
+  };
+  const syncRules = () => {
+    for (const [rule, names] of Object.entries(rules))
+      names.forEach((name) => (el(name).disabled = !el(rule).checked));
+  };
+  Object.keys(rules).forEach((rule) => (el(rule).onchange = syncRules));
+  syncRules();
+  form.onsubmit = guard(async (e) => {
     e.preventDefault();
     const f = new FormData(e.target),
       get = (k) => String(f.get(k) || ""),
-      num = (k) => Number(f.get(k));
+      // 从元素读取而非 FormData：禁用的阈值不出现在 FormData 里，
+      // 但取消勾选不应清掉已设好的数值。
+      num = (k) => Number(el(k).value);
     const value = {
       ...defaults,
       name: get("name"),
