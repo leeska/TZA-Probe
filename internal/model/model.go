@@ -18,7 +18,8 @@ var ErrNotFound = errors.New("not found")
 var ErrConflict = errors.New("conflict")
 var ErrInvalid = errors.New("invalid input")
 
-const Version = "2.0.0-dev"
+// Version is overridden at release time with -ldflags "-X …/internal/model.Version=v2.0.0".
+var Version = "2.0.0-dev"
 const Protocol = 1
 const OfflineAfter = 45 * time.Second
 

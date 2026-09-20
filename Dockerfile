@@ -3,7 +3,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /tza-server ./cmd/server
+ARG VERSION=2.0.0-dev
+# Embed Agents for both architectures so the image can serve the one-line installer.
+RUN for arch in amd64 arm64; do \
+      CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="-s -w -X github.com/leeska/TZA-Probe/internal/model.Version=$VERSION" -o internal/agentdist/bin/tza-agent-linux-$arch ./cmd/agent || exit 1; \
+    done \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/leeska/TZA-Probe/internal/model.Version=$VERSION" -o /tza-server ./cmd/server
 
 FROM alpine:3.23@sha256:075c2c1a4068c1e251228ca2b0ea8b163f835ca5d66e758b93c7fc89b1995616
 RUN apk add --no-cache ca-certificates tzdata && addgroup -g 65532 tza && adduser -D -H -u 65532 -G tza tza && mkdir /data && chown tza:tza /data
