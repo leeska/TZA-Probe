@@ -1041,18 +1041,21 @@ tbody tr:hover {
 }
 
 .option-tiles label.checkbox,
-.node-checkboxes label.checkbox {
+.node-checkboxes label.checkbox,
+.form-grid > label.checkbox {
   background: var(--glass-bg);
   border-color: var(--glass-border-subtle);
 }
 
 .option-tiles label.checkbox:hover,
-.node-checkboxes label.checkbox:hover {
+.node-checkboxes label.checkbox:hover,
+.form-grid > label.checkbox:hover {
   border-color: var(--accent);
 }
 
 .option-tiles label.checkbox:has(input:checked),
-.node-checkboxes label.checkbox:has(input:checked) {
+.node-checkboxes label.checkbox:has(input:checked),
+.form-grid > label.checkbox:has(input:checked) {
   border-color: rgba(var(--accent-rgb), 0.45);
   background: rgba(var(--accent-rgb), 0.1);
 }

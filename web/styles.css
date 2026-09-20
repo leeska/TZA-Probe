@@ -1378,7 +1378,8 @@ label.checkbox {
 }
 
 .option-tiles label.checkbox,
-.node-checkboxes label.checkbox {
+.node-checkboxes label.checkbox,
+.form-grid > label.checkbox {
   min-height: 40px;
   padding: 0 14px 0 10px;
   border: 1px solid var(--line);
@@ -1390,16 +1391,25 @@ label.checkbox {
 }
 
 .option-tiles label.checkbox:hover,
-.node-checkboxes label.checkbox:hover {
+.node-checkboxes label.checkbox:hover,
+.form-grid > label.checkbox:hover {
   border-color: var(--accent);
 }
 
 .option-tiles label.checkbox:has(input:checked),
-.node-checkboxes label.checkbox:has(input:checked) {
+.node-checkboxes label.checkbox:has(input:checked),
+.form-grid > label.checkbox:has(input:checked) {
   border-color: rgba(var(--accent-rgb), 0.45);
   background: rgba(var(--accent-rgb), 0.08);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* 网格里的复选框与同排输入框对齐：等高、同圆角、贴着输入行的底边 */
+.form-grid > label.checkbox {
+  align-self: end;
+  min-height: 36px;
+  border-radius: 10px;
 }
 
 .task-meta .option-tiles {
