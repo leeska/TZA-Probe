@@ -10,7 +10,7 @@
 | 内置目标容易查找 | 网络任务表单的搜索、地区/运营商/协议筛选与多选 | web/task-editor.js、internal/catalog |
 | 单任务组合延迟与回程、IPv4 与 IPv6 | 表单可同时选择；Agent 按单项调度 | model.Task.Leaves、storage.Lease |
 | 包含海外“其他”运营商 | 自定义目标运营商选项 | web/task-editor.js、model.Task.Validate |
-| 卡片只显示指定代表地区，详情看其他地区 | 节点编辑的代表地区、卡片、详情页 | web/admin.js、web/app.js、web/detail.js |
+| 卡片只显示指定地区，详情看其他地区；延迟与回程的地区可分别指定 | 节点编辑的卡片代表地区 / 卡片延迟地区、卡片、详情页 | web/admin.js、web/app.js、web/detail.js |
 | IPv4 / IPv6 分开展示 | 公开页与详情页协议切换 | web/app.js、web/detail.js |
 | 周期流量、额度、价格、到期时间 | 节点编辑、公开卡片 | model.Cycle、storage/billing.go、web/admin.js |
 | 可选续费、流量、负载、离线告警 | 节点提醒规则 | internal/notify、web/admin.js |

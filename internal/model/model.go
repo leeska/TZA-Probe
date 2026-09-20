@@ -20,6 +20,7 @@ var ErrInvalid = errors.New("invalid input")
 
 // Version is overridden at release time with -ldflags "-X …/internal/model.Version=v2.0.0".
 var Version = "2.0.0-dev"
+
 const Protocol = 1
 const OfflineAfter = 45 * time.Second
 
@@ -37,28 +38,31 @@ type Alerts struct {
 	HoldSeconds    int     `json:"hold_seconds"`
 }
 type Node struct {
-	TrafficAdjustment int64   `json:"traffic_adjustment"`
-	AdjustmentCycle   int64   `json:"adjustment_cycle"`
-	ID                string  `json:"id"`
-	Name              string  `json:"name"`
-	Group             string  `json:"group"`
-	Region            string  `json:"region"`
-	Order             int     `json:"order"`
-	Public            bool    `json:"public"`
-	Representative    string  `json:"representative"`
-	TrafficLimit      int64   `json:"traffic_limit"`
-	TrafficMode       string  `json:"traffic_mode"`
-	BillingDay        int     `json:"billing_day"`
-	Price             float64 `json:"price"`
-	Currency          string  `json:"currency"`
-	PricePeriod       string  `json:"price_period"`
-	ExpiresAt         string  `json:"expires_at"`
-	Alerts            Alerts  `json:"alerts"`
-	CreatedAt         int64   `json:"created_at"`
+	TrafficAdjustment int64  `json:"traffic_adjustment"`
+	AdjustmentCycle   int64  `json:"adjustment_cycle"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Group             string `json:"group"`
+	Region            string `json:"region"`
+	Order             int    `json:"order"`
+	Public            bool   `json:"public"`
+	Representative    string `json:"representative"`
+	// LatencyRegion picks which region's TCP latency the public card shows.
+	// Empty falls back to Representative, then to every region.
+	LatencyRegion string  `json:"latency_region"`
+	TrafficLimit  int64   `json:"traffic_limit"`
+	TrafficMode   string  `json:"traffic_mode"`
+	BillingDay    int     `json:"billing_day"`
+	Price         float64 `json:"price"`
+	Currency      string  `json:"currency"`
+	PricePeriod   string  `json:"price_period"`
+	ExpiresAt     string  `json:"expires_at"`
+	Alerts        Alerts  `json:"alerts"`
+	CreatedAt     int64   `json:"created_at"`
 }
 
 func (n Node) Validate() error {
-	if strings.TrimSpace(n.Name) == "" || len(n.Name) > 100 || len(n.Group) > 100 || len(n.Region) > 60 || len(n.Representative) > 60 {
+	if strings.TrimSpace(n.Name) == "" || len(n.Name) > 100 || len(n.Group) > 100 || len(n.Region) > 60 || len(n.Representative) > 60 || len(n.LatencyRegion) > 60 {
 		return errors.New("名称必填且不超过 100 字节；分组、地区过长")
 	}
 	if n.BillingDay < 1 || n.BillingDay > 31 || n.TrafficLimit < 0 || n.Price < 0 || !finite(n.Price) || len(n.Currency) > 12 || len(n.PricePeriod) > 30 {

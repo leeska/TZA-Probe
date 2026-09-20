@@ -18,6 +18,7 @@ const defaults = {
   order: 0,
   public: true,
   representative: "",
+  latency_region: "",
   traffic_limit: 0,
   traffic_mode: "sum",
   billing_day: 1,
@@ -174,7 +175,7 @@ function nodeForm(existing) {
   const threshold = (key) => a[key] || defaults.alerts[key];
   const d = modal(
     existing ? "编辑节点" : "添加节点",
-    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${field("节点所在地区", "region", n.region)}${field("卡片代表地区（与回程任务一致）", "representative", n.representative)}${field("排序（小的在前）", "order", n.order, "number")}${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.traffic_limit / 1e9, "number", 'min="0" step="0.1"')}${select(
+    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${field("节点所在地区", "region", n.region)}${field("卡片代表地区（与回程任务一致）", "representative", n.representative)}${field("卡片延迟地区（留空沿用代表地区）", "latency_region", n.latency_region)}${field("排序（小的在前）", "order", n.order, "number")}${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.traffic_limit / 1e9, "number", 'min="0" step="0.1"')}${select(
       "流量计费方式",
       "traffic_mode",
       [
@@ -214,6 +215,7 @@ function nodeForm(existing) {
       group: get("group"),
       region: get("region"),
       representative: get("representative"),
+      latency_region: get("latency_region"),
       order: num("order"),
       public: f.has("public"),
       traffic_limit: Math.round(num("quota") * 1e9),

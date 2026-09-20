@@ -56,7 +56,7 @@ w.eval(bundle.outputFiles[0].text);
 async function until(predicate, label) {
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(
@@ -113,6 +113,16 @@ $(`[data-edit="${created.id}"]`).click();
 form = $("#node-form");
 assert.equal(form.elements.name.value, name);
 assert.equal(form.elements.hold_seconds.value, "300");
+assert.equal(form.elements.latency_region.value, "", "latency region defaults to empty (falls back to the representative region)");
+set(form, "latency_region", "上海");
+submit(form);
+await until(async () => {
+  list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
+  return list.find((n) => n.id === created.id)?.latency_region === "上海";
+}, "latency region saved and read back");
+$(`[data-edit="${created.id}"]`).click();
+form = $("#node-form");
+assert.equal(form.elements.latency_region.value, "上海", "saved latency region must reappear in the form");
 // 未启用的规则禁用其阈值：服务端允许这些字段为 0，输入框的 min 不应把这样的节点锁死。
 form.elements.load.checked = false;
 form.elements.load.dispatchEvent(new w.Event("change"));
@@ -238,6 +248,12 @@ publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
 assert(publicDOM.window.document.querySelector(".empty"));
 publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+// 延迟按运营商分四格显示，与三网回程同构；地区取延迟地区，其次代表地区。
+const cardText = publicDOM.window.document.querySelector(".node-card").textContent;
+for (const carrier of ["电信", "联通", "移动", "其他"])
+  assert(cardText.includes(carrier), `latency grid must list ${carrier}`);
+assert.equal(publicDOM.window.document.querySelector(".latency-grid").children.length, 4, "latency grid has four carrier cells");
+assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
 publicDOM.window.document.querySelector('[data-family="ipv6"]').click();
 assert(
   publicDOM.window.document

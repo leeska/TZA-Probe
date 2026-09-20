@@ -577,11 +577,6 @@ h1 {
 }
 
 /* Network Summary Strip */
-.network-summary {
-  background: var(--glass-bg-subtle);
-  border: 1px solid var(--glass-border-subtle);
-}
-
 /* Route Labels (Carrier Badges) */
 .route-label {
   background: var(--glass-bg-subtle);
