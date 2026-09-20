@@ -51,15 +51,17 @@ Agent 的 endpoint 必须是它能访问的 Server 地址。远程 Agent 不能�
 
 ## 3. 安装 Agent（二选一）
 
-### 后台生成脚本
+### 一键安装（推荐）
 
-下载 `install-agent.sh`，与对应架构的 `tza-agent` 放在 Agent 主机同一目录。按需修改脚本中的公网网卡、挂载点和 NextTrace 绝对路径，然后执行：
+后台“接入”弹窗给出一条命令，在 Agent 主机以 root 执行即可：
 
 ```sh
-sudo sh install-agent.sh
+curl -fsSL https://probe.example.com/install.sh | sudo sh -s -- --endpoint https://probe.example.com --token <节点密钥>
 ```
 
-脚本使用本地二进制，安装私有配置和 systemd 服务；不会联网下载程序。脚本包含节点密钥，安装后删除副本。已有节点重新生成密钥会立即使旧密钥失效，需更新该节点配置。
+脚本从 **这台 Server** 的 `/dl/tza-agent-linux-<arch>` 下载与主机架构匹配的 Agent（x86_64 / arm64），校验 SHA-256，写入 `/etc/tza-probe/agent.json`（0600）和 systemd 单元并启动。可选参数：`--interfaces eth0,eth1` 指定统计网卡，`--nexttrace /path` 指定回程工具（默认查找 PATH），`--uninstall` 卸载。不带 `--token` 再执行一次即为升级 Agent，会保留现有配置并备份旧二进制为 `tza-agent.previous`。脚本本身不含密钥，密钥只作为命令参数出现；不希望它进入 shell 历史时可改用 `TZA_TOKEN=<密钥>` 环境变量。
+
+Server 提供的 Agent 来自两处，前者优先：数据目录下的 `agents/tza-agent-linux-<arch>`（运维手动放置，升级 Agent 不必重编 Server），以及构建时嵌入在 Server 内的副本（CI 发布包已包含；自行编译见 `internal/agentdist/bin/README.md`）。两处都没有时 Server 启动日志会提示，安装脚本则报“该 Server 未提供此架构的 Agent”。
 
 ### 手动安装
 

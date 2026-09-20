@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/httpapi"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
@@ -74,7 +75,13 @@ func run() error {
 	defer store.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	api := &httpapi.API{Store: store, Notifier: notify.Transport{}, AdminToken: token, Assets: web.Handler()}
+	agents := &agentdist.Dist{Dir: filepath.Join(*dir, "agents")}
+	if available := agents.Available(); len(available) == 0 {
+		slog.Warn("no agent binaries embedded or in data directory; one-line installation unavailable", "dir", agents.Dir)
+	} else {
+		slog.Info("agent binaries available for one-line installation", "arch", available)
+	}
+	api := &httpapi.API{Store: store, Notifier: notify.Transport{}, AdminToken: token, Assets: web.Handler(), Agents: agents}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
 	wg.Add(2)

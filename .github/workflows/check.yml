@@ -49,8 +49,13 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           mkdir -p dist
+          # Agents for both architectures are embedded so the Server can hand out
+          # the one-line installer regardless of which arch runs the panel.
+          for arch in amd64 arm64; do
+            GOARCH=$arch go build -trimpath -ldflags='-s -w' -o internal/agentdist/bin/tza-agent-linux-$arch ./cmd/agent
+          done
           go build -trimpath -ldflags='-s -w' -o dist/tza-server ./cmd/server
-          go build -trimpath -ldflags='-s -w' -o dist/tza-agent ./cmd/agent
+          cp internal/agentdist/bin/tza-agent-linux-${{ matrix.arch }} dist/tza-agent
           cp README.md LICENSE dist/
           cp -r deploy docs dist/
           tar -czf tza-probe-linux-${{ matrix.arch }}.tar.gz -C dist .

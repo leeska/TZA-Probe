@@ -131,3 +131,11 @@ node scripts/ui-smoke.mjs
 - 手机宽度：选项组与任务设置改单列，节点列表单列（避免节点名折行），滚动区 220px。
 - 登录表单补充隐藏的 `autocomplete="username"` 字段（固定值 `admin`），让密码管理器能把管理密钥识别为完整的登录项；页面上没有任何按钮会提交登录表单——后台所有操作按钮都在 `<form>` 之外或标了 `type="button"`。
 - 亮 / 暗、桌面 / 手机各截一份确认；`visual-check.mjs` 24 张截图、DOM 集成、图表检查与 Go 测试全部通过。
+
+## 2026-09-20 Agent 一键安装
+
+- 新增 `internal/agentdist`：Server 公开提供 `/install.sh`（静态 POSIX sh，不含任何密钥）与 `/dl/tza-agent-linux-{amd64,arm64}[.sha256]`（支持 Range 续传，写超时放宽到 10 分钟）。二进制优先取数据目录 `agents/`，其次取构建时嵌入的副本；两处都没有时两个路由返回 404，启动日志有提示。后台“接入”弹窗改为直接给出 `curl -fsSL <server>/install.sh | sudo sh -s -- --endpoint <server> --token <密钥>`，agent.json 折叠到“手动安装”里。
+- 端到端：本机起 `0.0.0.0:25975` 的 Server，在 Docker 容器里用 systemctl 桩验证。Alpine（wget 路径）暴露了 `/etc/systemd/system` 目录不存在时脚本失败，已补 `install -d`；Debian bookworm（curl 路径）从 `curl | sh` 到后台节点显示在线（`2.0.0-dev arm64 linux`）全程通过。同一容器内再验证：不带 `--token` 重跑为升级并保留 `.previous`；`--interfaces ' eth0 , eth1'` 正确去空格写成 JSON 数组；非 64 位十六进制密钥被拒绝。
+- 单元测试：目录副本优先于嵌入副本、校验和、Range 请求、非法架构名与路径穿越返回 404、脚本与仓库副本逐字节一致且不含 64 位十六进制串。测试用 `noEmbed` 开关屏蔽本机可能存在的嵌入二进制，CI 上无嵌入副本时同样通过。
+- CI 发布任务改为先交叉编译两种架构的 Agent 放入 `internal/agentdist/bin` 再构建 Server，发布包里的 Server 自带一键安装能力。
+- 视觉：接入弹窗桌面 / 深色 / 手机各一张，命令框与“复制命令”按钮并排，手机上纵向堆叠；`--token` 不再被 `break-all` 从中间截断。DOM 集成检查新增断言：弹窗里的命令必须精确等于 `curl -fsSL <base>/install.sh | sudo sh -s -- --endpoint <base> --token <密钥>`。

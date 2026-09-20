@@ -1476,6 +1476,37 @@ pre,
   margin: 16px 0;
 }
 
+/* 接入弹窗：一键安装命令与复制按钮 */
+.command-block {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.command-block pre {
+  flex: 1 1 auto;
+  margin: 0;
+  user-select: all;
+  /* 长密钥可以任意位置折行，但不要把 --token 这类参数从中间截断 */
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.command-block button {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--ink);
+}
+
 /* Detail Modal */
 .detail-meta {
   display: flex;

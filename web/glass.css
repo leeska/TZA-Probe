@@ -1408,6 +1408,12 @@ input[type="checkbox"]:disabled {
   .task-meta {
     grid-template-columns: 1fr;
   }
+  .command-block {
+    flex-direction: column;
+  }
+  .command-block button {
+    align-self: stretch;
+  }
   .node-checkboxes {
     grid-template-columns: 1fr;
     max-height: 220px;
@@ -1527,6 +1533,9 @@ html[data-theme="dark"] {
 }
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   background-color: rgba(255, 255, 255, 0.4);
+}
+[data-theme="dark"] .hint code {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* ==========================================================================

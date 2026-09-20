@@ -22,7 +22,7 @@ cmd/server and cmd/agent: composition roots and lifecycle
 - `notify` 的规则和发送器使用独立接口，Telegram / Webhook 发送器不影响采集模块。
 - `agent` 的采集、传输、探测接口可分别替换；CPU 采集不会被最长 60 秒的回程执行阻塞。
 - `probe` 不知道数据库或 HTTP；任务执行只允许固定动作，拒绝超频任务和无效目标。
-- `web` 只调用 `/api/v1`。`api.js` 处理通信，`admin.js` 负责后台，`app.js` 负责公开页，`detail.js` 负责共享详情，`charts.js` 与 `format.js` 负责展示。`task-editor.js` 负责任务表单，`task-controls.js` 负责任务操作，`agent-setup.js` 负责接入配置和安装脚本。它们通过 HTTP / 回调协作，不依赖旧主题资产。
+- `web` 只调用 `/api/v1`。`api.js` 处理通信，`admin.js` 负责后台，`app.js` 负责公开页，`detail.js` 负责共享详情，`charts.js` 与 `format.js` 负责展示。`task-editor.js` 负责任务表单，`task-controls.js` 负责任务操作，`agent-setup.js` 负责接入弹窗（一键安装命令与 agent.json）。`internal/agentdist` 通过 `/install.sh` 与 `/dl/tza-agent-linux-<arch>` 分发静态安装脚本和 Agent 二进制，二进制优先取数据目录 `agents/`，其次取构建时嵌入的副本。它们通过 HTTP / 回调协作，不依赖旧主题资产。
 
 Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图，不包含数据库和管理界面。两者通过版本化 JSON 协议协作。SQLite WAL 支持读写，单连接与显式事务约束写入顺序；任务租约、流量差值、告警转换具备事务边界。
 

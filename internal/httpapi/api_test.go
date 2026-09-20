@@ -7,11 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/storage"
 	"github.com/leeska/TZA-Probe/web"
@@ -145,5 +147,65 @@ func TestLoginCookiesAndJSONValidation(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != 400 {
 		t.Fatal("trailing JSON accepted", w.Code)
+	}
+}
+
+func TestAgentDistributionRoutes(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "api.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, agentdist.Name("arm64")), []byte("ELF-arm64"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	api := &API{Store: s, AdminToken: model.Secret(), Assets: web.Handler(), Agents: &agentdist.Dist{Dir: dir}}
+	server := httptest.NewServer(api.Handler())
+	defer server.Close()
+	get := func(path string) (int, string, http.Header) {
+		t.Helper()
+		resp, err := http.Get(server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body), resp.Header
+	}
+	// Script and downloads are public: a fresh node has no credentials yet.
+	if code, body, h := get("/install.sh"); code != 200 || !strings.HasPrefix(body, "#!/bin/sh") || !strings.HasPrefix(h.Get("Content-Type"), "text/plain") {
+		t.Fatalf("install.sh: %d %q %s", code, body[:min(len(body), 20)], h.Get("Content-Type"))
+	}
+	if code, body, h := get("/dl/tza-agent-linux-arm64"); code != 200 || body != "ELF-arm64" || h.Get("Content-Type") != "application/octet-stream" {
+		t.Fatalf("binary: %d %q %s", code, body, h.Get("Content-Type"))
+	}
+	if code, body, _ := get("/dl/tza-agent-linux-arm64.sha256"); code != 200 || !strings.HasSuffix(strings.TrimSpace(body), "  tza-agent-linux-arm64") || len(strings.Fields(body)[0]) != 64 {
+		t.Fatalf("checksum: %d %q", code, body)
+	}
+	// amd64 is not in dir; it is served only if this build embeds a copy.
+	if code, _, _ := get("/dl/tza-agent-linux-amd64"); code != 404 && code != 200 {
+		t.Fatalf("missing arch should be 404 (or 200 when embedded), got %d", code)
+	}
+	for _, path := range []string{"/dl/tza-agent-linux-mips", "/dl/..%2F..%2Fetc%2Fpasswd", "/dl/README.md"} {
+		if code, _, _ := get(path); code != 404 {
+			t.Fatalf("%s should be 404, got %d", path, code)
+		}
+	}
+	if code, _, _ := get("/dl/tza-agent-linux-arm64.sha256"); code != 200 {
+		t.Fatalf("dir copy must win over any embedded copy, got %d", code)
+	}
+	// A Server without distribution configured keeps both routes closed.
+	bare := httptest.NewServer((&API{Store: s, AdminToken: model.Secret(), Assets: web.Handler()}).Handler())
+	defer bare.Close()
+	for _, path := range []string{"/install.sh", "/dl/tza-agent-linux-arm64"} {
+		resp, err := http.Get(bare.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 404 {
+			t.Fatalf("%s without Agents should be 404, got %d", path, resp.StatusCode)
+		}
 	}
 }

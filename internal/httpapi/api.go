@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
@@ -50,6 +51,7 @@ type API struct {
 	Notifier      notify.Sender
 	AdminToken    string
 	Assets        http.Handler
+	Agents        *agentdist.Dist // nil disables /install.sh and /dl/
 	mu            sync.Mutex
 	sessions      map[string]time.Time
 	loginWindow   time.Time
@@ -248,6 +250,40 @@ func (a *API) Handler() http.Handler {
 		respond(w, a.Store.Finish(r.Context(), id, v, time.Now()))
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { write(w, 404, map[string]string{"error": "not found"}) })
+	// Agent distribution: the install script is public and secret-free; the
+	// node key travels only as an argument of the command shown to the admin.
+	mux.HandleFunc("GET /install.sh", func(w http.ResponseWriter, r *http.Request) {
+		if a.Agents == nil {
+			http.Error(w, "installation script not available", 404)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(agentdist.Script())
+	})
+	mux.HandleFunc("GET /dl/{name}", func(w http.ResponseWriter, r *http.Request) {
+		arch, sum, ok := agentdist.ParseDownload(r.PathValue("name"))
+		if a.Agents == nil || !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if sum {
+			s, err := a.Agents.Sum(arch)
+			if err != nil {
+				http.Error(w, "agent binary not available for "+arch, 404)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache")
+			io.WriteString(w, s+"  "+agentdist.Name(arch)+"\n")
+			return
+		}
+		if err := a.Agents.ServeBinary(w, r, arch); errors.Is(err, agentdist.ErrMissing) {
+			http.Error(w, "agent binary not available for "+arch+"; see internal/agentdist/bin/README.md", 404)
+		} else if err != nil {
+			slog.Warn("agent download failed", "arch", arch, "error", err)
+		}
+	})
 	mux.Handle("/", a.Assets)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
