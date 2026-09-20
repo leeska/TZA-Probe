@@ -49,21 +49,29 @@ type Node struct {
 	Representative    string `json:"representative"`
 	// LatencyRegion picks which region's TCP latency the public card shows.
 	// Empty falls back to Representative, then to every region.
-	LatencyRegion string  `json:"latency_region"`
-	TrafficLimit  int64   `json:"traffic_limit"`
-	TrafficMode   string  `json:"traffic_mode"`
-	BillingDay    int     `json:"billing_day"`
-	Price         float64 `json:"price"`
-	Currency      string  `json:"currency"`
-	PricePeriod   string  `json:"price_period"`
-	ExpiresAt     string  `json:"expires_at"`
-	Alerts        Alerts  `json:"alerts"`
-	CreatedAt     int64   `json:"created_at"`
+	LatencyRegion   string   `json:"latency_region"`
+	LatencyCarriers []string `json:"latency_carriers,omitempty"`
+	TrafficLimit    int64    `json:"traffic_limit"`
+	TrafficMode     string   `json:"traffic_mode"`
+	BillingDay      int      `json:"billing_day"`
+	Price           float64  `json:"price"`
+	Currency        string   `json:"currency"`
+	PricePeriod     string   `json:"price_period"`
+	ExpiresAt       string   `json:"expires_at"`
+	Alerts          Alerts   `json:"alerts"`
+	CreatedAt       int64    `json:"created_at"`
 }
 
 func (n Node) Validate() error {
 	if strings.TrimSpace(n.Name) == "" || len(n.Name) > 100 || len(n.Group) > 100 || len(n.Region) > 60 || len(n.Representative) > 60 || len(n.LatencyRegion) > 60 {
 		return errors.New("名称必填且不超过 100 字节；分组、地区过长")
+	}
+	seenCarriers := map[string]bool{}
+	for _, carrier := range n.LatencyCarriers {
+		if (carrier != "电信" && carrier != "联通" && carrier != "移动" && carrier != "其他") || seenCarriers[carrier] {
+			return errors.New("延迟展示运营商无效或重复")
+		}
+		seenCarriers[carrier] = true
 	}
 	if n.BillingDay < 1 || n.BillingDay > 31 || n.TrafficLimit < 0 || n.Price < 0 || !finite(n.Price) || len(n.Currency) > 12 || len(n.PricePeriod) > 30 {
 		return errors.New("计费配置无效")

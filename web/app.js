@@ -129,7 +129,8 @@ function card(n) {
       o.result.status !== "pending" &&
       (!latencyRegion || o.task.region === latencyRegion),
   );
-  const latencies = [...carriers, "其他"]
+  const visibleCarriers = n.latency_carriers?.length ? n.latency_carriers : [...carriers, "其他"];
+  const latencies = visibleCarriers
     .map((carrier) => {
       const matches = tcp.filter(
         (o) =>
@@ -142,11 +143,14 @@ function card(n) {
         : null;
       const sent = matches.reduce((v, o) => v + o.result.sent, 0),
         received = matches.reduce((v, o) => v + o.result.received, 0);
+      const loss = sent ? Math.max(0, (sent - received) / sent * 100) : null;
+      const latencyBars = qualityBars(value, 200);
+      const lossBars = qualityBars(loss, 20, true);
       const recent = matches.map((o) => o.at).sort((a, b) => b - a)[0];
       const title = matches.length
         ? `${date(recent)} · 成功 ${received}/${sent} 次`
         : "尚未检测";
-      return `<button class="route-label ${value == null ? "unknown" : "known"}" data-detail="${n.id}" title="${esc(title)}"><span>${carrier}</span><strong class="${value == null ? "muted" : ""}">${value == null ? (matches.length ? "超时" : "未检测") : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms"}</strong></button>`;
+      return `<button class="route-label latency-label ${value == null ? "unknown" : "known"}" data-detail="${n.id}" title="${esc(title)}"><span class="carrier-name">${carrier}</span><span class="quality-row"><span>延迟</span><strong class="${value == null ? "muted" : ""}">${value == null ? (matches.length ? "超时" : "未检测") : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms"}</strong></span><span class="quality-bars">${latencyBars}</span><span class="quality-row"><span>丢包</span><strong class="${loss == null ? "muted" : ""}">${loss == null ? "—" : loss.toFixed(1) + "%"}</strong></span><span class="quality-bars loss-bars">${lossBars}</span></button>`;
     })
     .join("");
 
@@ -175,6 +179,15 @@ function card(n) {
   const rateOutStr = isLive ? `${bytes(m.rate_out)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
 
   return `<article class="node-card ${n.online ? "is-online" : "is-offline"}"><div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><span class="os-tag">${esc(m?.os || (n.online ? "在线" : "等待接入"))}</span></div><div class="metrics-grid">${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small></div></div><div class="speeds"><div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateInStr}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOutStr}</strong></div></div></div><div class="route-heading"><span>TCP 延迟 <b>${family === "ipv4" ? "IPv4" : "IPv6"}</b></span><span class="rep-label">${esc(latencyRegion || "全部地区")}</span></div><div class="route-grid latency-grid">${latencies}</div><div class="route-heading"><span>三网回程 <b>${family === "ipv4" ? "IPv4" : "IPv6"}</b></span><span class="rep-label">${esc(n.representative || "未设代表地区")}</span></div><div class="route-grid">${routes}</div><div class="card-bottom"><span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span></div></article>`;
+}
+
+function qualityBars(value, ceiling, inverse = false) {
+  const count = value == null ? 0 : Math.max(0, Math.min(20, Math.round((value / ceiling) * 20)));
+  return Array.from({ length: 20 }, (_, i) => {
+    const active = inverse ? i >= 20 - count : i < count;
+    const level = inverse ? (value > 5 ? "bad" : value > 1 ? "warn" : "good") : (value > ceiling * .75 ? "bad" : value > ceiling * .4 ? "warn" : "good");
+    return `<i class="quality-bar ${active ? level : "idle"}"></i>`;
+  }).join("");
 }
 
 start().catch((e) => {

@@ -13,15 +13,21 @@ export async function detail(id) {
     api(`/nodes/${id}/network-history?hours=24`),
   ]);
   if (!d.open || d.dataset.nodeId !== id) return;
-  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div><div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3><select id="history-range" aria-label="历史时间范围"><option value="1">最近 1 小时</option><option value="24" selected>最近 24 小时</option><option value="168">最近 7 天</option><option value="720">最近 30 天</option></select></div><div id="charts">${hostCharts(history, 24)}</div><div class="section-head"><h3>网络与三网回程</h3><div class="segmented"><button data-detail-family="ipv4" class="active">IPv4</button><button data-detail-family="ipv6">IPv6</button></div></div><div id="network-history"></div><div id="route-details"></div><p class="hint">回程标签来自已观测 ASN，不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
+  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div><div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3><select id="history-range" aria-label="历史时间范围"><option value="1">最近 1 小时</option><option value="24" selected>最近 24 小时</option><option value="168">最近 7 天</option><option value="720">最近 30 天</option></select></div><div id="charts">${hostCharts(history, 24)}</div><div class="section-head"><h3>网络与三网回程</h3><div class="segmented"><button data-detail-family="ipv4" class="active">IPv4</button><button data-detail-family="ipv6">IPv6</button></div></div><div id="network-overview"></div><div id="network-history"></div><div id="route-details"></div><p class="hint">回程标签来自已观测 ASN，不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
   let networkSeries = network;
   let selectedFamily = "ipv4";
   let selectedHours = 24;
+  let overviewMetric = "latency";
   function renderNetwork() {
     const series = networkSeries.filter((s) => s.family === selectedFamily);
+    d.querySelector("#network-overview").innerHTML = networkOverview(series, overviewMetric, selectedHours);
+    d.querySelectorAll("[data-network-metric]").forEach((b) => (b.onclick = () => {
+      overviewMetric = b.dataset.networkMetric;
+      renderNetwork();
+    }));
     d.querySelector("#network-history").innerHTML = series.map((s, i) => {
       const samples = s.samples.map((p) => ({at: p.at, metrics: {latency: p.latency, failure: p.failure}}));
       const title = `${s.name} · ${s.region || ""} ${s.carrier || ""} · ${s.host}:${s.port}`;
@@ -75,4 +81,18 @@ function hostCharts(samples, hours) {
     chart(samples, "memory", "内存使用率", "orange", hours) +
     chart(samples, "rate_in", "下载速率", "teal", hours) +
     chart(samples, "rate_out", "上传速率", "orange", hours);
+}
+
+function networkOverview(series, metric, hours) {
+  const usable = series.map((s) => ({ ...s, samples: s.samples.filter((p) => p[metric] != null) })).filter((s) => s.samples.length > 1);
+  if (!usable.length) return '<div class="chart-empty">网络历史样本不足，采样后自动显示折线图</div>';
+  const all = usable.flatMap((s) => s.samples), first = Math.min(...all.map((p) => p.at)), last = Math.max(...all.map((p) => p.at));
+  const maxValue = metric === "failure" ? 100 : Math.max(100, ...all.map((p) => p.latency || 0));
+  const colors = ["#ff625f", "#36c8bf", "#9b7cff", "#5a9cff", "#ffad3d", "#eb63b5", "#36c98b", "#ff873d"];
+  const lines = usable.map((s, i) => {
+    const points = s.samples.map((p) => `${(((p.at - first) / Math.max(1, last - first)) * 680).toFixed(1)},${(110 - ((p[metric] || 0) / maxValue) * 102).toFixed(1)}`).join(" ");
+    return `<polyline class="overview-line" stroke="${colors[i % colors.length]}" points="${points}" />`;
+  }).join("");
+  const legend = usable.map((s, i) => `<span><i style="background:${colors[i % colors.length]}"></i>${esc([s.region, s.carrier, s.host].filter(Boolean).join(" · "))}</span>`).join("");
+  return `<figure class="network-overview chart"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${hours} 小时 · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><svg viewBox="0 0 680 140" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg><div class="chart-axis"><span>${new Date(first * 1000).toLocaleString("zh-CN", { hour12: false })}</span><span>${new Date(last * 1000).toLocaleString("zh-CN", { hour12: false })}</span></div><div class="overview-legend">${legend}</div></figure>`;
 }

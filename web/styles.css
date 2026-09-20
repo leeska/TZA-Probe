@@ -33,6 +33,11 @@
   --indigo: #5856d6;
 }
 
+html {
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -41,6 +46,8 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--ink);
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
 }
 
 a {
@@ -655,7 +662,7 @@ button.node-name:hover {
 
 /* 延迟多一个“其他”格 */
 .latency-grid {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
   margin-bottom: 14px;
 }
 
@@ -689,6 +696,18 @@ button.node-name:hover {
   font-weight: 400;
 }
 
+.latency-label { align-items: stretch; gap: 4px; padding: 10px 9px; min-height: 0; height: auto; }
+.carrier-name { text-align: left; font-size: 11px !important; color: var(--ink) !important; font-weight: 650; }
+.quality-row { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); font-size: 9px; }
+.quality-row strong { font-size: 12px; color: var(--ink); }
+.quality-row strong.muted { color: var(--muted); font-weight: 400; }
+.quality-bars { display: flex !important; align-items: flex-start; gap: 2px; width: 100%; height: 6px; min-height: 6px; overflow: hidden; }
+.quality-bar { display: block; flex: 1 1 0; width: auto; height: 6px !important; min-height: 6px; border-radius: 1px; background: var(--line); }
+.quality-bar.good { background: #35b77a; }
+.quality-bar.warn { background: #c7c83c; }
+.quality-bar.bad { background: #e06a5f; }
+.quality-bar.idle { background: color-mix(in srgb, var(--line) 70%, transparent); }
+
 /* Card Bottom */
 .card-bottom {
   margin: auto -22px 0 -22px;
@@ -720,7 +739,7 @@ button.node-name:hover {
 .public-main footer {
   display: flex;
   justify-content: space-between;
-  padding: 40px 0;
+  padding: 40px 0 max(40px, env(safe-area-inset-bottom));
   color: var(--muted);
   font-size: 11px;
 }
@@ -1175,6 +1194,8 @@ dialog {
   width: 820px;
   max-width: calc(100vw - 32px);
   max-height: 90vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 28px;
   color: var(--ink);
 }
@@ -1665,6 +1686,14 @@ pre,
   color: var(--muted);
   margin-top: 8px;
 }
+
+.network-overview { margin: 0 0 14px; }
+.overview-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.overview-head .segmented button { padding: 4px 9px; font-size: 10px; }
+.overview-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; font-size: 10px; color: var(--muted); }
+.overview-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.overview-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+.overview-line { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
 
 .chart-empty {
   padding: 28px;
