@@ -172,6 +172,18 @@ assert.equal(w.document.querySelectorAll("[data-remove]").length, 3);
 form = $("#dialog form");
 assert(form.elements.tcp.checked && form.elements.route.checked);
 assert(form.elements.ipv4.checked && form.elements.ipv6.checked);
+// 每组目标有自己的 IP 协议：上方勾选只是新加入时的默认值。
+const chipFamilies = (label) =>
+  [...w.document.querySelectorAll(".target-chip")]
+    .find((c) => c.querySelector("strong").textContent.includes(label))
+    ?.querySelectorAll(".chip-family.on");
+assert.equal(chipFamilies("电信").length, 2, "a freshly selected group follows the global default");
+[...w.document.querySelectorAll(".target-chip")]
+  .find((c) => c.querySelector("strong").textContent.includes("电信"))
+  .querySelector('.chip-family[data-family="ipv6"]')
+  .click();
+assert.equal(chipFamilies("电信").length, 1, "per-group toggle must turn one family off");
+assert.equal(chipFamilies("联通").length, 2, "other groups keep their own families");
 form.elements.namedItem("node:" + created.id).checked = true;
 set(form, "name", "UI 网络验收");
 submit(form);
@@ -184,13 +196,21 @@ const createdTask = tasks.find(
 );
 assert(createdTask);
 assert.deepEqual(createdTask.checks, ["tcp", "route"]);
-assert.equal(createdTask.targets.length, 6);
+// 三组目标：电信只留 IPv4，其余双栈
+assert.equal(createdTask.targets.length, 5);
+assert.deepEqual(
+  createdTask.targets.filter((x) => x.carrier === "电信").map((x) => x.family),
+  ["ipv4"],
+  "a group limited to IPv4 must not save its IPv6 address",
+);
 assert.equal(createdTask.route_interval, 3600);
 assert.equal(createdTask.interval, 60);
 $('[data-edit-task="' + createdTask.id + '"]').click();
 await until(() => $("#task-form"), "edit combined task");
 assert.equal(w.document.querySelectorAll("[data-remove]").length, 3);
 assert($("#task-form").elements.ipv6.checked);
+assert.equal(chipFamilies("电信").length, 1, "per-group families must round-trip through save and reopen");
+assert.equal(chipFamilies("联通").length, 2);
 form = $("#task-form");
 form.elements.namedItem("custom-region").value = "新加坡";
 form.elements.namedItem("custom-ipv4").value = "example.com";
@@ -205,7 +225,7 @@ const editedTask = (
     await fetch(base + "/api/v1/admin/tasks", { headers: adminHeaders })
   ).json()
 ).find((t) => t.id === createdTask.id);
-assert.equal(editedTask.targets.length, 8);
+assert.equal(editedTask.targets.length, 7, "5 catalog addresses (电信 only IPv4) plus the custom dual-stack pair");
 assert.equal(editedTask.targets.filter((x) => x.carrier === "其他").length, 2);
 assert.equal(editedTask.node_ids.length, 1);
 $('[data-tab="alerts"]').click();

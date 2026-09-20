@@ -53,6 +53,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(target(x));
   }
+  // 每组目标记录自己的 IP 协议：all 是该组可用地址，families 是本任务实际要测的协议。
   const selected = new Map();
   for (const x of existing ? t.targets || [t] : []) {
     const key = x.region + " / " + x.carrier;
@@ -62,9 +63,20 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         (y) => y.host === x.host && y.port === x.port && y.family === x.family,
       );
     const selectionKey = matching ? key : key + " · " + x.host;
-    if (matching) selected.set(selectionKey, groups.get(key));
-    else selected.set(selectionKey, [target(x)]);
+    const entry = selected.get(selectionKey) || { all: [], families: new Set() };
+    if (matching) entry.all = groups.get(key);
+    else if (!entry.all.some((y) => y.host === x.host && y.family === x.family))
+      entry.all.push(target(x));
+    entry.families.add(x.family);
+    selected.set(selectionKey, entry);
   }
+  const availableFamilies = (all) => ["ipv4", "ipv6"].filter((f) => all.some((x) => x.family === f));
+  // 新加入的组按上方“IP 协议”勾选；该组没有对应地址时退回它自己有的协议，避免加进来却什么都不测。
+  const defaultFamilies = (all) => {
+    const available = availableFamilies(all);
+    const wanted = available.filter((f) => el(f)?.checked);
+    return new Set(wanted.length ? wanted : available);
+  };
   const d = modal(
     existing?.id ? "编辑网络任务" : "创建网络任务",
     `
@@ -77,7 +89,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         </div>
         <div class="catalog-toolbar"><span id="catalog-count"></span><button type="button" id="select-visible">选中筛选结果</button><button type="button" id="clear-targets">清空已选</button></div>
         <div id="catalog-results" class="catalog-results"></div>
-        <p class="hint">同一地区和运营商只需选一次，地址会按下方勾选的 IP 协议自动匹配。</p>
+        <p class="hint">同一地区和运营商只需选一次。每组默认按下方勾选的 IP 协议检测，可在“已选目标”上单独改成只测 IPv4、只测 IPv6 或两者都测。</p>
         <details><summary>添加自定义目标（含海外运营商）</summary>
           <div class="form-grid">
             <label>地区<input name="custom-region" placeholder="例如：新加坡"></label>
@@ -92,7 +104,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       <section class="form-section"><h3>2. 检测内容</h3>
         <div class="option-groups">
           <div class="option-group"><span class="option-label">检测类型</span><div class="option-tiles">${checkbox("TCP 延迟", "tcp", checks.includes("tcp"))}${checkbox("三网 / 海外回程", "route", checks.includes("route"))}</div></div>
-          <div class="option-group"><span class="option-label">IP 协议</span><div class="option-tiles">${checkbox("IPv4", "ipv4", families.has("ipv4"))}${checkbox("IPv6", "ipv6", families.has("ipv6"))}</div></div>
+          <div class="option-group"><span class="option-label">IP 协议（批量设置，可在已选目标上单独调整）</span><div class="option-tiles">${checkbox("IPv4", "ipv4", families.has("ipv4"))}${checkbox("IPv6", "ipv6", families.has("ipv6"))}</div></div>
         </div>
         <details><summary>检测频率</summary><div class="form-grid">
           <label>延迟间隔（秒）<input name="interval" type="number" min="30" max="86400" value="${t.kind === "route" ? 60 : t.interval}"></label>
@@ -115,19 +127,42 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
   const el = (name) => form.elements.namedItem(name);
   let visible = [];
   const activeTargets = () =>
-    [...selected.values()].flat().filter((x) => el(x.family).checked);
+    [...selected.values()].flatMap((e) =>
+      e.all.filter((x) => e.families.has(x.family)),
+    );
   function update() {
-    d.querySelector("#selected-targets").innerHTML = [...selected.keys()]
-      .map(
-        (key) =>
-          `<button type="button" data-remove="${esc(key)}" aria-label="移除 ${esc(key)}">${esc(key)} ×</button>`,
-      )
+    d.querySelector("#selected-targets").innerHTML = [...selected]
+      .map(([key, e]) => {
+        const available = availableFamilies(e.all);
+        const toggles = ["ipv4", "ipv6"]
+          .map((f) => {
+            const has = available.includes(f);
+            const on = e.families.has(f);
+            return `<button type="button" class="chip-family ${on ? "on" : ""}" data-family-toggle="${esc(key)}" data-family="${f}" ${has ? "" : "disabled"} title="${has ? (on ? "点击停止检测" : "点击加入检测") : "该目标没有对应地址"}" aria-pressed="${on}">${f === "ipv4" ? "IPv4" : "IPv6"}</button>`;
+          })
+          .join("");
+        return `<span class="target-chip"><strong>${esc(key)}</strong><span class="chip-families">${toggles}</span><button type="button" class="chip-remove" data-remove="${esc(key)}" aria-label="移除 ${esc(key)}">×</button></span>`;
+      })
       .join("");
     d.querySelectorAll("[data-remove]").forEach(
       (b) =>
         (b.onclick = () => {
           selected.delete(b.dataset.remove);
           renderCatalog();
+        }),
+    );
+    d.querySelectorAll("[data-family-toggle]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          const e = selected.get(b.dataset.familyToggle);
+          const family = b.dataset.family;
+          if (!e.families.has(family)) e.families.add(family);
+          else if (e.families.size > 1) e.families.delete(family);
+          else {
+            toast("每组目标至少保留一种 IP 协议");
+            return;
+          }
+          update();
         }),
     );
     const count = activeTargets().length;
@@ -163,10 +198,10 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       (input) =>
         (input.onchange = () => {
           if (input.checked)
-            selected.set(
-              input.dataset.target,
-              groups.get(input.dataset.target),
-            );
+            selected.set(input.dataset.target, {
+              all: groups.get(input.dataset.target),
+              families: defaultFamilies(groups.get(input.dataset.target)),
+            });
           else selected.delete(input.dataset.target);
           update();
         }),
@@ -179,7 +214,9 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       renderCatalog,
     );
   d.querySelector("#select-visible").onclick = () => {
-    for (const [key, xs] of visible) selected.set(key, xs);
+    for (const [key, xs] of visible)
+      if (!selected.has(key))
+        selected.set(key, { all: xs, families: defaultFamilies(xs) });
     renderCatalog();
   };
   d.querySelector("#clear-targets").onclick = () => {
@@ -217,10 +254,16 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       throw new Error("请填写地区、有效端口和至少一个地址");
     selected.set(
       region + " / " + carrier + " · " + xs.map((x) => x.host).join(" / "),
-      xs,
+      { all: xs, families: new Set(xs.map((x) => x.family)) },
     );
     update();
   });
+  // 上方的 IP 协议是批量开关：勾选变化时套用到全部已选目标，之后仍可逐组微调。
+  for (const family of ["ipv4", "ipv6"])
+    el(family).addEventListener("change", () => {
+      for (const e of selected.values()) e.families = defaultFamilies(e.all);
+      update();
+    });
   form.addEventListener("change", update);
   form.onsubmit = guard(async (e) => {
     e.preventDefault();
@@ -230,14 +273,8 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         all.findIndex((y) => JSON.stringify(y) === JSON.stringify(x)) === i,
     );
     if (!checks.length) throw new Error("请至少选择一种检测内容");
-    if (!el("ipv4").checked && !el("ipv6").checked)
-      throw new Error("请至少选择一种 IP 协议");
-    if (!targets.length) throw new Error("请选择与 IP 协议匹配的目标");
-    for (const family of ["ipv4", "ipv6"])
-      if (el(family).checked && !targets.some((x) => x.family === family))
-        throw new Error(
-          `已勾选 ${family.toUpperCase()}，请添加对应地址，或取消该协议`,
-        );
+    if (!selected.size) throw new Error("请至少选择一组目标");
+    if (!targets.length) throw new Error("请为已选目标至少保留一种 IP 协议");
     const name =
       el("name").value.trim() ||
       (
