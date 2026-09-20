@@ -95,7 +95,7 @@ submit(form);
 await until(() => $("#agent-config"), "one-time agent configuration");
 const nodeToken = JSON.parse($("#agent-config").textContent).token;
 assert(nodeToken.length === 64);
-assert($("#install-command").textContent === `curl -fsSL ${base}/install.sh | sudo sh -s -- --endpoint ${base} --token ${nodeToken}`, "one-line install command must carry endpoint and key");
+assert($("#install-command").textContent === `curl -fsSL ${base}/install.sh | sh -s -- --endpoint ${base} --token ${nodeToken}`, "one-line install command must carry endpoint and key");
 $(".close").click();
 const adminHeaders = { Authorization: "Bearer " + token };
 let list = await (

@@ -25,7 +25,7 @@ go build -o bin/tza-agent ./cmd/agent
 ./bin/tza-server --listen 127.0.0.1:25774 --data ./data
 ```
 
-访问 `http://127.0.0.1:25774/admin`，使用 `data/admin-token` 中的密钥登录。也可以设置 `TZA_ADMIN_TOKEN`（至少 32 个字符）；密钥不会写入日志。新增节点后，“接入”弹窗给出一条 `curl ... | sudo sh -s -- --endpoint ... --token ...` 命令，在 Agent 主机执行即可自动下载、配置并启动 Agent（见 docs/DEPLOYMENT.md）。接入配置中的地址必须能从 Agent 主机访问；另一台机器不能使用 `127.0.0.1` 或 `localhost` 连接此 Server。也可以下载 `agent.json` 手动运行：
+访问 `http://127.0.0.1:25774/admin`，使用 `data/admin-token` 中的密钥登录。也可以设置 `TZA_ADMIN_TOKEN`（至少 32 个字符）；密钥不会写入日志。新增节点后，“接入”弹窗给出一条 `curl ... | sh -s -- --endpoint ... --token ...` 命令，在 Agent 主机执行即可自动下载、配置并启动 Agent（见 docs/DEPLOYMENT.md）。接入配置中的地址必须能从 Agent 主机访问；另一台机器不能使用 `127.0.0.1` 或 `localhost` 连接此 Server。也可以下载 `agent.json` 手动运行：
 
 ```sh
 chmod 600 agent.json

@@ -1,8 +1,9 @@
 #!/bin/sh
 # TZA Probe Agent 一键安装 / 升级脚本。由 Server 的 /install.sh 提供，后台“接入”弹窗会给出完整命令：
 #
-#   curl -fsSL https://probe.example.com/install.sh | sudo sh -s -- --endpoint https://probe.example.com --token <节点密钥>
+#   curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://probe.example.com --token <节点密钥>
 #
+# 以 root 直接执行；非 root 且系统有 sudo 时会自动改用 sudo 重新执行。
 # 可选参数：
 #   --interfaces eth0,eth1   只统计这些网卡的流量（默认统计全部非 loopback 网卡）
 #   --nexttrace /usr/bin/nexttrace   三网回程使用的 NextTrace 路径（默认自动查找 PATH）
@@ -38,7 +39,26 @@ done
 
 fail() { echo "错误: $*" >&2; exit 1; }
 
-[ "$(id -u)" -eq 0 ] || fail "请以 root 执行（curl ... | sudo sh -s -- ...）"
+if [ "$(id -u)" -ne 0 ]; then
+  # 通过管道执行时脚本正文已被 sh 读走，无法直接提权重跑；用 sudo 重新拉取一次。
+  command -v sudo >/dev/null 2>&1 || fail "需要 root 权限：请切换到 root 后再执行"
+  [ -n "$ENDPOINT" ] || fail "需要 root 权限：请以 root 执行，或加上 --endpoint 以便通过 sudo 重新执行"
+  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || fail "需要 curl 或 wget"
+  # 位置参数已被上面的解析消费���按解析结果重建；单引号转义保证原样传给 sudo 下的 sh
+  q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+  quoted=""
+  [ -n "$INTERFACES" ] && quoted="$quoted --interfaces $(q "$INTERFACES")"
+  [ -n "$NEXTTRACE" ] && quoted="$quoted --nexttrace $(q "$NEXTTRACE")"
+  [ -n "$ALLOW_HTTP" ] && quoted="$quoted --allow-http"
+  [ -n "$UNINSTALL" ] && quoted="$quoted --uninstall"
+  if command -v curl >/dev/null 2>&1; then
+    get="curl -fsSL '$ENDPOINT/install.sh'"
+  else
+    get="wget -qO- '$ENDPOINT/install.sh'"
+  fi
+  echo "非 root，改用 sudo 重新执行 ..." >&2
+  exec sudo env TZA_TOKEN="$TOKEN" TZA_ENDPOINT="$ENDPOINT" sh -c "$get | sh -s --$quoted"
+fi
 command -v systemctl >/dev/null 2>&1 || fail "需要使用 systemd 的 Linux"
 
 if [ -n "$UNINSTALL" ]; then

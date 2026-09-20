@@ -53,10 +53,10 @@ Agent 的 endpoint 必须是它能访问的 Server 地址。远程 Agent 不能�
 
 ### 一键安装（推荐）
 
-后台“接入”弹窗给出一条命令，在 Agent 主机以 root 执行即可：
+后台“接入”弹窗给出一条命令，在 Agent 主机以 root 执行即可（非 root 且有 sudo 时脚本会自动用 sudo 重新执行）：
 
 ```sh
-curl -fsSL https://probe.example.com/install.sh | sudo sh -s -- --endpoint https://probe.example.com --token <节点密钥>
+curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://probe.example.com --token <节点密钥>
 ```
 
 脚本从 **这台 Server** 的 `/dl/tza-agent-linux-<arch>` 下载与主机架构匹配的 Agent（x86_64 / arm64），校验 SHA-256，写入 `/etc/tza-probe/agent.json`（0600）和 systemd 单元并启动。可选参数：`--interfaces eth0,eth1` 指定统计网卡，`--nexttrace /path` 指定回程工具（默认查找 PATH），`--uninstall` 卸载。不带 `--token` 再执行一次即为升级 Agent，会保留现有配置并备份旧二进制为 `tza-agent.previous`。脚本本身不含密钥，密钥只作为命令参数出现；不希望它进入 shell 历史时可改用 `TZA_TOKEN=<密钥>` 环境变量。
