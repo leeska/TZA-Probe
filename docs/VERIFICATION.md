@@ -188,3 +188,14 @@ node scripts/ui-smoke.mjs
 - **探测方式必须换成 ICMP**：旧实现沿用了外部二进制的 `-T`（TCP），在这条线路上中间跳全部为空；ICMP 能拿到真实中间跳，UDP 一个都不返回。NextTrace CLI 不带 `-T`/`-U` 时默认也是 ICMP，所以内置实现默认改为 ICMP，并新增 `trace_method` 配置（`icmp`/`tcp`/`udp`）。同时把并发从 2 提到 6，否则 24 跳在 45 秒预算内跑不完。
 - 数据源表现：`IPAPI.com` 能返回 `AS37963`/`AS9808`（偶发 2 秒超时）；上游默认 `NextTrace-API` 在本机没有返回任何 ASN（它需要 PoW 通道）；`disable-geoip` 时空 ASN 由本地前缀表兜底，不影响判断流程。三条路径都不编造数据。
 - 仍然受限：本机出口是移动线路（第一跳就 22–39 ms，跳间波动大），TTL-exceeded 被大量过滤，多数中间跳仍是 `*`，因此**这张网络不能用来判定三网回程标签是否正确**。要确认 `163`/`CN2GIA`/`CN2GT`/`9929` 等标签，仍需在用户那台四川电信之类的生产节点上跑同一条命令。
+
+### 同日修复：Linux 上从 TTL 0 探测（由部署方报出）
+
+部署方在 Linux 上复跑 `TestEmbeddedTracesLoopback` 失败：
+`send error (ttl=0, attempt=0): setsockopt: invalid argument` / `Reason: timeout`。
+根因是两个 bug，都已修复：
+
+- `trace.Config` 没有设置 `BeginHop`，库默认 0，于是第一个探测包带着 TTL 0 发出。TTL 0 不是有效跳数，Linux 直接以 `setsockopt: invalid argument` 拒绝并让整次追踪失败；macOS 容忍了这个值，所以本地没暴露。现固定 `BeginHop: 1`（与 NextTrace CLI 的 `-f 1` 默认一致）。
+- 把 `res.Hops` 的**切片下标当成了 TTL**。库内部按 `ttl-1` 存（`updateHop` 用 `k := ttl - 1`，打印器传的也是下标），因此第一个跳会被丢弃、其余跳号整体错位一格，`StopReason.Hop`（存的是 TTL）也按下标去查。现统一 `TTL = index + 1`，`destinationHop` 用 `ttl - 1` 取下标；上一版为绕过服务端“TTL 必须 ≥ 1”而加的“跳过 ttl<1”是在掩盖症状，已删除。
+- 回归：`TestEmbeddedTracesLoopback` 在 macOS 由 12 秒失败边缘变为 **0.3 秒通过**；新增 `TestMapTraceResultTreatsTargetHopAsArrival` 钉住“目标跳即到达”与跳号语义，`TestMapTraceResultKeepsEvidenceAndMasksAddresses` 改为按真实布局（下标 0 = TTL 1）构造。
+- **仍未在 Linux 上验证**：本次尝试用 `debian:bookworm-slim` + 挂载的 Go 工具链离线编译来复跑，但开发机的 Clash（网络扩展 HakoMacExtension、DNS `198.18.0.2`、Fake-IP）在会话中途重新启用，容器内下载依赖被中间人证书拦截，`docker pull` 也超时，因此没有取得 Linux 结论。Linux 复验由部署方在目标机上执行。

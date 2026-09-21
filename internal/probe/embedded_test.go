@@ -18,9 +18,9 @@ import (
 )
 
 func TestMapTraceResultKeepsEvidenceAndMasksAddresses(t *testing.T) {
+	// NTrace-core indexes Hops by TTL-1 and stores the TTL in StopReason.
 	res := &trace.Result{
 		Hops: [][]trace.Hop{
-			nil,
 			{{Success: true, Address: &net.IPAddr{IP: net.ParseIP("10.29.1.1")}, TTL: 1, RTT: 900 * time.Microsecond}},
 			{{Success: false, Error: errors.New("hop timeout"), TTL: 2}},
 			{{Success: true, Address: &net.IPAddr{IP: net.ParseIP("59.43.245.1")}, TTL: 3, RTT: 120400 * time.Microsecond, Geo: &ipgeo.IPGeoData{Asnumber: "4809", Owner: "CN2"}}},
@@ -37,10 +37,10 @@ func TestMapTraceResultKeepsEvidenceAndMasksAddresses(t *testing.T) {
 	if out.Hops[0].TTL != 1 || out.Hops[0].Address != "10.29.*.*" {
 		t.Fatalf("masked hop: %+v", out.Hops[0])
 	}
-	if out.Hops[1].Address != "*" || out.Hops[1].RTT != 0 {
+	if out.Hops[1].TTL != 2 || out.Hops[1].Address != "*" || out.Hops[1].RTT != 0 {
 		t.Fatalf("timed out hop: %+v", out.Hops[1])
 	}
-	if out.Hops[2].ASN != "AS4809" || out.Hops[2].Address != "59.43.*.*" || out.Hops[2].RTT != 120.4 {
+	if out.Hops[2].TTL != 3 || out.Hops[2].ASN != "AS4809" || out.Hops[2].Address != "59.43.*.*" || out.Hops[2].RTT != 120.4 {
 		t.Fatalf("cn2 hop: %+v", out.Hops[2])
 	}
 	if *out.Latency != 120.4 {
@@ -65,9 +65,25 @@ func TestMapTraceResultReasons(t *testing.T) {
 	if got := mapTraceResult(nil, context.DeadlineExceeded, nil); got.Reason != "timeout" {
 		t.Fatalf("deadline: %+v", got)
 	}
-	partial := &trace.Result{Hops: [][]trace.Hop{nil, {{Success: false, TTL: 1}}}}
-	if got := mapTraceResult(partial, context.DeadlineExceeded, nil); got.Reason != "timeout" || len(got.Hops) != 1 {
+	partial := &trace.Result{Hops: [][]trace.Hop{{{Success: false, TTL: 1}}}}
+	if got := mapTraceResult(partial, context.DeadlineExceeded, nil); got.Reason != "timeout" || len(got.Hops) != 1 || got.Hops[0].TTL != 1 {
 		t.Fatalf("partial trace: %+v", got)
+	}
+}
+
+// A destination that only shows up as the last answered hop still counts as
+// reached, even when the tracer never wrote its own stop reason.
+func TestMapTraceResultTreatsTargetHopAsArrival(t *testing.T) {
+	res := &trace.Result{Hops: [][]trace.Hop{
+		{{Success: false, TTL: 1}},
+		{{Success: true, Address: &net.IPAddr{IP: net.ParseIP("203.0.113.9")}, TTL: 2, RTT: 12 * time.Millisecond}},
+	}}
+	out := mapTraceResult(res, context.DeadlineExceeded, net.ParseIP("203.0.113.9"))
+	if out.Received != 1 || out.Latency == nil || *out.Latency != 12 || out.Reason != "" {
+		t.Fatalf("target hop not treated as arrival: %+v", out)
+	}
+	if out.Hops[1].TTL != 2 {
+		t.Fatalf("hop ttl: %+v", out.Hops[1])
 	}
 }
 

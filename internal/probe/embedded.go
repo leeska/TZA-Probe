@@ -73,8 +73,12 @@ func (e Embedded) Trace(ctx context.Context, ip net.IP, port int) traceOutcome {
 		defer cancel()
 	}
 	conf := trace.Config{
-		Context:         ctx,
-		OSType:          osType(),
+		Context: ctx,
+		OSType:  osType(),
+		// BeginHop must be at least 1. The tracer otherwise sends its first
+		// probe with TTL 0, which is not a real hop and which Linux rejects
+		// outright (setsockopt: invalid argument), failing the whole trace.
+		BeginHop:        1,
 		DstIP:           ip,
 		DstPort:         port,
 		MaxHops:         24,
@@ -100,15 +104,15 @@ func (e Embedded) Trace(ctx context.Context, ip net.IP, port int) traceOutcome {
 func mapTraceResult(res *trace.Result, err error, target net.IP) traceOutcome {
 	out := traceOutcome{Hops: []model.Hop{}}
 	if res != nil {
-		for ttl, attempts := range res.Hops {
-			// Index 0 is the unused slot below the first real TTL; the wire
-			// model rejects TTL 0.
-			if ttl < 1 || len(attempts) == 0 {
+		// NTrace-core indexes Hops by TTL-1 (updateHop uses ttl-1), so the
+		// slice index is not the TTL the hop was observed at.
+		for index, attempts := range res.Hops {
+			if len(attempts) == 0 {
 				continue
 			}
 			hop := winningAttempt(attempts)
 			out.Hops = append(out.Hops, model.Hop{
-				TTL:     ttl,
+				TTL:     index + 1,
 				Address: hopAddress(hop),
 				ASN:     hopASN(hop),
 				RTT:     hopRTT(hop),
@@ -156,11 +160,13 @@ func winningAttempt(attempts []trace.Hop) trace.Hop {
 }
 
 func destinationHop(res *trace.Result) (trace.Hop, bool) {
+	// StopReason.Hop is a TTL; the slice is indexed by TTL-1.
 	ttl := res.StopReason.Hop
-	if ttl < 0 || ttl >= len(res.Hops) || len(res.Hops[ttl]) == 0 {
+	index := ttl - 1
+	if index < 0 || index >= len(res.Hops) || len(res.Hops[index]) == 0 {
 		return trace.Hop{}, false
 	}
-	return winningAttempt(res.Hops[ttl]), true
+	return winningAttempt(res.Hops[index]), true
 }
 
 func hopAddress(hop trace.Hop) string {
