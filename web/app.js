@@ -102,8 +102,23 @@ function renderCards() {
   document.querySelector("#nodes").innerHTML = filtered.length
     ? filtered.map(card).join("")
     : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点，并开启公开展示。"}</p></div>`;
+  // 单元格子只展示那一格的内容（延迟 / 回程），整张卡片才展示综合信息。
   for (const b of document.querySelectorAll("[data-detail]"))
-    b.onclick = guard(() => detail(b.dataset.detail));
+    b.onclick = guard((e) => {
+      e.stopPropagation();
+      detail(
+        b.dataset.detail,
+        b.dataset.focusKind
+          ? { kind: b.dataset.focusKind, carrier: b.dataset.focusCarrier, family: b.dataset.focusFamily }
+          : null,
+      );
+    });
+  for (const c of document.querySelectorAll(".node-card"))
+    c.onclick = guard((e) => {
+      // 卡片里已有自己行为的控件（协议开关、格子、节点名）不触发整卡的综合信息
+      if (e.target.closest("button, a, select, input, [data-detail]")) return;
+      detail(c.dataset.node);
+    });
   for (const b of document.querySelectorAll("[data-card-family]"))
     b.onclick = () => { cardFamilies.set(b.dataset.cardNode, b.dataset.cardFamily); renderCards(); };
 }
@@ -183,7 +198,7 @@ function card(n) {
       const title = matches.length
         ? `${date(recent)} · 成功 ${received}/${sent} 次`
         : "尚未检测";
-      return `<button class="route-label latency-label ${value == null ? "unknown" : "known"}" data-detail="${n.id}" title="${esc(title)}"><span class="carrier-name">${carrier}</span><span class="quality-row"><span>延迟</span><strong class="${value == null ? "muted" : ""}">${value == null ? (matches.length ? "超时" : "未检测") : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms"}</strong></span><span class="quality-bars">${latencyBars}</span><span class="quality-row"><span>丢包</span><strong class="${loss == null ? "muted" : ""}">${loss == null ? "—" : loss.toFixed(1) + "%"}</strong></span><span class="quality-bars loss-bars">${lossBars}</span></button>`;
+      return `<button class="route-label latency-label ${value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(carrier)}" data-focus-family="${effectiveFamily}" title="${esc(title)}"><span class="carrier-name">${carrier}</span><span class="quality-row"><span>延迟</span><strong class="${value == null ? "muted" : ""}">${value == null ? (matches.length ? "超时" : "未检测") : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms"}</strong></span><span class="quality-bars">${latencyBars}</span><span class="quality-row"><span>丢包</span><strong class="${loss == null ? "muted" : ""}">${loss == null ? "—" : loss.toFixed(1) + "%"}</strong></span><span class="quality-bars loss-bars">${lossBars}</span></button>`;
     })
     .join("");
 
@@ -203,7 +218,7 @@ function card(n) {
       const region = match?.task.region || n.representative || "未设代表地区";
       const label = known ? match.result.route : "未知";
       const title = match ? [region, label, date(match.at), statusName[match.result.status] || "未知"].join(" · ") : "尚未检测";
-      return `<button class="route-label ${known ? "known" : "unknown"}" data-detail="${n.id}" title="${esc(title)}"><span>${carrier}</span><strong class="${known ? "" : "muted"}">${esc(label)}</strong></button>`;
+      return `<button class="route-label ${known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(carrier)}" data-focus-family="${effectiveFamily}" title="${esc(title)}"><span>${carrier}</span><strong class="${known ? "" : "muted"}">${esc(label)}</strong></button>`;
     })
     .join("");
 
@@ -219,7 +234,7 @@ function card(n) {
     ? `<div class="route-heading"><span>TCP 延迟 <b>${familyLabel}</b></span><span class="rep-label">${esc(latencyRegion || "全部地区")}</span></div><div class="route-grid latency-grid">${latencies}</div><div class="route-heading"><span>三网回程 <b>${familyLabel}</b></span><span class="rep-label">${esc(n.representative || "自动匹配地区")}</span></div><div class="route-grid">${routes}</div>`
     : `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
 
-  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}"><div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${hasIPv4 && hasIPv6 ? `<div class="segmented card-family" aria-label="${esc(n.name)} IP 协议"><button data-card-family="ipv4" data-card-node="${n.id}" class="${effectiveFamily === "ipv4" ? "active" : ""}">IPv4</button><button data-card-family="ipv6" data-card-node="${n.id}" class="${effectiveFamily === "ipv6" ? "active" : ""}">IPv6</button></div>` : `<span class="family-tag">${hasIPv6 ? "IPv6" : hasIPv4 ? "IPv4" : "无探测"}</span>`}<span class="os-tag">${esc(m?.os || (n.online ? "在线" : "等待接入"))}</span></div></div><div class="metrics-grid">${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small></div></div><div class="speeds"><div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateInStr}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOutStr}</strong></div></div></div>${networkSections}<div class="card-bottom"><span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span></div></article>`;
+  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}"><div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${hasIPv4 && hasIPv6 ? `<div class="segmented card-family" aria-label="${esc(n.name)} IP 协议"><button data-card-family="ipv4" data-card-node="${n.id}" class="${effectiveFamily === "ipv4" ? "active" : ""}">IPv4</button><button data-card-family="ipv6" data-card-node="${n.id}" class="${effectiveFamily === "ipv6" ? "active" : ""}">IPv6</button></div>` : `<span class="family-tag">${hasIPv6 ? "IPv6" : hasIPv4 ? "IPv4" : "无探测"}</span>`}<span class="os-tag">${esc(m?.os || (n.online ? "在线" : "等待接入"))}</span></div></div><div class="metrics-grid">${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small></div></div><div class="speeds"><div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateInStr}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOutStr}</strong></div></div></div>${networkSections}<div class="card-bottom"><span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span></div></article>`;
 }
 
 // 一行 20 格，每格代表一次探测结果，按那次的数值落到 20 档色带上

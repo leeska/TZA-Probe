@@ -207,3 +207,10 @@ node scripts/ui-smoke.mjs
 - 前端：每行 20 格，最右是最新一次、左侧更早，样本不足时左边留空；每格按那次结果落到 20 档色带（延迟以 200 ms 为满量程，丢包以 20% 为满量程），失败的那次用空心红格 `.fail`，与"无数据"的灰格 `.idle` 区分；每格 `title` 是那次的时间与数值。
 - 顺带修掉一个会让整条色带失效的坑：页面 CSP 是 `style-src 'self'`，行内 `style` 属性会被浏览器忽略（属性留在 DOM 里但 `el.style` 为空、计算值仍是样式表的基础值）。色带因此改成 `styles.css` 里的 `.quality-bar.q1…q20`，由类名着色，`scripts/ui-smoke.mjs` 增加断言禁止再退回行内样式。
 - 验证：新增 `verify8.mjs`，用接口返回的原始结果独立算出 60 个格子应有的颜色，再与真实 Chrome 里 DOM 的类名逐一比对（延迟/丢包各 3 个运营商 × 20 格），并断言每格带自己的时间、样本不足时左侧留空、失败格为 `.fail`；`go test -race ./...`、`go vet ./...`、`git diff --check`、`ui-smoke.mjs` 均通过。存储层新增 `TestRecentLatencySamplesKeepsPerProbeResults`（分组上限、失败探测保留、回程任务不入表、时间升序）。
+
+## 2026-09-22 卡片点击分工：格子看单项，卡片看综合
+
+- 需求：点上面（TCP 延迟）的电信格 → 只看电信的详细延迟；点下面（三网回程）的电信格 → 只看电信的回程；点整张大卡片才看其它没有延迟与回程的综合信息。
+- 实现：`detail(id, focus)` 接受 `{kind: "latency"|"route", carrier, family}`。聚焦时只渲染该运营商的那一块（延迟视图给趋势图 + 逐目标延迟/失败率；回程视图只列 route 观测并排除 TCP 结果行），隐藏主机历史与统计，并在标题右侧提供“查看全部信息”切回综合视图；协议开关的初始选中态跟随卡片当前协议。卡片上的格子带 `data-focus-kind/carrier/family`，事件按 dataset 分发。
+- 整卡可点：`.node-card` 增加点击打开综合信息，并排除卡片内的控件（`button/a/select/input/[data-detail]`）。这一点有回归价值——第一版没排除协议开关，点 IPv4/IPv6 会误弹详情，`verify.mjs`/`verify2.mjs`/`ui-smoke` 立刻报“dialog intercepts pointer events”，已修复并加入断言。
+- 验证：新增 `verify9.mjs` 覆盖四条路径（延迟格→“电信 · TCP 延迟”且无回程/无主机历史、只含电信目标；回程格→“电信 · 三网回程”且行数等于该运营商 route 观测数、无 TCP 行；`#show-all`→综合信息；点卡片指标区与节点名→综合信息）。`ui-smoke.mjs` 增加“切协议不得弹详情”和“格子必须带聚焦信息”的断言。全套 `verify`~`verify9` 与 `ui-smoke`、`go test -race ./...`、`go vet ./...`、`git diff --check` 通过。

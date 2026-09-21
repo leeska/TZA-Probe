@@ -323,6 +323,18 @@ assert(
   findCard().querySelector('[data-card-family="ipv6"]').classList.contains("active"),
   "the public card switches to IPv6 on its own",
 );
+// 整张卡片现在可点开综合信息，所以卡片内的控件必须被排除，否则点协议开关会误弹详情
+assert(
+  !publicDOM.window.document.querySelector("#dialog[data-node-id]"),
+  "switching the address family must not open the detail dialog",
+);
+// 格子自己带聚焦信息：延迟格 → 该运营商延迟，回程格 → 该运营商回程
+const latencyCell = findCard().querySelector(".latency-grid .route-label");
+assert.equal(latencyCell.dataset.focusKind, "latency", "latency cell must carry its focus kind");
+assert(latencyCell.dataset.focusCarrier, "latency cell must carry its carrier");
+const routeCell = findCard().querySelector(".route-grid:not(.latency-grid) .route-label");
+assert.equal(routeCell.dataset.focusKind, "route", "route cell must carry its focus kind");
+assert(routeCell.dataset.focusCarrier, "route cell must carry its carrier");
 assert(
   [...publicDOM.window.document.querySelectorAll(".node-card")].every((c) =>
     c === findCard() ||

@@ -462,6 +462,9 @@ h1 {
   flex-direction: column;
 }
 
+/* 整张卡片可点：打开综合信息；卡片内的格子有自己的聚焦详情。 */
+.node-card { cursor: pointer; }
+
 .card-top {
   display: flex;
   align-items: center;

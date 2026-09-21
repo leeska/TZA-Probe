@@ -1,7 +1,9 @@
 import { api, esc, modal, guard } from "./api.js";
 import { bytes, date, statusName, reasonName } from "./format.js";
 import { chart } from "./charts.js";
-export async function detail(id) {
+// focus 为空时展示整台机器的综合信息；带 {kind, carrier} 时只展示那一格的详情：
+// 延迟格看该运营商的 TCP 延迟，回程格看该运营商的回程路径。
+export async function detail(id, focus = null) {
   const list = await api("/nodes");
   const n = list.find((x) => x.id === id);
   if (!n) return;
@@ -24,16 +26,32 @@ export async function detail(id) {
     hasIPv4 && hasIPv6
       ? `<div class="segmented" role="group" aria-label="IP 协议"><button data-detail-family="ipv4" class="active">IPv4</button><button data-detail-family="ipv6">IPv6</button></div>`
       : `<span class="family-tag">${hasIPv4 ? "IPv4" : hasIPv6 ? "IPv6" : "无探测"}</span>`;
+  // 点击卡片上的某一格时只展示那一格的详情：延迟格看该运营商 TCP 延迟，
+  // 回程格看该运营商回程路径；点整张卡片才给综合信息。
+  const focused = !!focus && (focus.kind === "latency" || focus.kind === "route");
+  const focusCarrier = focused ? focus.carrier || "" : "";
+  const focusKind = focused ? focus.kind : "";
+  const focusTitle = focused
+    ? `${focusCarrier && focusCarrier !== "其他" ? focusCarrier + " · " : ""}${focusKind === "route" ? "三网回程" : "TCP 延迟"}`
+    : "";
   const networkPanel =
     hasIPv4 || hasIPv6
-      ? `<div id="network-overview"></div><div id="network-history"></div><div id="route-details"></div>`
+      ? focused
+        ? focusKind === "route"
+          ? `<div id="route-details"></div>`
+          : `<div id="network-overview"></div><div id="network-history"></div>`
+        : `<div id="network-overview"></div><div id="network-history"></div><div id="route-details"></div>`
       : `<p class="hint">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
-  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div><div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3><select id="history-range" aria-label="历史时间范围"><option value="1">最近 1 小时</option><option value="24" selected>最近 24 小时</option><option value="168">最近 7 天</option><option value="720">最近 30 天</option></select></div><div id="charts">${hostCharts(history, 24)}</div><div class="section-head"><h3>网络与三网回程</h3>${familyControl}</div>${networkPanel}<p class="hint">回程标签按实际观测到的骨干命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG）；ASN 优先、跳地址前缀兜底，CN2 直接进入 59.43.* 记为 GIA、先经过 163 再进入记为 GT，仍不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
+  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3><select id="history-range" aria-label="历史时间范围"><option value="1">最近 1 小时</option><option value="24" selected>最近 24 小时</option><option value="168">最近 7 天</option><option value="720">最近 30 天</option></select></div><div id="charts">${hostCharts(history, 24)}</div>`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused ? '<button type="button" id="show-all">查看全部信息</button>' : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际观测到的骨干命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG）；ASN 优先、跳地址前缀兜底，CN2 直接进入 59.43.* 记为 GIA、先经过 163 再进入记为 GT，仍不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
-  let networkSeries = network;
-  let selectedFamily = hasIPv4 ? "ipv4" : "ipv6";
+  // 卡片把没有运营商的旧任务归入“其他”，这里用同样的规则匹配。
+  const carrierOf = (value) => (["电信", "联通", "移动"].includes(value) ? value : "其他");
+  let networkSeries = focused ? network.filter((x) => carrierOf(x.carrier) === focusCarrier) : network;
+  const scopedObs = focused ? obs.filter((o) => carrierOf(o.task.carrier) === focusCarrier) : obs;
+  const wantedFamily = focus && focus.family;
+  let selectedFamily = wantedFamily && (wantedFamily === "ipv4" ? hasIPv4 : hasIPv6) ? wantedFamily : hasIPv4 ? "ipv4" : "ipv6";
   let selectedHours = 24;
   let overviewMetric = "latency";
   function renderNetwork() {
@@ -57,7 +75,10 @@ export async function detail(id) {
     renderNetwork();
     const details = d.querySelector("#route-details");
     if (!details) return;
-    const matches = obs.filter((o) => o.task.family === f);
+    // 只看回程时把 TCP 结果排除掉，否则回程列表里会混进延迟行。
+    const matches = scopedObs.filter(
+      (o) => o.task.family === f && (focusKind !== "route" || o.task.kind === "route"),
+    );
     details.innerHTML = matches.length
       ? matches
           .map(
@@ -67,6 +88,9 @@ export async function detail(id) {
           .join("")
       : '<div class="chart-empty">此协议暂无探测结果。请在后台创建并绑定任务。</div>';
   }
+  d.querySelectorAll("[data-detail-family]").forEach(
+    (x) => x.classList.toggle("active", x.dataset.detailFamily === selectedFamily),
+  );
   renderRoutes(selectedFamily);
   d.querySelectorAll("[data-detail-family]").forEach(
     (b) =>
@@ -77,7 +101,9 @@ export async function detail(id) {
         renderRoutes(b.dataset.detailFamily);
       }),
   );
-  d.querySelector("#history-range").onchange = guard(async (e) => {
+  const showAll = d.querySelector("#show-all");
+  if (showAll) showAll.onclick = guard(() => detail(id));
+  d.querySelector("#history-range")?.addEventListener("change", guard(async (e) => {
     const hours = Number(e.target.value);
     const [samples, net] = await Promise.all([
       api(`/nodes/${id}/history?hours=${hours}`),
@@ -90,10 +116,10 @@ export async function detail(id) {
     )
       return;
     selectedHours = hours;
-    networkSeries = net;
+    networkSeries = focused ? net.filter((x) => carrierOf(x.carrier) === focusCarrier) : net;
     d.querySelector("#charts").innerHTML = hostCharts(samples, hours);
     renderNetwork();
-  });
+  }));
 }
 
 function targetLabel(series) {
