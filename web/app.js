@@ -104,13 +104,17 @@ function renderCards() {
 
 function card(n) {
   const cardFamily = cardFamilies.get(n.id) || "ipv4";
+  const allObs = observations.get(n.id) || [];
+  const hasIPv4 = allObs.some((o) => o.task.family === "ipv4" && o.task.enabled);
+  const hasIPv6 = allObs.some((o) => o.task.family === "ipv6" && o.task.enabled);
+  const effectiveFamily = cardFamily === "ipv6" && !hasIPv6 ? "ipv4" : cardFamily;
   const m = n.metrics,
     hasMetrics = !!m,
     isLive = n.online && m,
     expiry = days(n.expires_at);
 
-  const obs = (observations.get(n.id) || []).filter(
-    (o) => o.task.family === cardFamily && o.task.enabled,
+  const obs = allObs.filter(
+    (o) => o.task.family === effectiveFamily && o.task.enabled,
   );
   // 延迟按运营商分格显示，地区取节点的延迟地区，其次代表地区，都未设则不限地区。
   // 目录外的自定义目标（以及没有运营商的旧任务）归入“其他”。
@@ -155,7 +159,7 @@ function card(n) {
         .filter(
           (o) =>
             o.task.kind === "route" &&
-            o.task.family === cardFamily &&
+            o.task.family === effectiveFamily &&
             (!n.representative || o.task.region === n.representative) &&
             o.task.carrier === carrier,
         )
@@ -175,7 +179,7 @@ function card(n) {
   const rateInStr = isLive ? `${bytes(m.rate_in)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
   const rateOutStr = isLive ? `${bytes(m.rate_out)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
 
-  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}><div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions"><div class="segmented card-family" aria-label="${esc(n.name)} IP 协议"><button data-card-family="ipv4" data-card-node="${n.id}" class="${cardFamily === "ipv4" ? "active" : ""}">IPv4</button><button data-card-family="ipv6" data-card-node="${n.id}" class="${cardFamily === "ipv6" ? "active" : ""}">IPv6</button></div><span class="os-tag">${esc(m?.os || (n.online ? "在线" : "等待接入"))}</span></div></div><div class="metrics-grid">${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small></div></div><div class="speeds"><div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateInStr}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOutStr}</strong></div></div></div><div class="route-heading"><span>TCP 延迟 <b>${family === "ipv4" ? "IPv4" : "IPv6"}</b></span><span class="rep-label">${esc(latencyRegion || "全部地区")}</span></div><div class="route-grid latency-grid">${latencies}</div><div class="route-heading"><span>三网回程 <b>${family === "ipv4" ? "IPv4" : "IPv6"}</b></span><span class="rep-label">${esc(n.representative || "自动匹配地区")}</span></div><div class="route-grid">${routes}</div><div class="card-bottom"><span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span></div></article>`;
+  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}><div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${hasIPv4 && hasIPv6 ? `<div class="segmented card-family" aria-label="${esc(n.name)} IP 协议"><button data-card-family="ipv4" data-card-node="${n.id}" class="${effectiveFamily === "ipv4" ? "active" : ""}">IPv4</button><button data-card-family="ipv6" data-card-node="${n.id}" class="${effectiveFamily === "ipv6" ? "active" : ""}">IPv6</button></div>` : `<span class="family-tag">${hasIPv6 ? "IPv6" : hasIPv4 ? "IPv4" : "无探测"}</span>`}<span class="os-tag">${esc(m?.os || (n.online ? "在线" : "等待接入"))}</span></div></div><div class="metrics-grid">${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small></div></div><div class="speeds"><div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateInStr}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOutStr}</strong></div></div></div><div class="route-heading"><span>TCP 延迟 <b>${effectiveFamily === "ipv4" ? "IPv4" : "IPv6"}</b></span><span class="rep-label">${esc(latencyRegion || "全部地区")}</span></div><div class="route-grid latency-grid">${latencies}</div><div class="route-heading"><span>三网回程 <b>${effectiveFamily === "ipv4" ? "IPv4" : "IPv6"}</b></span><span class="rep-label">${esc(n.representative || "自动匹配地区")}</span></div><div class="route-grid">${routes}</div><div class="card-bottom"><span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span></div></article>`;
 }
 
 function qualityBars(value, ceiling, inverse = false) {
