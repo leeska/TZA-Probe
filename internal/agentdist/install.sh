@@ -8,6 +8,7 @@
 #   --interfaces eth0,eth1   只统计这些网卡的流量（默认统计全部非 loopback 网卡）
 #   --nexttrace /usr/bin/nexttrace   改用外部 NextTrace 二进制（默认用内置的 NTrace-core，无需安装）
 #   --geo-provider NAME      内置回程的 ASN/地区数据源，默认 NextTrace-API；也可 disable-geoip、IPAPI.com 等
+#   --trace-method NAME      内置回程的探测方式：icmp（默认，与 NextTrace CLI 一致）、tcp 或 udp
 #   --allow-http             允许明文 HTTP 的 endpoint（仅限可信私网；endpoint 为 http:// 时自动开启）
 #   --uninstall              停止服务并删除程序、配置和 systemd 单元
 #
@@ -20,6 +21,7 @@ TOKEN="${TZA_TOKEN:-}"
 INTERFACES=""
 NEXTTRACE=""
 GEO_PROVIDER=""
+TRACE_METHOD=""
 ALLOW_HTTP=""
 UNINSTALL=""
 CONFIG=/etc/tza-probe/agent.json
@@ -33,9 +35,10 @@ while [ $# -gt 0 ]; do
     --interfaces) INTERFACES="$2"; shift 2 ;;
     --nexttrace) NEXTTRACE="$2"; shift 2 ;;
     --geo-provider) GEO_PROVIDER="$2"; shift 2 ;;
+    --trace-method) TRACE_METHOD="$2"; shift 2 ;;
     --allow-http) ALLOW_HTTP=true; shift ;;
     --uninstall) UNINSTALL=true; shift ;;
-    -h|--help) sed -n '2,15p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done
@@ -53,6 +56,7 @@ if [ "$(id -u)" -ne 0 ]; then
   [ -n "$INTERFACES" ] && quoted="$quoted --interfaces $(q "$INTERFACES")"
   [ -n "$NEXTTRACE" ] && quoted="$quoted --nexttrace $(q "$NEXTTRACE")"
   [ -n "$GEO_PROVIDER" ] && quoted="$quoted --geo-provider $(q "$GEO_PROVIDER")"
+  [ -n "$TRACE_METHOD" ] && quoted="$quoted --trace-method $(q "$TRACE_METHOD")"
   [ -n "$ALLOW_HTTP" ] && quoted="$quoted --allow-http"
   [ -n "$UNINSTALL" ] && quoted="$quoted --uninstall"
   if command -v curl >/dev/null 2>&1; then
@@ -146,11 +150,12 @@ if [ -z "$UPGRADE" ]; then
   IFS=$OLDIFS
   case "$NEXTTRACE" in *[\"\\]*) fail "NextTrace 路径不能包含引号或反斜杠" ;; esac
   case "$GEO_PROVIDER" in *[\"\\]*) fail "数据源名称不能包含引号或反斜杠" ;; esac
+  case "$TRACE_METHOD" in ""|icmp|tcp|udp) ;; *) fail "探测方式只能是 icmp、tcp 或 udp" ;; esac
   install -d -m 0700 /etc/tza-probe
   umask 077
   # 用 printf 逐字段写出，密钥与路径不经过 shell 二次展开
-  printf '{\n  "endpoint": "%s",\n  "token": "%s",\n  "interfaces": [%s],\n  "mount": "/",\n  "nexttrace": "%s",\n  "geo_provider": "%s",\n  "allow_http": %s\n}\n' \
-    "$ENDPOINT" "$TOKEN" "$IFACES" "$NEXTTRACE" "$GEO_PROVIDER" "${ALLOW_HTTP:-false}" > "$CONFIG"
+  printf '{\n  "endpoint": "%s",\n  "token": "%s",\n  "interfaces": [%s],\n  "mount": "/",\n  "nexttrace": "%s",\n  "geo_provider": "%s",\n  "trace_method": "%s",\n  "allow_http": %s\n}\n' \
+    "$ENDPOINT" "$TOKEN" "$IFACES" "$NEXTTRACE" "$GEO_PROVIDER" "$TRACE_METHOD" "${ALLOW_HTTP:-false}" > "$CONFIG"
   chmod 0600 "$CONFIG"
 fi
 

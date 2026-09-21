@@ -6,6 +6,7 @@ import (
 	"net"
 	"runtime"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +27,22 @@ type Embedded struct {
 	// "NextTrace-API" (the upstream default), "IPAPI.com" or "disable-geoip".
 	// Empty keeps the upstream default.
 	GeoProvider string
+	// Method selects the probe protocol: "icmp" (default), "tcp" or "udp".
+	// ICMP is what the NextTrace CLI uses when no method flag is given, and it
+	// is the method that keeps returning TTL-exceeded hops on filtered access
+	// networks. The operator can switch without touching code.
+	Method string
+}
+
+func (e Embedded) traceMethod() trace.Method {
+	switch strings.ToLower(strings.TrimSpace(e.Method)) {
+	case "tcp":
+		return trace.TCPTrace
+	case "udp":
+		return trace.UDPTrace
+	default:
+		return trace.ICMPTrace
+	}
 }
 
 // traceBudget caps one embedded trace. The caller still owns the outer job
@@ -56,21 +73,24 @@ func (e Embedded) Trace(ctx context.Context, ip net.IP, port int) traceOutcome {
 		defer cancel()
 	}
 	conf := trace.Config{
-		Context:            ctx,
-		OSType:             osType(),
-		DstIP:              ip,
-		DstPort:            port,
-		MaxHops:            24,
-		NumMeasurements:    1,
-		MaxAttempts:        1,
-		ParallelRequests:   2,
+		Context:         ctx,
+		OSType:          osType(),
+		DstIP:           ip,
+		DstPort:         port,
+		MaxHops:         24,
+		NumMeasurements: 1,
+		MaxAttempts:     1,
+		// More probes in flight keeps a filtered path inside the budget: with
+		// one measurement per hop, two parallel requests spent the whole 45s
+		// and still stopped short of the destination.
+		ParallelRequests:   6,
 		Timeout:            1500 * time.Millisecond,
 		DisableMPLS:        true,
 		Lang:               "cn",
 		IPGeoSource:        session.Source,
 		RefreshIPGeoSource: session.Refresh,
 	}
-	res, err := trace.TracerouteWithContext(ctx, trace.TCPTrace, conf)
+	res, err := trace.TracerouteWithContext(ctx, e.traceMethod(), conf)
 	return mapTraceResult(res, err, ip)
 }
 

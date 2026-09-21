@@ -43,6 +43,7 @@ chmod 600 agent.json
   "mount": "/",
   "nexttrace": "",
   "geo_provider": "",
+  "trace_method": "",
   "allow_http": false
 }
 ```
@@ -53,7 +54,7 @@ chmod 600 agent.json
 
 后台创建任务，可从内置目录选择地区、运营商和 IP 协议，再明确选择节点。空绑定不执行。回程最短 15 分钟、默认 1 小时；TCP 最短 30 秒。单个节点最多同时执行一个 TCP 和一个回程任务。
 
-回程由 Agent 内置的 **NTrace-core**（NextTrace 的同一个追踪核心）在进程内执行，无需在节点上安装任何外部工具；固定使用 TCP、24 跳、单次测量、1500 毫秒超时和 45 秒预算，显式关闭路径地图生成，避免上传完整路径制作分享地图。`nexttrace` 留空即用内置实现；填写绝对路径则改为调用该外部二进制（仅作运维兜底）。`geo_provider` 选择跳数 ASN/地区数据源，留空等同上游默认 `NextTrace-API`，也可填 `IPAPI.com`、`disable-geoip` 等；`disable-geoip` 时标签完全依赖本地地址前缀表。权限不足、目标不响应或数据源不可用时不会编造线路。运行原始套接字探测时，使用具备所需权限的服务账户或由运维为工具配置对应能力。
+回程由 Agent 内置的 **NTrace-core**（NextTrace 的同一个追踪核心）在进程内执行，无需在节点上安装任何外部工具；固定 24 跳、单次测量、1500 毫秒超时和 45 秒预算，显式关闭路径地图生成，避免上传完整路径制作分享地图。`nexttrace` 留空即用内置实现；填写绝对路径则改为调用该外部二进制（仅作运维兜底）。`trace_method` 是探测方式，默认 `icmp`（与 NextTrace CLI 一致），可改 `tcp` 或 `udp`。`geo_provider` 选择跳数 ASN/地区数据源，留空等同上游默认 `NextTrace-API`，也可填 `IPAPI.com`、`disable-geoip` 等；`disable-geoip` 时标签完全依赖本地地址前缀表。权限不足、目标不响应或数据源不可用时不会编造线路。运行原始套接字探测时，使用具备所需权限的服务账户或由运维为工具配置对应能力。
 
 线路依据实际 ASN 与跳地址前缀展示 `163`、`CN2GIA`、`CN2GT`、`CTG`、`10099`、`9929`、`4837`、`CMIN2`、`CMI` 及路径组合；前缀表沿用同族分类器的三网回程网段，只覆盖各运营商骨干网段，表外地址不会硬猜。ASN 数据源由 Agent 直接请求（可用 `geo_provider` 指定或关闭），页面与 Server 不执行 traceroute，也不请求 ASN 服务。内置追踪核心 NTrace-core 为 GPL-3.0，Agent 二进制的分发条款见 NOTICE。
 

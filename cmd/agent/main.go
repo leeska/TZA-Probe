@@ -24,6 +24,7 @@ type config struct {
 	Mount       string   `json:"mount"`
 	Nexttrace   string   `json:"nexttrace"`
 	GeoProvider string   `json:"geo_provider"`
+	TraceMethod string   `json:"trace_method"`
 	AllowHTTP   bool     `json:"allow_http"`
 }
 
@@ -69,8 +70,8 @@ func run() error {
 		prober.Nexttrace = cfg.Nexttrace
 		slog.Info("route probing uses the configured nexttrace binary", "path", cfg.Nexttrace)
 	} else {
-		prober.Embedded = &probe.Embedded{GeoProvider: cfg.GeoProvider}
-		slog.Info("route probing runs in process through the embedded NTrace-core tracer", "geo_provider", cfg.GeoProvider)
+		prober.Embedded = &probe.Embedded{GeoProvider: cfg.GeoProvider, Method: cfg.TraceMethod}
+		slog.Info("route probing runs in process through the embedded NTrace-core tracer", "geo_provider", cfg.GeoProvider, "trace_method", cfg.TraceMethod)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

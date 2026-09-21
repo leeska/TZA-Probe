@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -109,5 +110,73 @@ func TestRunnerWithoutTracerStaysUnavailable(t *testing.T) {
 	got := (Runner{}).Run(context.Background(), model.Job{Task: task})
 	if got.Status != "unavailable" || got.Reason != "tool_missing" {
 		t.Fatalf("missing tracer: %+v", got)
+	}
+}
+
+// ICMP is the default because it matches the NextTrace CLI and keeps returning
+// TTL-exceeded hops on access networks that drop TCP probe replies.
+func TestTraceMethodSelection(t *testing.T) {
+	for input, want := range map[string]trace.Method{
+		"": trace.ICMPTrace, "icmp": trace.ICMPTrace, "ICMP": trace.ICMPTrace,
+		" icmp ": trace.ICMPTrace, "tcp": trace.TCPTrace, "udp": trace.UDPTrace,
+		"nonsense": trace.ICMPTrace,
+	} {
+		if got := (Embedded{Method: input}).traceMethod(); got != want {
+			t.Fatalf("%q: %v", input, got)
+		}
+	}
+}
+
+// TestEmbeddedLiveTrace is the on-node acceptance check for the embedded
+// tracer. It only runs when explicitly asked, because it needs root and a host
+// with a direct internet path:
+//
+//	sudo TZA_LIVE_TRACE_TARGET=1.1.1.1 \
+//	  TZA_LIVE_TRACE_GEO=IPAPI.com go test ./internal/probe/ -run LiveTrace -v
+//
+// Do not run this on a host whose egress goes through a local proxy or
+// Fake-IP resolver: the hops would describe the proxy, not the operator line.
+func TestEmbeddedLiveTrace(t *testing.T) {
+	target := os.Getenv("TZA_LIVE_TRACE_TARGET")
+	if target == "" {
+		t.Skip("set TZA_LIVE_TRACE_TARGET=<ip> to run a live trace")
+	}
+	if os.Geteuid() != 0 {
+		t.Skip("raw socket probe requires root")
+	}
+	ip := net.ParseIP(target)
+	if ip == nil || ip.To4() == nil {
+		t.Fatalf("TZA_LIVE_TRACE_TARGET must be an IPv4 literal, got %q", target)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	method := os.Getenv("TZA_LIVE_TRACE_METHOD")
+	if method == "" {
+		method = "tcp"
+	}
+	out := (Embedded{GeoProvider: os.Getenv("TZA_LIVE_TRACE_GEO"), Method: method}).Trace(ctx, ip, 443)
+	t.Logf("status: received=%d latency=%v reason=%q", out.Received, out.Latency, out.Reason)
+	for _, h := range out.Hops {
+		t.Logf("  %2d  %-16s %-10s %.1f ms", h.TTL, h.Address, h.ASN, h.RTT)
+	}
+	t.Logf("route label: %s", model.RouteLabel(out.Hops))
+
+	if len(out.Hops) < 3 {
+		t.Fatalf("live trace produced %d hops; expected a real path", len(out.Hops))
+	}
+	for _, h := range out.Hops {
+		if h.Address == "198.18.*.*" || h.Address == "198.19.*.*" {
+			t.Fatalf("hop %d is a Fake-IP address; this host is not a valid probe point", h.TTL)
+		}
+		if strings.HasPrefix(h.Address, "10.") || strings.HasPrefix(h.Address, "127.") {
+			t.Fatalf("hop %d is private (%s); the trace never left the local network", h.TTL, h.Address)
+		}
+	}
+	if out.Received != 1 {
+		t.Fatalf("target %s did not answer: %+v", target, out)
+	}
+	last := out.Hops[len(out.Hops)-1]
+	if last.Address != model.MaskAddress(ip.String()) {
+		t.Fatalf("last hop is %s, expected the target %s", last.Address, model.MaskAddress(ip.String()))
 	}
 }
