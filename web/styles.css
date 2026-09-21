@@ -1734,6 +1734,24 @@ pre,
   overflow: visible;
 }
 
+/* 纵坐标刻度：绘图区 120 高，网格线固定在 8 / 59 / 110，标签就贴着这三条线。 */
+.chart-plot { display: flex; align-items: flex-start; gap: 8px; }
+.chart-body { flex: 1 1 auto; min-width: 0; }
+.chart-y {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 120px;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.chart-y span { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
+.chart-y span:nth-child(1) { top: 8px; }
+.chart-y span:nth-child(2) { top: 59px; }
+.chart-y span:nth-child(3) { top: 110px; }
+
 .chart polyline,
 .chart-line {
   fill: none;

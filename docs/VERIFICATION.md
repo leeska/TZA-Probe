@@ -214,3 +214,10 @@ node scripts/ui-smoke.mjs
 - 实现：`detail(id, focus)` 接受 `{kind: "latency"|"route", carrier, family}`。聚焦时只渲染该运营商的那一块（延迟视图给趋势图 + 逐目标延迟/失败率；回程视图只列 route 观测并排除 TCP 结果行），隐藏主机历史与统计，并在标题右侧提供“查看全部信息”切回综合视图；协议开关的初始选中态跟随卡片当前协议。卡片上的格子带 `data-focus-kind/carrier/family`，事件按 dataset 分发。
 - 整卡可点：`.node-card` 增加点击打开综合信息，并排除卡片内的控件（`button/a/select/input/[data-detail]`）。这一点有回归价值——第一版没排除协议开关，点 IPv4/IPv6 会误弹详情，`verify.mjs`/`verify2.mjs`/`ui-smoke` 立刻报“dialog intercepts pointer events”，已修复并加入断言。
 - 验证：新增 `verify9.mjs` 覆盖四条路径（延迟格→“电信 · TCP 延迟”且无回程/无主机历史、只含电信目标；回程格→“电信 · 三网回程”且行数等于该运营商 route 观测数、无 TCP 行；`#show-all`→综合信息；点卡片指标区与节点名→综合信息）。`ui-smoke.mjs` 增加“切协议不得弹详情”和“格子必须带聚焦信息”的断言。全套 `verify`~`verify9` 与 `ui-smoke`、`go test -race ./...`、`go vet ./...`、`git diff --check` 通过。
+
+## 2026-09-22 折线图补上纵坐标
+
+- 问题：图表只有 `0–上限` 的文字说明和 X 轴首尾时间，没有纵向刻度，看不出曲线对应的数值。
+- 改法：`chart()` 与详情页的网络趋势图都在绘图区左侧加一列刻度（`.chart-y`），三条标签分别贴住 8 / 59 / 110 三条网格线，对应量程上限、半量程和 0；单位跟着指标走（CPU / 内存 / 丢包为百分比，速率为 KB/s、MB/s，延迟为 ms）。刻度用 CSS 的 `:nth-child` 定位，位置不依赖行内样式（页面 CSP 为 `style-src 'self'`，行内样式会被忽略）。
+- 顺带把详情页网络趋势图的 `viewBox` 从 `0 0 680 140` 改成 `0 0 680 120`，与其它图统一，这样网格线和纵坐标标签的像素位置一致（原来 140 高被压进 120px 的容器，网格线并不落在 8 / 59 / 110）。
+- 验证：新增 `verify10.mjs`，在真实 Chrome 里断言主机历史四张图各有 3 个刻度、数值递减、底部为 0、位置正好是 `8px / 59px / 110px`，并断言把网络趋势切到丢包后纵轴变成 `100% / 50% / 0%`。截图见 `shots/charts-y-axis.png` 与 `shots/charts-y-axis-overview.png`。

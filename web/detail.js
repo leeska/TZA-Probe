@@ -138,11 +138,14 @@ function networkOverview(series, metric, hours) {
   if (!usable.length) return '<div class="chart-empty">网络历史样本不足，采样后自动显示折线图</div>';
   const all = usable.flatMap((s) => s.samples), first = Math.min(...all.map((p) => p.at)), last = Math.max(...all.map((p) => p.at));
   const maxValue = metric === "failure" ? 100 : Math.max(100, ...all.map((p) => p.latency || 0));
+  // 纵坐标：顶部是量程（丢包固定 100%，延迟取历史峰值，最低 100 ms），底部是 0。
+  const tick = (v) => metric === "failure" ? v.toFixed(0) + "%" : (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " ms";
+  const yAxis = `<div class="chart-y" aria-hidden="true"><span>${esc(tick(maxValue))}</span><span>${esc(tick(maxValue / 2))}</span><span>${esc(tick(0))}</span></div>`;
   const colors = ["#ff625f", "#36c8bf", "#9b7cff", "#5a9cff", "#ffad3d", "#eb63b5", "#36c98b", "#ff873d"];
   const lines = usable.map((s, i) => {
     const points = s.samples.map((p) => `${(((p.at - first) / Math.max(1, last - first)) * 680).toFixed(1)},${(110 - ((p[metric] || 0) / maxValue) * 102).toFixed(1)}`).join(" ");
     return `<polyline class="overview-line" stroke="${colors[i % colors.length]}" points="${points}" />`;
   }).join("");
   const legend = usable.map((s, i) => `<span><i class="legend-dot lc${i % colors.length}"></i>${esc([s.region, s.carrier, s.host].filter(Boolean).join(" · "))}</span>`).join("");
-  return `<figure class="network-overview chart"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${hours} 小时 · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><svg viewBox="0 0 680 140" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg><div class="chart-axis"><span>${new Date(first * 1000).toLocaleString("zh-CN", { hour12: false })}</span><span>${new Date(last * 1000).toLocaleString("zh-CN", { hour12: false })}</span></div><div class="overview-legend">${legend}</div></figure>`;
+  return `<figure class="network-overview chart"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${hours} 小时 · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><div class="chart-plot">${yAxis}<div class="chart-body"><svg viewBox="0 0 680 120" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线，纵轴 0 到 ${esc(tick(maxValue))}"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg><div class="chart-axis"><span>${new Date(first * 1000).toLocaleString("zh-CN", { hour12: false })}</span><span>${new Date(last * 1000).toLocaleString("zh-CN", { hour12: false })}</span></div><div class="overview-legend">${legend}</div></div></div></figure>`;
 }
