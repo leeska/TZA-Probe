@@ -199,3 +199,11 @@ node scripts/ui-smoke.mjs
 - 把 `res.Hops` 的**切片下标当成了 TTL**。库内部按 `ttl-1` 存（`updateHop` 用 `k := ttl - 1`，打印器传的也是下标），因此第一个跳会被丢弃、其余跳号整体错位一格，`StopReason.Hop`（存的是 TTL）也按下标去查。现统一 `TTL = index + 1`，`destinationHop` 用 `ttl - 1` 取下标；上一版为绕过服务端“TTL 必须 ≥ 1”而加的“跳过 ttl<1”是在掩盖症状，已删除。
 - 回归：`TestEmbeddedTracesLoopback` 在 macOS 由 12 秒失败边缘变为 **0.3 秒通过**；新增 `TestMapTraceResultTreatsTargetHopAsArrival` 钉住“目标跳即到达”与跳号语义，`TestMapTraceResultKeepsEvidenceAndMasksAddresses` 改为按真实布局（下标 0 = TTL 1）构造。
 - **仍未在 Linux 上验证**：本次尝试用 `debian:bookworm-slim` + 挂载的 Go 工具链离线编译来复跑，但开发机的 Clash（网络扩展 HakoMacExtension、DNS `198.18.0.2`、Fake-IP）在会话中途重新启用，容器内下载依赖被中间人证书拦截，`docker pull` 也超时，因此没有取得 Linux 结论。Linux 复验由部署方在目标机上执行。
+
+## 2026-09-21 卡片延迟格改成"每格一次探测"
+
+- 需求澄清：格子的语义是**每次探测的结果**，不是"整条进度条表示延迟高低"。原来的实现是单值量级条（按聚合延迟点亮前 N 格再统一上色），语义不对。
+- 数据侧新增 `GET /api/v1/latency-samples?limit=N`（默认 20，上限 60），用窗口函数按 `节点/运营商/协议/地区` 分组各取最近 N 次已完成的 TCP 结果，返回逐次的 `at/latency/sent/received`；只返回调用者本来就可见的节点（公开节点或管理员），不引入新的可见性。回程任务不进入该接口。
+- 前端：每行 20 格，最右是最新一次、左侧更早，样本不足时左边留空；每格按那次结果落到 20 档色带（延迟以 200 ms 为满量程，丢包以 20% 为满量程），失败的那次用空心红格 `.fail`，与"无数据"的灰格 `.idle` 区分；每格 `title` 是那次的时间与数值。
+- 顺带修掉一个会让整条色带失效的坑：页面 CSP 是 `style-src 'self'`，行内 `style` 属性会被浏览器忽略（属性留在 DOM 里但 `el.style` 为空、计算值仍是样式表的基础值）。色带因此改成 `styles.css` 里的 `.quality-bar.q1…q20`，由类名着色，`scripts/ui-smoke.mjs` 增加断言禁止再退回行内样式。
+- 验证：新增 `verify8.mjs`，用接口返回的原始结果独立算出 60 个格子应有的颜色，再与真实 Chrome 里 DOM 的类名逐一比对（延迟/丢包各 3 个运营商 × 20 格），并断言每格带自己的时间、样本不足时左侧留空、失败格为 `.fail`；`go test -race ./...`、`go vet ./...`、`git diff --check`、`ui-smoke.mjs` 均通过。存储层新增 `TestRecentLatencySamplesKeepsPerProbeResults`（分组上限、失败探测保留、回程任务不入表、时间升序）。

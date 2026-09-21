@@ -747,10 +747,32 @@ button.node-name:hover {
 .quality-row strong.muted { color: var(--muted); font-weight: 400; }
 .quality-bars { display: flex !important; align-items: flex-start; gap: 2px; width: 100%; height: 6px; min-height: 6px; overflow: hidden; }
 .quality-bar { display: block; flex: 1 1 0; width: auto; height: 6px !important; min-height: 6px; border-radius: 1px; background: var(--line); }
-.quality-bar.good { background: #35b77a; }
-.quality-bar.warn { background: #c7c83c; }
-.quality-bar.bad { background: #e06a5f; }
+/* 延迟 / 丢包条的色带：绿 → 青 → 黄 → 橙 → 红，q1（最低）到 q20（最高）无级过渡。
+   颜色写在 CSS 里而不是行内 style，因为页面 CSP 是 style-src 'self'，行内样式会被忽略。
+   改色带只需改这里的 20 个值，或在 app.js 的 qualityStops 里重新生成。 */
+.quality-bar.q1 { background: rgb(43 199 107); }
+.quality-bar.q2 { background: rgb(33 199 125); }
+.quality-bar.q3 { background: rgb(24 199 143); }
+.quality-bar.q4 { background: rgb(15 199 161); }
+.quality-bar.q5 { background: rgb(6 199 179); }
+.quality-bar.q6 { background: rgb(20 200 176); }
+.quality-bar.q7 { background: rgb(69 204 142); }
+.quality-bar.q8 { background: rgb(119 207 108); }
+.quality-bar.q9 { background: rgb(168 210 74); }
+.quality-bar.q10 { background: rgb(188 210 74); }
+.quality-bar.q11 { background: rgb(207 211 74); }
+.quality-bar.q12 { background: rgb(227 211 74); }
+.quality-bar.q13 { background: rgb(231 197 62); }
+.quality-bar.q14 { background: rgb(234 183 51); }
+.quality-bar.q15 { background: rgb(238 169 39); }
+.quality-bar.q16 { background: rgb(239 152 36); }
+.quality-bar.q17 { background: rgb(237 132 46); }
+.quality-bar.q18 { background: rgb(234 112 57); }
+.quality-bar.q19 { background: rgb(232 92 67); }
+.quality-bar.q20 { background: rgb(229 72 77); }
 .quality-bar.idle { background: color-mix(in srgb, var(--line) 70%, transparent); }
+/* 一次失败探测（拿不到延迟）：空心红格，与"无数据"的灰格区分。 */
+.quality-bar.fail { background: transparent; box-shadow: inset 0 0 0 1px #e5484d; }
 
 /* Card Bottom */
 .card-bottom {

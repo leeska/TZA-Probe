@@ -12,6 +12,7 @@ let nodes = [],
   query = "",
   group = "",
   observations = new Map(),
+  latencySamples = [],
   generation = 0;
 
 export const brand = `<a class="brand" href="/" aria-label="TZA Probe 首页"><span class="brand-mark">t<span>z</span>a</span><span>PROBE<small>基础设施观测</small></span></a>`;
@@ -66,6 +67,10 @@ async function refresh() {
 
   renderCards();
 
+  // 卡片上每个小格子是一次探测结果，所以除了逐目标的最新观测，还要取最近若干次原始结果。
+  const sampleTicket = api("/latency-samples?limit=20")
+    .then((data) => { if (ticket === generation) latencySamples = data.samples || []; })
+    .catch(() => { if (ticket === generation) latencySamples = []; });
   let index = 0;
   await Promise.all(
     Array.from({ length: Math.min(4, nodes.length) }, async () => {
@@ -80,6 +85,7 @@ async function refresh() {
       }
     }),
   );
+  await sampleTicket;
   if (ticket === generation) renderCards();
 }
 
@@ -157,8 +163,22 @@ function card(n) {
       const sent = matches.reduce((v, o) => v + o.result.sent, 0),
         received = matches.reduce((v, o) => v + o.result.received, 0);
       const loss = sent ? Math.max(0, (sent - received) / sent * 100) : null;
-      const latencyBars = qualityBars(value, 200);
-      const lossBars = qualityBars(loss, 20, true);
+      // 每个格子是一次探测：20 格 = 最近 20 次，最新在右。失败的那次用空心红格表示。
+      const history = latencySamples
+        .filter(
+          (s) =>
+            s.node_id === n.id &&
+            s.family === effectiveFamily &&
+            (!latencyRegion || s.region === latencyRegion) &&
+            (carriers.includes(s.carrier) ? s.carrier : "其他") === carrier,
+        )
+        .slice(-20);
+      const latencyBars = sampleBars(history, (s) => s.latency, 200);
+      const lossBars = sampleBars(
+        history,
+        (s) => (s.sent ? Math.max(0, (s.sent - s.received) / s.sent * 100) : null),
+        20,
+      );
       const recent = matches.map((o) => o.at).sort((a, b) => b - a)[0];
       const title = matches.length
         ? `${date(recent)} · 成功 ${received}/${sent} 次`
@@ -202,13 +222,25 @@ function card(n) {
   return `<article class="node-card ${n.online ? "is-online" : "is-offline"}"><div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${hasIPv4 && hasIPv6 ? `<div class="segmented card-family" aria-label="${esc(n.name)} IP 协议"><button data-card-family="ipv4" data-card-node="${n.id}" class="${effectiveFamily === "ipv4" ? "active" : ""}">IPv4</button><button data-card-family="ipv6" data-card-node="${n.id}" class="${effectiveFamily === "ipv6" ? "active" : ""}">IPv6</button></div>` : `<span class="family-tag">${hasIPv6 ? "IPv6" : hasIPv4 ? "IPv4" : "无探测"}</span>`}<span class="os-tag">${esc(m?.os || (n.online ? "在线" : "等待接入"))}</span></div></div><div class="metrics-grid">${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small></div></div><div class="speeds"><div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateInStr}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOutStr}</strong></div></div></div>${networkSections}<div class="card-bottom"><span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span></div></article>`;
 }
 
-function qualityBars(value, ceiling, inverse = false) {
-  const count = value == null ? 0 : Math.max(0, Math.min(20, Math.round((value / ceiling) * 20)));
-  return Array.from({ length: 20 }, (_, i) => {
-    const active = inverse ? i >= 20 - count : i < count;
-    const level = inverse ? (value > 5 ? "bad" : value > 1 ? "warn" : "good") : (value > ceiling * .75 ? "bad" : value > ceiling * .4 ? "warn" : "good");
-    return `<i class="quality-bar ${active ? level : "idle"}"></i>`;
-  }).join("");
+// 一行 20 格，每格代表一次探测结果，按那次的数值落到 20 档色带上
+// （绿 → 青 → 黄 → 橙 → 红）。没有足够的探测时左边的格子留空，最新的一次在最右。
+// 颜色来自 styles.css 的 .quality-bar.qN：页面 CSP 是 style-src 'self'，行内
+// style 会被浏览器直接忽略，所以只能用 class。
+function sampleBars(samples, pick, ceiling) {
+  const recent = samples.slice(-20);
+  const cells = new Array(20).fill(null);
+  recent.forEach((s, i) => { cells[20 - recent.length + i] = s; });
+  return cells
+    .map((s) => {
+      if (!s) return '<i class="quality-bar idle"></i>';
+      const value = pick(s);
+      // 失败的那一次没有数值：给一个空心红格，和"没有数据"的灰格区分开。
+      if (value == null) return `<i class="quality-bar fail" title="${esc(date(s.at))} · 失败"></i>`;
+      const step = Math.max(1, Math.min(20, Math.round((value / ceiling) * 20)));
+      const text = ceiling === 20 ? value.toFixed(1) + "%" : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms";
+      return `<i class="quality-bar q${step}" title="${esc(date(s.at))} · ${esc(text)}"></i>`;
+    })
+    .join("");
 }
 
 start().catch((e) => {

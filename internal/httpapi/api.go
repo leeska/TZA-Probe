@@ -42,6 +42,7 @@ type Repository interface {
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
 	Observations(context.Context, string, time.Time) ([]model.Observation, error)
+	RecentLatencySamples(context.Context, []string, int) ([]model.LatencySample, error)
 	Setting(context.Context, string) (string, error)
 	SetSetting(context.Context, string, string) error
 	Events(context.Context, bool, time.Time) ([]model.Event, error)
@@ -79,6 +80,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/nodes/{id}/history", a.history)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/network-history", a.networkHistory)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/observations", a.observations)
+	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
 	mux.HandleFunc("GET /api/v1/admin/nodes", a.admin(a.nodes))
 	mux.HandleFunc("POST /api/v1/admin/nodes", a.admin(a.saveNode))
 	mux.HandleFunc("PUT /api/v1/admin/nodes/{id}", a.admin(a.saveNode))
@@ -462,6 +464,35 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	write(w, 200, out)
+}
+
+// latencySamples feeds the per-probe cells on the public card. Only nodes the
+// caller may already see are included, so this adds no new visibility.
+func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = min(max(n, 1), 60)
+		}
+	}
+	nodes, err := a.Store.Nodes(r.Context(), time.Now())
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	admin := a.isAdmin(r)
+	ids := []string{}
+	for _, n := range nodes {
+		if n.Public || admin {
+			ids = append(ids, n.ID)
+		}
+	}
+	out, err := a.Store.RecentLatencySamples(r.Context(), ids, limit)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	write(w, 200, map[string]any{"samples": out})
 }
 func (a *API) saveNode(w http.ResponseWriter, r *http.Request) {
 	var n model.Node

@@ -7,6 +7,7 @@
 | GET /nodes | 公开节点；登录管理员可见全部 |
 | GET /nodes/{id}/history?hours=24 | 1–720 小时，最多约 240 桶的主机曲线 |
 | GET /nodes/{id}/observations | 每个检测项最新网络结果，带 stale 状态 |
+| GET /latency-samples?limit=20 | 卡片延迟格用：每个「节点 / 运营商 / 协议 / 地区」最近 N 次逐次 TCP 结果（范围 1–60），只含调用者可见的节点 |
 | POST /login、POST /logout、GET /session | 管理会话 |
 | GET、POST /admin/nodes | 列表、新建节点（返回一次性 token） |
 | PUT、DELETE /admin/nodes/{id} | 编辑、删除节点 |

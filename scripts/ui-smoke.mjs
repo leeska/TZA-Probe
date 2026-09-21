@@ -301,6 +301,18 @@ for (const carrier of ["电信", "联通", "移动", "其他"])
 assert.equal(card.querySelector(".latency-grid").children.length, 4, "latency grid has four carrier cells");
 assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
 assert(cardText.includes("上海"), "the card shows the latency region it was configured with");
+// 延迟 / 丢包条按 styles.css 的 q1..q20 上色：颜色必须来自 class，不能是行内 style，
+// 因为页面 CSP 是 style-src 'self'，行内样式会被浏览器直接忽略（曾因此整条色带失效）。
+for (const bar of card.querySelectorAll(".quality-bar")) {
+  assert(!bar.hasAttribute("style"), "quality bars must not rely on inline styles (CSP blocks them)");
+  if (bar.classList.contains("idle")) continue;
+  assert(
+    [...bar.classList].some((c) => /^q\d+$/.test(c)),
+    `quality bar must carry a qN colour class, got "${bar.className}"`,
+  );
+  // 每个格子是一次探测，所以必须带那次自己的时间，而不是整行的聚合提示。
+  assert(/·/.test(bar.getAttribute("title") || ""), `each cell needs its own probe tooltip, got "${bar.getAttribute("title")}"`);
+}
 const findCard = () =>
   [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) =>
     c.textContent.includes(name),

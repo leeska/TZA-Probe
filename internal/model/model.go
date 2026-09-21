@@ -407,6 +407,20 @@ type NetworkSeries struct {
 	Samples []NetworkSample `json:"samples"`
 }
 
+// LatencySample is one finished TCP probe. The public card draws each probe as
+// its own cell, so the cell colours describe individual measurements instead of
+// a single aggregated gauge. Latency is nil when that probe failed.
+type LatencySample struct {
+	NodeID   string   `json:"node_id"`
+	Carrier  string   `json:"carrier"`
+	Region   string   `json:"region"`
+	Family   string   `json:"family"`
+	At       int64    `json:"at"`
+	Latency  *float64 `json:"latency"`
+	Sent     int      `json:"sent"`
+	Received int      `json:"received"`
+}
+
 type TaskAction struct {
 	Action  string   `json:"action"`
 	NodeIDs []string `json:"node_ids"`
