@@ -248,6 +248,8 @@ input[type="checkbox"] {
   gap: 20px;
 }
 
+.header-family { flex: 0 0 auto; }
+
 .live-label {
   font-size: 11px;
   letter-spacing: 1.4px;
@@ -1914,6 +1916,7 @@ pre,
     height: 68px;
     padding: 0 16px;
   }
+  .header-family button { padding: 0 9px; font-size: 11px; }
   .public-main {
     padding: 0 16px;
   }
