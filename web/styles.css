@@ -1723,6 +1723,14 @@ pre,
   font-weight: 550;
 }
 
+.trace summary > span:first-child { min-width: 0; }
+.trace summary b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trace-chevron { flex: 0 0 auto; color: var(--muted); font-size: 10px; font-weight: 500; }
+.network-trace summary { padding: 11px 14px; }
+.network-trace .trace-charts { padding: 0 14px 12px; }
+.network-trace .chart { margin: 10px 0 0; }
+.network-trace .chart figcaption span { display: none; }
+
 .trace summary small {
   display: block;
   font-size: 10px;

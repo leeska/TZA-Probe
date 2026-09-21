@@ -30,8 +30,8 @@ export async function detail(id) {
     }));
     d.querySelector("#network-history").innerHTML = series.map((s, i) => {
       const samples = s.samples.map((p) => ({at: p.at, metrics: {latency: p.latency, failure: p.failure}}));
-      const title = `${s.name} · ${s.region || ""} ${s.carrier || ""} · ${s.host}:${s.port}`;
-      return `<details class="trace"><summary>${esc(title)} · 历史趋势</summary>${chart(samples, "latency", "TCP 延迟", "teal", Math.min(selectedHours, 168)).replaceAll("chart-grad-latency-teal", "network-latency-" + i)}${chart(samples, "failure", "TCP 连接失败率", "orange", Math.min(selectedHours, 168)).replaceAll("chart-grad-failure-orange", "network-failure-" + i)}</details>`;
+      const title = targetLabel(s);
+      return `<details class="trace network-trace"><summary><span><b>${esc(title)}</b><small>${esc(s.host)}:${s.port} · ${s.samples.length} 个采样</small></span><span class="trace-chevron">查看趋势</span></summary><div class="trace-charts">${chart(samples, "latency", "TCP 延迟", "teal", Math.min(selectedHours, 168)).replaceAll("chart-grad-latency-teal", "network-latency-" + i)}${chart(samples, "failure", "TCP 连接失败率", "orange", Math.min(selectedHours, 168)).replaceAll("chart-grad-failure-orange", "network-failure-" + i)}</div></details>`;
     }).join("") || '<p class="hint">此协议暂无 TCP 历史，网络历史最多保留 7 天。</p>';
   }
   function renderRoutes(f) {
@@ -42,7 +42,7 @@ export async function detail(id) {
       ? matches
           .map(
             (o) =>
-              `<details class="trace"><summary><span>${esc(o.task.region || o.task.name)} · ${esc(o.task.carrier || "自定义")} · ${o.task.kind === "route" ? "回程" : "TCP 延迟"}<small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${o.task.kind === "route" ? esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知") : o.result.latency != null ? o.result.latency.toFixed(1) + " ms" : "—"}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary>${o.task.kind === "route" ? `<div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div>` : `<p class="hint">TCP 成功 ${o.result.received} / ${o.result.sent} 次</p>`}</details>`,
+              `<details class="trace"><summary><span><b>${esc(o.task.region || o.task.name)} · ${esc(o.task.carrier || "自定义")}</b><small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${o.task.kind === "route" ? esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知") : o.result.latency != null ? o.result.latency.toFixed(1) + " ms" : "—"}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary>${o.task.kind === "route" ? `<div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div>` : `<p class="hint">TCP 成功 ${o.result.received} / ${o.result.sent} 次</p>`}</details>`,
           )
           .join("")
       : '<div class="chart-empty">此协议暂无探测结果。请在后台创建并绑定任务。</div>';
@@ -74,6 +74,10 @@ export async function detail(id) {
     d.querySelector("#charts").innerHTML = hostCharts(samples, hours);
     renderNetwork();
   });
+}
+
+function targetLabel(series) {
+  return [series.region, series.carrier || "自定义"].filter(Boolean).join(" · ") || series.name || "网络目标";
 }
 
 function hostCharts(samples, hours) {
