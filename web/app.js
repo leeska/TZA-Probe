@@ -181,7 +181,9 @@ function card(n) {
       const known =
         match && !match.stale && match.result.status === "ok" && n.online;
       const region = match?.task.region || n.representative || "未设代表地区";
-      return `<button class="route-label ${known ? "known" : "unknown"}" data-detail="${n.id}" title="${esc(match ? region + " · " + date(match.at) + " · " + (statusName[match.result.status] || "未知") : "尚未检测")}"><span>${carrier}</span><strong class="${known ? "" : "muted"}">${esc(known ? match.result.route : "未知")}</strong></button>`;
+      const label = known ? match.result.route : "未知";
+      const title = match ? [region, label, date(match.at), statusName[match.result.status] || "未知"].join(" · ") : "尚未检测";
+      return `<button class="route-label ${known ? "known" : "unknown"}" data-detail="${n.id}" title="${esc(title)}"><span>${carrier}</span><strong class="${known ? "" : "muted"}">${esc(label)}</strong></button>`;
     })
     .join("");
 

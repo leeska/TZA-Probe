@@ -726,6 +726,15 @@ button.node-name:hover {
   overflow-wrap: anywhere;
 }
 
+/* 多骨干组合（如 4837 → 9929 → 163）在窄格子里最多两行，完整标签在 title 里。 */
+.route-label:not(.latency-label) strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.25;
+}
+
 .route-label strong.muted {
   color: var(--muted);
   font-weight: 400;

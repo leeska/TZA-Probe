@@ -61,6 +61,15 @@ func TestRouteRequiresEvidence(t *testing.T) {
 	if got := RouteLabel(direct); got != "CN2GIA" {
 		t.Fatal(got)
 	}
+	// A 163 hop that only proves itself by prefix still turns CN2 into GT.
+	gtByPrefix := []Hop{{Address: "219.141.*.*"}, {Address: "59.43.*.*"}}
+	if got := RouteLabel(gtByPrefix); got != "163 → CN2GT" {
+		t.Fatal(got)
+	}
+	// The ASN stays authoritative when it disagrees with the address prefix.
+	if got := RouteLabel([]Hop{{ASN: "AS9929", Address: "219.158.*.*"}}); got != "9929" {
+		t.Fatal(got)
+	}
 	for _, c := range []struct {
 		hops []Hop
 		want string
@@ -70,6 +79,17 @@ func TestRouteRequiresEvidence(t *testing.T) {
 		{[]Hop{{Address: "202.97.1.*"}}, "163"},
 		{[]Hop{{ASN: "AS23764", Address: "203.0.113.*"}}, "CTG"},
 		{[]Hop{{ASN: "AS58807"}}, "CMIN2"},
+		// The tool regularly returns no ASN at all. Prefixes carry those hops.
+		{[]Hop{{Address: "210.14.*.*"}}, "9929"},
+		{[]Hop{{Address: "219.158.*.*"}}, "4837"},
+		{[]Hop{{Address: "240e:1234:****"}}, "163"},
+		{[]Hop{{Address: "223.120.*.*"}}, "CMI"},
+		{[]Hop{{Address: "69.194.*.*"}}, "CTG"},
+		{[]Hop{{Address: "103.214.*.*"}}, "10099"},
+		{[]Hop{{Address: "2402:4f00:****"}}, "CMIN2"},
+		{[]Hop{{Address: "2408:8120:****"}}, "4837"},
+		// An unlisted prefix stays unknown rather than being guessed.
+		{[]Hop{{Address: "203.0.113.*.*"}}, "未知"},
 	} {
 		if got := RouteLabel(c.hops); got != c.want {
 			t.Fatalf("%v: %s", c.hops, got)

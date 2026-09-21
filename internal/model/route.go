@@ -21,14 +21,36 @@ const (
 	ct163Prefix = "202.97."
 )
 
+// prefixBackbones is the fallback used when the trace tool reports no ASN for a
+// hop. Addresses are stored masked, so an IPv4 entry matches on /16 and an IPv6
+// entry on the first two hextets. The list is deliberately narrow: an address
+// that is not listed stays unknown instead of being guessed. Prefixes follow
+// the operator backbone allocations taken from the earlier classifier tables.
+var prefixBackbones = []struct {
+	prefix string
+	name   string
+}{
+	{"202.97.", "163"}, {"202.96.", "163"}, {"219.141.", "163"}, {"219.142.", "163"},
+	{"106.37.", "163"}, {"240e:", "163"},
+	{"219.158.", "4837"}, {"2408:", "4837"},
+	{"210.14.", "9929"}, {"210.51.", "9929"}, {"210.78.", "9929"}, {"218.105.", "9929"},
+	{"223.120.", "CMI"}, {"223.119.", "CMI"}, {"221.183.", "CMI"}, {"111.24.", "CMI"},
+	{"111.13.", "CMI"}, {"2409:8080:", "CMI"},
+	{"203.22.178.", "CTG"}, {"203.22.179.", "CTG"}, {"203.22.182.", "CTG"},
+	{"203.128.224.", "CTG"}, {"69.194.", "CTG"}, {"2400:9380:", "CTG"},
+	{"103.214.", "10099"}, {"103.239.176.", "10099"}, {"118.26.151.", "10099"},
+	{"202.77.23.", "10099"}, {"2401:8a00:", "10099"},
+	{"2402:4f00:", "CMIN2"},
+}
+
 // RouteLabel names the concrete backbones seen in a trace, in hop order, for
-// example "163 → CN2GT" or "4837 → 9929". Every hop is read by address prefix
-// first and by ASN second, so the backbone evidence survives a trace whose CN2
+// example "163 → CN2GT" or "4837 → 9929". Every hop is read by ASN first and by
+// address prefix second, so the backbone evidence survives a trace whose CN2
 // hops came back without an ASN. Unmatched traces read "未知".
 func RouteLabel(hops []Hop) string {
 	firstCN2 := -1
 	for i, h := range hops {
-		if isCN2Hop(h) {
+		if hopBackbone(h) == "CN2" {
 			firstCN2 = i
 			break
 		}
@@ -36,14 +58,9 @@ func RouteLabel(hops []Hop) string {
 	out := []string{}
 	seen := map[string]bool{}
 	for _, h := range hops {
-		var name string
-		switch {
-		case isCN2Hop(h):
+		name := hopBackbone(h)
+		if name == "CN2" {
 			name = cn2Label(hops, firstCN2)
-		case is163Hop(h):
-			name = "163"
-		default:
-			name = backboneNames[asnDigits(h.ASN)]
 		}
 		if name != "" && !seen[name] {
 			out = append(out, name)
@@ -56,16 +73,25 @@ func RouteLabel(hops []Hop) string {
 	return strings.Join(out, " → ")
 }
 
-// isCN2Hop reports CN2 evidence: the 59.43.* backbone prefix or the AS4809
-// owner. Traceroute tools regularly leave the ASN of these hops unresolved.
-func isCN2Hop(h Hop) bool {
-	return strings.HasPrefix(h.Address, cn2Prefix) || asnDigits(h.ASN) == "4809"
-}
-
-// is163Hop reports 163 evidence: the 202.97.* backbone prefix or AS4134, which
-// is ChinaNet and therefore the same 163 backbone under a provincial prefix.
-func is163Hop(h Hop) bool {
-	return strings.HasPrefix(h.Address, ct163Prefix) || asnDigits(h.ASN) == "4134"
+// hopBackbone names the backbone a single hop proves. The ASN is authoritative;
+// the address prefix only fills in for hops the tool could not resolve.
+func hopBackbone(h Hop) string {
+	asn := asnDigits(h.ASN)
+	if asn == "4809" {
+		return "CN2"
+	}
+	if name := backboneNames[asn]; name != "" {
+		return name
+	}
+	if strings.HasPrefix(h.Address, cn2Prefix) {
+		return "CN2"
+	}
+	for _, entry := range prefixBackbones {
+		if strings.HasPrefix(h.Address, entry.prefix) {
+			return entry.name
+		}
+	}
+	return ""
 }
 
 // cn2Label splits CN2 into GIA and GT. GIA enters the CN2 backbone directly,
@@ -77,7 +103,7 @@ func cn2Label(hops []Hop, firstCN2 int) string {
 		return "CN2"
 	}
 	for _, h := range hops[:firstCN2] {
-		if is163Hop(h) {
+		if hopBackbone(h) == "163" {
 			return "CN2GT"
 		}
 	}
