@@ -129,14 +129,19 @@ func TestRouteRequiresEvidence(t *testing.T) {
 		{[]Hop{{ASN: "AS23764", Address: "203.0.113.*"}}, "CTG"},
 		{[]Hop{{ASN: "AS58807"}}, "CMIN2"},
 		// The tool regularly returns no ASN at all. Prefixes carry those hops.
-		{[]Hop{{Address: "210.14.*.*"}}, "9929"},
+		{[]Hop{{Address: "210.51.*.*"}}, "9929"},
 		{[]Hop{{Address: "219.158.*.*"}}, "4837"},
 		{[]Hop{{Address: "240e:1234:****"}}, "163"},
 		{[]Hop{{Address: "223.120.*.*"}}, "CMI"},
 		{[]Hop{{Address: "69.194.*.*"}}, "CTG"},
-		{[]Hop{{Address: "103.214.*.*"}}, "10099"},
-		{[]Hop{{Address: "2402:4f00:****"}}, "CMIN2"},
+		{[]Hop{{Address: "103.239.176.*"}}, "10099"},
 		{[]Hop{{Address: "2408:8120:****"}}, "4837"},
+		// Entries the RIPE registry attributes to another carrier, and the CMIN2
+		// IPv6 range the mask cannot split, stay unknown: a wrong operator is
+		// worse than an honest 未知.
+		{[]Hop{{Address: "210.14.*.*"}}, "未知"},
+		{[]Hop{{Address: "103.214.*.*"}}, "未知"},
+		{[]Hop{{Address: "2402:4f00:****"}}, "未知"},
 		// An unlisted prefix stays unknown rather than being guessed.
 		{[]Hop{{Address: "203.0.113.*.*"}}, "未知"},
 	} {

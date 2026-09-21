@@ -29,7 +29,16 @@ const (
 // hop. Addresses are stored masked, so an IPv4 entry matches on /16 and an IPv6
 // entry on the first two hextets. The list is deliberately narrow: an address
 // that is not listed stays unknown instead of being guessed. Prefixes follow
-// the operator backbone allocations taken from the earlier classifier tables.
+// the operator backbone allocations taken from the earlier classifier tables,
+// minus the entries the RIPE registry attributes to another carrier: 210.14.*
+// resolves to PLDT (AS9299) and a Beijing ISP rather than 联通 9929, and
+// 103.214.* to a Nepali and a Hong Kong/Orange block rather than 联通国际 10099.
+// Naming the wrong operator is worse than staying unknown, and the ASN path
+// still names both backbones when the tool resolves them. A CMIN2 entry is not
+// expressible here either: 58807 sits inside 2402:4f00:f000::/36 while the mask
+// keeps only two hextets, so "2402:4f00:****" would label plain CMI hops as
+// CMIN2. 202.96.* stays even though 202.96.0.0/21 is 联通: the rest of that /16
+// is 电信 (4134 and 4812), and the mask cannot split a /16.
 var prefixBackbones = []struct {
 	prefix string
 	name   string
@@ -37,14 +46,13 @@ var prefixBackbones = []struct {
 	{"202.97.", "163"}, {"202.96.", "163"}, {"219.141.", "163"}, {"219.142.", "163"},
 	{"106.37.", "163"}, {"240e:", "163"},
 	{"219.158.", "4837"}, {"2408:", "4837"},
-	{"210.14.", "9929"}, {"210.51.", "9929"}, {"210.78.", "9929"}, {"218.105.", "9929"},
+	{"210.51.", "9929"}, {"210.78.", "9929"}, {"218.105.", "9929"},
 	{"223.120.", "CMI"}, {"223.119.", "CMI"}, {"221.183.", "CMI"}, {"111.24.", "CMI"},
 	{"111.13.", "CMI"}, {"2409:8080:", "CMI"},
 	{"203.22.178.", "CTG"}, {"203.22.179.", "CTG"}, {"203.22.182.", "CTG"},
 	{"203.128.224.", "CTG"}, {"69.194.", "CTG"}, {"2400:9380:", "CTG"},
-	{"103.214.", "10099"}, {"103.239.176.", "10099"}, {"118.26.151.", "10099"},
+	{"103.239.176.", "10099"}, {"118.26.151.", "10099"},
 	{"202.77.23.", "10099"}, {"2401:8a00:", "10099"},
-	{"2402:4f00:", "CMIN2"},
 }
 
 // RouteLabel names the concrete backbones seen in a trace, in hop order, for
