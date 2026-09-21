@@ -12,6 +12,13 @@ const target = ({ host, port, family, region, carrier }) => ({
   region,
   carrier,
 });
+// 自定义目标的地区会与节点卡片的代表地区逐字比对，手输容易写出对不上的名字，
+// 所以给候选；目录里没有的海外地区仍然可以自己填。
+const regionSuggestions = (catalog, existing) => {
+  const regions = new Set(catalog.targets.map((x) => x.region));
+  for (const x of existing?.targets || []) if (x.region) regions.add(x.region);
+  return [...regions].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+};
 
 export function taskSummary(t) {
   const targets = t.targets || [t];
@@ -92,12 +99,13 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         <p class="hint">同一地区和运营商只需选一次。每组默认按下方勾选的 IP 协议检测，可在“已选目标”上单独改成只测 IPv4、只测 IPv6 或两者都测。</p>
         <details><summary>添加自定义目标（含海外运营商）</summary>
           <div class="form-grid">
-            <label>地区<input name="custom-region" placeholder="例如：新加坡"></label>
+            <label>地区<input name="custom-region" list="task-region-options" placeholder="选择或输入地区" autocomplete="off"></label>
             <label>运营商<select name="custom-carrier">${options(["其他", "电信", "联通", "移动"])}</select></label>
             <label>IPv4 地址或域名<input name="custom-ipv4" placeholder="IPv4 或支持 A 记录的域名"></label>
             <label>IPv6 地址或域名<input name="custom-ipv6" placeholder="IPv6 或支持 AAAA 记录的域名"></label>
             <label>端口<input name="custom-port" type="number" min="1" max="65535" value="443"></label>
           </div><button type="button" id="add-custom">添加目标</button>
+          <datalist id="task-region-options">${options(regionSuggestions(catalog, existing))}</datalist>
         </details>
         <div id="selected-targets" class="selected-targets"></div>
       </section>

@@ -10,6 +10,7 @@ let container,
   tab = "nodes",
   nodes = [],
   tasks = [],
+  regions = [],
   catalog;
 const defaults = {
   name: "",
@@ -94,7 +95,10 @@ async function render() {
     alerts: "告警与通知",
   }[tab];
   nodes = await api("/admin/nodes");
-  if (tab === "nodes") renderNodes();
+  if (tab === "nodes") {
+    regions = await knownRegions();
+    renderNodes();
+  }
   if (tab === "tasks") {
     tasks = await api("/admin/tasks");
     renderTasks();
@@ -115,14 +119,14 @@ function renderNodes() {
       });
     };
   });
-  content().querySelector("#add-node").onclick = () => nodeForm();
+  content().querySelector("#add-node").onclick = guard(() => nodeForm());
   content().querySelector("#refresh-nodes").onclick = guard(render);
   content()
     .querySelectorAll("[data-edit]")
     .forEach(
       (b) =>
-        (b.onclick = () =>
-          nodeForm(nodes.find((n) => n.id === b.dataset.edit))),
+        (b.onclick = guard(() =>
+          nodeForm(nodes.find((n) => n.id === b.dataset.edit)))),
     );
   content()
     .querySelectorAll("[data-inspect]")
@@ -168,15 +172,65 @@ function check(label, name, value) {
 function select(label, name, options, value) {
   return `<label>${label}<select name="${name}">${options.map(([v, l]) => `<option value="${v}" ${v === value ? "selected" : ""}>${l}</option>`).join("")}</select></label>`;
 }
+// 地区必须与任务的地区字段逐字相同，回程与延迟匹配才成立；手打容易写出
+// “上海市”或带尾随空格这类静默失配。候选 = 目录地区 + 已建任务用到的地区
+// （含自定义目标）+ 当前节点的值，保证既有数据不会因为换控件而丢失。
+async function knownRegions() {
+  const found = new Set();
+  const add = (value) => {
+    const region = String(value ?? "").trim();
+    if (region) found.add(region);
+  };
+  try {
+    if (!catalog) catalog = await api("/admin/catalog");
+    for (const target of catalog?.targets || []) add(target.region);
+  } catch {}
+  try {
+    const list = tasks.length ? tasks : await api("/admin/tasks");
+    for (const task of list)
+      for (const target of task.targets || []) add(target.region);
+  } catch {}
+  return [...found].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+}
+// 候选列表在 render() 里预取，弹窗才能同步打开；节点自身的历史值再并进来，
+// 保证目录外或已废弃的地区不会因为换控件而被清掉。
+function nodeRegions(values) {
+  const merged = new Set(regions);
+  for (const value of values) {
+    const region = String(value ?? "").trim();
+    if (region) merged.add(region);
+  }
+  return [...merged].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+}
+function regionSelect(label, name, value, options, emptyLabel) {
+  const html = [
+    `<option value="">${esc(emptyLabel)}</option>`,
+    ...options.map(
+      (region) =>
+        `<option value="${esc(region)}" ${region === value ? "selected" : ""}>${esc(region)}</option>`,
+    ),
+  ].join("");
+  return `<label>${label}<select name="${name}">${html}</select></label>`;
+}
+// 节点所在地区只用于展示，允许目录外的城市，所以给建议列表而不是强制下拉。
+function regionInput(label, name, value) {
+  return `<label>${label}<input name="${name}" value="${esc(value)}" list="region-options" placeholder="选择或输入地区" autocomplete="off"></label>`;
+}
+function regionDatalist(regions) {
+  return `<datalist id="region-options">${regions
+    .map((region) => `<option value="${esc(region)}"></option>`)
+    .join("")}</datalist>`;
+}
 function nodeForm(existing) {
   const n = existing || structuredClone(defaults),
     a = n.alerts;
   // 未启用的规则允许存 0（服务端只在启用时要求有效阈值），但 0 不满足输入框的 min，
   // 直接回填会让这个节点再也保存不了。对必须 ≥1 的阈值退回默认值。
   const threshold = (key) => a[key] || defaults.alerts[key];
+  const options = nodeRegions([n.region, n.representative, n.latency_region]);
   const d = modal(
     existing ? "编辑节点" : "添加节点",
-    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${field("节点所在地区", "region", n.region)}${field("卡片代表地区（与回程任务一致）", "representative", n.representative)}${field("卡片延迟地区（留空沿用代表地区）", "latency_region", n.latency_region)}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.latency_carriers?.length || n.latency_carriers.includes(carrier))).join("")}</div><small class="hint">空配置会显示全部延迟分组。</small></div>${field("排序（小的在前）", "order", n.order, "number")}${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
+    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionInput("节点所在地区", "region", n.region)}${regionSelect("卡片代表地区（与回程任务一致）", "representative", n.representative, options, "不指定（按任务地区匹配）")}${regionSelect("卡片延迟地区（留空沿用代表地区）", "latency_region", n.latency_region, options, "沿用代表地区")}${regionDatalist(options)}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.latency_carriers?.length || n.latency_carriers.includes(carrier))).join("")}</div><small class="hint">空配置会显示全部延迟分组。</small></div>${field("排序（小的在前）", "order", n.order, "number")}${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
       "流量计费方式",
       "traffic_mode",
       [

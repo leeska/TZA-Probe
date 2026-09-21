@@ -104,8 +104,29 @@ let list = await (
 const created = list.find((n) => n.name === name);
 assert(created?.alerts.load);
 assert.equal(created.traffic_limit, 2e12);
+// 还没上报地址族的节点：不给出无从探测的 IPv4/IPv6 切换，网络区块整体隐藏。
 $(`[data-inspect="${created.id}"]`).click();
 await until(() => $("#history-range"), "node detail and history controls");
+assert.equal(w.document.querySelector("[data-detail-family]"), null, "a host with no reported family must not offer an address-family switch");
+assert(w.document.querySelector(".family-tag"), "a host with no reported family still shows a fixed tag");
+assert.equal(w.document.querySelector("#network-overview"), null, "network blocks stay hidden without a usable address family");
+$(".close").click();
+// Agent 上报双栈后，卡片与详情页都要能按地址族切换。
+const report = await fetch(base + "/api/v1/agent/report", {
+  method: "POST",
+  headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    protocol: 1,
+    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64", version: "smoke", ip_families: ["ipv4", "ipv6"] },
+  }),
+});
+assert.equal(report.status, 204, "agent report carrying both address families must be accepted");
+$("#refresh-nodes").click();
+await until(() => $(`[data-inspect="${created.id}"]`), "node list after the agent report");
+$(`[data-inspect="${created.id}"]`).click();
+// 关闭后的对话框只是 open=false，旧标记仍在文档里，所以要等新内容真的渲染出来。
+await until(() => $("[data-detail-family=ipv6]"), "address-family switch after the agent report");
+assert($("#network-overview"), "a dual-stack host must show the network blocks");
 $("[data-detail-family=ipv6]").click();
 assert($("[data-detail-family=ipv6]").classList.contains("active"));
 $(".close").click();
@@ -269,16 +290,34 @@ assert(publicDOM.window.document.querySelector(".empty"));
 publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
 // 延迟按运营商分四格显示，与三网回程同构；地区取延迟地区，其次代表地区。
-const cardText = publicDOM.window.document.querySelector(".node-card").textContent;
+// 数据目录跨多次运行复用，所以要按名字找到本轮创建的卡片，不能取第一张。
+const card = [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) =>
+  c.textContent.includes(name),
+);
+assert(card, "the node created in this run must appear on the public panel");
+const cardText = card.textContent;
 for (const carrier of ["电信", "联通", "移动", "其他"])
   assert(cardText.includes(carrier), `latency grid must list ${carrier}`);
-assert.equal(publicDOM.window.document.querySelector(".latency-grid").children.length, 4, "latency grid has four carrier cells");
+assert.equal(card.querySelector(".latency-grid").children.length, 4, "latency grid has four carrier cells");
 assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
-publicDOM.window.document.querySelector('[data-family="ipv6"]').click();
+assert(cardText.includes("上海"), "the card shows the latency region it was configured with");
+const findCard = () =>
+  [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) =>
+    c.textContent.includes(name),
+  );
+card.querySelector('[data-card-family="ipv6"]').click();
+// 切换会重绘整个列表，所以要重新取一次卡片。
 assert(
-  publicDOM.window.document
-    .querySelector('[data-family="ipv6"]')
-    .classList.contains("active"),
+  findCard().querySelector('[data-card-family="ipv6"]').classList.contains("active"),
+  "the public card switches to IPv6 on its own",
+);
+assert(
+  [...publicDOM.window.document.querySelectorAll(".node-card")].every((c) =>
+    c === findCard() ||
+    !c.querySelector("[data-card-family]") ||
+    c.querySelector('[data-card-family="ipv4"]').classList.contains("active"),
+  ),
+  "another card's address family must not follow this card's switch",
 );
 assert.deepEqual(errors, []);
 await fetch(base + "/api/v1/admin/tasks/" + createdTask.id, {
