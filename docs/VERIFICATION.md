@@ -28,6 +28,7 @@
 - 从源站当前 TSV 更新为 186 个明确公网 IP 目标，校验地址族、端口和唯一性；不再将失效域名或本地合成 DNS 地址放入目录。保留原始域名仅作为来源记录。IP 格式有效不代表目标可达。
 - Agent 检测 `198.18.0.0/15` 合成目标并拒绝生成虚假成功结果；保留明确的 DNS、权限、工具与超时原因代码，不上传原始错误文本。
 - NextTrace 调用显式设置 `-M` 关闭完整路径分享地图。ASN 查询仍依赖工具的数据源。
+- 该轮的外部二进制方案后续被内置 NTrace-core 取代，见文末“2026-09-21 内置 NTrace-core”。
 - 主机启动时间和网卡集合组成计数器来源标识；来源变化自动重建基线，避免把新网卡的累计量误记到当前周期。新增回归测试通过。
 - 历史图按实际时间定位，缺失时间段不连线；图表回归测试通过。详情弹窗和时间范围切换忽略已过期请求，避免旧响应覆盖新页面。
 - 详情权限检查改为按节点主键查询，避免逐个节点请求导致全量节点/账本查询。
@@ -165,3 +166,14 @@ node scripts/ui-smoke.mjs
 - 提交校验相应放宽：不再要求“已勾选的全局协议必须有对应地址”，改为「至少一组目标」+「至少一个地址」。
 - 验证（Playwright 真实浏览器）：批量选中四川三组默认双栈 → 电信关掉 IPv6、移动关掉 IPv4 → 再关电信的 IPv4 被拒绝并提示 → 保存后服务端存的正是 `电信:[ipv4] 联通:[ipv4,ipv6] 移动:[ipv6]` → 重新打开编辑三组开关原样回填。亮/暗/手机各截一张。
 - DOM 集成检查同步更新：新增每组开关的断言（默认跟随全局、单组关闭不影响其他组、存盘并重开后保持），目标数量断言由 6/8 改为 5/7。
+
+## 2026-09-21 内置 NTrace-core（吸纳 NextTrace）
+
+- 回程不再依赖运维安装的外部二进制：`github.com/nxtrace/NTrace-core v1.7.4` 作为 Go 依赖链接进 `tza-agent`，`internal/probe/embedded.go` 在进程内调用 `trace.TracerouteWithContext`，固定 TCP、24 跳、单次测量、1500 毫秒超时、`DisableMPLS`，并额外加 45 秒预算；`nexttrace` 配置项保留为外部二进制兜底。
+- 移植方式与约束：ASN 数据源通过 `geo_provider` 选择（默认与上游一致 `NextTrace-API`，可 `IPAPI.com`、`disable-geoip`）；`trace.Hops` 按 TTL 归并、地址照旧脱敏为 /16 或前两组十六进制，ASN 走 `model.NormalizeASN`；到达判定同时接受上游 `StopReasonDestination` 和“跳地址等于目标地址”，后者沿用原 `--raw` 解析器的判据。
+- 许可证影响：NTrace-core 是 GPL-3.0，本仓库其余部分是 MIT。`tza-agent` 因链接该库按 GPL-3.0 分发，新增 `NOTICE` 并在 `LICENSE` 末尾标注；`tza-server` 不链接该库。
+- 工具链：`go.mod` 提升到 `go 1.27.1`，Dockerfile 基础镜像换为 `golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414`（digest 取自 registry 的 `1.27-alpine` 索引）。
+- 验证：`CGO_ENABLED=0 GOOS=linux GOARCH=amd64` 与 `arm64` 交叉编译通过（pcap/cgo 只在 darwin 分支需要，Linux 走原始套接字）；`go test -race ./...`、`go vet ./...`、`gofmt -l .` 通过；新增 `embedded_test.go` 覆盖跳数映射、地址脱敏、ASN 归一、到达判定与失败原因（EPERM→permission、deadline→timeout、空结果→tool_failed）。
+- **已撤回的结论**：开发机开着代理的 Fake-IP，本机对 `1.1.1.1:443` 的进程内追踪只走了本机代理栈，拿到的 `1.1.*.*`、`AS13335`、0.358 ms 是代理转发结果，不是公网回程路径。该结果不作为三网线路识别的证据，本文档不再引用。
+- 有效验证仅限不依赖公网路径的部分：`embedded_test.go` 的跳数映射、地址脱敏、ASN 归一、到达判定与失败原因用例；`probe.Runner{Embedded: …}` 驱动 Server 下发→Agent 执行→结果上传的完整链路（结果内容只用于确认管线可用，不用于判定线路）。
+- 未覆盖：本机没有 Docker daemon，容器镜像未重新构建；本机存在 Fake-IP，**任何在本机发起的回程探测都不构成有效验收**。内置追踪器的真实行为（跳数、ASN、GIA/GT 判定、45 秒预算）必须在具备直连出口的真实节点上复验。另：本机沙箱网络下上游追踪器不会自行提前停止，因此 45 秒预算与“跳地址等于目标地址”的到达判定是本轮的实际兜底，同样需要在真实节点确认。

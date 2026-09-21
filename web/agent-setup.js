@@ -15,6 +15,7 @@ export function showToken(token) {
     interfaces: [],
     mount: "/",
     nexttrace: "",
+    geo_provider: "",
     allow_http: location.protocol === "http:",
   };
   const command = installCommand(endpoint, token);
@@ -22,7 +23,7 @@ export function showToken(token) {
     "节点接入",
     `<p>密钥仅在此处显示。在 Agent 主机（Linux + systemd，x86_64 / arm64）以 root（或有 sudo 权限的用户）执行下面这一条命令，会自动下载对应架构的 Agent、写入配置并启动服务：</p>
     <div class="command-block"><pre id="install-command">${esc(command)}</pre><button type="button" id="copy-command" class="primary">复制命令</button></div>
-    <p class="hint">命令包含节点密钥，只在需要接入的主机上执行。默认统计全部非 loopback 网卡、自动查找 PATH 中的 NextTrace；需要指定时追加 <code>--interfaces eth0</code> 或 <code>--nexttrace /usr/local/bin/nexttrace</code>。以后不带 <code>--token</code> 再执行一次即为升级 Agent。${location.protocol === "http:" ? "当前面板使用明文 HTTP，命令只适用于可信私网；生产环境请从 HTTPS 地址打开后台再生成。" : ""}</p>
+    <p class="hint">命令包含节点密钥，只在需要接入的主机上执行。默认统计全部非 loopback 网卡，三网回程使用内置的 NTrace-core（与 NextTrace 同源，无需另行安装）；需要指定时追加 <code>--interfaces eth0</code>、<code>--nexttrace /usr/local/bin/nexttrace</code>（改用外部二进制）或 <code>--geo-provider IPAPI.com</code>（换 ASN 数据源）。以后不带 <code>--token</code> 再执行一次即为升级 Agent。${location.protocol === "http:" ? "当前面板使用明文 HTTP，命令只适用于可信私网；生产环境请从 HTTPS 地址打开后台再生成。" : ""}</p>
     <details><summary>手动安装 / 查看 agent.json</summary>
       <p class="hint">不方便让主机联网下载时，可自行编译 Agent 并使用以下配置，安装步骤见 docs/DEPLOYMENT.md。</p>
       <pre id="agent-config">${esc(JSON.stringify(config, null, 2))}</pre>

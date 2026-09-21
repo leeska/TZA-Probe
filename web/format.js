@@ -40,7 +40,7 @@ export const reasonName = {
   synthetic_dns: "DNS 返回代理虚拟地址，请使用真实目标 IP",
   dns: "目标地址解析失败",
   permission: "探测权限不足",
-  tool_missing: "未配置 NextTrace",
+  tool_missing: "回程工具不可用",
   tool_failed: "探测工具执行失败",
   timeout: "探测超时",
   connect_failed: "TCP 连接失败",

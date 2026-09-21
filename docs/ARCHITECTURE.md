@@ -10,7 +10,7 @@ notify.Engine ───> Repository port             │
                                              │
 Agent ───> Transport port <── HTTPTransport ──┘
   ├─────> Collector port <── SystemCollector (gopsutil)
-  └─────> Prober port <── probe.Runner (TCP / NextTrace)
+  └─────> Prober port <── probe.Runner (TCP / 内置 NTrace-core)
 
 model: shared data contract, validation, billing calendar, route labels
 cmd/server and cmd/agent: composition roots and lifecycle

@@ -61,7 +61,7 @@ Agent 的 endpoint 必须是它能访问的 Server 地址。远程 Agent 不能�
 curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://probe.example.com --token <节点密钥>
 ```
 
-脚本从 **这台 Server** 的 `/dl/tza-agent-linux-<arch>` 下载与主机架构匹配的 Agent（x86_64 / arm64），校验 SHA-256，写入 `/etc/tza-probe/agent.json`（0600）和 systemd 单元并启动。可选参数：`--interfaces eth0,eth1` 指定统计网卡，`--nexttrace /path` 指定回程工具（默认查找 PATH），`--uninstall` 卸载。不带 `--token` 再执行一次即为升级 Agent，会保留现有配置并备份旧二进制为 `tza-agent.previous`。脚本本身不含密钥，密钥只作为命令参数出现；不希望它进入 shell 历史时可改用 `TZA_TOKEN=<密钥>` 环境变量。
+脚本从 **这台 Server** 的 `/dl/tza-agent-linux-<arch>` 下载与主机架构匹配的 Agent（x86_64 / arm64），校验 SHA-256，写入 `/etc/tza-probe/agent.json`（0600）和 systemd 单元并启动。可选参数：`--interfaces eth0,eth1` 指定统计网卡，`--geo-provider NAME` 指定内置回程的 ASN 数据源（默认 `NextTrace-API`），`--nexttrace /path` 改用外部 NextTrace 二进制（默认用内置实现），`--uninstall` 卸载。不带 `--token` 再执行一次即为升级 Agent，会保留现有配置并备份旧二进制为 `tza-agent.previous`。脚本本身不含密钥，密钥只作为命令参数出现；不希望它进入 shell 历史时可改用 `TZA_TOKEN=<密钥>` 环境变量。
 
 Server 提供的 Agent 来自两处，前者优先：数据目录下的 `agents/tza-agent-linux-<arch>`（运维手动放置，升级 Agent 不必重编 Server），以及构建时嵌入在 Server 内的副本（CI 发布包已包含；自行编译见 `internal/agentdist/bin/README.md`）。两处都没有时 Server 启动日志会提示，安装脚本则报“该 Server 未提供此架构的 Agent”。
 
@@ -78,7 +78,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now tza-agent
 ```
 
-`interfaces` 为空时统计非 loopback 网卡；有容器、桥接或隧道时建议明确指定公网网卡，避免重复计数。三网回程需单独安装 NextTrace，并填写 `nexttrace` 绝对路径；仅主机指标和 TCP 延迟可留空。服务示例以 root 启动，并收窄 capability 集合；仅基础监控和 TCP 可改成普通账户且不授予 `CAP_NET_RAW`。
+`interfaces` 为空时统计非 loopback 网卡；有容器、桥接或隧道时建议明确指定公网网卡，避免重复计数。三网回程由内置 NTrace-core 在 Agent 进程内完成，不需要额外安装；仅在需要改用外部二进制时才填写 `nexttrace` 绝对路径。服务示例以 root 启动，并收窄 capability 集合；仅基础监控和 TCP 可改成普通账户且不授予 `CAP_NET_RAW`。
+
+回程探测从 Agent 主机发出，因此该主机必须直连出口：如果主机开着代理（尤其是 Fake-IP），跳数与 ASN 会变成代理转发路径，线路标签随之失真。验收回程请选择未挂代理的节点，或临时关闭本机代理。
 
 生产接入使用 HTTPS。`allow_http` 只适用于可信私网；从 HTTP 面板生成的配置会开启它，改用公网 HTTPS 时同时设为 false。
 
@@ -133,4 +135,4 @@ docker run -d --name tza-server --restart unless-stopped \
 
 容器运行账户 UID 为 65532；使用宿主目录绑定时需授予对应权限。更新镜像仍需保留原数据卷，备份时停止容器后复制完整数据。Agent 在宿主机运行，避免把容器指标当成主机指标。
 
-以上是操作说明。本轮未执行真实节点、Telegram、NextTrace 或生产部署验收。
+以上是操作说明。本轮未执行真实节点、Telegram 或生产部署验收。

@@ -71,7 +71,7 @@ func TestScriptIsPOSIXAndSecretFree(t *testing.T) {
 	if !strings.HasPrefix(script, "#!/bin/sh\n") {
 		t.Fatal("script must start with a POSIX sh shebang")
 	}
-	for _, needle := range []string{"set -eu", "/dl/$NAME.sha256", "chmod 0600 \"$CONFIG\"", "systemctl restart tza-agent", "--uninstall", "<<'TZA_AGENT_SERVICE'"} {
+	for _, needle := range []string{"set -eu", "/dl/$NAME.sha256", "chmod 0600 \"$CONFIG\"", "systemctl restart tza-agent", "--uninstall", "<<'TZA_AGENT_SERVICE'", "--geo-provider", "\"geo_provider\": \"%s\""} {
 		if !strings.Contains(script, needle) {
 			t.Errorf("script missing %q", needle)
 		}

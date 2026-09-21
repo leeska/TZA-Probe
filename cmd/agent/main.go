@@ -18,12 +18,13 @@ import (
 )
 
 type config struct {
-	Endpoint   string   `json:"endpoint"`
-	Token      string   `json:"token"`
-	Interfaces []string `json:"interfaces"`
-	Mount      string   `json:"mount"`
-	Nexttrace  string   `json:"nexttrace"`
-	AllowHTTP  bool     `json:"allow_http"`
+	Endpoint    string   `json:"endpoint"`
+	Token       string   `json:"token"`
+	Interfaces  []string `json:"interfaces"`
+	Mount       string   `json:"mount"`
+	Nexttrace   string   `json:"nexttrace"`
+	GeoProvider string   `json:"geo_provider"`
+	AllowHTTP   bool     `json:"allow_http"`
 }
 
 func main() {
@@ -58,17 +59,22 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	prober := probe.Runner{}
 	if cfg.Nexttrace != "" {
+		// An operator-supplied binary stays an explicit override.
 		cfg.Nexttrace, err = exec.LookPath(cfg.Nexttrace)
 		if err != nil {
 			return errors.New("configured nexttrace executable was not found")
 		}
+		prober.Nexttrace = cfg.Nexttrace
+		slog.Info("route probing uses the configured nexttrace binary", "path", cfg.Nexttrace)
 	} else {
-		slog.Info("route probing unavailable until nexttrace is configured")
+		prober.Embedded = &probe.Embedded{GeoProvider: cfg.GeoProvider}
+		slog.Info("route probing runs in process through the embedded NTrace-core tracer", "geo_provider", cfg.GeoProvider)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	app := agent.Agent{Collector: &agent.SystemCollector{Interfaces: cfg.Interfaces, Mount: cfg.Mount}, Prober: probe.Runner{Nexttrace: cfg.Nexttrace}, Transport: transport}
+	app := agent.Agent{Collector: &agent.SystemCollector{Interfaces: cfg.Interfaces, Mount: cfg.Mount}, Prober: prober, Transport: transport}
 	slog.Info("TZA Probe Agent started", "version", model.Version)
 	app.Run(ctx)
 	return nil

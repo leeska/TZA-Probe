@@ -6,7 +6,8 @@
 # 以 root 直接执行；非 root 且系统有 sudo 时会自动改用 sudo 重新执行。
 # 可选参数：
 #   --interfaces eth0,eth1   只统计这些网卡的流量（默认统计全部非 loopback 网卡）
-#   --nexttrace /usr/bin/nexttrace   三网回程使用的 NextTrace 路径（默认自动查找 PATH）
+#   --nexttrace /usr/bin/nexttrace   改用外部 NextTrace 二进制（默认用内置的 NTrace-core，无需安装）
+#   --geo-provider NAME      内置回程的 ASN/地区数据源，默认 NextTrace-API；也可 disable-geoip、IPAPI.com 等
 #   --allow-http             允许明文 HTTP 的 endpoint（仅限可信私网；endpoint 为 http:// 时自动开启）
 #   --uninstall              停止服务并删除程序、配置和 systemd 单元
 #
@@ -18,6 +19,7 @@ ENDPOINT="${TZA_ENDPOINT:-}"
 TOKEN="${TZA_TOKEN:-}"
 INTERFACES=""
 NEXTTRACE=""
+GEO_PROVIDER=""
 ALLOW_HTTP=""
 UNINSTALL=""
 CONFIG=/etc/tza-probe/agent.json
@@ -30,9 +32,10 @@ while [ $# -gt 0 ]; do
     --token) TOKEN="$2"; shift 2 ;;
     --interfaces) INTERFACES="$2"; shift 2 ;;
     --nexttrace) NEXTTRACE="$2"; shift 2 ;;
+    --geo-provider) GEO_PROVIDER="$2"; shift 2 ;;
     --allow-http) ALLOW_HTTP=true; shift ;;
     --uninstall) UNINSTALL=true; shift ;;
-    -h|--help) sed -n '2,14p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,15p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done
@@ -49,6 +52,7 @@ if [ "$(id -u)" -ne 0 ]; then
   quoted=""
   [ -n "$INTERFACES" ] && quoted="$quoted --interfaces $(q "$INTERFACES")"
   [ -n "$NEXTTRACE" ] && quoted="$quoted --nexttrace $(q "$NEXTTRACE")"
+  [ -n "$GEO_PROVIDER" ] && quoted="$quoted --geo-provider $(q "$GEO_PROVIDER")"
   [ -n "$ALLOW_HTTP" ] && quoted="$quoted --allow-http"
   [ -n "$UNINSTALL" ] && quoted="$quoted --uninstall"
   if command -v curl >/dev/null 2>&1; then
@@ -141,11 +145,12 @@ if [ -z "$UPGRADE" ]; then
   done
   IFS=$OLDIFS
   case "$NEXTTRACE" in *[\"\\]*) fail "NextTrace 路径不能包含引号或反斜杠" ;; esac
+  case "$GEO_PROVIDER" in *[\"\\]*) fail "数据源名称不能包含引号或反斜杠" ;; esac
   install -d -m 0700 /etc/tza-probe
   umask 077
   # 用 printf 逐字段写出，密钥与路径不经过 shell 二次展开
-  printf '{\n  "endpoint": "%s",\n  "token": "%s",\n  "interfaces": [%s],\n  "mount": "/",\n  "nexttrace": "%s",\n  "allow_http": %s\n}\n' \
-    "$ENDPOINT" "$TOKEN" "$IFACES" "$NEXTTRACE" "${ALLOW_HTTP:-false}" > "$CONFIG"
+  printf '{\n  "endpoint": "%s",\n  "token": "%s",\n  "interfaces": [%s],\n  "mount": "/",\n  "nexttrace": "%s",\n  "geo_provider": "%s",\n  "allow_http": %s\n}\n' \
+    "$ENDPOINT" "$TOKEN" "$IFACES" "$NEXTTRACE" "$GEO_PROVIDER" "${ALLOW_HTTP:-false}" > "$CONFIG"
   chmod 0600 "$CONFIG"
 fi
 
@@ -178,7 +183,7 @@ sleep 2
 if systemctl is-active --quiet tza-agent; then
   if [ -n "$UPGRADE" ]; then echo "Agent 已升级并重启"; else echo "Agent 已安装并启动，稍后后台节点会显示在线"; fi
   if [ -z "$NEXTTRACE" ] && [ -z "$UPGRADE" ]; then
-    echo "提示: 未找到 NextTrace，三网回程任务将显示“工具未配置”；安装后在 $CONFIG 填写路径并重启服务"
+    echo "提示: 三网回程使用内置 NTrace-core（NextTrace 同源），无需额外安装；如需改用外部二进制，在 $CONFIG 填写 nexttrace 路径并重启服务"
   fi
 else
   echo "Agent 未能启动，最近日志：" >&2

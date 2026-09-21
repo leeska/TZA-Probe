@@ -1,0 +1,21 @@
+TZA-Probe
+Copyright (C) 2025-2026 leeska
+
+本仓库整体以 MIT 许可证发布（见 LICENSE），但 Agent 链接了下列 GPL-3.0 组件：
+
+- NTrace-core (https://github.com/nxtrace/NTrace-core)
+  Copyright (C) NextTrace contributors
+  License: GNU General Public License v3.0
+  用途: internal/probe 的嵌入式回程探测（tza-agent 进程内调用）。
+  版本: 见 go.mod 中 github.com/nxtrace/NTrace-core 的版本。
+
+因为 tza-agent 与该组件链接为一个可执行程序，**tza-agent 二进制按 GPL-3.0 分发**。
+Server（tza-server）不链接该组件，仅以文件形式随镜像分发 Agent 二进制。
+
+GPL-3.0 全文见 https://www.gnu.org/licenses/gpl-3.0.txt ，或从
+https://github.com/nxtrace/NTrace-core/blob/main/LICENSE 获取。
+按 GPL-3.0 第 6 节，tza-agent 的完整对应源码即本仓库源码（含 go.mod 中固定的
+NTrace-core 版本），构建方式见 Dockerfile 与 docs/DEPLOYMENT.md。
+
+如需保持 tza-agent 为纯 MIT，可在构建时排除 internal/probe 的嵌入式实现
+（去掉 cmd/agent 中的 probe.Embedded，改用 --nexttrace 指向外部二进制）。

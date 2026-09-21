@@ -16,14 +16,19 @@ import (
 	"github.com/leeska/TZA-Probe/internal/model"
 )
 
-type Runner struct{ Nexttrace string }
+// Runner executes one job. Route tasks run through Embedded unless the operator
+// points Nexttrace at a binary, in which case that binary is used instead.
+type Runner struct {
+	Nexttrace string
+	Embedded  *Embedded
+}
 
 func (r Runner) Run(ctx context.Context, j model.Job) model.Result {
 	result := model.Result{JobID: j.ID, Status: "failed", Route: "未知", Hops: []model.Hop{}}
 	if err := j.Task.Validate(); err != nil {
 		return result
 	}
-	if j.Task.Kind == "route" && r.Nexttrace == "" {
+	if j.Task.Kind == "route" && r.Nexttrace == "" && r.Embedded == nil {
 		result.Status = "unavailable"
 		result.Reason = "tool_missing"
 		return result
@@ -72,11 +77,43 @@ func (r Runner) Run(ctx context.Context, j model.Job) model.Result {
 		return result
 	}
 
+	outcome := r.traceRoute(ctx, j, ip)
+	result.Hops, result.Sent = outcome.Hops, 1
+	result.Received, result.Latency = outcome.Received, outcome.Latency
+	switch {
+	case outcome.Received > 0:
+		result.Status = "ok"
+		result.Route = model.RouteLabel(result.Hops)
+	case outcome.Reason == "timeout":
+		result.Status = "timeout"
+		result.Reason = "timeout"
+	case outcome.Reason == "tool_missing":
+		result.Status = "unavailable"
+		result.Reason = "tool_missing"
+	default:
+		result.Status = "failed"
+		result.Reason = outcome.Reason
+	}
+	return result
+}
+
+// traceRoute picks the tracer: an operator-configured binary wins, otherwise
+// the embedded NTrace-core tracer runs in process.
+func (r Runner) traceRoute(ctx context.Context, j model.Job, ip string) traceOutcome {
+	if r.Nexttrace != "" {
+		return execTrace(ctx, r.Nexttrace, j, ip)
+	}
+	return r.Embedded.Trace(ctx, net.ParseIP(ip), j.Task.Port)
+}
+
+// execTrace runs an operator-installed NextTrace binary and parses --raw output.
+// No shell and no caller-supplied flags are involved.
+func execTrace(ctx context.Context, binary string, j model.Job, ip string) traceOutcome {
 	family := "-4"
 	if j.Task.Family == "ipv6" {
 		family = "-6"
 	}
-	cmd := exec.CommandContext(ctx, r.Nexttrace, "--raw", "-n", "-C", "-M", "-q", "1", "--parallel-requests", "2", "--max-attempts", "1", "-m", "24", "--timeout", "1500", "-T", "-p", strconv.Itoa(j.Task.Port), family, ip)
+	cmd := exec.CommandContext(ctx, binary, "--raw", "-n", "-C", "-M", "-q", "1", "--parallel-requests", "2", "--max-attempts", "1", "-m", "24", "--timeout", "1500", "-T", "-p", strconv.Itoa(j.Task.Port), family, ip)
 	// Limit memory independently of command behavior. CommandContext bounds runtime.
 	output := &limitedBuffer{remaining: 128 << 10}
 	cmd.Stdout = output
@@ -84,22 +121,21 @@ func (r Runner) Run(ctx context.Context, j model.Job) model.Result {
 	cmd.Stderr = stderr
 	cmd.WaitDelay = 2 * time.Second
 	_ = cmd.Run()
-	result.Hops, result.Received, result.Latency = parse(output.data, ip)
-	result.Sent = 1
-	if result.Received > 0 {
-		result.Status = "ok"
-		result.Route = model.RouteLabel(result.Hops)
-	} else if errors.Is(ctx.Err(), context.DeadlineExceeded) || len(result.Hops) > 0 {
-		result.Status = "timeout"
-		result.Reason = "timeout"
-	} else {
-		result.Status = "failed"
-		result.Reason = "tool_failed"
-		if strings.Contains(strings.ToLower(string(stderr.data)), "operation not permitted") || strings.Contains(strings.ToLower(string(stderr.data)), "permission denied") {
-			result.Reason = "permission"
-		}
+	hops, received, latency := parse(output.data, ip)
+	out := traceOutcome{Hops: hops, Received: received, Latency: latency}
+	if received > 0 {
+		return out
 	}
-	return result
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || len(hops) > 0 {
+		out.Reason = "timeout"
+		return out
+	}
+	out.Reason = "tool_failed"
+	lower := strings.ToLower(string(stderr.data))
+	if strings.Contains(lower, "operation not permitted") || strings.Contains(lower, "permission denied") {
+		out.Reason = "permission"
+	}
+	return out
 }
 
 type limitedBuffer struct {
