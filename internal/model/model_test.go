@@ -32,8 +32,20 @@ func TestRouteRequiresEvidence(t *testing.T) {
 	if got := RouteLabel(hops); got != "10099 → 4837" {
 		t.Fatal(got)
 	}
+	// GIA and GT share AS4809, so the split needs hop prefix evidence.
 	if RouteLabel([]Hop{{ASN: "AS4809"}}) != "CN2" {
-		t.Fatal("must not invent a GIA product classification")
+		t.Fatal("ASN alone must not invent a GIA or GT product classification")
+	}
+	gia := []Hop{{ASN: "AS4809", Address: "59.43.1.*"}, {ASN: "AS4809", Address: "59.43.2.*"}}
+	if got := RouteLabel(gia); got != "CN2GIA" {
+		t.Fatal(got)
+	}
+	gt := []Hop{{ASN: "AS4134", Address: "202.97.1.*"}, {ASN: "AS4809", Address: "59.43.2.*"}}
+	if got := RouteLabel(gt); got != "163 → CN2GT" {
+		t.Fatal(got)
+	}
+	if got := RouteLabel([]Hop{{ASN: "AS4134", Address: "202.97.1.*"}}); got != "163" {
+		t.Fatal(got)
 	}
 }
 func TestMasks(t *testing.T) {
