@@ -1,20 +1,24 @@
 {
   "fetched_at": "2026-09-18T05:56:35.622766+00:00",
+  "note": "TZA-Probe-Agent、TZA-Web 两个来源仓库与旧主题仓库已于 2026-09-21 删除，本项目不再依赖它们；标记 deleted 的条目仅为一次性溯源快照，remote 地址已失效。",
   "repositories": [
     {
       "repository": "TZA-Probe",
       "remote": "https://github.com/leeska/TZA-Probe.git",
-      "commit": "f2d2f9c21d02d27f96b7776399d2b8a2c90b9fc3"
+      "commit": "f2d2f9c21d02d27f96b7776399d2b8a2c90b9fc3",
+      "note": "重建前基线；重建内容自 2026-09-21 起为 main 分支本体"
     },
     {
       "repository": "TZA-Probe-Agent",
       "remote": "https://github.com/leeska/TZA-Probe-Agent.git",
-      "commit": "2224132c8ddc4e700d44092887a4fea574423ca1"
+      "commit": "2224132c8ddc4e700d44092887a4fea574423ca1",
+      "deleted": "2026-09-21"
     },
     {
       "repository": "TZA-Web",
       "remote": "https://github.com/leeska/TZA-Web.git",
-      "commit": "6dfe63f03d778045b3447c8b310aeeb74ad7663c"
+      "commit": "6dfe63f03d778045b3447c8b310aeeb74ad7663c",
+      "deleted": "2026-09-21"
     }
   ]
 }
