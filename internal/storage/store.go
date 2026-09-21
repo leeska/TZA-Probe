@@ -130,6 +130,9 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 				rows.Close()
 				return nil, err
 			}
+			if v.Metrics != nil {
+				v.IPFamilies = v.Metrics.IPFamilies
+			}
 		}
 		v.Online = v.LastSeen > 0 && now.Unix()-v.LastSeen < int64(model.OfflineAfter.Seconds())
 		start, end := model.Cycle(now, v.BillingDay)
@@ -378,6 +381,19 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 		return nil, err
 	}
 	defer tx.Rollback()
+	// Address-family capability comes from the Agent's own report. Unknown
+	// capability (older Agent or first report not arrived yet) keeps the old
+	// behaviour so upgrades do not silently disable every probe.
+	var metricsJSON sql.NullString
+	var capabilities model.Metrics
+	if err = tx.QueryRowContext(ctx, "SELECT metrics FROM nodes WHERE id=?", node).Scan(&metricsJSON); err != nil {
+		return nil, err
+	}
+	if metricsJSON.Valid {
+		if err = json.Unmarshal([]byte(metricsJSON.String), &capabilities); err != nil {
+			return nil, err
+		}
+	}
 	rows, err := tx.QueryContext(ctx, "SELECT t.config,b.due FROM bindings b JOIN tasks t ON t.id=b.task_id WHERE b.node_id=? ORDER BY t.id", node)
 	if err != nil {
 		return nil, err
@@ -397,8 +413,13 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 			return nil, err
 		}
 		requested[t.ID] = requestAt
-		if t.Enabled {
-			candidates = append(candidates, t.Leaves()...)
+		if !t.Enabled {
+			continue
+		}
+		for _, leaf := range t.Leaves() {
+			if capabilities.AllowsFamily(leaf.Family) {
+				candidates = append(candidates, leaf)
+			}
 		}
 	}
 	err = rows.Err()

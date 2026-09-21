@@ -26,7 +26,6 @@ export function applyTheme(pref = preference()) {
   const theme = resolved(pref);
   const root = document.documentElement;
   root.dataset.theme = theme;
-  root.style.colorScheme = theme;
   for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = theme === "dark" ? "#0f141c" : "#edf2fb";
   for (const b of document.querySelectorAll("[data-theme-toggle]")) {
     b.innerHTML = inner(pref);

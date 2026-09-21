@@ -95,3 +95,33 @@ func TestCombinedTaskValidation(t *testing.T) {
 		t.Fatal("accepted excessive route frequency")
 	}
 }
+
+func TestMetricsAddressFamilyCapability(t *testing.T) {
+	valid := Metrics{MemoryTotal: 1}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if !valid.AllowsFamily("ipv4") || !valid.AllowsFamily("ipv6") {
+		t.Fatal("unreported capabilities must stay backwards compatible")
+	}
+	valid.IPFamilies = []string{}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if valid.AllowsFamily("ipv4") || valid.AllowsFamily("ipv6") {
+		t.Fatal("empty capability must allow neither family")
+	}
+	valid.IPFamilies = []string{"ipv6"}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if valid.AllowsFamily("ipv4") || !valid.AllowsFamily("ipv6") {
+		t.Fatal("reported IPv6-only capability filtered incorrectly")
+	}
+	for _, bad := range [][]string{{"ipv4", "ipv4"}, {"ipv4", "ipv6", "ipv4"}, {"ipv5"}} {
+		valid.IPFamilies = bad
+		if err := valid.Validate(); err == nil {
+			t.Fatalf("accepted invalid families %v", bad)
+		}
+	}
+}

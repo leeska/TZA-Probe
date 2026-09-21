@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"net"
 	"runtime"
 	"sort"
 	"strconv"
@@ -96,5 +97,51 @@ func (c *SystemCollector) Collect(ctx context.Context) (model.Metrics, error) {
 	}
 	c.lastIn, c.lastOut, c.lastAt = m.NetIn, m.NetOut, now
 	c.lastCounterID = m.CounterID
+	m.IPFamilies = localIPFamilies()
 	return m, m.Validate()
+}
+
+// localIPFamilies reports which public address families this host can use for
+// outbound probes. Loopback, link-local and unspecified addresses are not
+// usable; private IPv4 is kept because NAT'd hosts still have a working IPv4
+// path. IPv6 unique-local addresses are excluded because they cannot reach
+// public probe targets.
+func localIPFamilies() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	return ipFamilies(addrs)
+}
+
+func ipFamilies(addrs []net.Addr) []string {
+	seen := map[string]bool{}
+	for _, addr := range addrs {
+		var ip net.IP
+		switch value := addr.(type) {
+		case *net.IPNet:
+			ip = value.IP
+		case *net.IPAddr:
+			ip = value.IP
+		}
+		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		if ip4 := ip.To4(); ip4 != nil {
+			seen["ipv4"] = true
+			continue
+		}
+		ip16 := ip.To16()
+		if ip16 == nil || ip16.IsPrivate() {
+			continue
+		}
+		seen["ipv6"] = true
+	}
+	out := make([]string, 0, 2)
+	for _, family := range []string{"ipv4", "ipv6"} {
+		if seen[family] {
+			out = append(out, family)
+		}
+	}
+	return out
 }

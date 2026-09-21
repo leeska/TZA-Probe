@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -281,5 +282,40 @@ func TestCombinedTaskIndependentProbes(t *testing.T) {
 	jobs, err = s.Lease(ctx, node, now.Add(time.Hour))
 	if err != nil || len(jobs) != 0 {
 		t.Fatal("empty bindings executed")
+	}
+}
+
+func TestLeaseSkipsUnavailableAddressFamilies(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, _ := makeNode(t, s)
+	now := time.Now()
+	m := metrics()
+	m.IPFamilies = []string{"ipv6"}
+	if err := s.Report(ctx, id, m, now); err != nil {
+		t.Fatal(err)
+	}
+	views, err := s.Nodes(ctx, now.Add(time.Second))
+	if err != nil || len(views) != 1 {
+		t.Fatalf("views=%+v err=%v", views, err)
+	}
+	if !reflect.DeepEqual(views[0].IPFamilies, []string{"ipv6"}) {
+		t.Fatalf("reported families not exposed: %+v", views[0].IPFamilies)
+	}
+	v4 := model.Task{Name: "v4", Kind: "tcp", Host: "1.1.1.1", Family: "ipv4", Port: 80, Interval: 60, Enabled: true, NodeIDs: []string{id}}
+	if err = s.SaveTask(ctx, v4, true); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := s.Lease(ctx, id, now.Add(2*time.Second))
+	if err != nil || len(jobs) != 0 {
+		t.Fatalf("IPv4 task leased to IPv6-only host: jobs=%v err=%v", jobs, err)
+	}
+	v6 := model.Task{Name: "v6", Kind: "tcp", Host: "2606:4700:4700::1111", Family: "ipv6", Port: 80, Interval: 60, Enabled: true, NodeIDs: []string{id}}
+	if err = s.SaveTask(ctx, v6, true); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err = s.Lease(ctx, id, now.Add(3*time.Second))
+	if err != nil || len(jobs) != 1 || jobs[0].Task.Family != "ipv6" {
+		t.Fatalf("IPv6 task not leased: jobs=%v err=%v", jobs, err)
 	}
 }

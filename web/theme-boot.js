@@ -8,5 +8,4 @@
   var dark = pref === "dark" || (pref !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
   var root = document.documentElement;
   root.dataset.theme = dark ? "dark" : "light";
-  root.style.colorScheme = root.dataset.theme;
 })();

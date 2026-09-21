@@ -112,13 +112,42 @@ type Metrics struct {
 	OS          string  `json:"os"`
 	Arch        string  `json:"arch"`
 	Version     string  `json:"version"`
+	// IPFamilies is the set of usable public address families the Agent
+	// reported for this host. nil means the Agent has not reported them yet;
+	// an empty non-nil slice means the host has neither IPv4 nor IPv6.
+	IPFamilies []string `json:"ip_families"`
 }
 
 func (m Metrics) Validate() error {
 	if len(m.CounterID) > 64 || !percent(m.CPU) || m.MemoryTotal == 0 || m.MemoryUsed > m.MemoryTotal || m.DiskUsed > m.DiskTotal || !finite(m.RateIn) || !finite(m.RateOut) || m.RateIn < 0 || m.RateOut < 0 || len(m.OS) > 100 || len(m.Arch) > 30 || len(m.Version) > 40 || m.NetIn > math.MaxInt64 || m.NetOut > math.MaxInt64 {
 		return errors.New("invalid metrics")
 	}
+	if len(m.IPFamilies) > 2 {
+		return errors.New("invalid metrics")
+	}
+	seen := map[string]bool{}
+	for _, family := range m.IPFamilies {
+		if (family != "ipv4" && family != "ipv6") || seen[family] {
+			return errors.New("invalid metrics")
+		}
+		seen[family] = true
+	}
 	return nil
+}
+
+// AllowsFamily reports whether the host can run probes for family. A host
+// that has not reported address families yet stays backwards compatible and
+// is allowed to run every configured probe.
+func (m Metrics) AllowsFamily(family string) bool {
+	if m.IPFamilies == nil {
+		return true
+	}
+	for _, reported := range m.IPFamilies {
+		if reported == family {
+			return true
+		}
+	}
+	return false
 }
 
 type Sample struct {
@@ -134,6 +163,7 @@ type NodeView struct {
 	Online      bool     `json:"online"`
 	LastSeen    int64    `json:"last_seen"`
 	Metrics     *Metrics `json:"metrics"`
+	IPFamilies  []string `json:"ip_families"`
 	CycleStart  int64    `json:"cycle_start"`
 	CycleEnd    int64    `json:"cycle_end"`
 	TrafficUsed int64    `json:"traffic_used"`
