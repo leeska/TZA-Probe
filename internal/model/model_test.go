@@ -97,6 +97,24 @@ func TestRouteRequiresEvidence(t *testing.T) {
 	if got := RouteLabel(ctg); got != "CTG" {
 		t.Fatalf("CTG trace: %s", got)
 	}
+	// A CTG trace that also shows CN2 hops is still a CTG line: CTG wins over the
+	// CN2 split, the same way the neighbouring route classifiers resolve 电信.
+	ctgWithCN2 := []Hop{
+		{ASN: "AS25820", Address: "45.78.*.*"},
+		{ASN: "AS4809", Address: "59.43.*.*"},
+		{ASN: "AS23764", Address: "69.194.*.*"},
+	}
+	if got := RouteLabel(ctgWithCN2); got != "CTG" {
+		t.Fatalf("CTG with CN2 hops: %s", got)
+	}
+	// 电信 is one name, but another carrier's backbone still joins the chain.
+	ctThenCU := []Hop{
+		{ASN: "AS4134", Address: "202.97.1.*"},
+		{ASN: "AS4837", Address: "219.158.*.*"},
+	}
+	if got := RouteLabel(ctThenCU); got != "163 → 4837" {
+		t.Fatalf("163 then 4837: %s", got)
+	}
 	// The ASN stays authoritative when it disagrees with the address prefix.
 	if got := RouteLabel([]Hop{{ASN: "AS9929", Address: "219.158.*.*"}}); got != "9929" {
 		t.Fatal(got)

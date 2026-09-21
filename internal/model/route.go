@@ -50,7 +50,8 @@ var prefixBackbones = []struct {
 // RouteLabel names the concrete backbones seen in a trace, in hop order, for
 // example "CN2GT" or "4837 → 9929". Every hop is read by ASN first and by
 // address prefix second, so the backbone evidence survives a trace whose CN2
-// hops came back without an ASN. Unmatched traces read "未知".
+// hops came back without an ASN. China Telecom is one product per trace, so its
+// hops share the name ctLabel resolves; unmatched traces read "未知".
 func RouteLabel(hops []Hop) string {
 	firstCN2 := -1
 	for i, h := range hops {
@@ -59,20 +60,19 @@ func RouteLabel(hops []Hop) string {
 			break
 		}
 	}
+	ct := ctLabel(hops, firstCN2)
 	out := []string{}
 	seen := map[string]bool{}
-	// The 电信 return route is one product, so a trace that already carries a CN2
-	// or CTG name never repeats its 163 hops: those hops are that product's own
-	// access side — the 163 hand-off of a GT line, or China Telecom's own
-	// international entry and provincial access ranges on a GIA or CTG line.
-	ct := hasCTProduct(hops)
 	for _, h := range hops {
 		name := hopBackbone(h)
-		switch {
-		case name == "CN2":
-			name = cn2Label(hops, firstCN2)
-		case name == "163" && ct:
-			continue
+		switch name {
+		case "163", "CN2", "CTG":
+			// hopBackbone names the evidence a single hop carries, ctLabel names
+			// the product the 电信 path belongs to. The 163 hops around a CN2 run
+			// are that product's access side, and a GIA or CTG trace crosses
+			// China Telecom's own AS4134 ranges on both sides of it, so neither
+			// may be reported as a second backbone.
+			name = ct
 		}
 		if name != "" && !seen[name] {
 			out = append(out, name)
@@ -85,17 +85,30 @@ func RouteLabel(hops []Hop) string {
 	return strings.Join(out, " → ")
 }
 
-// hasCTProduct reports whether the trace is already named as one of China
-// Telecom's products. Their traces all cross China Telecom's own AS4134 ranges,
-// so those hops must not be reported as a second, 163 backbone.
-func hasCTProduct(hops []Hop) bool {
+// ctLabel names the single 电信 product a trace carries. CTG wins over CN2: a
+// trace that shows CTGNet hops is a CTG line and its 59.43.* hops are that
+// line's transport, which is how the neighbouring route classifiers resolve it
+// too. Next comes the CN2 split; a trace with neither falls back to the 163 line
+// its AS4134 hops prove. Other carriers keep their own names.
+func ctLabel(hops []Hop, firstCN2 int) string {
+	ctg, line163 := false, false
 	for _, h := range hops {
 		switch hopBackbone(h) {
-		case "CN2", "CTG":
-			return true
+		case "CTG":
+			ctg = true
+		case "163":
+			line163 = true
 		}
 	}
-	return false
+	switch {
+	case ctg:
+		return "CTG"
+	case firstCN2 >= 0:
+		return cn2Label(hops, firstCN2)
+	case line163:
+		return "163"
+	}
+	return ""
 }
 
 // hopBackbone names the backbone a single hop proves. The ASN is authoritative;
