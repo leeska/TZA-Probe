@@ -36,35 +36,66 @@ func TestRouteRequiresEvidence(t *testing.T) {
 	if RouteLabel([]Hop{{ASN: "AS4809"}}) != "CN2" {
 		t.Fatal("ASN alone must not invent a GIA or GT product classification")
 	}
-	gia := []Hop{{ASN: "AS4809", Address: "59.43.1.*"}, {ASN: "AS4809", Address: "59.43.2.*"}}
-	if got := RouteLabel(gia); got != "CN2GIA" {
-		t.Fatal(got)
+	// GT hands the traffic to the 163 backbone on the China side of the trace, so
+	// a 202.97.* hop behind the CN2 hops is what separates it from GIA. The 163
+	// hops on either side of the CN2 run are that same product, not a second
+	// backbone, so the label stays a single name.
+	gt := []Hop{
+		{ASN: "AS25820", Address: "45.78.*.*"},
+		{ASN: "AS4809", Address: "59.43.1.*"},
+		{ASN: "AS4134", Address: "202.97.1.*"},
+		{ASN: "AS4134", Address: "202.97.2.*"},
+		{ASN: "AS4134", Address: "202.96.*.*"},
 	}
-	gt := []Hop{{ASN: "AS4134", Address: "202.97.1.*"}, {ASN: "AS4809", Address: "59.43.2.*"}}
-	if got := RouteLabel(gt); got != "163 → CN2GT" {
-		t.Fatal(got)
+	if got := RouteLabel(gt); got != "CN2GT" {
+		t.Fatalf("CN2GT: %s", got)
 	}
-	// A live 电信 trace: the CN2 hops came back without an ASN, and 163 shows
-	// up both before and after them. The address prefix still proves CN2 GT.
+	// A live 电信 trace: the CN2 hops came back without an ASN, so the 59.43.*
+	// addresses are the only CN2 evidence, and 163 shows up both in front of and
+	// behind them. The 202.97.* hop behind them is what proves CN2 GT.
 	unresolved := []Hop{
 		{ASN: "AS25820", Address: "45.78.*.*"},
 		{ASN: "AS4134", Address: "218.30.*.*"},
 		{Address: "59.43.*.*"},
 		{Address: "59.43.*.*"},
+		{ASN: "AS4134", Address: "202.97.1.*"},
+	}
+	if got := RouteLabel(unresolved); got != "CN2GT" {
+		t.Fatalf("unresolved CN2 hops: %s", got)
+	}
+	// The reported regression: a GIA trace whose China Telecom hops are AS4134
+	// must not become GT. 218.30.* is 电信's international entry and 110.184.* is
+	// the target province's access network; neither is the 163 backbone, and no
+	// 202.97.* hop follows the CN2 run, so the line is GIA.
+	gia := []Hop{
+		{ASN: "AS25820", Address: "45.78.*.*"},
+		{ASN: "AS4134", Address: "218.30.*.*"},
+		{ASN: "AS4809", Address: "59.43.*.*"},
+		{Address: "59.43.*.*"},
+		{ASN: "AS4134", Address: "110.184.*.*"},
+	}
+	if got := RouteLabel(gia); got != "CN2GIA" {
+		t.Fatalf("live GIA trace: %s", got)
+	}
+	// Same evidence without the ASN on the CN2 hops, and a 163 hop in front of
+	// the CN2 run that a prefix alone proves.
+	giaByPrefix := []Hop{
+		{Address: "219.141.*.*"},
+		{Address: "59.43.*.*"},
 		{ASN: "AS4134", Address: "110.190.*.*"},
 	}
-	if got := RouteLabel(unresolved); got != "163 → CN2GT" {
-		t.Fatal(got)
+	if got := RouteLabel(giaByPrefix); got != "CN2GIA" {
+		t.Fatalf("GIA proven by prefix: %s", got)
 	}
-	// A direct CN2 entry with no 163 hop in front of it is GIA.
-	direct := []Hop{{ASN: "AS25820", Address: "45.78.*.*"}, {Address: "59.43.*.*"}}
-	if got := RouteLabel(direct); got != "CN2GIA" {
-		t.Fatal(got)
+	// A CTG trace crosses the same China Telecom access ranges, so it stays one
+	// name as well instead of reporting an extra 163 hop.
+	ctg := []Hop{
+		{ASN: "AS25820", Address: "45.78.*.*"},
+		{ASN: "AS4134", Address: "218.30.*.*"},
+		{ASN: "AS23764", Address: "69.194.*.*"},
 	}
-	// A 163 hop that only proves itself by prefix still turns CN2 into GT.
-	gtByPrefix := []Hop{{Address: "219.141.*.*"}, {Address: "59.43.*.*"}}
-	if got := RouteLabel(gtByPrefix); got != "163 → CN2GT" {
-		t.Fatal(got)
+	if got := RouteLabel(ctg); got != "CTG" {
+		t.Fatalf("CTG trace: %s", got)
 	}
 	// The ASN stays authoritative when it disagrees with the address prefix.
 	if got := RouteLabel([]Hop{{ASN: "AS9929", Address: "219.158.*.*"}}); got != "9929" {

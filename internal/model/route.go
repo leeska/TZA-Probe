@@ -15,7 +15,11 @@ var backboneNames = map[string]string{
 }
 
 // Address prefixes that identify a backbone on their own, without an ASN:
-// 59.43.* is the CN2 backbone, 202.97.* belongs to the 163 backbone.
+// 59.43.* is the CN2 backbone, 202.97.* is the core of the 163 backbone. Other
+// China Telecom ranges (218.30.* for its international entry, 110.184.* to
+// 110.199.* for provincial access, and the rest of the 163-family list below)
+// are announced under AS4134 as well, which is why that ASN alone cannot name
+// the 163 backbone — see cn2Label.
 const (
 	cn2Prefix   = "59.43."
 	ct163Prefix = "202.97."
@@ -44,7 +48,7 @@ var prefixBackbones = []struct {
 }
 
 // RouteLabel names the concrete backbones seen in a trace, in hop order, for
-// example "163 → CN2GT" or "4837 → 9929". Every hop is read by ASN first and by
+// example "CN2GT" or "4837 → 9929". Every hop is read by ASN first and by
 // address prefix second, so the backbone evidence survives a trace whose CN2
 // hops came back without an ASN. Unmatched traces read "未知".
 func RouteLabel(hops []Hop) string {
@@ -57,10 +61,18 @@ func RouteLabel(hops []Hop) string {
 	}
 	out := []string{}
 	seen := map[string]bool{}
+	// The 电信 return route is one product, so a trace that already carries a CN2
+	// or CTG name never repeats its 163 hops: those hops are that product's own
+	// access side — the 163 hand-off of a GT line, or China Telecom's own
+	// international entry and provincial access ranges on a GIA or CTG line.
+	ct := hasCTProduct(hops)
 	for _, h := range hops {
 		name := hopBackbone(h)
-		if name == "CN2" {
+		switch {
+		case name == "CN2":
 			name = cn2Label(hops, firstCN2)
+		case name == "163" && ct:
+			continue
 		}
 		if name != "" && !seen[name] {
 			out = append(out, name)
@@ -73,8 +85,23 @@ func RouteLabel(hops []Hop) string {
 	return strings.Join(out, " → ")
 }
 
+// hasCTProduct reports whether the trace is already named as one of China
+// Telecom's products. Their traces all cross China Telecom's own AS4134 ranges,
+// so those hops must not be reported as a second, 163 backbone.
+func hasCTProduct(hops []Hop) bool {
+	for _, h := range hops {
+		switch hopBackbone(h) {
+		case "CN2", "CTG":
+			return true
+		}
+	}
+	return false
+}
+
 // hopBackbone names the backbone a single hop proves. The ASN is authoritative;
-// the address prefix only fills in for hops the tool could not resolve.
+// the address prefix only fills in for hops the tool could not resolve. AS4134
+// names the 163 line because that ASN is China Telecom's own network: a hop it
+// owns is 电信 traffic even when the trace never showed the 202.97.* core.
 func hopBackbone(h Hop) string {
 	asn := asnDigits(h.ASN)
 	if asn == "4809" {
@@ -94,16 +121,22 @@ func hopBackbone(h Hop) string {
 	return ""
 }
 
-// cn2Label splits CN2 into GIA and GT. GIA enters the CN2 backbone directly,
-// while GT first crosses the 163 backbone and only then reaches 59.43.*. The
-// split needs 59.43.* evidence, so a trace that reports AS4809 alone stays
+// cn2Label splits CN2 into GIA and GT. A trace runs from the probe towards the
+// Chinese target, so the China-side hand-off is what comes after the CN2 hops:
+// a GT line leaves 59.43.* for the 163 backbone there, while a GIA line stays on
+// 59.43.* down to the target's province. Looking at the hops in front of the
+// first CN2 hop cannot decide this — AS4134 covers China Telecom's international
+// entry and the target's provincial access network as well as 163, so a GIA
+// trace carries AS4134 hops on both sides of 59.43.* without ever touching the
+// 163 backbone. Only 202.97.* addresses prove the 163 backbone, and the split
+// needs 59.43.* evidence at all, so a trace that reports AS4809 alone stays
 // plain "CN2".
 func cn2Label(hops []Hop, firstCN2 int) string {
 	if !hasAddressPrefix(hops, cn2Prefix) {
 		return "CN2"
 	}
-	for _, h := range hops[:firstCN2] {
-		if hopBackbone(h) == "163" {
+	for _, h := range hops[firstCN2+1:] {
+		if strings.HasPrefix(h.Address, ct163Prefix) {
 			return "CN2GT"
 		}
 	}
