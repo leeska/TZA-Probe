@@ -44,8 +44,36 @@ func TestRouteRequiresEvidence(t *testing.T) {
 	if got := RouteLabel(gt); got != "163 → CN2GT" {
 		t.Fatal(got)
 	}
-	if got := RouteLabel([]Hop{{ASN: "AS4134", Address: "202.97.1.*"}}); got != "163" {
+	// A live 电信 trace: the CN2 hops came back without an ASN, and 163 shows
+	// up both before and after them. The address prefix still proves CN2 GT.
+	unresolved := []Hop{
+		{ASN: "AS25820", Address: "45.78.*.*"},
+		{ASN: "AS4134", Address: "218.30.*.*"},
+		{Address: "59.43.*.*"},
+		{Address: "59.43.*.*"},
+		{ASN: "AS4134", Address: "110.190.*.*"},
+	}
+	if got := RouteLabel(unresolved); got != "163 → CN2GT" {
 		t.Fatal(got)
+	}
+	// A direct CN2 entry with no 163 hop in front of it is GIA.
+	direct := []Hop{{ASN: "AS25820", Address: "45.78.*.*"}, {Address: "59.43.*.*"}}
+	if got := RouteLabel(direct); got != "CN2GIA" {
+		t.Fatal(got)
+	}
+	for _, c := range []struct {
+		hops []Hop
+		want string
+	}{
+		{[]Hop{{ASN: "AS4134", Address: "202.97.1.*"}}, "163"},
+		{[]Hop{{ASN: "AS4134"}}, "163"},
+		{[]Hop{{Address: "202.97.1.*"}}, "163"},
+		{[]Hop{{ASN: "AS23764", Address: "203.0.113.*"}}, "CTG"},
+		{[]Hop{{ASN: "AS58807"}}, "CMIN2"},
+	} {
+		if got := RouteLabel(c.hops); got != c.want {
+			t.Fatalf("%v: %s", c.hops, got)
+		}
 	}
 }
 func TestMasks(t *testing.T) {
