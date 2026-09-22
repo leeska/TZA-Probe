@@ -84,6 +84,83 @@ func ReadConfig(value string) Config {
 	return Config{Channel: "none"}
 }
 
+// Store is the persistence port a notification configuration needs.
+type Store interface {
+	Settings
+	SetSetting(context.Context, string, string) error
+}
+
+// Status reports the configured channel without exposing any credential.
+func Status(ctx context.Context, store Settings) (Config, error) {
+	value, err := Destination(ctx, store)
+	if err != nil {
+		return Config{}, err
+	}
+	return ReadConfig(value), nil
+}
+
+// Normalize applies the rules both the panel and the MCP endpoint must share: an
+// empty channel means "no webhook configured" and therefore none, a blank
+// Telegram token keeps the stored one (the form never echoes it), and the
+// credentials of the unselected channel are dropped. An error here means the
+// submitted configuration is invalid — the caller must fix its input — and never
+// that storage failed.
+func Normalize(ctx context.Context, store Settings, next Config) (Config, error) {
+	if next.Channel == "" {
+		next.Channel = "webhook"
+		if next.Webhook == "" {
+			next.Channel = "none"
+		}
+	}
+	if next.Channel == "telegram" && next.BotToken == "" {
+		old, err := Destination(ctx, store)
+		if err != nil {
+			return Config{}, err
+		}
+		next.BotToken = ReadConfig(old).BotToken
+	}
+	if err := next.Validate(); err != nil {
+		return Config{}, err
+	}
+	if next.Channel != "telegram" {
+		next.BotToken = ""
+		next.ChatID = ""
+	}
+	if next.Channel != "webhook" {
+		next.Webhook = ""
+	}
+	return next, nil
+}
+
+// Save normalises and persists a submitted configuration in one step.
+func Save(ctx context.Context, store Store, next Config) error {
+	normalized, err := Normalize(ctx, store, next)
+	if err != nil {
+		return err
+	}
+	return Persist(ctx, store, normalized)
+}
+
+// Persist writes an already normalised configuration.
+func Persist(ctx context.Context, store Store, c Config) error {
+	data, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return store.SetSetting(ctx, "notification", string(data))
+}
+
+// Public is the credential-free view of a configuration for the panel and for
+// the MCP tools.
+func (c Config) Public() map[string]any {
+	return map[string]any{
+		"webhook_configured":  c.Channel == "webhook",
+		"telegram_configured": c.Channel == "telegram",
+		"channel":             c.Channel,
+		"chat_id":             c.ChatID,
+	}
+}
+
 type Transport struct{ Telegram Telegram }
 
 func (s Transport) Send(ctx context.Context, destination string, event model.Event) error {

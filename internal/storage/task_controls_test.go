@@ -13,7 +13,7 @@ func TestTaskControlsPreserveHistoryAndSchedule(t *testing.T) {
 	id, _ := makeNode(t, s)
 	other, _ := makeNode(t, s)
 	task := model.Task{Name: "test", Kind: "tcp", Host: "example.com", Port: 443, Family: "ipv4", Interval: 3600, Enabled: true, NodeIDs: []string{id}}
-	if err := s.SaveTask(ctx, task, true); err != nil {
+	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
 	tasks, _ := s.Tasks(ctx)
@@ -101,7 +101,7 @@ func TestManualRunCoversEveryLeafOnce(t *testing.T) {
 	ctx := context.Background()
 	id, _ := makeNode(t, s)
 	task := model.Task{Name: "combined", Checks: []string{"tcp", "route"}, Targets: []model.Target{{Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "test", Carrier: "其他"}, {Host: "8.8.8.8", Port: 443, Family: "ipv4", Region: "test", Carrier: "其他"}}, Interval: 3600, RouteInterval: 3600, Enabled: true, NodeIDs: []string{id}}
-	if err := s.SaveTask(ctx, task, true); err != nil {
+	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
 	tasks, _ := s.Tasks(ctx)
@@ -141,7 +141,7 @@ func TestManualRequestInSameSecondAsPreviousLease(t *testing.T) {
 	ctx := context.Background()
 	id, _ := makeNode(t, s)
 	task := model.Task{Name: "same second", Kind: "tcp", Host: "example.com", Port: 443, Family: "ipv4", Interval: 3600, Enabled: true, NodeIDs: []string{id}}
-	if err := s.SaveTask(ctx, task, true); err != nil {
+	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
 	tasks, _ := s.Tasks(ctx)

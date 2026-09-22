@@ -22,7 +22,7 @@ func openTest(t *testing.T) *Store {
 }
 func makeNode(t *testing.T, s *Store) (string, string) {
 	t.Helper()
-	token, err := s.SaveNode(context.Background(), model.Node{Name: "node", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
+	_, token, err := s.SaveNode(context.Background(), model.Node{Name: "node", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestExplicitBindingLeaseOwnershipAndEdit(t *testing.T) {
 	b, _ := makeNode(t, s)
 	now := time.Now()
 	task := model.Task{Name: "route", Kind: "route", Host: "example.com", Family: "ipv4", Port: 80, Interval: 900, Enabled: true, Region: "上海", Carrier: "电信"}
-	if err := s.SaveTask(ctx, task, true); err != nil {
+	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err := s.Lease(ctx, a, now)
@@ -99,7 +99,7 @@ func TestExplicitBindingLeaseOwnershipAndEdit(t *testing.T) {
 	tasks, _ := s.Tasks(ctx)
 	task = tasks[0]
 	task.NodeIDs = []string{a}
-	if err = s.SaveTask(ctx, task, false); err != nil {
+	if _, err = s.SaveTask(ctx, task, false); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err = s.Lease(ctx, a, now)
@@ -126,7 +126,7 @@ func TestExplicitBindingLeaseOwnershipAndEdit(t *testing.T) {
 		t.Fatal("duplicate result accepted")
 	}
 	task.Enabled = false
-	if err = s.SaveTask(ctx, task, false); err != nil {
+	if _, err = s.SaveTask(ctx, task, false); err != nil {
 		t.Fatal(err)
 	}
 	obs, err := s.Observations(ctx, a, now)
@@ -134,7 +134,7 @@ func TestExplicitBindingLeaseOwnershipAndEdit(t *testing.T) {
 		t.Fatal("edited task retains stale observations")
 	}
 	task.NodeIDs = []string{"missing"}
-	if err = s.SaveTask(ctx, task, false); err == nil {
+	if _, err = s.SaveTask(ctx, task, false); err == nil {
 		t.Fatal("accepted missing node")
 	}
 }
@@ -230,7 +230,7 @@ func TestCombinedTaskIndependentProbes(t *testing.T) {
 		{Host: "127.0.0.1", Port: 80, Family: "ipv4", Region: "本地", Carrier: "其他"},
 		{Host: "::1", Port: 80, Family: "ipv6", Region: "本地", Carrier: "其他"},
 	}, Interval: 30, RouteInterval: 900, Enabled: true, NodeIDs: []string{node}}
-	if err := s.SaveTask(ctx, task, true); err != nil {
+	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
@@ -276,7 +276,7 @@ func TestCombinedTaskIndependentProbes(t *testing.T) {
 	tasks, _ := s.Tasks(ctx)
 	task = tasks[0]
 	task.NodeIDs = nil
-	if err := s.SaveTask(ctx, task, false); err != nil {
+	if _, err := s.SaveTask(ctx, task, false); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err = s.Lease(ctx, node, now.Add(time.Hour))
@@ -303,7 +303,7 @@ func TestLeaseSkipsUnavailableAddressFamilies(t *testing.T) {
 		t.Fatalf("reported families not exposed: %+v", views[0].IPFamilies)
 	}
 	v4 := model.Task{Name: "v4", Kind: "tcp", Host: "1.1.1.1", Family: "ipv4", Port: 80, Interval: 60, Enabled: true, NodeIDs: []string{id}}
-	if err = s.SaveTask(ctx, v4, true); err != nil {
+	if _, err = s.SaveTask(ctx, v4, true); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err := s.Lease(ctx, id, now.Add(2*time.Second))
@@ -311,7 +311,7 @@ func TestLeaseSkipsUnavailableAddressFamilies(t *testing.T) {
 		t.Fatalf("IPv4 task leased to IPv6-only host: jobs=%v err=%v", jobs, err)
 	}
 	v6 := model.Task{Name: "v6", Kind: "tcp", Host: "2606:4700:4700::1111", Family: "ipv6", Port: 80, Interval: 60, Enabled: true, NodeIDs: []string{id}}
-	if err = s.SaveTask(ctx, v6, true); err != nil {
+	if _, err = s.SaveTask(ctx, v6, true); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err = s.Lease(ctx, id, now.Add(3*time.Second))
@@ -327,7 +327,7 @@ func TestObservationsRelabelRouteOnRead(t *testing.T) {
 	ctx := context.Background()
 	node, _ := makeNode(t, s)
 	now := time.Date(2026, 9, 22, 20, 8, 41, 0, time.UTC)
-	err := s.SaveTask(ctx, model.Task{
+	_, err := s.SaveTask(ctx, model.Task{
 		Name: "移动回程", Kind: "route", Family: "ipv6",
 		Host: "2409:8c62:e10:32::99:80", Region: "四川", Carrier: "移动", Port: 443,
 		Interval: 3600, RouteInterval: 3600, Enabled: true, NodeIDs: []string{node},

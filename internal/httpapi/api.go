@@ -31,14 +31,14 @@ type Repository interface {
 	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
 	IsPublic(context.Context, string) (bool, error)
 	Nodes(context.Context, time.Time) ([]model.NodeView, error)
-	SaveNode(context.Context, model.Node, bool) (string, error)
+	SaveNode(context.Context, model.Node, bool) (string, string, error)
 	DeleteNode(context.Context, string) error
 	Rotate(context.Context, string) (string, error)
 	Authenticate(context.Context, string) (string, error)
 	Report(context.Context, string, model.Metrics, time.Time) error
 	History(context.Context, string, int, time.Time) ([]model.Sample, error)
 	Tasks(context.Context) ([]model.Task, error)
-	SaveTask(context.Context, model.Task, bool) error
+	SaveTask(context.Context, model.Task, bool) (string, error)
 	DeleteTask(context.Context, string) error
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
@@ -147,51 +147,24 @@ func (a *API) Handler() http.Handler {
 		write(w, 200, events)
 	}))
 	mux.HandleFunc("GET /api/v1/admin/settings", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		value, err := notify.Destination(r.Context(), a.Store)
+		config, err := notify.Status(r.Context(), a.Store)
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		c := notify.ReadConfig(value)
-		write(w, 200, map[string]any{"webhook_configured": c.Channel == "webhook", "telegram_configured": c.Channel == "telegram", "channel": c.Channel, "chat_id": c.ChatID})
+		write(w, 200, config.Public())
 	}))
 	mux.HandleFunc("PUT /api/v1/admin/settings", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		var v notify.Config
 		if !decode(w, r, &v) {
 			return
 		}
-		if v.Channel == "" {
-			v.Channel = "webhook"
-			if v.Webhook == "" {
-				v.Channel = "none"
-			}
-		}
-		if v.Channel == "telegram" && v.BotToken == "" {
-			old, err := notify.Destination(r.Context(), a.Store)
-			if err != nil {
-				fail(w, err)
-				return
-			}
-			v.BotToken = notify.ReadConfig(old).BotToken
-		}
-		if err := v.Validate(); err != nil {
+		next, err := notify.Normalize(r.Context(), a.Store, v)
+		if err != nil {
 			write(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
-		// Only persist credentials for the selected destination.
-		if v.Channel != "telegram" {
-			v.BotToken = ""
-			v.ChatID = ""
-		}
-		if v.Channel != "webhook" {
-			v.Webhook = ""
-		}
-		data, err := json.Marshal(v)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		respond(w, a.Store.SetSetting(r.Context(), "notification", string(data)))
+		respond(w, notify.Persist(r.Context(), a.Store, next))
 	}))
 	mux.HandleFunc("POST /api/v1/admin/settings/test", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		value, err := notify.Destination(r.Context(), a.Store)
@@ -254,9 +227,9 @@ func (a *API) Handler() http.Handler {
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { write(w, 404, map[string]string{"error": "not found"}) })
 	// Model Context Protocol: the same administrator key as the API, sent as a
-	// bearer token by the AI client. Read-only tools, so this adds no way to
-	// change a node or a task.
-	probe := &mcp.Server{Source: a.Store}
+	// bearer token by the AI client. The tools cover what the panel does, reads
+	// and writes both.
+	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier}
 	mux.HandleFunc("POST /mcp", a.admin(probe.ServeHTTP))
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		// The modern revision dropped the standalone SSE stream (GET) and
@@ -507,12 +480,12 @@ func (a *API) saveNode(w http.ResponseWriter, r *http.Request) {
 		write(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
-	token, err := a.Store.SaveNode(r.Context(), n, r.Method == "POST")
+	id, token, err := a.Store.SaveNode(r.Context(), n, r.Method == "POST")
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	write(w, 200, map[string]string{"token": token})
+	write(w, 200, map[string]string{"id": id, "token": token})
 }
 func (a *API) saveTask(w http.ResponseWriter, r *http.Request) {
 	var t model.Task
@@ -524,7 +497,8 @@ func (a *API) saveTask(w http.ResponseWriter, r *http.Request) {
 		write(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
-	respond(w, a.Store.SaveTask(r.Context(), t, r.Method == "POST"))
+	_, err := a.Store.SaveTask(r.Context(), t, r.Method == "POST")
+	respond(w, err)
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {

@@ -16,7 +16,7 @@
 - 公开面板、节点管理与任务目录的搜索同时认中文、全拼、拼音首字母、英文和代号：香港 = 香港 / xianggang / xg / hk / hongkong，电信 = 电信 / dianxin / dx / ct / telecom，目录里按空格分隔多个词是「且」的关系（如 `hb ct`）。首字母可能撞名（`hb` 同时是河北与湖北），要精确就用全拼。拼音表在 `web/pinyin.js`，由 `scripts/gen-pinyin.mjs` 生成（多音字地名按词定音，重庆 = chongqing）；表外的汉字退回纯文本匹配。搜索框里贴目录地址同样能筛出对应目标。
 - 月度计费周期、流量额度、四种流量计费方式、价格、到期日期。
 - 续费 / 流量 / 持续 CPU 或内存负载 / 离线提醒，触发与恢复事件、Telegram / Webhook 和有限重试。
-- MCP 接口 `/mcp`：AI 客户端用同一个管理密钥读取节点、主机历史、TCP 延迟与回程标签，只读、无会话状态，不新增或修改任何配置。
+- MCP 接口 `/mcp`：AI 客户端用同一个管理密钥读写整站——节点与任务的增删改、接入密钥轮换、用量校正、任务绑定与暂停/执行、通知出口与测试通知，另有面板没有的目录检索与执行记录查询。读工具与写工具分开标注（`readOnlyHint` / `destructiveHint`），写工具每次返回被改对象的 id。
 
 ## 一键部署
 
@@ -107,7 +107,7 @@ TCP 指标是连接耗时和连接失败比例，**不声称是 ICMP 丢包率**
 
 ## MCP 接口
 
-Server 在 `POST /mcp` 上提供 [Model Context Protocol](https://modelcontextprotocol.io) 端点：用同一个管理密钥（`Authorization: Bearer`）调用只读工具，可以问节点状态、主机历史、TCP 延迟和回程标签，但改不了节点与任务。跨源写入与节点密钥都不通行。
+Server 在 `POST /mcp` 上提供 [Model Context Protocol](https://modelcontextprotocol.io) 端点：用同一个管理密钥鉴权（请求头携带管理密钥，或面板会话 Cookie），工具覆盖管理面板的全部操作——读取节点、任务、主机历史、TCP 延迟与回程标签，以及新建 / 修改 / 删除节点与任务、轮换接入密钥、校正用量、绑定与暂停任务、配置通知出口并发送测试通知。写工具与面板走同一套持久化与校验：非法输入按 `-32602` 报错，周期已变化这类冲突按工具错误返回；返回体只给 id、状态与接入命令，已存的 Bot Token / Webhook 不回显。
 
 客户端配置（通用的 `mcpServers` 写法）：
 
@@ -117,7 +117,7 @@ Server 在 `POST /mcp` 上提供 [Model Context Protocol](https://modelcontextpr
 
 任何支持 HTTP 端点或 `mcpServers` 配置的客户端填同一个 URL 与管理密钥即可，改完重载客户端。
 
-工具：`list_nodes`、`list_tasks`、`node_history`（主机历史 1–720 小时）、`node_network_history`（网络历史 1–168 小时）、`node_observations`（每个检测项最新结果，含回程标签）、`recent_events`、`latency_samples`。回程跳地址与管理接口同样脱敏，过期或失败的探测不返回线路标签。
+工具 21 个。读取：`list_nodes`、`list_tasks`、`node_history`（主机历史 1–720 小时）、`node_network_history`（网络历史 1–168 小时）、`node_observations`（每个检测项最新结果，含回程标签）、`recent_events`、`latency_samples`、`list_catalog`（内置目标目录，可按地区 / 运营商 / 协议过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（暂停 / 恢复 / 立即安排 / 绑定节点）、`update_settings`、`test_notification`。`update_node` / `update_task` 是合并语义：只提交要改的字段，没提到的字段保持原值（`alerts` 这类嵌套对象按字段合并，不必整段覆盖）。回程跳地址与管理接口同样脱敏，过期或失败的探测不返回线路标签。
 
 同一个地址同时说两代协议：`2026-07-28`（无握手，版本与客户端信息按请求放在 `_meta` 并镜像到 `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` 头）与 `2025-11-25` / `2025-06-18`（`initialize` 握手）。版本不认识时返回 `UnsupportedProtocolVersionError` 并列出支持的版本，头与请求体不一致时按规范返回 `HeaderMismatch`。协议细节见 [HTTP 协议](docs/API.md)。
 

@@ -41,7 +41,7 @@ func TestCycleCorrectionPreservesCountersAndExpires(t *testing.T) {
 	n := nodes[0].Node
 	n.Name = "renamed"
 	n.TrafficAdjustment = 0
-	if _, err := s.SaveNode(ctx, n, false); err != nil {
+	if _, _, err := s.SaveNode(ctx, n, false); err != nil {
 		t.Fatal(err)
 	}
 	nodes, _ = s.Nodes(ctx, now)

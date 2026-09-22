@@ -242,9 +242,12 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 	}
 	return views, nil
 }
-func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string, error) {
+
+// SaveNode creates or updates a node and returns the stored id plus, on
+// creation, the one-time Agent token.
+func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string, string, error) {
 	if err := n.Validate(); err != nil {
-		return "", err
+		return "", "", err
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -255,17 +258,17 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 		n.CreatedAt = time.Now().Unix()
 		token := model.Secret()
 		_, err := s.db.ExecContext(ctx, "INSERT INTO nodes(id,config,token_hash) VALUES(?,?,?)", n.ID, encode(n), model.Hash(token))
-		return token, err
+		return n.ID, token, err
 	}
 	var old string
 	if err := s.db.QueryRowContext(ctx, "SELECT config FROM nodes WHERE id=?", n.ID).Scan(&old); errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNotFound
+		return "", "", ErrNotFound
 	} else if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var prior model.Node
 	if err := json.Unmarshal([]byte(old), &prior); err != nil {
-		return "", err
+		return "", "", err
 	}
 	n.CreatedAt = prior.CreatedAt
 	n.TrafficAdjustment = prior.TrafficAdjustment
@@ -275,7 +278,7 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 		n.AdjustmentCycle = 0
 	}
 	_, err := s.db.ExecContext(ctx, "UPDATE nodes SET config=? WHERE id=?", encode(n), n.ID)
-	return "", err
+	return n.ID, "", err
 }
 func (s *Store) DeleteNode(ctx context.Context, id string) error { return s.delete(ctx, "nodes", id) }
 func (s *Store) DeleteTask(ctx context.Context, id string) error { return s.delete(ctx, "tasks", id) }
@@ -416,15 +419,17 @@ func (s *Store) Tasks(ctx context.Context) ([]model.Task, error) {
 	}
 	return out, rows.Err()
 }
-func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) error {
+
+// SaveTask creates or updates a probe task and returns the stored id.
+func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) (string, error) {
 	if err := t.Validate(); err != nil {
-		return err
+		return "", err
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer tx.Rollback()
 	if create {
@@ -436,33 +441,33 @@ func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) error {
 		if err == nil {
 			n, _ := r.RowsAffected()
 			if n == 0 {
-				return ErrNotFound
+				return "", ErrNotFound
 			}
 		}
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	// Editing invalidates in-flight leases and old route classifications.
 	if _, err = tx.ExecContext(ctx, "DELETE FROM jobs WHERE task_id=?", t.ID); err != nil {
-		return err
+		return "", err
 	}
 	if _, err = tx.ExecContext(ctx, "DELETE FROM bindings WHERE task_id=?", t.ID); err != nil {
-		return err
+		return "", err
 	}
 	for _, id := range t.NodeIDs {
 		var exists int
 		if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM nodes WHERE id=?", id).Scan(&exists); err != nil {
-			return err
+			return "", err
 		}
 		if exists == 0 {
-			return fmt.Errorf("%w: bound node does not exist", model.ErrInvalid)
+			return "", fmt.Errorf("%w: bound node does not exist", model.ErrInvalid)
 		}
 		if _, err = tx.ExecContext(ctx, "INSERT INTO bindings(task_id,node_id) VALUES(?,?)", t.ID, id); err != nil {
-			return err
+			return "", err
 		}
 	}
-	return tx.Commit()
+	return t.ID, tx.Commit()
 }
 func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.Job, error) {
 	s.writes.Lock()

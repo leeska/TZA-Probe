@@ -27,7 +27,7 @@ func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 	defer s.Close()
 	now := time.Now()
 	n := model.Node{Name: "test", BillingAt: billingAt(now), TrafficMode: "sum", Alerts: model.Alerts{Load: true, CPUPercent: 80, MemoryPercent: 80, HoldSeconds: 30}}
-	token, err := s.SaveNode(ctx, n, true)
+	_, token, err := s.SaveNode(ctx, n, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	defer s.Close()
 	now := time.Now()
 	node := model.Node{Name: "billing", BillingAt: billingAt(now), TrafficMode: "sum", TrafficLimit: 1000, ExpiresAt: now.Add(2 * 24 * time.Hour).UTC().Format(time.RFC3339), Alerts: model.Alerts{Offline: true, Renewal: true, RenewalDays: 7, Traffic: true, TrafficPercent: 80}}
-	token, err := s.SaveNode(ctx, node, true)
+	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	views, _ := s.Nodes(ctx, now)
 	node = views[0].Node
 	node.Alerts = model.Alerts{}
-	if _, err = s.SaveNode(ctx, node, false); err != nil {
+	if _, _, err = s.SaveNode(ctx, node, false); err != nil {
 		t.Fatal(err)
 	}
 	if err = engine.Tick(ctx, now.Add(75*time.Second)); err != nil {
@@ -130,7 +130,7 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	token, err := s.SaveNode(ctx, model.Node{Name: "grace", BillingAt: billingAt(time.Now()), TrafficMode: "sum", Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}}, true)
+	_, token, err := s.SaveNode(ctx, model.Node{Name: "grace", BillingAt: billingAt(time.Now()), TrafficMode: "sum", Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,6 +25,17 @@ type fakeSource struct {
 	samples      []model.LatencySample
 	askedHours   []int
 	askedLimit   int
+
+	// write side
+	failure    error
+	deleted    []string
+	rotated    []string
+	controlled []model.TaskAction
+	savedNodes []model.Node
+	savedTasks []model.Task
+	runs       []model.TaskRun
+	setting    string
+	corrected  []int64
 }
 
 func (f *fakeSource) Nodes(context.Context, time.Time) ([]model.NodeView, error) { return f.nodes, nil }
@@ -51,13 +62,118 @@ func (f *fakeSource) RecentLatencySamples(_ context.Context, ids []string, limit
 	return f.samples, nil
 }
 
+func (f *fakeSource) SaveNode(_ context.Context, n model.Node, create bool) (string, string, error) {
+	if f.failure != nil {
+		return "", "", f.failure
+	}
+	f.savedNodes = append(f.savedNodes, n)
+	if create {
+		return "new-node", "new-token", nil
+	}
+	return n.ID, "", nil
+}
+
+func (f *fakeSource) DeleteNode(_ context.Context, id string) error {
+	if f.failure != nil {
+		return f.failure
+	}
+	if !f.hasNode(id) {
+		return model.ErrNotFound
+	}
+	f.deleted = append(f.deleted, id)
+	return nil
+}
+
+// hasNode mirrors storage: deleting something that is not there is not a no-op.
+func (f *fakeSource) hasNode(id string) bool {
+	for _, n := range f.nodes {
+		if n.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fakeSource) Rotate(_ context.Context, id string) (string, error) {
+	if f.failure != nil {
+		return "", f.failure
+	}
+	f.rotated = append(f.rotated, id)
+	return "rotated-token", nil
+}
+
+func (f *fakeSource) CorrectTraffic(_ context.Context, id string, used, cycle int64, _ time.Time) error {
+	if f.failure != nil {
+		return f.failure
+	}
+	f.corrected = append(f.corrected, used, cycle)
+	return nil
+}
+
+func (f *fakeSource) SaveTask(_ context.Context, task model.Task, create bool) (string, error) {
+	if f.failure != nil {
+		return "", f.failure
+	}
+	f.savedTasks = append(f.savedTasks, task)
+	if create {
+		return "new-task", nil
+	}
+	return task.ID, nil
+}
+
+func (f *fakeSource) DeleteTask(_ context.Context, id string) error {
+	if f.failure != nil {
+		return f.failure
+	}
+	found := false
+	for _, task := range f.tasks {
+		if task.ID == id {
+			found = true
+		}
+	}
+	if !found {
+		return model.ErrNotFound
+	}
+	f.deleted = append(f.deleted, id)
+	return nil
+}
+
+func (f *fakeSource) ControlTask(_ context.Context, _ string, action model.TaskAction, _ time.Time) error {
+	if f.failure != nil {
+		return f.failure
+	}
+	f.controlled = append(f.controlled, action)
+	return nil
+}
+
+func (f *fakeSource) TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error) {
+	if f.failure != nil {
+		return nil, f.failure
+	}
+	return f.runs, nil
+}
+
+func (f *fakeSource) Setting(context.Context, string) (string, error) { return f.setting, nil }
+
+func (f *fakeSource) SetSetting(_ context.Context, _, value string) error {
+	if f.failure != nil {
+		return f.failure
+	}
+	f.setting = value
+	return nil
+}
+
 func fixture() *fakeSource {
 	return &fakeSource{
 		nodes: []model.NodeView{
-			{Node: model.Node{ID: "n1", Name: "香港", Public: true}, Online: true, TrafficUsed: 1234},
+			{Node: model.Node{ID: "n1", Name: "香港", Public: true, BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Alerts: model.Alerts{OfflineSeconds: 60}}, Online: true, TrafficUsed: 1234},
 			{Node: model.Node{ID: "n2", Name: "东京"}, Online: false},
 		},
-		tasks:   []model.Task{{ID: "t1", Name: "电信回程", Kind: "route", Enabled: true, NodeIDs: []string{"n1"}}},
+		tasks: []model.Task{{
+			ID: "t1", Name: "电信回程", Kind: "route", Enabled: true, Interval: 1800,
+			Host: "219.141.147.210", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信",
+			NodeIDs: []string{"n1"},
+		}},
 		history: []model.Sample{{At: 1, Metrics: model.Metrics{CPU: 12, MemoryTotal: 100}}},
 		series: []model.NetworkSeries{{
 			Name: "电信回程", Family: "ipv4", Host: "1.1.1.1", Port: 443,
@@ -84,17 +200,26 @@ func fixture() *fakeSource {
 	}
 }
 
+type stubSender struct{ sent []model.Event }
+
+func (s *stubSender) Send(_ context.Context, _ string, event model.Event) error {
+	s.sent = append(s.sent, event)
+	return nil
+}
+
 type testEnv struct {
 	server *httptest.Server
 	source *fakeSource
+	sender *stubSender
 }
 
 func newEnv(t *testing.T) *testEnv {
 	t.Helper()
 	source := fixture()
-	server := httptest.NewServer(&Server{Source: source, Version: "2.0.0-test"})
+	sender := &stubSender{}
+	server := httptest.NewServer(&Server{Source: source, Notifier: sender, Version: "2.0.0-test"})
 	t.Cleanup(server.Close)
-	return &testEnv{server: server, source: source}
+	return &testEnv{server: server, source: source, sender: sender}
 }
 
 func (e *testEnv) raw(t *testing.T, body string, headers ...string) (int, string, http.Header) {
@@ -165,6 +290,25 @@ func rpcResult(t *testing.T, out map[string]any) map[string]any {
 	return result
 }
 
+// codeOf reads the JSON-RPC error code of a response.
+func codeOf(t *testing.T, out map[string]any) int {
+	t.Helper()
+	code, _ := errorOf(t, out)
+	return code
+}
+
+// text reads the readable half of a tool result.
+func text(t *testing.T, result map[string]any) string {
+	t.Helper()
+	content, _ := result["content"].([]any)
+	if len(content) == 0 {
+		t.Fatalf("tool result has no content: %v", result)
+	}
+	block, _ := content[0].(map[string]any)
+	value, _ := block["text"].(string)
+	return value
+}
+
 func invoke(t *testing.T, env *testEnv, name, arguments string) map[string]any {
 	t.Helper()
 	code, out := env.modern(t, "3", "tools/call", name, arguments)
@@ -191,6 +335,13 @@ func structured(t *testing.T, result map[string]any) map[string]any {
 		t.Fatalf("text block is not the readable payload: %v", block)
 	}
 	return content
+}
+
+// readOnly says which tools only read; the annotations must agree.
+var readOnly = map[string]bool{
+	"list_nodes": true, "list_tasks": true, "node_history": true, "node_network_history": true,
+	"node_observations": true, "recent_events": true, "latency_samples": true,
+	"list_catalog": true, "task_runs": true, "get_settings": true,
 }
 
 func TestModernRevisionRoundTrip(t *testing.T) {
@@ -223,7 +374,12 @@ func TestModernRevisionRoundTrip(t *testing.T) {
 		t.Fatalf("list result must be cacheable and complete: %v", list)
 	}
 	entries, _ := list["tools"].([]any)
-	want := []string{"list_nodes", "list_tasks", "node_history", "node_network_history", "node_observations", "recent_events", "latency_samples"}
+	want := []string{
+		"list_nodes", "list_tasks", "node_history", "node_network_history", "node_observations", "recent_events", "latency_samples",
+		"create_node", "update_node", "delete_node", "rotate_node_token", "correct_node_traffic", "list_catalog",
+		"create_task", "update_task", "delete_task", "control_task", "task_runs",
+		"get_settings", "update_settings", "test_notification",
+	}
 	if len(entries) != len(want) {
 		t.Fatalf("tool count: %d", len(entries))
 	}
@@ -235,6 +391,15 @@ func TestModernRevisionRoundTrip(t *testing.T) {
 		schema, _ := entry["inputSchema"].(map[string]any)
 		if schema["type"] != "object" || schema["additionalProperties"] != false {
 			t.Fatalf("%s schema: %v", name, schema)
+		}
+		// The client decides whether to ask for confirmation from the hint, so a
+		// tool that only reads must not be marked destructive and vice versa.
+		notes, _ := entry["annotations"].(map[string]any)
+		if notes["readOnlyHint"] != readOnly[name] {
+			t.Fatalf("%s readOnlyHint: %v", name, notes)
+		}
+		if notes["destructiveHint"] == true && readOnly[name] {
+			t.Fatalf("%s is read-only but destructive: %v", name, notes)
 		}
 	}
 
@@ -358,8 +523,8 @@ func TestLegacyHandshake(t *testing.T) {
 	if result["resultType"] != nil || result["ttlMs"] != nil {
 		t.Fatalf("legacy list must not advertise modern caching: %v", result)
 	}
-	if entries, _ := result["tools"].([]any); len(entries) != 7 {
-		t.Fatalf("legacy tool count: %v", entries)
+	if entries, _ := result["tools"].([]any); len(entries) != len(tools) {
+		t.Fatalf("legacy tool count: %d", len(entries))
 	}
 
 	// A client that never sends the header at all is treated as the oldest
@@ -499,5 +664,235 @@ func TestToolsReadThePanelContract(t *testing.T) {
 	}
 	if payload := structured(t, invoke(t, env, "recent_events", `{}`)); payload["count"].(float64) != 1 {
 		t.Fatalf("events: %v", payload)
+	}
+}
+
+func TestAdminToolsChangeTheFleet(t *testing.T) {
+	env := newEnv(t)
+
+	// create_node is the panel's node form, and the one place a node key leaves
+	// the Server: the caller must see it exactly once.
+	created := structured(t, invoke(t, env, "create_node",
+		`{"name":"东京","billing_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","region":"日本","public":true}`))
+	if created["id"] != "new-node" || created["token"] != "new-token" {
+		t.Fatalf("create_node: %v", created)
+	}
+	want := "curl -fsSL " + env.server.URL + "/install.sh | sh -s -- --endpoint " + env.server.URL + " --token new-token"
+	if created["install_command"] != want {
+		t.Fatalf("install command: %v", created["install_command"])
+	}
+	if _, ok := created["warning"]; !ok {
+		t.Fatalf("a plain-HTTP endpoint must warn like the panel does: %v", created)
+	}
+	if len(env.source.savedNodes) != 1 || env.source.savedNodes[0].Name != "东京" || !env.source.savedNodes[0].Public {
+		t.Fatalf("stored node: %+v", env.source.savedNodes)
+	}
+
+	// update_node merges into the stored node: a field the caller did not mention
+	// keeps its value, and an object such as alerts is merged field by field.
+	env.source.savedNodes = nil
+	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"alerts":{"offline":true}}`))["id"] != "n1" {
+		t.Fatalf("update_node did not report the node")
+	}
+	if len(env.source.savedNodes) != 1 {
+		t.Fatalf("update_node stored nothing: %+v", env.source.savedNodes)
+	}
+	node := env.source.savedNodes[0]
+	if node.Name != "香港" || node.Region != "" || node.BillingAt != "2026-09-01T00:00:00Z" || node.TrafficMode != "sum" {
+		t.Fatalf("update blanked fields it was not given: %+v", node)
+	}
+	if node.Public || !node.Alerts.Offline || node.Alerts.OfflineSeconds != 60 {
+		t.Fatalf("update did not apply the patch: %+v", node.Alerts)
+	}
+	if _, out := env.modern(t, "1", "tools/call", "update_node", `{"node_id":"n1","pbulic":true}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("misspelled patch: %v", out)
+	}
+
+	// The panel's 接入 button is rotate: the old key dies, the new one comes back
+	// with the command.
+	rotated := structured(t, invoke(t, env, "rotate_node_token", `{"node_id":"n1"}`))
+	if rotated["token"] != "rotated-token" || !strings.Contains(rotated["install_command"].(string), "rotated-token") {
+		t.Fatalf("rotate_node_token: %v", rotated)
+	}
+	if len(env.source.rotated) != 1 || env.source.rotated[0] != "n1" {
+		t.Fatalf("rotated: %v", env.source.rotated)
+	}
+
+	// Traffic correction refuses a stale cycle, like the HTTP endpoint does.
+	if !structured(t, invoke(t, env, "correct_node_traffic", `{"node_id":"n1","used":5000000000,"cycle":100}`))["corrected"].(bool) {
+		t.Fatalf("correction did not report success")
+	}
+	if len(env.source.corrected) != 2 || env.source.corrected[0] != 5000000000 || env.source.corrected[1] != 100 {
+		t.Fatalf("correction payload: %v", env.source.corrected)
+	}
+	env.source.failure = model.ErrConflict
+	result := invoke(t, env, "correct_node_traffic", `{"node_id":"n1","used":1,"cycle":2}`)
+	if result["isError"] != true || !strings.Contains(text(t, result), "周期已变化") {
+		t.Fatalf("stale cycle: %v", result)
+	}
+	// Input storage rejects (an unknown id, a misspelled field) is a protocol
+	// error the caller has to fix, never data it should read as a result.
+	env.source.failure = model.ErrInvalid
+	for _, rejected := range []struct{ tool, arguments string }{
+		{"delete_node", `{"node_id":"n1"}`},
+		{"control_task", `{"task_id":"t1","action":"bind","node_ids":["n9"]}`},
+	} {
+		if _, out := env.modern(t, "1", "tools/call", rejected.tool, rejected.arguments); codeOf(t, out) != codeInvalidParams {
+			t.Fatalf("%s rejected input must be -32602: %v", rejected.tool, out)
+		}
+	}
+	env.source.failure = nil
+
+	// delete_node and delete_task report what was removed.
+	if !structured(t, invoke(t, env, "delete_node", `{"node_id":"n2"}`))["deleted"].(bool) {
+		t.Fatalf("delete_node did not report success")
+	}
+	if !structured(t, invoke(t, env, "delete_task", `{"task_id":"t1"}`))["deleted"].(bool) {
+		t.Fatalf("delete_task did not report success")
+	}
+	if len(env.source.deleted) != 2 || env.source.deleted[0] != "n2" || env.source.deleted[1] != "t1" {
+		t.Fatalf("deleted: %v", env.source.deleted)
+	}
+	if result = invoke(t, env, "delete_node", `{"node_id":"n9"}`); result["isError"] != true {
+		t.Fatalf("deleting an unknown node must fail: %v", result)
+	}
+
+	// create_task takes the same definition the task editor builds.
+	createdTask := structured(t, invoke(t, env, "create_task",
+		`{"name":"上海联通","checks":["tcp"],"targets":[{"host":"112.64.235.107","port":443,"family":"ipv4","region":"上海","carrier":"联通"}],"interval":60,"enabled":true,"node_ids":["n1"]}`))
+	if createdTask["id"] != "new-task" {
+		t.Fatalf("create_task: %v", createdTask)
+	}
+	if len(env.source.savedTasks) != 1 || env.source.savedTasks[0].Interval != 60 || env.source.savedTasks[0].NodeIDs[0] != "n1" {
+		t.Fatalf("stored task: %+v", env.source.savedTasks)
+	}
+	// update_task merges too: only the submitted fields change.
+	env.source.savedTasks = nil
+	if !structured(t, invoke(t, env, "update_task", `{"task_id":"t1","enabled":false}`))["updated"].(bool) {
+		t.Fatalf("update_task did not report success")
+	}
+	if len(env.source.savedTasks) != 1 {
+		t.Fatalf("update_task stored nothing: %+v", env.source.savedTasks)
+	}
+	task := env.source.savedTasks[0]
+	if task.ID != "t1" || task.Name != "电信回程" || task.Interval != 1800 || len(task.NodeIDs) != 1 || task.Enabled {
+		t.Fatalf("update_task lost fields: %+v", task)
+	}
+
+	// The task controls are the panel's pause / resume / run / bind buttons.
+	if !structured(t, invoke(t, env, "control_task", `{"task_id":"t1","action":"pause"}`))["ok"].(bool) {
+		t.Fatalf("control_task did not report success")
+	}
+	if len(env.source.controlled) != 1 || env.source.controlled[0].Action != "pause" {
+		t.Fatalf("control: %+v", env.source.controlled)
+	}
+	if _, out := env.modern(t, "1", "tools/call", "control_task", `{"task_id":"t1","action":"delete"}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("unknown action: %v", out)
+	}
+	env.source.failure = model.ErrConflict
+	if result = invoke(t, env, "control_task", `{"task_id":"t1","action":"run"}`); result["isError"] != true || !strings.Contains(text(t, result), "未启用") {
+		t.Fatalf("run on a stopped task: %v", result)
+	}
+	env.source.failure = nil
+
+	// task_runs lists what each bound node last did.
+	env.source.runs = []model.TaskRun{{NodeID: "n1", NodeName: "香港", Kind: "route", Status: "ok"}}
+	if payload := structured(t, invoke(t, env, "task_runs", `{"task_id":"t1"}`)); payload["count"].(float64) != 1 {
+		t.Fatalf("task_runs: %v", payload)
+	}
+	if result = invoke(t, env, "task_runs", `{"task_id":"n9"}`); result["isError"] != true {
+		t.Fatalf("runs for an unknown task must fail: %v", result)
+	}
+}
+
+func TestCatalogAndNotificationTools(t *testing.T) {
+	env := newEnv(t)
+
+	// The catalog is the same built-in snapshot the task editor searches.
+	all := structured(t, invoke(t, env, "list_catalog", `{}`))
+	total := int(all["total"].(float64))
+	if total == 0 || all["count"].(float64) != all["total"].(float64) {
+		t.Fatalf("unfiltered catalog: total=%v count=%v", all["total"], all["count"])
+	}
+	telecom := structured(t, invoke(t, env, "list_catalog", `{"carrier":"电信"}`))
+	if int(telecom["count"].(float64)) == 0 || int(telecom["count"].(float64)) >= total {
+		t.Fatalf("carrier filter: %v", telecom["count"])
+	}
+	for _, entry := range telecom["targets"].([]any) {
+		if entry.(map[string]any)["carrier"] != "电信" {
+			t.Fatalf("carrier filter leaked: %v", entry)
+		}
+	}
+	narrow := structured(t, invoke(t, env, "list_catalog", `{"region":"上海","family":"ipv6"}`))
+	if int(narrow["count"].(float64)) > int(telecom["count"].(float64)) {
+		t.Fatalf("region and family filters did not narrow: %v", narrow["count"])
+	}
+	if _, out := env.modern(t, "1", "tools/call", "list_catalog", `{"carrier":"电信运营商"}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("invalid carrier enum: %v", out)
+	}
+
+	// An unconfigured notification channel reads as none, and never echoes a
+	// credential the Server holds.
+	settings := structured(t, invoke(t, env, "get_settings", `{}`))
+	if settings["channel"] != "none" || settings["webhook_configured"] != false || settings["telegram_configured"] != false {
+		t.Fatalf("fresh settings: %v", settings)
+	}
+	if _, ok := settings["bot_token"]; ok {
+		t.Fatalf("settings leaked a credential: %v", settings)
+	}
+	if result := invoke(t, env, "test_notification", `{}`); result["isError"] != true || !strings.Contains(text(t, result), "请先配置") {
+		t.Fatalf("test without a channel: %v", result)
+	}
+
+	// update_settings keeps the stored Telegram token when the caller leaves it
+	// blank, drops the other channel's credentials, and answers with the public
+	// view only.
+	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"channel":"webhook"}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("webhook channel without a URL: %v", out)
+	}
+	updated := structured(t, invoke(t, env, "update_settings", `{"channel":"webhook","webhook":"https://example.com/hook"}`))
+	if updated["channel"] != "webhook" || updated["webhook_configured"] != true {
+		t.Fatalf("update_settings: %v", updated)
+	}
+	if !strings.Contains(env.source.setting, "https://example.com/hook") || strings.Contains(updated["channel"].(string), "https://") {
+		t.Fatalf("stored settings: %q result %v", env.source.setting, updated)
+	}
+	// A Telegram token has a fixed shape; build it here so no secret-looking
+	// literal has to live in the test.
+	token := "123456789:" + strings.Repeat("Ab1", 12)
+	updated = structured(t, invoke(t, env, "update_settings", `{"channel":"telegram","bot_token":"`+token+`","chat_id":"@channel"}`))
+	if updated["telegram_configured"] != true || updated["chat_id"] != "@channel" {
+		t.Fatalf("telegram settings: %v", updated)
+	}
+	carried := structured(t, invoke(t, env, "update_settings", `{"channel":"telegram","chat_id":"-1001234567890"}`))
+	if carried["telegram_configured"] != true || carried["chat_id"] != "-1001234567890" {
+		t.Fatalf("telegram fields: %v", carried)
+	}
+	if !strings.Contains(env.source.setting, token) {
+		t.Fatalf("a blank token must keep the stored one: %q", env.source.setting)
+	}
+	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"channel":"telegram","bot_token":"nope","chat_id":"@channel"}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("invalid token format: %v", out)
+	}
+
+	// The explicit test sends one event and reports the channel, not the URL.
+	if sent := structured(t, invoke(t, env, "test_notification", `{}`)); sent["sent"] != true || sent["channel"] != "telegram" {
+		t.Fatalf("test_notification: %v", sent)
+	}
+	if len(env.sender.sent) != 1 || env.sender.sent[0].Kind != "test" {
+		t.Fatalf("sender events: %+v", env.sender.sent)
+	}
+
+	// A Server wired without a sender says so instead of pretending to send.
+	bare := httptest.NewServer(&Server{Source: env.source})
+	defer bare.Close()
+	bareEnv := &testEnv{server: bare}
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"test_notification","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+	status, out, _ := bareEnv.post(t, body, "MCP-Protocol-Version", Modern, "Mcp-Method", "tools/call", "Mcp-Name", "test_notification")
+	if status != 200 {
+		t.Fatalf("bare server: %d %v", status, out)
+	}
+	if !strings.Contains(text(t, rpcResult(t, out)), "没有可用的通知发送器") {
+		t.Fatalf("missing sender: %v", out)
 	}
 }

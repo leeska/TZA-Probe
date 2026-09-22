@@ -615,3 +615,22 @@ node scripts/ui-smoke.mjs
 - `ui-smoke` 全套 PASS（断言改为「守卫必须已被删除」+「两拍取数回来直接写」）。
 - 真 WebKit `layout-webkit.mjs`：16 秒文档高度恒定 24780、磁贴 96×4、盯住卡片 198→198。
 - `gofmt` / `go vet` / `go test ./internal/...` / `git diff --check` / `presentation-test.mjs` 全绿。
+
+## MCP 写能力：AI 客户端与管理面板同权（2026-09-22）
+
+把 MCP 从「只读」扩到「面板能做的都能做，并补上面板没有的批量查询」。
+
+- 工具从 7 个扩到 21 个：读 10（原 7 个加 `list_catalog`、`task_runs`、`get_settings`），写 11（`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`、`update_settings`、`test_notification`）。`tools/list` 带 `annotations`（`readOnlyHint` / `destructiveHint`），客户端据此决定是否先确认。
+- 写工具全部落在同一个持久化端口上（`store.SaveNode` / `SaveTask` 改为返回生成的 id），不新增第二套写路径；面板与 MCP 的差异只剩「面板是表单、MCP 是 JSON」。
+- `update_node` / `update_task` 是**合并语义**：以库里的对象为底，只覆盖调用方提交的字段，嵌套对象（`alerts`）按字段合并。理由：面板的编辑表单回传整份节点，AI 客户端只发 `{"node_id":"n1","public":false}` 时若按零值覆盖会把名称、计费周期、流量方式一起清空。测试用「只改 public 与 alerts.offline」断言 `name` / `billing_at` / `traffic_mode` / `alerts.offline_seconds` 全部保持原值。
+- 顺手收敛了通知配置：`internal/notify` 增加 `Status` / `Normalize` / `ReadConfig`（支持历史上写进库的裸 URL 与 JSON 两种值），`GET/PUT /api/v1/admin/settings` 与 MCP 的 `get_settings` / `update_settings` 共用它，避免两处各写一份校验。
+- 鉴权不变：同一个管理密钥，节点密钥与通知凭据都不经 MCP 外泄（`get_settings` 只回状态与掩码）。
+
+验证（本地真实进程 + 真实 SDK 客户端，数据目录 `/tmp/tza-ui-run/data`）：
+
+- 用官方 MCP TypeScript SDK（`@modelcontextprotocol/sdk@1.30.0`）连 `POST /mcp` 走完整流程：`create_node` → 返回 `id`、一次性 `token` 与接入命令；`update_node` 只发 `public` + `alerts.load/cpu_percent/hold_seconds` → 重新读回 `public=false`、`offline_seconds=60`（未提交的字段没被清空）；`correct_node_traffic` 写 1234567890 → 面板列表显示 `1.2 GB / 500 GB`；`rotate_node_token` 换出新密钥；`list_catalog` 按 `carrier=电信&region=上海&family=ipv4` 从 186 条里筛出 1 条并据此建任务；`control_task` 依次 `bind` / `resume` / `run`，`task_runs` 立即多出该节点一行；`update_task {interval:120}` 后目标与绑定节点都保留。
+- 同一次运行的**交叉核对**：`/api/v1/admin/nodes`、`/api/v1/admin/tasks`、`/api/v1/admin/settings` 读回的结果与 MCP 写入一致（间隔 120 秒、绑定 1 个节点、目标 101.226.94.50:80 上海电信）。
+- `test_notification` 指向本机 webhook 接收器，接收器**实际收到 1 条投递**（`POST /hook`，`kind=test`，`"TZA Probe 通知测试"`）；未配置渠道时返回「请先配置通知渠道」，接收器未启动时返回「webhook connection failed」。
+- 错误面：未知工具的 `-32602`、`action` 拼错 `-32602`、未知节点 `node_history` 返回 `isError`「节点不存在：nope；先用 list_nodes 获取可用 id。」、重复删除返回 `isError`「not found」、存储拒绝的输入（绑定不存在的节点）按 `-32602` 返回。
+- 面板截图复核：会话 Cookie 登录后节点页只有 MCP 建的那台（`mcp-创建的东京节点`，私有 · 代表地区 上海 · MCP / 日本 · 1.2 GB / 500 GB），任务页显示 `mcp-任务-上海电信延迟`「已启用 · 延迟 · 1 个地址 IPv4 · 上海 电信 · 延迟 120 秒 · 1 个」。
+- 测试与静态检查：`go test -race ./...` 全绿（新增 `TestAdminToolsChangeTheFleet`、`TestCatalogAndNotificationTools` 覆盖合并语义、枚举校验、凭据不回显、无发送器时的降级）；`go vet ./...`、`gofmt -l`、`git diff --check`、`presentation-test.mjs`、`ui-smoke.mjs`（通知页与设置表单回归）全绿。
