@@ -94,8 +94,8 @@ export async function detail(id, focus = null) {
       ? focused
         ? focusKind === "route"
           ? `<div id="route-details"></div>`
-          : `<div id="network-overview"></div><div id="network-history"></div>`
-        : `<div id="network-overview"></div><div id="network-history"></div><div id="route-details"></div>`
+          : `<div id="network-overview"></div>`
+        : `<div id="network-overview"></div><div id="route-details"></div>`
       : `<p class="hint">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
   const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3><select id="history-range" aria-label="历史时间范围"><option value="1">最近 1 小时</option><option value="24" selected>最近 24 小时</option><option value="168">最近 7 天</option><option value="720">最近 30 天</option></select></div><div id="charts">${hostCharts(history, 24)}</div>`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused ? '<button type="button" id="show-all">查看全部信息</button>' : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际观测到的骨干命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG）；ASN 优先、跳地址前缀兜底，CN2 跳之后仍走 59.43.* 到目标省份记为 GIA、转回 163 骨干（202.97.*）落地记为 GT，一条电信线路只给一个标签，仍不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
   const head = d.querySelector(".modal-head");
@@ -112,20 +112,15 @@ export async function detail(id, focus = null) {
   let overviewMetric = "latency";
   function renderNetwork() {
     const overview = d.querySelector("#network-overview");
-    const historyEl = d.querySelector("#network-history");
-    if (!overview || !historyEl) return;
+    if (!overview) return;
+    // 每个目标一条线，悬停就能读出任意时刻的延迟或丢包；单目标的「查看趋势」折叠图已删掉
+    // ——同一份数据重复一遍，只会让人分不清哪条是延迟、哪条是回程。
     const series = networkSeries.filter((s) => s.family === selectedFamily);
     overview.innerHTML = networkOverview(series, overviewMetric, selectedHours);
     d.querySelectorAll("[data-network-metric]").forEach((b) => (b.onclick = () => {
       overviewMetric = b.dataset.networkMetric;
       renderNetwork();
     }));
-    historyEl.innerHTML = series.map((s, i) => {
-      const samples = s.samples.map((p) => ({at: p.at, metrics: {latency: p.latency, failure: p.failure}}));
-      const title = targetLabel(s);
-      const options = {id: `network-${i}`, seriesLabel: `${title} · ${s.host}:${s.port}`};
-      return `<details class="trace network-trace"><summary><span><b>${esc(title)}</b><small>${esc(s.host)}:${s.port} · ${s.samples.length} 个采样</small></span><span class="trace-chevron">查看趋势</span></summary><div class="trace-charts">${chart(samples, "latency", "TCP 延迟", "teal", Math.min(selectedHours, 168), options)}${chart(samples, "failure", "TCP 连接失败率", "orange", Math.min(selectedHours, 168), options)}</div></details>`;
-    }).join("") || '<p class="hint">此协议暂无 TCP 历史，网络历史最多保留 7 天。</p>';
     wireCharts(d);
   }
   function renderRoutes(f) {
@@ -133,28 +128,16 @@ export async function detail(id, focus = null) {
     renderNetwork();
     const details = d.querySelector("#route-details");
     if (!details) return;
-    // 只看回程时把 TCP 结果排除掉，否则回程列表里会混进延迟行。
-    const matches = scopedObs.filter(
-      (o) => o.task.family === f && (focusKind !== "route" || o.task.kind === "route"),
-    );
-    const rows = (list) =>
-      list
+    // 延迟数据由上面的多折线图呈现，这里只留三网回程路径。
+    const matches = scopedObs.filter((o) => o.task.family === f && o.task.kind === "route");
+    details.innerHTML = matches.length
+      ? `<section class="trace-group"><h4>三网回程<span>${matches.length} 个目标</span></h4>${matches
           .map(
             (o) =>
-              `<details class="trace"><summary><span><b><i class="trace-kind ${o.task.kind === "route" ? "route" : "latency"}">${o.task.kind === "route" ? "回程" : "延迟"}</i>${esc(o.task.region || o.task.name)} · ${esc(o.task.carrier || "自定义")}</b><small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${o.task.kind === "route" ? esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知") : o.result.latency != null ? o.result.latency.toFixed(1) + " ms" : "—"}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary>${o.task.kind === "route" ? `<div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div>` : `<p class="hint">TCP 成功 ${o.result.received} / ${o.result.sent} 次</p>`}</details>`,
+              `<details class="trace"><summary><span><b>${esc(o.task.region || o.task.name)} · ${esc(o.task.carrier || "自定义")}</b><small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知")}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary><div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div></details>`,
           )
-          .join("");
-    // 延迟与回程是两种数据，混在一个列表里同一地区会出现两条几乎一样的记录：
-    // 分成两组，各带标题与计数，行首再标一次类型，一眼就能分清。
-    const latencyRows = matches.filter((o) => o.task.kind !== "route");
-    const routeRows = matches.filter((o) => o.task.kind === "route");
-    const group = (title, list) =>
-      list.length
-        ? `<section class="trace-group"><h4>${esc(title)}<span>${list.length} 个目标</span></h4>${rows(list)}</section>`
-        : "";
-    details.innerHTML = matches.length
-      ? group("地区延迟", latencyRows) + group("三网回程", routeRows)
-      : '<div class="chart-empty">此协议暂无探测结果。请在后台创建并绑定任务。</div>';
+          .join("")}</section>`
+      : '<div class="chart-empty">此协议暂无回程结果。请在后台创建并绑定任务。</div>';
   }
   d.querySelectorAll("[data-detail-family]").forEach(
     (x) => x.classList.toggle("active", x.dataset.detailFamily === selectedFamily),

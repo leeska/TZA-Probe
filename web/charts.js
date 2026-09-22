@@ -42,6 +42,8 @@ function payload(series, first, last, ceiling) {
   return `data-series="${esc(JSON.stringify(series))}" data-range="${first},${last}" data-ceiling="${Number.isFinite(ceiling) ? ceiling : 0}"`;
 }
 
+const px = (value) => Math.round(value * 100) / 100 + "px";
+
 function nearest(points, at) {
   if (!points.length) return null;
   let best = points[0];
@@ -81,6 +83,7 @@ export function wireCharts(root) {
     const tip = overlay.querySelector(".chart-tip");
     const draw = (event) => {
       const rect = svg.getBoundingClientRect();
+      const box = body.getBoundingClientRect();
       if (!rect.width) return;
       const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
       const at = range[0] + (range[1] - range[0]) * ratio;
@@ -93,17 +96,21 @@ export function wireCharts(root) {
         overlay.hidden = true;
         return;
       }
-      const percent = (ratio * 100).toFixed(2) + "%";
-      guide.style.left = percent;
-      tip.style.left = percent;
-      tip.classList.toggle("flip", ratio > 0.62);
+      // 位置一律按 svg 的实际盒子换算：按 .chart-body 的百分比会被坐标轴和图例的
+      // 高度带偏（数据点因此落在曲线之外）。竖线只覆盖绘图区，不越到横坐标外面。
+      const x = rect.left - box.left + ratio * rect.width;
+      const top = rect.top - box.top;
+      guide.style.left = px(x);
+      guide.style.top = px(top);
+      guide.style.height = px(rect.height);
       const only = rows.length === 1 ? rows[0] : null;
       if (only && only.value != null && Number.isFinite(only.value) && ceiling > 0) {
+        const y = top +
+          ((110 - (Math.min(ceiling, Math.max(0, only.value)) / ceiling) * 102) / 120) * rect.height;
         dot.hidden = false;
-        dot.style.left = percent;
-        dot.style.top =
-          ((110 - (Math.min(ceiling, Math.max(0, only.value)) / ceiling) * 102) / 120) * 100 + "%";
         dot.className = "chart-dot " + (only.color || "");
+        dot.style.left = px(x);
+        dot.style.top = px(y);
       } else {
         dot.hidden = true;
       }
@@ -116,6 +123,11 @@ export function wireCharts(root) {
           )
           .join("");
       overlay.hidden = false;
+      // 信息框排在绘图区上方（悬停时压住标题行也不要压住曲线），再按自身宽度夹进图表里。
+      const tipWidth = tip.offsetWidth;
+      const tipHeight = tip.offsetHeight;
+      tip.style.left = px(Math.min(Math.max(x - tipWidth / 2, 0), Math.max(0, box.width - tipWidth)));
+      tip.style.top = px(top - tipHeight - 6);
     };
     body.addEventListener("pointermove", draw);
     body.addEventListener("pointerleave", () => {

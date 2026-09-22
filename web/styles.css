@@ -1835,10 +1835,11 @@ pre,
 .chart-dot.orange { --series: var(--orange); }
 .overview-line { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
 
-/* 悬停读数：鼠标停在哪一列，就在那一列显示竖线、数据点与数值。 */
+/* 悬停读数：竖线只画在绘图区里，数据点落在曲线上，信息框排在绘图区上方——位置由 JS
+   按 svg 的实际盒子写入（按 .chart-body 的百分比会被坐标轴与图例的高度带偏），CSS 只管外观。 */
 .chart-hover { position: absolute; inset: 0; pointer-events: none; }
 .chart-hover[hidden] { display: none; }
-.chart-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--muted); opacity: 0.55; }
+.chart-guide { position: absolute; width: 1px; background: var(--muted); opacity: 0.5; }
 .chart-dot {
   position: absolute;
   width: 7px;
@@ -1846,12 +1847,11 @@ pre,
   margin: -3.5px 0 0 -3.5px;
   border-radius: 50%;
   background: var(--series, var(--accent));
+  box-shadow: 0 0 0 2px var(--glass-bg-elevated);
 }
 .chart-dot[hidden] { display: none; }
 .chart-tip {
   position: absolute;
-  top: 2px;
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1865,7 +1865,6 @@ pre,
   color: var(--ink);
   white-space: nowrap;
 }
-.chart-tip.flip { transform: translateX(-100%); }
 .chart-tip b { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .chart-tip span { display: flex; align-items: center; gap: 6px; }
 .chart-tip i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--series, var(--accent)); }

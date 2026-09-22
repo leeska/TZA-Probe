@@ -275,12 +275,18 @@ for (const job of lease) {
 $('[data-tab="nodes"]').click();
 await until(() => $(`[data-inspect="${created.id}"]`), "node list after the agent results");
 $(`[data-inspect="${created.id}"]`).click();
-await until(() => $(".trace-group"), "grouped latency and route lists");
+await until(() => $(".trace-group"), "the backhaul list");
 const headings = [...w.document.querySelectorAll(".trace-group h4")].map((h) => h.textContent);
-assert(headings.some((h) => h.includes("地区延迟")), "latency rows need their own group: " + headings);
-assert(headings.some((h) => h.includes("三网回程")), "route rows need their own group: " + headings);
-assert(w.document.querySelector(".trace-kind.latency"), "latency rows must carry a type label");
-assert(w.document.querySelector(".trace-kind.route"), "route rows must carry a type label");
+assert.equal(headings.length, 1, "only the backhaul list stays in the dialog: " + headings);
+assert(headings[0].includes("三网回程"), "the backhaul list must be titled: " + headings);
+// 延迟只由多折线图呈现：单目标的「查看趋势」折叠图和「地区延迟」行列表都应不复存在。
+assert($("#network-overview"), "the dialog must keep the multi-line overview chart");
+assert.equal($("#network-history"), null, "per-target trend rows must be gone");
+assert(
+  !/查看趋势/.test($(".modal-body")?.textContent || ""),
+  "no per-target trend links may remain",
+);
+assert.equal(w.document.querySelector(".trace-kind"), null, "type chips are obsolete without latency rows");
 $(".close").click();
 // 回到网络探测页，继续后面的任务编辑流程。
 $('[data-tab="tasks"]').click();
@@ -433,6 +439,16 @@ probe.dataset.range = "0,1200";
 probe.dataset.ceiling = "100";
 probe.innerHTML = '<div class="chart-body"><svg viewBox="0 0 680 120"></svg></div>';
 w.document.body.append(probe);
+// 单序列的图要额外把数据点画在曲线上，用同一套几何（120 高的 viewBox、0 在 y=110）。
+const single = w.document.createElement("figure");
+single.className = "chart";
+single.dataset.series = JSON.stringify([
+  { label: "四川 · 电信", unit: "ms", color: "lc0", points: [[0, 10], [600, 20], [1200, 30]] },
+]);
+single.dataset.range = "0,1200";
+single.dataset.ceiling = "100";
+single.innerHTML = '<div class="chart-body"><svg viewBox="0 0 680 120"></svg><div class="chart-axis"></div></div>';
+w.document.body.append(single);
 w.TZACharts.wireCharts(w.document.body);
 const chartBody = probe.querySelector(".chart-body");
 chartBody.dispatchEvent(new w.MouseEvent("pointermove", { clientX: 340, clientY: 40, bubbles: true }));
@@ -440,11 +456,25 @@ assert(!probe.querySelector(".chart-hover").hidden, "hovering a chart must revea
 const tip = probe.querySelector(".chart-tip");
 assert.equal(tip.querySelectorAll("span").length, 2, "a multi-line chart reports every series");
 assert(/20\.0 ms/.test(tip.textContent) && /50\.0 ms/.test(tip.textContent), "the readout must show the values at that column, got " + tip.textContent);
-assert(Math.abs(parseFloat(probe.querySelector(".chart-guide").style.left) - 50) < 0.1, "the guide must follow the pointer column, got " + probe.querySelector(".chart-guide").style.left);
+const guide = probe.querySelector(".chart-guide");
+// 竖线只覆盖绘图区：位置按 svg 的实际盒子算（不是按 .chart-body 的百分比，那会被坐标轴带偏）。
+assert(Math.abs(parseFloat(guide.style.left) - 340) < 0.1, "the guide must follow the pointer column, got " + guide.style.left);
+assert(Math.abs(parseFloat(guide.style.top) - 0) < 0.1 && Math.abs(parseFloat(guide.style.height) - 120) < 0.1, "the guide must stay inside the plot, got " + guide.style.top + "/" + guide.style.height);
 assert.equal(probe.querySelectorAll(".chart-tip i.lc0, .chart-tip i.lc1").length, 2, "each series keeps its own colour chip");
+assert(parseFloat(tip.style.top) < 0, "the readout must sit above the plot instead of covering a line, got " + tip.style.top);
+assert(parseFloat(tip.style.left) >= 0 && parseFloat(tip.style.left) <= 680, "the readout must stay inside the chart, got " + tip.style.left);
+// 单序列：数据点必须落在曲线的同一点上（value 20 在 120 高的绘图区里是 y=89.6）。
+const singleBody = single.querySelector(".chart-body");
+singleBody.dispatchEvent(new w.MouseEvent("pointermove", { clientX: 340, clientY: 40, bubbles: true }));
+const singleTip = single.querySelector(".chart-tip");
+const dot = single.querySelector(".chart-dot");
+assert(/20\.0 ms/.test(singleTip.textContent), "a single-line chart reports its value, got " + singleTip.textContent);
+assert(!dot.hidden, "a single-line chart must mark the point it is reading");
+assert(Math.abs(parseFloat(dot.style.left) - 340) < 0.1 && Math.abs(parseFloat(dot.style.top) - 89.6) < 0.1, "the dot must sit on the line, got " + dot.style.left + "/" + dot.style.top);
 chartBody.dispatchEvent(new w.MouseEvent("pointerleave", { bubbles: true }));
 assert(probe.querySelector(".chart-hover").hidden, "leaving the chart must hide the readout");
 probe.remove();
+single.remove();
 assert.deepEqual(errors, []);
 await fetch(base + "/api/v1/admin/tasks/" + createdTask.id, {
   method: "DELETE",

@@ -264,7 +264,16 @@ node scripts/ui-smoke.mjs
 - 定位（③）：`networkOverview` 用 `<polyline stroke="#…">` 逐条上色，但表现属性打不过样式表——`glass.css` 的 `.chart polyline { stroke: var(--accent) }` 优先级更高，实测四条线的 computed stroke 全是 `rgb(0, 113, 227)`，而图例点却各自有色，于是整张图只剩一条蓝色曲线。（卡片色带踩过的是 CSP 禁止行内样式，这次是层叠顺序，两者都会让颜色失效。）
 - 改法：
   - ③ 颜色改为 class：`.lc0…lc7` 只定义 `--series` 变量，折线 `.chart .overview-line`、图例点、悬停数据点与色块共用同一来源，标记里的 `stroke="…"` 全部删掉。
-  - ① `chart()` 与 `networkOverview()` 把每个序列的采样点以 JSON 挂在 figure 的 `data-series`（附 `data-range`、`data-ceiling`），新增 `wireCharts(root)`：`pointermove` 时按指针 x 定位最近的采样列，画竖线、单序列再画落在曲线上的数据点，提示框列出该列每个序列的时间与数值，靠近右边缘自动翻到左侧，`pointerleave` 收起。位置用 CSSOM 写（`el.style.left`），标记里的行内样式会被 CSP 忽略。
-  - ② 新增 `axisLabels/axisRow`：首尾之间均匀取 5 个时刻，日期与时间分两行，坐标轴加轴线与刻度背景；主机历史、单目标趋势、网络总览统一使用。
-  - ④ `renderRoutes` 按 kind 把观测分成「地区延迟」「三网回程」两组并各带目标数，每行行首加类型标签（延迟 / 回程），聚焦视图同样生效。
-- 验证：`presentation-test.mjs` 断言 5 个刻度且日期与时间分行、悬停 payload 与 `lcN` 调色、缺失值不打印成数字；`ui-smoke.mjs` 用真实租约灌入延迟与回程结果后断言详情必须出现两组标题与类型标签，并用 jsdom 直接驱动 `wireCharts`——指针停在 50% 时提示框同时列出两个序列（20.0 ms / 50.0 ms），竖线落在 50%。真实 Chrome + 真实数据（240 条主机采样、三个 TCP 目标各 240 条采样与回程结果）：单折线悬停读数与数据点正确，总览四条线 computed stroke 为 `#ff625f / #36c8bf / #9b7cff / #5a9cff` 且与图例一致，悬停一次列出 4 个目标的值，横坐标为 5 个两行标签，列表分「地区延迟 5 个目标」「三网回程 4 个目标」。`go test ./...`、`go vet ./...`、`gofmt`、`git diff --check`、`node --check`、`presentation-test.mjs`、`ui-smoke.mjs` 全绿。
+  - ① `chart()` 与 `networkOverview()` 把每个序列的采样点以 JSON 挂在 figure 的 `data-series`（附 `data-range`、`data-ceiling`），新增 `wireCharts(root)`：`pointermove` 时按指针 x 定位最近的采样列，画竖线、单序列再画落在曲线上的数据点，提示框列出该列每个序列的时间与数值。位置用 CSSOM 写（`el.style.left`），标记里的行内样式会被 CSP 忽略。
+  - ② 新增 `axisLabels/axisRow`：首尾之间均匀取 5 个时刻，日期与时间分两行，坐标轴加轴线与刻度背景；主机历史、网络总览统一使用。
+  - ④ 一段时间的过渡做法：把观测按 kind 分成「地区延迟」「三网回程」两组、行首加类型标签。**随后按现场反馈删掉**：延迟只由多折线图呈现，回程列表只留三网回程（见下一节）。
+- 验证：`presentation-test.mjs` 断言 5 个刻度且日期与时间分行、悬停 payload 与 `lcN` 调色、缺失值不打印成数字；`ui-smoke.mjs` 用真实租约灌入延迟与回程结果后断言详情分组（该断言随后按现场反馈改为「只留三网回程」，见下一节），并用 jsdom 直接驱动 `wireCharts`——指针停在 50% 时提示框同时列出两个序列（20.0 ms / 50.0 ms）。真实 Chrome + 真实数据（240 条主机采样、三个 TCP 目标各 240 条采样与回程结果）：单折线悬停读数与数据点正确，总览四条线 computed stroke 为 `#ff625f / #36c8bf / #9b7cff / #5a9cff` 且与图例一致，悬停一次列出 4 个目标的值，横坐标为 5 个两行标签，列表分「地区延迟 5 个目标」「三网回程 4 个目标」。`go test ./...`、`go vet ./...`、`gofmt`、`git diff --check`、`node --check`、`presentation-test.mjs`、`ui-smoke.mjs` 全绿。
+
+## 2026-09-22 悬停几何按现场反馈修正，并去掉重复的单目标趋势
+
+- 现场反馈（附面板截图）：① 数据点没落在曲线上，竖线越过横坐标跑到图外，白色信息框挡住了曲线；② 单目标的「查看趋势」折叠图和详情里的「地区延迟」行列表都不要，只留多折线图。
+- 定位（①）：悬停层是 `.chart-body` 的子元素，位置却按 `.chart-body` 的百分比算——而 `.chart-body` 里除 svg 还有坐标轴与图例，百分比因此被撑高，点与竖线一起往下漂；竖线用 `top: 0; bottom: 0` 也就跟着画到坐标轴外面，数据点的 y 与曲线的 y 实际上是两套基准。
+- 改法（①）：位置一律用 **svg 的实际盒子**换算成像素——`guide` 的 `left/top/height` 取 `svg.getBoundingClientRect()` 相对 `.chart-body` 的偏移与高宽（竖线只覆盖绘图区），数据点的 y 复用曲线自身的映射（`110 - v/ceiling*102`，120 高的 viewBox）；信息框改为排在绘图区**上方**（`top - tipHeight - 6`），并按自身宽度夹进图表内，悬停时压住标题行也不压住曲线，原来的左右翻转逻辑随之删掉。
+- 改法（②）：`renderNetwork` 只渲染多折线总览（同一份数据、每个目标一条线、悬停即读数），`#network-history` 的单目标折叠图连同「查看趋势」入口一并删除；`renderRoutes` 只列三网回程路径，「地区延迟」组与类型标签不再需要。
+- 验证：`ui-smoke.mjs` 新增几何断言——竖线 `left` 必须等于指针所在的像素 x、`top/height` 必须正好等于绘图区、信息框 `top` 必须为负（在绘图区之上）且横向不越界、单序列数据点的 `top` 必须等于该值的曲线坐标（20 在 120 高的绘图区里是 89.6px）；`git stash push -- web/charts.js web/detail.js web/styles.css` 后同一套断言失败，确认能挡回归。真实 Chrome + 真实数据逐项测量：数据点中心 (734, 465) 对曲线同 x 处的映射点 (733, 464)（差 ≤1px），竖线盒 [368,488] 与绘图区 [368,488] 完全一致，信息框底边 362 在绘图区顶边 368 之上；详情里 `#network-history`、「查看趋势」、类型标签均为 0，只剩「三网回程 4 个目标」与四条配色的总览线。
+- 附带确认：`presentation-test.mjs`、`ui-smoke.mjs`、`go test ./...`、`go vet`、`gofmt`、`git diff --check` 全绿。
