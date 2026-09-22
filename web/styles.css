@@ -1755,7 +1755,7 @@ pre,
 
 /* 纵坐标刻度：绘图区 120 高，网格线固定在 8 / 59 / 110，标签就贴着这三条线。 */
 .chart-plot { display: flex; align-items: flex-start; gap: 8px; }
-.chart-body { flex: 1 1 auto; min-width: 0; }
+.chart-body { flex: 1 1 auto; min-width: 0; position: relative; }
 .chart-y {
   position: relative;
   flex: 0 0 auto;
@@ -1785,13 +1785,34 @@ pre,
   stroke-dasharray: 4 4;
 }
 
+/* 横坐标：在首尾之间按时间细分刻度，日期与时间分行显示。 */
 .chart-axis {
   display: flex;
   justify-content: space-between;
+  gap: 2px;
   font-size: 10px;
   color: var(--muted);
-  margin-top: 8px;
+  margin-top: 10px;
+  padding-top: 5px;
+  border-top: 1px solid var(--line);
+  background-image: linear-gradient(to right, var(--line) 0 1px, transparent 1px);
+  background-size: 25% 4px;
+  background-repeat: repeat-x;
+  font-variant-numeric: tabular-nums;
 }
+
+.chart-axis span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.chart-axis span:first-child { align-items: flex-start; }
+.chart-axis span:last-child { align-items: flex-end; }
+.chart-axis span b { font-weight: 500; }
+.chart-axis span i { font-style: normal; font-size: 9px; opacity: 0.75; }
 
 .network-overview { margin: 0 0 14px; }
 .overview-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
@@ -1799,15 +1820,82 @@ pre,
 .overview-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; font-size: 10px; color: var(--muted); }
 .overview-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .overview-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
-.overview-legend .lc0 { background: #ff625f; }
-.overview-legend .lc1 { background: #36c8bf; }
-.overview-legend .lc2 { background: #9b7cff; }
-.overview-legend .lc3 { background: #5a9cff; }
-.overview-legend .lc4 { background: #ffad3d; }
-.overview-legend .lc5 { background: #eb63b5; }
-.overview-legend .lc6 { background: #36c98b; }
-.overview-legend .lc7 { background: #ff873d; }
+/* 多折线配色：class 只定义变量，折线、图例点、悬停点共用同一个来源。标记里的
+   stroke="…" 属性敌不过样式表里的 `.chart polyline`，颜色必须由 CSS 给出。 */
+.lc0 { --series: #ff625f; }
+.lc1 { --series: #36c8bf; }
+.lc2 { --series: #9b7cff; }
+.lc3 { --series: #5a9cff; }
+.lc4 { --series: #ffad3d; }
+.lc5 { --series: #eb63b5; }
+.lc6 { --series: #36c98b; }
+.lc7 { --series: #ff873d; }
+.overview-legend i { background: var(--series, var(--accent)); }
+.chart .overview-line { stroke: var(--series, var(--accent)); filter: none; }
+.chart-dot.orange { --series: var(--orange); }
 .overview-line { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+
+/* 悬停读数：鼠标停在哪一列，就在那一列显示竖线、数据点与数值。 */
+.chart-hover { position: absolute; inset: 0; pointer-events: none; }
+.chart-hover[hidden] { display: none; }
+.chart-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--muted); opacity: 0.55; }
+.chart-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: var(--series, var(--accent));
+}
+.chart-dot[hidden] { display: none; }
+.chart-tip {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 96px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  box-shadow: var(--glass-shadow);
+  font-size: 10px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.chart-tip.flip { transform: translateX(-100%); }
+.chart-tip b { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chart-tip span { display: flex; align-items: center; gap: 6px; }
+.chart-tip i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--series, var(--accent)); }
+.chart-tip em { margin-left: auto; font-style: normal; font-variant-numeric: tabular-nums; }
+
+/* 延迟与回程分成两组，行首再标一次类型，避免同地区两条记录看着一样。 */
+.trace-group { margin: 0 0 16px; }
+.trace-group h4 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.trace-group h4 span { font-weight: 400; font-size: 10px; }
+.trace-kind {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 5px;
+  border-radius: 7px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.trace-kind.latency { color: var(--accent); background: rgba(var(--accent-rgb), 0.14); }
+.trace-kind.route { color: var(--orange); background: rgba(var(--orange-rgb), 0.16); }
 
 .chart-empty {
   padding: 28px;

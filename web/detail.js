@@ -1,6 +1,6 @@
 import { api, esc, modal, guard } from "./api.js";
 import { bytes, date, statusName, reasonName } from "./format.js";
-import { chart } from "./charts.js";
+import { chart, wireCharts, colorClass, axisRow } from "./charts.js";
 // 详情页要发三个请求，任何一个失败或长时间无响应，弹窗都会停在“读取节点详情…”：
 // 每个请求都带截止时间，失败时把原因和重试按钮写进弹窗。
 const requestTimeout = 15000;
@@ -101,6 +101,7 @@ export async function detail(id, focus = null) {
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
+  wireCharts(d);
   // 卡片把没有运营商的旧任务归入“其他”，这里用同样的规则匹配。
   const carrierOf = (value) => (["电信", "联通", "移动"].includes(value) ? value : "其他");
   let networkSeries = focused ? network.filter((x) => carrierOf(x.carrier) === focusCarrier) : network;
@@ -122,8 +123,10 @@ export async function detail(id, focus = null) {
     historyEl.innerHTML = series.map((s, i) => {
       const samples = s.samples.map((p) => ({at: p.at, metrics: {latency: p.latency, failure: p.failure}}));
       const title = targetLabel(s);
-      return `<details class="trace network-trace"><summary><span><b>${esc(title)}</b><small>${esc(s.host)}:${s.port} · ${s.samples.length} 个采样</small></span><span class="trace-chevron">查看趋势</span></summary><div class="trace-charts">${chart(samples, "latency", "TCP 延迟", "teal", Math.min(selectedHours, 168)).replaceAll("chart-grad-latency-teal", "network-latency-" + i)}${chart(samples, "failure", "TCP 连接失败率", "orange", Math.min(selectedHours, 168)).replaceAll("chart-grad-failure-orange", "network-failure-" + i)}</div></details>`;
+      const options = {id: `network-${i}`, seriesLabel: `${title} · ${s.host}:${s.port}`};
+      return `<details class="trace network-trace"><summary><span><b>${esc(title)}</b><small>${esc(s.host)}:${s.port} · ${s.samples.length} 个采样</small></span><span class="trace-chevron">查看趋势</span></summary><div class="trace-charts">${chart(samples, "latency", "TCP 延迟", "teal", Math.min(selectedHours, 168), options)}${chart(samples, "failure", "TCP 连接失败率", "orange", Math.min(selectedHours, 168), options)}</div></details>`;
     }).join("") || '<p class="hint">此协议暂无 TCP 历史，网络历史最多保留 7 天。</p>';
+    wireCharts(d);
   }
   function renderRoutes(f) {
     selectedFamily = f;
@@ -134,13 +137,23 @@ export async function detail(id, focus = null) {
     const matches = scopedObs.filter(
       (o) => o.task.family === f && (focusKind !== "route" || o.task.kind === "route"),
     );
-    details.innerHTML = matches.length
-      ? matches
+    const rows = (list) =>
+      list
           .map(
             (o) =>
-              `<details class="trace"><summary><span><b>${esc(o.task.region || o.task.name)} · ${esc(o.task.carrier || "自定义")}</b><small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${o.task.kind === "route" ? esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知") : o.result.latency != null ? o.result.latency.toFixed(1) + " ms" : "—"}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary>${o.task.kind === "route" ? `<div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div>` : `<p class="hint">TCP 成功 ${o.result.received} / ${o.result.sent} 次</p>`}</details>`,
+              `<details class="trace"><summary><span><b><i class="trace-kind ${o.task.kind === "route" ? "route" : "latency"}">${o.task.kind === "route" ? "回程" : "延迟"}</i>${esc(o.task.region || o.task.name)} · ${esc(o.task.carrier || "自定义")}</b><small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${o.task.kind === "route" ? esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知") : o.result.latency != null ? o.result.latency.toFixed(1) + " ms" : "—"}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary>${o.task.kind === "route" ? `<div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div>` : `<p class="hint">TCP 成功 ${o.result.received} / ${o.result.sent} 次</p>`}</details>`,
           )
-          .join("")
+          .join("");
+    // 延迟与回程是两种数据，混在一个列表里同一地区会出现两条几乎一样的记录：
+    // 分成两组，各带标题与计数，行首再标一次类型，一眼就能分清。
+    const latencyRows = matches.filter((o) => o.task.kind !== "route");
+    const routeRows = matches.filter((o) => o.task.kind === "route");
+    const group = (title, list) =>
+      list.length
+        ? `<section class="trace-group"><h4>${esc(title)}<span>${list.length} 个目标</span></h4>${rows(list)}</section>`
+        : "";
+    details.innerHTML = matches.length
+      ? group("地区延迟", latencyRows) + group("三网回程", routeRows)
       : '<div class="chart-empty">此协议暂无探测结果。请在后台创建并绑定任务。</div>';
   }
   d.querySelectorAll("[data-detail-family]").forEach(
@@ -198,11 +211,19 @@ function networkOverview(series, metric, hours) {
   // 纵坐标：顶部是量程（丢包固定 100%，延迟取历史峰值，最低 100 ms），底部是 0。
   const tick = (v) => metric === "failure" ? v.toFixed(0) + "%" : (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " ms";
   const yAxis = `<div class="chart-y" aria-hidden="true"><span>${esc(tick(maxValue))}</span><span>${esc(tick(maxValue / 2))}</span><span>${esc(tick(0))}</span></div>`;
-  const colors = ["#ff625f", "#36c8bf", "#9b7cff", "#5a9cff", "#ffad3d", "#eb63b5", "#36c98b", "#ff873d"];
+  // 多折线必须靠 class 上色：标记里的 stroke="…" 属性优先级低于样式表里的
+  // `.chart polyline`，会被主题色统一覆盖成同一条蓝线。legend 用同一组 class 保持一致。
+  const unit = metric === "failure" ? "%" : "ms";
+  const hover = usable.map((s, i) => ({
+    label: [s.region, s.carrier, s.host].filter(Boolean).join(" · "),
+    unit,
+    color: colorClass(i),
+    points: s.samples.map((p) => [p.at, p[metric] == null ? null : p[metric]]),
+  }));
   const lines = usable.map((s, i) => {
     const points = s.samples.map((p) => `${(((p.at - first) / Math.max(1, last - first)) * 680).toFixed(1)},${(110 - ((p[metric] || 0) / maxValue) * 102).toFixed(1)}`).join(" ");
-    return `<polyline class="overview-line" stroke="${colors[i % colors.length]}" points="${points}" />`;
+    return `<polyline class="overview-line ${colorClass(i)}" points="${points}" />`;
   }).join("");
-  const legend = usable.map((s, i) => `<span><i class="legend-dot lc${i % colors.length}"></i>${esc([s.region, s.carrier, s.host].filter(Boolean).join(" · "))}</span>`).join("");
-  return `<figure class="network-overview chart"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${hours} 小时 · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><div class="chart-plot">${yAxis}<div class="chart-body"><svg viewBox="0 0 680 120" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线，纵轴 0 到 ${esc(tick(maxValue))}"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg><div class="chart-axis"><span>${new Date(first * 1000).toLocaleString("zh-CN", { hour12: false })}</span><span>${new Date(last * 1000).toLocaleString("zh-CN", { hour12: false })}</span></div><div class="overview-legend">${legend}</div></div></div></figure>`;
+  const legend = usable.map((s, i) => `<span><i class="legend-dot ${colorClass(i)}"></i>${esc([s.region, s.carrier, s.host].filter(Boolean).join(" · "))}</span>`).join("");
+  return `<figure class="network-overview chart" data-series="${esc(JSON.stringify(hover))}" data-range="${first},${last}" data-ceiling="${maxValue}"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${hours} 小时 · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><div class="chart-plot">${yAxis}<div class="chart-body"><svg viewBox="0 0 680 120" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线，纵轴 0 到 ${esc(tick(maxValue))}"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg>${axisRow(first, last)}<div class="overview-legend">${legend}</div></div></div></figure>`;
 }

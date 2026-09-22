@@ -257,3 +257,14 @@ node scripts/ui-smoke.mjs
 - 改法：`NetworkHistory` 的每个 json_extract 字段 COALESCE（family/host/region/carrier → `''`，port → `0`，sent/received → `0`）；坏 JSON 用 `json_valid` 挡在聚合之外（`CASE WHEN json_valid(task) THEN json_extract(...) END`，结果列先在子查询里 `CASE WHEN json_valid(result) THEN result END` 归一化，`node_id`/`finished` 过滤下推到子查询以保住索引）；任务 JSON 解析不了的行只跳过自己并计数。`family` 缺失且目标是 IP 字面量时按地址补 `ipv4`/`ipv6`（地址决定，不是猜），旧数据才能与新数据并进同一条曲线。`History` 跳过读不出来的样本行；`Observations` 跳过任务 JSON 坏掉的行、结果坏掉的行按 `unknown` 显示。三处各记一条 `slog.Warn` 汇总被跳过的行数，不留静默丢数据。
 - 验证：新增 `internal/storage/legacy_rows_test.go` 三个用例（旧任务行 / 坏任务与坏结果行 / 坏样本行）。修复前分别以 `converting NULL...`、`malformed JSON` 失败，现在返回成功且数据正确——旧行 latency 保留、缺失 `sent` 不伪造失败率、坏结果按“无结果”聚合而不是零延迟。真实 Server + 真实 DB 端到端：往库里灌入这四类旧行后三个接口全部 200（此前 `/network-history` 为 500），面板点开该节点正常渲染（2 个区块、7 条结果、无失败提示）。`go test ./...`、`go test -race ./internal/storage/ ./internal/httpapi/`、`go vet ./...`、`gofmt`、`git diff --check`、`node --check`、`presentation-test.mjs`、`ui-smoke.mjs` 全绿。
 - 待确认：生产库中具体是哪一类旧行（服务端日志 `request failed` 那一行的 error 文本会写明；`converting NULL ...` 属缺失键，`malformed JSON` 属坏 JSON）。无论哪类，本提交都已覆盖。
+
+## 2026-09-22 折线图读数、横坐标细分、多折线配色与延迟/回程分组
+
+- 需求：① 鼠标停在折线哪个位置就显示哪个位置的数据值；② 横坐标细分，日期与时间分行；③「全部信息」里的多折线要有颜色区分；④ 详情列表里「具体地区延迟」与「三网回程」要分清楚。
+- 定位（③）：`networkOverview` 用 `<polyline stroke="#…">` 逐条上色，但表现属性打不过样式表——`glass.css` 的 `.chart polyline { stroke: var(--accent) }` 优先级更高，实测四条线的 computed stroke 全是 `rgb(0, 113, 227)`，而图例点却各自有色，于是整张图只剩一条蓝色曲线。（卡片色带踩过的是 CSP 禁止行内样式，这次是层叠顺序，两者都会让颜色失效。）
+- 改法：
+  - ③ 颜色改为 class：`.lc0…lc7` 只定义 `--series` 变量，折线 `.chart .overview-line`、图例点、悬停数据点与色块共用同一来源，标记里的 `stroke="…"` 全部删掉。
+  - ① `chart()` 与 `networkOverview()` 把每个序列的采样点以 JSON 挂在 figure 的 `data-series`（附 `data-range`、`data-ceiling`），新增 `wireCharts(root)`：`pointermove` 时按指针 x 定位最近的采样列，画竖线、单序列再画落在曲线上的数据点，提示框列出该列每个序列的时间与数值，靠近右边缘自动翻到左侧，`pointerleave` 收起。位置用 CSSOM 写（`el.style.left`），标记里的行内样式会被 CSP 忽略。
+  - ② 新增 `axisLabels/axisRow`：首尾之间均匀取 5 个时刻，日期与时间分两行，坐标轴加轴线与刻度背景；主机历史、单目标趋势、网络总览统一使用。
+  - ④ `renderRoutes` 按 kind 把观测分成「地区延迟」「三网回程」两组并各带目标数，每行行首加类型标签（延迟 / 回程），聚焦视图同样生效。
+- 验证：`presentation-test.mjs` 断言 5 个刻度且日期与时间分行、悬停 payload 与 `lcN` 调色、缺失值不打印成数字；`ui-smoke.mjs` 用真实租约灌入延迟与回程结果后断言详情必须出现两组标题与类型标签，并用 jsdom 直接驱动 `wireCharts`——指针停在 50% 时提示框同时列出两个序列（20.0 ms / 50.0 ms），竖线落在 50%。真实 Chrome + 真实数据（240 条主机采样、三个 TCP 目标各 240 条采样与回程结果）：单折线悬停读数与数据点正确，总览四条线 computed stroke 为 `#ff625f / #36c8bf / #9b7cff / #5a9cff` 且与图例一致，悬停一次列出 4 个目标的值，横坐标为 5 个两行标签，列表分「地区延迟 5 个目标」「三网回程 4 个目标」。`go test ./...`、`go vet ./...`、`gofmt`、`git diff --check`、`node --check`、`presentation-test.mjs`、`ui-smoke.mjs` 全绿。

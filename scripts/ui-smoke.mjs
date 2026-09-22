@@ -256,6 +256,35 @@ const createdTask = tasks.find(
 );
 assert(createdTask);
 assert.deepEqual(createdTask.checks, ["tcp", "route"]);
+// 用真实租约灌一条延迟结果和一条回程结果：列表必须把两种数据分开并标注类型。
+const lease = await (
+  await fetch(base + "/api/v1/agent/jobs", { headers: { Authorization: "Bearer " + nodeToken } })
+).json();
+assert(lease.length >= 2, "a bound task must hand out jobs to its agent");
+for (const job of lease) {
+  const result = job.task.kind === "route"
+    ? { job_id: job.id, status: "ok", sent: 1, received: 1, latency: 152.4, route: "CN2GIA", hops: [{ ttl: 1, address: "59.43.*.*", asn: "AS4809", rtt: 12.3 }] }
+    : { job_id: job.id, status: "ok", sent: 3, received: 3, latency: 21.5, route: "未知", hops: [] };
+  const posted = await fetch(base + "/api/v1/agent/results", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
+    body: JSON.stringify(result),
+  });
+  assert.equal(posted.status, 204, "an agent result must be accepted");
+}
+$('[data-tab="nodes"]').click();
+await until(() => $(`[data-inspect="${created.id}"]`), "node list after the agent results");
+$(`[data-inspect="${created.id}"]`).click();
+await until(() => $(".trace-group"), "grouped latency and route lists");
+const headings = [...w.document.querySelectorAll(".trace-group h4")].map((h) => h.textContent);
+assert(headings.some((h) => h.includes("地区延迟")), "latency rows need their own group: " + headings);
+assert(headings.some((h) => h.includes("三网回程")), "route rows need their own group: " + headings);
+assert(w.document.querySelector(".trace-kind.latency"), "latency rows must carry a type label");
+assert(w.document.querySelector(".trace-kind.route"), "route rows must carry a type label");
+$(".close").click();
+// 回到网络探测页，继续后面的任务编辑流程。
+$('[data-tab="tasks"]').click();
+await until(() => $('[data-edit-task="' + createdTask.id + '"]'), "task list again");
 // 三组目标：电信只留 IPv4，其余双栈
 assert.equal(createdTask.targets.length, 5);
 assert.deepEqual(
@@ -382,6 +411,40 @@ assert(
   ),
   "another card's address family must not follow this card's switch",
 );
+// 折线图的悬停读数在多折线图上也成立：鼠标停在哪一列，就报那一列每个序列的数值。
+const chartBundle = await build({
+  entryPoints: [path.join(root, "web/charts.js")],
+  bundle: true,
+  format: "iife",
+  globalName: "TZACharts",
+  write: false,
+});
+w.eval(chartBundle.outputFiles[0].text);
+w.SVGElement.prototype.getBoundingClientRect = () => ({
+  x: 0, y: 0, top: 0, left: 0, right: 680, bottom: 120, width: 680, height: 120,
+});
+const probe = w.document.createElement("figure");
+probe.className = "chart";
+probe.dataset.series = JSON.stringify([
+  { label: "四川 · 电信 · 118.112.1.144", unit: "ms", color: "lc0", points: [[0, 10], [600, 20], [1200, 30]] },
+  { label: "四川 · 联通 · 119.6.217.13", unit: "ms", color: "lc1", points: [[0, 40], [600, 50], [1200, 60]] },
+]);
+probe.dataset.range = "0,1200";
+probe.dataset.ceiling = "100";
+probe.innerHTML = '<div class="chart-body"><svg viewBox="0 0 680 120"></svg></div>';
+w.document.body.append(probe);
+w.TZACharts.wireCharts(w.document.body);
+const chartBody = probe.querySelector(".chart-body");
+chartBody.dispatchEvent(new w.MouseEvent("pointermove", { clientX: 340, clientY: 40, bubbles: true }));
+assert(!probe.querySelector(".chart-hover").hidden, "hovering a chart must reveal the readout");
+const tip = probe.querySelector(".chart-tip");
+assert.equal(tip.querySelectorAll("span").length, 2, "a multi-line chart reports every series");
+assert(/20\.0 ms/.test(tip.textContent) && /50\.0 ms/.test(tip.textContent), "the readout must show the values at that column, got " + tip.textContent);
+assert(Math.abs(parseFloat(probe.querySelector(".chart-guide").style.left) - 50) < 0.1, "the guide must follow the pointer column, got " + probe.querySelector(".chart-guide").style.left);
+assert.equal(probe.querySelectorAll(".chart-tip i.lc0, .chart-tip i.lc1").length, 2, "each series keeps its own colour chip");
+chartBody.dispatchEvent(new w.MouseEvent("pointerleave", { bubbles: true }));
+assert(probe.querySelector(".chart-hover").hidden, "leaving the chart must hide the readout");
+probe.remove();
 assert.deepEqual(errors, []);
 await fetch(base + "/api/v1/admin/tasks/" + createdTask.id, {
   method: "DELETE",
