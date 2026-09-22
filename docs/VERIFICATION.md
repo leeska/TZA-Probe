@@ -324,3 +324,20 @@ node scripts/ui-smoke.mjs
 - 改法：删掉 `9808 → CMI` 与 `223.120.` / `221.183.` / `111.24.` / `111.13.` / `2409:8080:` 五条 CMI 前缀条目（`223.120.*` 上半是 CMIN2 的 AS58807、下半才是 CMI 的 AS58453，脱敏只保留一个 /16，无法区分，按“标错运营商比未知更糟”撤掉）；移动照电信的规则收敛成单个产品名（CMIN2 优先，只有 CMI 时记 CMI），中国移动国内侧留空不标。
 - 标签改为在读取时按当前规则重算（`store.Observations`）：判定规则修正后，存量记录跟着跳表一起更新，不必等下一次探测，也不改动实测数据本身。
 - 验证：现场那条 14 跳记录（2602:f656 → AS1054 → AS58453 → AS58807 ×2 → AS9808 ×4 → AS139080 → 目标）现在得到 `CMIN2`，而数据库里存的仍是旧标签「CMI → CMIN2」；真机 Chrome 里公开卡片的移动回程格、聚焦视图的标题行都显示「CMIN2 · 正常」，跳表照旧列出 AS58453 / AS58807 / AS9808。新增 `TestRouteLabelOnRecordedMobileTrace`（现场跳表）、`TestObservationsRelabelRouteOnRead`（存量旧标签读出来是新标签）与一组 AS9808 前缀保持“未知”的用例；`go test ./...`、`go vet`、`gofmt` 全绿。
+
+## 2026-09-22 折线图铺满绘图区，曲线和刻度重新对上
+
+- 现场反馈（手机截图）：延迟趋势的折线和纵轴刻度对不上。
+- 根因：图表 svg 是 `viewBox="0 0 680 120"` + CSS `width:100%; height:120px`，走的是默认的
+  `preserveAspectRatio="xMidYMid meet"`。盒子宽度只要不是 680（手机约 200px），绘图区就被
+  等比缩小后垂直居中：360px 视口实测网格线只画在 y=45..75，而纵轴标签钉死在 8/59/110，
+  所以「0 ms」标签下面 35px 才是真正的 0 线；屏幕越窄差得越多（桌面 659px 宽时只差 2px，
+  一直没有暴露）。悬停数据点的 y 也按「铺满盒子」换算，同一原因会落到曲线之外。
+- 改法：两块图表（主机历史、三网延迟趋势）的 svg 加 `preserveAspectRatio="none"`，
+  `.chart svg *` 加 `vector-effect: non-scaling-stroke`（横向压缩时线宽与虚线不跟着缩，
+  否则手机上描边被压到半像素）；横轴 5 个标签由 flex `space-between` 改为绝对定位钉在
+  0/25/50/75/100%——`space-between` 等分的是标签之间的空隙，标签中心会跟着宽度跑，最多偏半格。
+- 验证：360px 视口下网格线 8..110 与纵轴标签 8/59/110 完全重合，横轴标签中心落在
+  0/25/50/75/100%，悬停读数与之同源；线上面板同尺寸复核通过。
+  `presentation-test.mjs` 断言 charts.js 输出、`ui-smoke.mjs` 断言 detail.js 输出与 styles.css
+  规则，`node --check`、`gofmt`、`go vet ./...`、`go test ./...` 全绿。

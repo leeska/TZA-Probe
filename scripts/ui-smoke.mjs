@@ -347,6 +347,24 @@ assert.equal(headings.length, 1, "only the backhaul list stays in the dialog: " 
 assert(headings[0].includes("三网回程"), "the backhaul list must be titled: " + headings);
 // 延迟只由多折线图呈现：单目标的「查看趋势」折叠图和「地区延迟」行列表都应不复存在。
 assert($("#network-overview"), "the dialog must keep the multi-line overview chart");
+// 折线图要铺满 svg 盒子：手机盒子宽度只有两百来像素，默认的 preserveAspectRatio="meet"
+// 会把绘图区等比缩小后垂直居中，折线和网格线就落不到 8/59/110 三条刻度线上；铺满后
+// 描边必须不跟着缩放（否则横向压缩把线宽压到半像素）。横轴标签一律绝对定位钉在刻度上。
+assert(
+  /svg viewBox="0 0 680 120" preserveAspectRatio="none"/.test(
+    await (await fetch(base + "/detail.js")).text(),
+  ),
+  "the multi-line overview must stretch its plot to its box",
+);
+assert(
+  /\.chart svg \* \{[^}]*vector-effect:\s*non-scaling-stroke/.test(styles),
+  "a stretched chart must keep its stroke width",
+);
+assert(
+  /\.chart-axis span \{[^}]*position:\s*absolute/.test(styles) &&
+    /\.chart-axis span:nth-child\(5\) \{ left: 100%; \}/.test(styles),
+  "axis labels must be pinned to their tick, not spaced out by flex",
+);
 assert.equal($("#network-history"), null, "per-target trend rows must be gone");
 assert(
   !/查看趋势/.test($(".modal-body")?.textContent || ""),

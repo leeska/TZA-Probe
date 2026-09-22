@@ -46,6 +46,9 @@ assert(ticks.every((t) => t.date && t.time), "every tick carries a date line and
 assert.notEqual(ticks[0].time, ticks[4].time, "ticks must advance across the range");
 assert.equal((rateHTML.match(/<b>\d+\/\d+<\/b><i>\d\d:\d\d<\/i>/g) || []).length, 5, "labels must split date and time onto two lines");
 assert(rateHTML.includes("data-series=") && rateHTML.includes("data-range=") && rateHTML.includes("data-ceiling="), "charts must carry the hover payload");
+// 窄屏下盒子宽度远小于 viewBox 的 680：默认的 preserveAspectRatio="meet" 会把绘图区
+// 等比缩小后垂直居中，折线和网格线就落不到 8/59/110 三条刻度线上。
+assert(/preserveAspectRatio="none"/.test(html), "charts must stretch the plot to their box, not letterbox it");
 assert(JSON.parse(rateHTML.match(/data-series="([^"]*)"/)[1].replaceAll("&quot;", '"'))[0].points.length === 3, "the payload keeps every sample, gaps included");
 assert.equal(colorClass(0), "lc0");
 assert.equal(colorClass(9), "lc1", "the palette wraps around");

@@ -1792,17 +1792,26 @@ pre,
   stroke-linejoin: round;
 }
 
+/* 绘图区必须铺满 svg 盒子：viewBox 是 680×120，而盒子宽度随屏幕变（手机上只有
+   两百来像素），默认的 preserveAspectRatio="meet" 会等比缩小后垂直居中，网格线和
+   折线就落在 8/59/110 三条线之外，和钉在固定像素上的纵轴标签错开。用 none 拉满
+   盒子，再让描边不跟着缩放——否则横向压缩会把线宽压到半像素。 */
+.chart svg * {
+  vector-effect: non-scaling-stroke;
+}
+
 .chart .gridline {
   fill: none;
   stroke-width: 1;
   stroke-dasharray: 4 4;
 }
 
-/* 横坐标：在首尾之间按时间细分刻度，日期与时间分行显示。 */
+/* 横坐标：5 个刻度按时间均匀分布（0/25/50/75/100%），标签用绝对定位把自身中心压在
+   刻度上。之前用 flex 的 space-between，等分的是标签之间的空隙，标签中心会跟着标签
+   宽度跑，中间那几个最多偏半格，和折线的时间位置对不上。 */
 .chart-axis {
-  display: flex;
-  justify-content: space-between;
-  gap: 2px;
+  position: relative;
+  height: 30px;
   font-size: 10px;
   color: var(--muted);
   margin-top: 10px;
@@ -1815,15 +1824,21 @@ pre,
 }
 
 .chart-axis span {
+  position: absolute;
+  top: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  transform: translateX(-50%);
   line-height: 1.25;
   white-space: nowrap;
 }
 
-.chart-axis span:first-child { align-items: flex-start; }
-.chart-axis span:last-child { align-items: flex-end; }
+.chart-axis span:nth-child(1) { left: 0; }
+.chart-axis span:nth-child(2) { left: 25%; }
+.chart-axis span:nth-child(3) { left: 50%; }
+.chart-axis span:nth-child(4) { left: 75%; }
+.chart-axis span:nth-child(5) { left: 100%; }
 .chart-axis span b { font-weight: 500; }
 .chart-axis span i { font-style: normal; font-size: 9px; opacity: 0.75; }
 

@@ -198,7 +198,7 @@ export function chart(samples, key, label, color = "teal", hours = 24, options =
         <span>0–${esc(scaleLabel)} · ${samples.length} 个历史采样 · 自动聚合</span>
       </figcaption>
       <div class="chart-plot">${yAxis}<div class="chart-body">
-      <svg viewBox="0 0 680 120" role="img" aria-label="${esc(label)}历史曲线，纵轴 0 到 ${esc(scaleLabel)}">
+      <svg viewBox="0 0 680 120" preserveAspectRatio="none" role="img" aria-label="${esc(label)}历史曲线，纵轴 0 到 ${esc(scaleLabel)}">
         <defs>
           <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="${gradColor}" stop-opacity="0.32" />
