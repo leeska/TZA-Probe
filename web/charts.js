@@ -119,15 +119,17 @@ export function wireCharts(root) {
         rows
           .map(
             (row) =>
-              `<span><i class="${esc(row.color || "")}"></i>${esc(row.label || "")}<em>${esc(formatValue(row.value, row.unit))}</em></span>`,
+              `<span title="${esc(row.full || row.label || "")}"><i class="${esc(row.color || "")}"></i>${esc(row.label || "")}<em>${esc(formatValue(row.value, row.unit))}</em></span>`,
           )
           .join("");
       overlay.hidden = false;
-      // 信息框排在绘图区上方（悬停时压住标题行也不要压住曲线），再按自身宽度夹进图表里。
+      // 读数框摆在绘图区正中间：贴在图上方会压住标题行（手机上一行标不出来时最明显），
+      // 横向仍跟着指针走并夹在图表里，纵向夹在绘图区内不掉出去。
       const tipWidth = tip.offsetWidth;
       const tipHeight = tip.offsetHeight;
       tip.style.left = px(Math.min(Math.max(x - tipWidth / 2, 0), Math.max(0, box.width - tipWidth)));
-      tip.style.top = px(top - tipHeight - 6);
+      const centered = top + (rect.height - tipHeight) / 2;
+      tip.style.top = px(Math.min(Math.max(centered, top), Math.max(top, top + rect.height - tipHeight)));
     };
     body.addEventListener("pointermove", draw);
     body.addEventListener("pointerleave", () => {

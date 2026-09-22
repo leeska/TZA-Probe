@@ -1845,7 +1845,7 @@ pre,
 .network-overview { margin: 0 0 14px; }
 .overview-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
 .overview-head .segmented button { padding: 4px 9px; font-size: 10px; }
-.overview-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; font-size: 10px; color: var(--muted); }
+.overview-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 14px; margin-top: 8px; font-size: 10px; color: var(--muted); }
 .overview-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .overview-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
 /* 多折线配色：class 只定义变量，折线、图例点、悬停点共用同一个来源。标记里的

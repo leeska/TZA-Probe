@@ -551,7 +551,7 @@ w.SVGElement.prototype.getBoundingClientRect = () => ({
 const probe = w.document.createElement("figure");
 probe.className = "chart";
 probe.dataset.series = JSON.stringify([
-  { label: "四川 · 电信 · 118.112.1.144", unit: "ms", color: "lc0", points: [[0, 10], [600, 20], [1200, 30]] },
+  { label: "四川 · 电信", full: "四川 · 电信 · 118.112.1.144", unit: "ms", color: "lc0", points: [[0, 10], [600, 20], [1200, 30]] },
   { label: "四川 · 联通 · 119.6.217.13", unit: "ms", color: "lc1", points: [[0, 40], [600, 50], [1200, 60]] },
 ]);
 probe.dataset.range = "0,1200";
@@ -580,7 +580,10 @@ const guide = probe.querySelector(".chart-guide");
 assert(Math.abs(parseFloat(guide.style.left) - 340) < 0.1, "the guide must follow the pointer column, got " + guide.style.left);
 assert(Math.abs(parseFloat(guide.style.top) - 0) < 0.1 && Math.abs(parseFloat(guide.style.height) - 120) < 0.1, "the guide must stay inside the plot, got " + guide.style.top + "/" + guide.style.height);
 assert.equal(probe.querySelectorAll(".chart-tip i.lc0, .chart-tip i.lc1").length, 2, "each series keeps its own colour chip");
-assert(parseFloat(tip.style.top) < 0, "the readout must sit above the plot instead of covering a line, got " + tip.style.top);
+// 读数框摆进绘图区正中：贴在图上方会压住标题行。jsdom 里 offsetHeight 为 0，所以取到的
+// 正好是绘图区的垂直中点（120 高的一半）。
+assert.equal(tip.style.top, "60px", "the readout must sit inside the plot, got " + tip.style.top);
+assert.equal(tip.querySelectorAll("span")[0].title, "四川 · 电信 · 118.112.1.144", "each row keeps the full target in its title");
 assert(parseFloat(tip.style.left) >= 0 && parseFloat(tip.style.left) <= 680, "the readout must stay inside the chart, got " + tip.style.left);
 // 单序列：数据点必须落在曲线的同一点上（value 20 在 120 高的绘图区里是 y=89.6）。
 const singleBody = single.querySelector(".chart-body");

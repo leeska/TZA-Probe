@@ -197,8 +197,13 @@ function networkOverview(series, metric, hours) {
   // 多折线必须靠 class 上色：标记里的 stroke="…" 属性优先级低于样式表里的
   // `.chart polyline`，会被主题色统一覆盖成同一条蓝线。legend 用同一组 class 保持一致。
   const unit = metric === "failure" ? "%" : "ms";
+  // 图例和读数框只写「地区 · 运营商」：IPv6 目标地址太长，一行放不下会把读数框撑到
+  // 图表外面；地址放在 title 里，下面「三网回程」表本来也会列出完整目标。
+  const seriesName = (s) => [s.region, s.carrier].filter(Boolean).join(" · ") || s.name || "网络目标";
+  const seriesFull = (s) => [s.region, s.carrier, s.host].filter(Boolean).join(" · ");
   const hover = usable.map((s, i) => ({
-    label: [s.region, s.carrier, s.host].filter(Boolean).join(" · "),
+    label: seriesName(s),
+    full: seriesFull(s),
     unit,
     color: colorClass(i),
     points: s.samples.map((p) => [p.at, p[metric] == null ? null : p[metric]]),
@@ -207,6 +212,6 @@ function networkOverview(series, metric, hours) {
     const points = s.samples.map((p) => `${(((p.at - first) / Math.max(1, last - first)) * 680).toFixed(1)},${(110 - ((p[metric] || 0) / maxValue) * 102).toFixed(1)}`).join(" ");
     return `<polyline class="overview-line ${colorClass(i)}" points="${points}" />`;
   }).join("");
-  const legend = usable.map((s, i) => `<span><i class="legend-dot ${colorClass(i)}"></i>${esc([s.region, s.carrier, s.host].filter(Boolean).join(" · "))}</span>`).join("");
+  const legend = usable.map((s, i) => `<span title="${esc(seriesFull(s))}"><i class="legend-dot ${colorClass(i)}"></i>${esc(seriesName(s))}</span>`).join("");
   return `<figure class="network-overview chart" data-series="${esc(JSON.stringify(hover))}" data-range="${first},${last}" data-ceiling="${maxValue}"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${hours} 小时 · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><div class="chart-plot">${yAxis}<div class="chart-body"><svg viewBox="0 0 680 120" preserveAspectRatio="none" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线，纵轴 0 到 ${esc(tick(maxValue))}"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg>${axisRow(first, last)}<div class="overview-legend">${legend}</div></div></div></figure>`;
 }
