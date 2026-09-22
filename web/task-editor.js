@@ -1,4 +1,5 @@
 import { esc, modal, guard, toast, send } from "./api.js";
+import { regionOptions } from "./regions.js";
 
 const carriers = ["电信", "联通", "移动", "其他"];
 const checkbox = (label, name, checked) =>
@@ -13,12 +14,12 @@ const target = ({ host, port, family, region, carrier }) => ({
   carrier,
 });
 // 自定义目标的地区会与节点卡片的代表地区逐字比对，手输容易写出对不上的名字，
-// 所以给候选；目录里没有的海外地区仍然可以自己填。
-const regionSuggestions = (catalog, existing) => {
-  const regions = new Set(catalog.targets.map((x) => x.region));
-  for (const x of existing?.targets || []) if (x.region) regions.add(x.region);
-  return [...regions].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
-};
+// 所以给候选；目录里没有的其他地区仍然可以自己填。
+const regionSuggestions = (catalog, existing) =>
+  regionOptions(
+    catalog.targets.map((x) => x.region),
+    (existing?.targets || []).map((x) => x.region),
+  );
 
 export function taskSummary(t) {
   const targets = t.targets || [t];

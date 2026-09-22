@@ -116,6 +116,12 @@ for (const d of ["（默认 60）", "（默认 7）", "（默认 80）", "（默
   assert(rules.includes(d), "提醒规则缺少默认值提示: " + d);
 assert(rules.includes("新建节点的默认值：离线等待 60 秒"), "提示行要列出各项默认值");
 assert.equal(form.elements.repeat_minutes.placeholder, "默认 0（只提醒一次）");
+// 内置目录只有国内三网，而节点多半在海外：建议列表必须补上常用海外地区，且仍可自由填写。
+const nodeRegionOptions = [...w.document.querySelectorAll("#region-options option")].map((o) => o.value);
+for (const region of ["香港", "美国", "日本", "新加坡"])
+  assert(nodeRegionOptions.includes(region), `节点地区建议列表缺少 ${region}（共 ${nodeRegionOptions.length} 项）`);
+assert(form.elements.region.getAttribute("list") === "region-options", "节点地区仍要允许输入目录外的值");
+assert(nodeRegionOptions.length > 30, "建议列表不能只剩目录里的省份");
 form.elements.offline.checked = true;
 form.elements.renewal.checked = true;
 form.elements.traffic.checked = true;
@@ -347,6 +353,10 @@ assert.equal(createdTask.interval, 60);
 $('[data-edit-task="' + createdTask.id + '"]').click();
 await until(() => $("#task-form"), "edit combined task");
 assert.equal(w.document.querySelectorAll("[data-remove]").length, 3);
+// 自定义目标的地区候选同样要带上常用海外地区。
+const taskRegionOptions = [...w.document.querySelectorAll("#task-region-options option")].map((o) => o.value);
+for (const region of ["香港", "美国"])
+  assert(taskRegionOptions.includes(region), `自定义目标地区候选缺少 ${region}（共 ${taskRegionOptions.length} 项）`);
 assert($("#task-form").elements.ipv6.checked);
 assert.equal(chipFamilies("电信").length, 1, "per-group families must round-trip through save and reopen");
 assert.equal(chipFamilies("联通").length, 2);

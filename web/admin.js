@@ -5,6 +5,7 @@ import { taskEditor, taskSummary } from "./task-editor.js";
 import { api, send, esc, toast, modal, guard } from "./api.js";
 import { bytes, date, days, kindName, stamp, stampISO } from "./format.js";
 import { detail } from "./detail.js";
+import { regionOptions } from "./regions.js";
 let container,
   brandHTML,
   tab = "nodes",
@@ -198,14 +199,9 @@ async function knownRegions() {
   return [...found].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
 }
 // 候选列表在 render() 里预取，弹窗才能同步打开；节点自身的历史值再并进来，
-// 保证目录外或已废弃的地区不会因为换控件而被清掉。
+// 保证目录外或已废弃的地区不会因为换控件而被清掉。海外地区由 regions.js 统一补上。
 function nodeRegions(values) {
-  const merged = new Set(regions);
-  for (const value of values) {
-    const region = String(value ?? "").trim();
-    if (region) merged.add(region);
-  }
-  return [...merged].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  return regionOptions(regions, values);
 }
 function regionSelect(label, name, value, options, emptyLabel) {
   const html = [
