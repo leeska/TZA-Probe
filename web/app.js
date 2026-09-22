@@ -41,25 +41,14 @@ async function start() {
     return;
   }
   renderShell();
-  watchScrolling();
   await refresh();
   // 数值类数据（负载、实时速率、用量）约 1 秒一笔，所以每秒轻刷一次——只换数字，不重建卡片；
   // 探测明细（每个目标的观测与最近样本）仍是 10 秒一轮，那一轮要打十几个请求。
-  // 用户正在滑动时两拍都让开，等停下来再补。
   setInterval(() => {
     if (!document.hidden) liveTick().catch(() => {});
   }, 1000);
   setInterval(() => {
-    if (document.hidden) return;
-    // iOS 的惯性可以比手指多滑一两秒，所以不是等一次就算：还在滑就 400ms 后再看，停下才动 DOM。
-    const run = () => {
-      if (scrolling()) {
-        setTimeout(run, 400);
-        return;
-      }
-      if (!document.hidden) refresh().catch((e) => toast(e.message));
-    };
-    run();
+    if (!document.hidden) refresh().catch((e) => toast(e.message));
   }, 10000);
 }
 
@@ -80,19 +69,6 @@ async function refresh() {
   const ticket = ++generation;
   const next = await api("/nodes");
   if (ticket !== generation) return;
-  // 同 liveTick：取数途中开始滑动就推迟——但等待期间不重复取数，还在滑就继续等。
-  if (scrolling()) {
-    const retry = () => {
-      if (document.hidden) return;
-      if (scrolling()) {
-        setTimeout(retry, 400);
-        return;
-      }
-      refresh().catch((e) => toast(e.message));
-    };
-    setTimeout(retry, 400);
-    return;
-  }
   nodes = next;
   const groups = [...new Set(nodes.map((n) => n.group).filter(Boolean))];
   if (group && !groups.includes(group)) group = "";
@@ -162,18 +138,6 @@ function speedsInner(n) {
   return `<div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateIn}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOut}</strong></div></div>`;
 }
 
-// 滚动期间不改 DOM：WebKit（iOS 上的 Chrome / Safari）在滚动中改 DOM 会把位置弹回去。
-let lastScrollAt = 0;
-function watchScrolling() {
-  const mark = () => {
-    lastScrollAt = Date.now();
-  };
-  // scroll 不冒泡，用捕获阶段听 document，元素级滚动也能触发。
-  document.addEventListener("scroll", mark, { passive: true, capture: true });
-  window.addEventListener("touchmove", mark, { passive: true });
-}
-const scrolling = () => Date.now() - lastScrollAt < 1200;
-
 // 文本 / HTML 先比一遍再写：数值没变就不碰 DOM（每秒那层刷新因此只写真正在动的几个数字）。
 function setHTML(el, html) {
   if (!el || el.__html === html) return;
@@ -187,16 +151,14 @@ function setText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }
 
-// 每秒一次的轻刷新：只动数值——顶部四个数字、每张卡片的指标与速率、在线状态。不重建卡片列表，
-// 也就不动滚动位置（重建那一轮走 renderCards，里面另有滚动锚定）。
+// 每秒一次的轻刷新：只动数值——顶部四个数字、每张卡片的指标与速率、在线状态。写入都走 setHTML 的
+// 补丁路径（只改变化的文本与属性、不换元素），所以手指底下写也不会把位置弹走，不必再暂停刷新。
 let liveBusy = false;
 async function liveTick() {
-  if (liveBusy || scrolling()) return; // 上一拍没回来、或用户正在滑动，都跳过这一拍
+  if (liveBusy) return; // 上一拍还没回来就跳过这一拍，别把请求叠起来
   liveBusy = true;
   try {
     const next = await api("/nodes");
-    // 取数期间用户可能刚起步滑动：写入前再查一次，别把手指下的内容动了（这一步是「还是跳」的漏洞）。
-    if (scrolling()) return;
     nodes = next;
     setHTML(document.querySelector("#overview"), overviewInner());
     for (const el of document.querySelectorAll("#nodes .node-card")) {

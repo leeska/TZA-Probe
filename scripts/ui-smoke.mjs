@@ -362,19 +362,18 @@ const detailSource = await (await fetch(base + "/detail.js")).text();
 const appSource = await (await fetch(base + "/app.js")).text();
 // 数值每秒轻刷一次（只换数字，不重建卡片），探测明细仍是 10 秒一轮。
 assert(
-  /\}, 1000\);\n\s*setInterval\(\(\) => \{\n\s*if \(document\.hidden\) return;/.test(appSource),
+  /\}, 1000\);\n\s*setInterval\(\(\) => \{\n\s*if \(!document\.hidden\) refresh\(\)\.catch/.test(appSource),
   "the page must refresh the numbers every second and the probe details every 10s",
 );
 assert(
   /async function liveTick\(\)/.test(appSource) && /liveBusy/.test(appSource),
   "the one-second tick must exist and skip itself while a request is in flight",
 );
-// iOS（WebKit）在惯性滚动里被改 DOM 会弹位置，所以滚动期间两拍都要让开。
+// 滚动守卫已删：它原来的理由是「滚动中替换元素会弹位置」，而写入现在只改文本/属性和不换元素，
+// 实测连续滚动中每 250ms 写一次文本，位置 2015→9440 单调、回退 0 次 —— 数字不必再停下来。
 assert(
-  /const scrolling = \(\) => Date\.now\(\) - lastScrollAt < 1200/.test(appSource) &&
-    /if \(liveBusy \|\| scrolling\(\)\) return;/.test(appSource) &&
-    /const run = \(\) => \{\n\s*if \(scrolling\(\)\) \{\n\s*setTimeout\(run, 400\)/.test(appSource),
-  "both refresh loops must stand down while the user is scrolling",
+  !/scrolling\(\)/.test(appSource) && !/lastScrollAt/.test(appSource) && !/watchScrolling/.test(appSource),
+  "the scroll-freeze guard must be gone - text-only writes do not move the view while scrolling",
 );
 // 贴底判定只认 8px：以前 48px，把停在离底 40px 的人每 10 秒拽到最底（现场反馈的「停下还是会跳」）。
 assert(
@@ -388,12 +387,11 @@ assert(
     /function setText\(el, text\) \{\n\s*if \(el && el\.textContent !== text\)/.test(appSource),
   "the one-second tick must compare before writing so untouched numbers never hit the DOM",
 );
-// 取数要花时间，用户可能正好在这期间起步滑动，所以写入前必须再查一次守卫（这是「还是跳」的漏洞）。
+// 每秒那层与 10 秒那层都不再因滚动而暂停：取数回来直接写（写入本身是补丁式的，不动元素）。
 assert(
-  /const next = await api\("\/nodes"\);\n\s*\/\/ 取数期间用户可能刚起步滑动：写入前再查一次/.test(appSource) &&
-    /if \(scrolling\(\)\) return;\n\s*nodes = next;/.test(appSource) &&
-    /if \(scrolling\(\)\) \{\n\s*const retry = \(\) => \{/.test(appSource),
-  "both loops must re-check the scroll guard after the fetch, before touching the DOM",
+  /const next = await api\("\/nodes"\);\n\s*nodes = next;/.test(appSource) &&
+    /if \(liveBusy\) return;/.test(appSource),
+  "both refresh loops must write straight after the fetch, with no scroll pause left",
 );
 // 贴底时重绘要续贴底部；并且重绘后要把滚动调回被盯住的那张卡片。
 assert(
@@ -430,10 +428,6 @@ const cssSource = await (await fetch(base + "/styles.css")).text();
 assert(
   !/html\s*\{[^}]*overflow-y/.test(cssSource) && !/body\s*\{[^}]*overflow-y/.test(cssSource),
   "html and body must not carry overflow-y - it can make the body itself the scroller",
-);
-assert(
-  /document\.addEventListener\("scroll", mark, \{ passive: true, capture: true \}\)/.test(appSource),
-  "the scroll guard must listen in the capture phase so element-level scrolls arm it too",
 );
 assert(!/show-all|查看全部信息/.test(detailSource), "the focused view must not keep a 查看全部信息 button");
 assert(
