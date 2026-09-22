@@ -360,6 +360,15 @@ assert(
 // 所以那里的下拉只有 1 小时 / 24 小时 / 7 天三档，主机历史所在的综合视图保留 30 天。
 const detailSource = await (await fetch(base + "/detail.js")).text();
 const appSource = await (await fetch(base + "/app.js")).text();
+// 数值每秒轻刷一次（只换数字，不重建卡片），探测明细仍是 10 秒一轮。
+assert(
+  /\}, 1000\);\n\s*setInterval\(\(\) => \{\n\s*if \(!document\.hidden\) refresh\(\)/.test(appSource),
+  "the page must refresh the numbers every second and the probe details every 10s",
+);
+assert(
+  /async function liveTick\(\)/.test(appSource) && /liveBusy/.test(appSource),
+  "the one-second tick must exist and skip itself while a request is in flight",
+);
 // 贴底时重绘要续贴底部；iOS Safari 没有浏览器级滚动锚定，所以还必须有手动锚回同一张卡片。
 assert(
   /if \(atBottom\) scroller\.scrollTop = scroller\.scrollHeight/.test(appSource),
