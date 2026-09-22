@@ -22,13 +22,29 @@ const regionSuggestions = (catalog, existing) => {
 
 export function taskSummary(t) {
   const targets = t.targets || [t];
+  // 地区 / 运营商按地区归并：同一地区的运营商合成一行，不再为每个运营商重复一遍地区名。
+  const rank = (carrier) => {
+    const at = ["电信", "联通", "移动", "其他"].indexOf(carrier);
+    return at < 0 ? 9 : at;
+  };
+  const byRegion = new Map();
+  for (const x of targets) {
+    const region = x.region || "其他";
+    if (!byRegion.has(region)) byRegion.set(region, new Set());
+    byRegion.get(region).add(x.carrier || "其他");
+  }
+  const groups = [...byRegion].map(
+    ([region, carriers]) =>
+      `${region} ${[...carriers].sort((a, b) => rank(a) - rank(b)).join("/")}`,
+  );
   return {
     checks: (t.checks || [t.kind])
       .map((x) => (x === "route" ? "回程" : "延迟"))
       .join(" + "),
-    targets: [...new Set(targets.map((x) => x.region + " " + x.carrier))].join(
-      "、",
-    ),
+    // 列表里只放前三个地区，超出的折成省略号，数量交给单元格的次级行（targetsFull 是完整名单，悬停显示）。
+    targets: groups.length > 3 ? `${groups.slice(0, 3).join("、")} …` : groups.join("、"),
+    targetsFull: groups.join("、"),
+    regions: byRegion.size,
     families: [
       ...new Set(targets.map((x) => (x.family === "ipv4" ? "IPv4" : "IPv6"))),
     ].join(" / "),

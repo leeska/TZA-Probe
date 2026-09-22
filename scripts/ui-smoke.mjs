@@ -324,6 +324,17 @@ $(".close").click();
 // 回到网络探测页，继续后面的任务编辑流程。
 $('[data-tab="tasks"]').click();
 await until(() => $('[data-edit-task="' + createdTask.id + '"]'), "task list again");
+// 列表里的「地区 / 运营商」按地区归并：同一个地区名只出现一次，运营商并排列在它后面，
+// 超过三个地区折成「…等 N 个地区」，完整名单放在单元格悬停里。
+const regionCell = $(`[data-edit-task="${createdTask.id}"]`).closest("tr").querySelector('td[data-label="地区 / 运营商"]');
+const taskRegions = [...new Set(createdTask.targets.map((x) => x.region))];
+for (const r of taskRegions) assert(regionCell.textContent.includes(r), `地区 ${r} 必须出现在列表里: ${regionCell.textContent}`);
+for (const r of taskRegions)
+  assert.equal((regionCell.textContent.match(new RegExp(r, "g")) || []).length, 1, `地区名 ${r} 不应按运营商重复: ${regionCell.textContent}`);
+assert.equal(regionCell.title.split("、").length, taskRegions.length, "悬停里要是完整名单");
+assert.equal(/…/.test(regionCell.textContent), taskRegions.length > 3, "只有超过三个地区才折行: " + regionCell.textContent);
+if (taskRegions.length > 3) assert(/共 \d+ 个地区/.test(regionCell.textContent), "折行时要写明地区总数: " + regionCell.textContent);
+else assert(!/个地区/.test(regionCell.textContent), "地区不多时不该再写数量: " + regionCell.textContent);
 // 三组目标：电信只留 IPv4，其余双栈
 assert.equal(createdTask.targets.length, 5);
 assert.deepEqual(

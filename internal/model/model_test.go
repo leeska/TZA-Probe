@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -222,6 +223,12 @@ func TestCombinedTaskValidation(t *testing.T) {
 	if err := task.Validate(); err == nil {
 		t.Fatal("accepted duplicate checks")
 	}
+	// 名字写错时要说清是检测项本身不对，而不是让叶子任务报「任务类型须为 tcp 或 route」。
+	task.Checks = []string{"latency"}
+	if err := task.Validate(); err == nil || !strings.Contains(err.Error(), "检测内容须为") {
+		t.Fatalf("check name error = %v", err)
+	}
+	task.Checks = []string{"tcp", "route"}
 	task.Checks = []string{"route"}
 	task.RouteInterval = 30
 	if err := task.Validate(); err == nil {

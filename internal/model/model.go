@@ -232,6 +232,12 @@ func (t Task) Validate() error {
 		if len(t.Checks) < 1 || len(t.Checks) > 2 || len(t.Targets) < 1 || len(t.Targets) > 200 {
 			return errors.New("请选择检测内容和目标（最多 200 个地址）")
 		}
+		for _, check := range t.Checks {
+			// 名字写错时直接指出是哪一项，否则错误会由叶子任务报成「任务类型须为 tcp 或 route」。
+			if check != "tcp" && check != "route" {
+				return errors.New("检测内容须为 tcp（延迟）或 route（回程）")
+			}
+		}
 		seen := map[string]bool{}
 		for _, leaf := range t.Leaves() {
 			if seen[leaf.ProbeKey()] {
