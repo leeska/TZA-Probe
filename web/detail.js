@@ -1,19 +1,74 @@
 import { api, esc, modal, guard } from "./api.js";
 import { bytes, date, statusName, reasonName } from "./format.js";
 import { chart } from "./charts.js";
+// 详情页要发三个请求，任何一个失败或长时间无响应，弹窗都会停在“读取节点详情…”：
+// 每个请求都带截止时间，失败时把原因和重试按钮写进弹窗。
+const requestTimeout = 15000;
+function withDeadline(send) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          Object.assign(new Error(`${requestTimeout / 1000} 秒内没有响应`), {
+            name: "TimeoutError",
+          }),
+        ),
+      requestTimeout,
+    );
+  });
+  const pending = send();
+  // 超时后原请求仍会返回，别让它变成未处理的拒绝。
+  pending.catch(() => {});
+  return Promise.race([pending, timeout]).finally(() => clearTimeout(timer));
+}
+function failureReason(error) {
+  return (error && error.message) || "未知错误";
+}
+function showFailure(dialog, id, focus, error) {
+  dialog.querySelector(".loading")?.remove();
+  const box = document.createElement("div");
+  box.className = "detail-error";
+  const text = document.createElement("p");
+  text.textContent = `读取节点详情失败：${failureReason(error)}`;
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "重试";
+  retry.onclick = () => {
+    box.remove();
+    detail(id, focus);
+  };
+  box.append(text, retry);
+  dialog.append(box);
+}
 // focus 为空时展示整台机器的综合信息；带 {kind, carrier} 时只展示那一格的详情：
 // 延迟格看该运营商的 TCP 延迟，回程格看该运营商的回程路径。
 export async function detail(id, focus = null) {
   const list = await api("/nodes");
   const n = list.find((x) => x.id === id);
-  if (!n) return;
+  if (!n) {
+    // 节点可能刚被删掉或改了可见性，此时列表里已经没有它：说清楚，别留一个空弹窗。
+    const open = document.querySelector(`#dialog[data-node-id="${id}"]`);
+    if (open && open.open) showFailure(open, id, focus, new Error("节点已不在列表里，可能已被删除或不再公开"));
+    return;
+  }
   const d = modal(n.name, `<div class="loading">读取节点详情…</div>`);
   d.dataset.nodeId = id;
-  const [history, obs, network] = await Promise.all([
-    api(`/nodes/${id}/history?hours=24`),
-    api(`/nodes/${id}/observations`),
-    api(`/nodes/${id}/network-history?hours=24`),
-  ]);
+  let history, obs, network;
+  try {
+    [history, obs, network] = await withDeadline(() =>
+      Promise.all([
+        api(`/nodes/${id}/history?hours=24`),
+        api(`/nodes/${id}/observations`),
+        api(`/nodes/${id}/network-history?hours=24`),
+      ]),
+    );
+  } catch (error) {
+    if (!d.open || d.dataset.nodeId !== id) return;
+    console.error("节点详情加载失败", `/api/v1/nodes/${id}`, error);
+    showFailure(d, id, focus, error);
+    return;
+  }
   if (!d.open || d.dataset.nodeId !== id) return;
   const reported = Array.isArray(n.ip_families) ? new Set(n.ip_families) : null;
   const hasIPv4 = reported
@@ -105,10 +160,12 @@ export async function detail(id, focus = null) {
   if (showAll) showAll.onclick = guard(() => detail(id));
   d.querySelector("#history-range")?.addEventListener("change", guard(async (e) => {
     const hours = Number(e.target.value);
-    const [samples, net] = await Promise.all([
-      api(`/nodes/${id}/history?hours=${hours}`),
-      api(`/nodes/${id}/network-history?hours=${Math.min(hours, 168)}`)
-    ]);
+    const [samples, net] = await withDeadline(() =>
+      Promise.all([
+        api(`/nodes/${id}/history?hours=${hours}`),
+        api(`/nodes/${id}/network-history?hours=${Math.min(hours, 168)}`),
+      ]),
+    );
     if (
       !d.open ||
       d.dataset.nodeId !== id ||

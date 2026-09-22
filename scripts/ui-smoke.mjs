@@ -111,6 +111,45 @@ assert.equal(w.document.querySelector("[data-detail-family]"), null, "a host wit
 assert(w.document.querySelector(".family-tag"), "a host with no reported family still shows a fixed tag");
 assert.equal(w.document.querySelector("#network-overview"), null, "network blocks stay hidden without a usable address family");
 $(".close").click();
+// 详情页任一请求失败时，弹窗必须说明原因并给出重试，而不是停在“读取节点详情…”。
+const realFetch = w.fetch;
+w.fetch = async (input, opts = {}) => {
+  if (String(input).includes("/observations"))
+    return new Response(JSON.stringify({ error: "详情接口故障" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  return realFetch(input, opts);
+};
+$(`[data-inspect="${created.id}"]`).click();
+await until(() => $(".detail-error"), "detail failure notice");
+assert(
+  $(".detail-error").textContent.includes("详情接口故障"),
+  "the dialog must show why the detail request failed",
+);
+assert.equal($(".loading"), null, "a failed request must not leave the loading state behind");
+w.fetch = realFetch;
+// 重试时节点已从列表消失（被删除或转为非公开）：必须给出说明，而不是留下空弹窗。
+w.fetch = async (input, opts = {}) => {
+  const response = await realFetch(input, opts);
+  if (!String(input).endsWith("/nodes")) return response;
+  const list = await response.json();
+  return new Response(JSON.stringify(list.filter((x) => x.id !== created.id)), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+};
+$(".detail-error button").click();
+await until(
+  () => $(".detail-error")?.textContent.includes("已不在列表里"),
+  "notice when the node disappeared from the list",
+);
+assert.equal($(".loading"), null, "a vanished node must not leave an empty dialog");
+w.fetch = realFetch;
+$(".detail-error button").click();
+await until(() => $(".family-tag"), "detail after retry");
+assert.equal($(".detail-error"), null, "a successful retry must clear the failure notice");
+$(".close").click();
 // Agent 上报双栈后，卡片与详情页都要能按地址族切换。
 const report = await fetch(base + "/api/v1/agent/report", {
   method: "POST",

@@ -845,6 +845,25 @@ button.node-name:hover {
   font-size: 14px;
 }
 
+/* 详情页请求失败时的兜底：说明原因并给一次重试，不再停在加载态。 */
+.detail-error {
+  margin: 18px 0 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 98, 95, 0.35);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.detail-error p {
+  margin: 0;
+  font-size: 13px;
+  color: #ff625f;
+}
+
 /* Admin Shell Layout */
 .admin-layout {
   display: grid;
