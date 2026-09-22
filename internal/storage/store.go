@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -292,6 +293,7 @@ func (s *Store) History(ctx context.Context, id string, hours int, now time.Time
 	}
 	defer rows.Close()
 	out := []model.Sample{}
+	skipped := 0
 	for rows.Next() {
 		var x model.Sample
 		var data string
@@ -299,9 +301,15 @@ func (s *Store) History(ctx context.Context, id string, hours int, now time.Time
 			return nil, err
 		}
 		if err = json.Unmarshal([]byte(data), &x.Metrics); err != nil {
-			return nil, err
+			// 坏掉的样本行（旧版本格式或半写入）只跳过自己：一台机器的历史不该
+			// 因为一行读不出来就整体打不开。
+			skipped++
+			continue
 		}
 		out = append(out, x)
+	}
+	if skipped > 0 {
+		slog.Warn("skipped unreadable samples", "node", id, "samples", skipped)
 	}
 	return out, rows.Err()
 }
@@ -505,12 +513,15 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 	return nil
 }
 func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([]model.Observation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT task,issued,finished,result FROM jobs WHERE node_id=? AND id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY task_id,json_extract(task,'$.kind'),json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier') ORDER BY issued DESC,id DESC) n FROM jobs WHERE node_id=?) WHERE n=1) ORDER BY task_id`, node, node)
+	// json_valid 挡住坏掉的任务 JSON：json1 遇到非法 JSON 会让整条语句报 "malformed JSON"，
+	// 一条旧数据不该让整台节点的观测列表打不开。
+	rows, err := s.db.QueryContext(ctx, `SELECT task,issued,finished,result FROM jobs WHERE node_id=? AND id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY task_id,json_extract(task,'$.kind'),json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier') ORDER BY issued DESC,id DESC) n FROM jobs WHERE node_id=? AND json_valid(task)) WHERE n=1) ORDER BY task_id`, node, node)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []model.Observation{}
+	skipped := 0
 	for rows.Next() {
 		var o model.Observation
 		var task string
@@ -520,13 +531,18 @@ func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([
 			return nil, err
 		}
 		if err = json.Unmarshal([]byte(task), &o.Task); err != nil {
-			return nil, err
+			// 任务 JSON 读不出来就没法把这条结果摆到面板上：跳过它，别让整个节点 500。
+			skipped++
+			continue
 		}
 		if result.Valid {
 			if err = json.Unmarshal([]byte(result.String), &o.Result); err != nil {
-				return nil, err
+				// 任务还在、结果坏了：这一条按“未知”显示，比整页打不开有用。
+				skipped++
+				o.Result = model.Result{Status: "unknown"}
+			} else {
+				o.At = finished.Int64
 			}
-			o.At = finished.Int64
 		} else {
 			o.Result.Status = "pending"
 			if now.Unix()-o.At > 90 {
@@ -535,6 +551,9 @@ func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([
 		}
 		o.Stale = now.Unix()-o.At > int64(o.Task.Interval*2+90)
 		out = append(out, o)
+	}
+	if skipped > 0 {
+		slog.Warn("skipped unreadable observations", "node", node, "rows", skipped)
 	}
 	return out, rows.Err()
 }

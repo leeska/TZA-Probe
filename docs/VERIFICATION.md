@@ -246,3 +246,14 @@ node scripts/ui-smoke.mjs
 - 改法：三个请求包进 `withDeadline()`（15 秒竞速截止；这里不用 `AbortController`，因为 jsdom 的 `AbortSignal` 与 node fetch 不同 realm，会让 CI 里的 DOM 测试直接抛错）；失败时移除 `.loading`，在弹窗里显示“读取节点详情失败：<原因>”并给出“重试”按钮，同时 `console.error` 记下失败的接口便于排查。`#history-range` 切换范围时同样带截止时间。节点已从 `/nodes` 列表消失（被删除或转为非公开）时，重试给出“节点已不在列表里，可能已被删除或不再公开”，不再留下空白弹窗。`styles.css` 新增 `.detail-error`，用 class 上色（页面 CSP 为 `style-src 'self'`，行内样式会被忽略）。
 - 验证：`scripts/ui-smoke.mjs` 新增断言——单接口 500 时弹窗必须写明原因且清掉加载态；重试时节点已从列表消失必须写明原因。修复前同一条断言超时失败（回归有效）。真实 Chrome 对着本地 Server 实测三条路径：单接口 500 → “读取节点详情失败：详情接口故障”＋重试按钮；点重试 → 正常渲染；请求永久挂起 → 15 秒后显示“读取节点详情失败：15 秒内没有响应”。`go test ./...`、`go vet ./...`、`gofmt`、`git diff --check`、`node --check`、`presentation-test.mjs`、`ui-smoke.mjs` 全绿。
 - 待确认：生产节点上真正失败的是哪个请求（现在弹窗会直接写明；也可看 5 秒 toast 文案或浏览器 Network 面板）。常见可能是某个接口 500、反代超时，或列表里的节点已被删除/转为非公开而页面未刷新。
+
+## 2026-09-22 一条旧数据行不再让节点详情 500
+
+- 问题：弹窗能报错了，紧接着生产节点报出「读取节点详情失败：服务器处理失败」。`服务器处理失败` 是 `fail()` 的默认分支——即三个接口里有一个返回 500，真实错误只写进服务端日志。
+- 定位：在本地库上逐条构造可疑行，确认 `json_extract` 的两类返回值都能打断查询，并复现出与生产一致的 `{"error":"服务器处理失败"}`：
+  - **缺失键 → NULL**：旧版本写下的 TCP 任务 JSON 没有 `family` / `port`、结果 JSON 没有 `sent` 时，NULL 直接 Scan 进 Go 的 `string` / `int` 报 `converting NULL to string/int is unsupported`（`sum()` 分组全为 NULL 时同理）→ `/network-history` 500。
+  - **非法 JSON**：json1 遇到坏 JSON 会让整条语句报 `SQL logic error: malformed JSON` → `/network-history` 与 `/observations` 500。
+  - **样本 payload 不是 Metrics 形状**（`[]`、`{"cpu":"x"}`、非 JSON）→ `/history` 500。
+- 改法：`NetworkHistory` 的每个 json_extract 字段 COALESCE（family/host/region/carrier → `''`，port → `0`，sent/received → `0`）；坏 JSON 用 `json_valid` 挡在聚合之外（`CASE WHEN json_valid(task) THEN json_extract(...) END`，结果列先在子查询里 `CASE WHEN json_valid(result) THEN result END` 归一化，`node_id`/`finished` 过滤下推到子查询以保住索引）；任务 JSON 解析不了的行只跳过自己并计数。`family` 缺失且目标是 IP 字面量时按地址补 `ipv4`/`ipv6`（地址决定，不是猜），旧数据才能与新数据并进同一条曲线。`History` 跳过读不出来的样本行；`Observations` 跳过任务 JSON 坏掉的行、结果坏掉的行按 `unknown` 显示。三处各记一条 `slog.Warn` 汇总被跳过的行数，不留静默丢数据。
+- 验证：新增 `internal/storage/legacy_rows_test.go` 三个用例（旧任务行 / 坏任务与坏结果行 / 坏样本行）。修复前分别以 `converting NULL...`、`malformed JSON` 失败，现在返回成功且数据正确——旧行 latency 保留、缺失 `sent` 不伪造失败率、坏结果按“无结果”聚合而不是零延迟。真实 Server + 真实 DB 端到端：往库里灌入这四类旧行后三个接口全部 200（此前 `/network-history` 为 500），面板点开该节点正常渲染（2 个区块、7 条结果、无失败提示）。`go test ./...`、`go test -race ./internal/storage/ ./internal/httpapi/`、`go vet ./...`、`gofmt`、`git diff --check`、`node --check`、`presentation-test.mjs`、`ui-smoke.mjs` 全绿。
+- 待确认：生产库中具体是哪一类旧行（服务端日志 `request failed` 那一行的 error 文本会写明；`converting NULL ...` 属缺失键，`malformed JSON` 属坏 JSON）。无论哪类，本提交都已覆盖。
