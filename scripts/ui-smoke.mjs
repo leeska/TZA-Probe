@@ -356,6 +356,20 @@ assert(
   ),
   "the multi-line overview must stretch its plot to its box",
 );
+// 聚焦视图（点卡片上的某一格）不再给「查看全部信息」，改成时间范围下拉；网络历史最多 7 天，
+// 所以那里的下拉只有 1 小时 / 24 小时 / 7 天三档，主机历史所在的综合视图保留 30 天。
+const detailSource = await (await fetch(base + "/detail.js")).text();
+assert(!/show-all|查看全部信息/.test(detailSource), "the focused view must not keep a 查看全部信息 button");
+assert(
+  /focusKind !== "route" \? historyRange\(168\)/.test(detailSource),
+  "the focused latency view must offer the period dropdown",
+);
+assert(/hours <= maxHours/.test(detailSource), "the period dropdown must drop ranges the history cannot serve");
+assert.equal(
+  [...$("#history-range").options].length,
+  4,
+  "the combined view keeps all four host-history ranges",
+);
 assert(
   /\.chart svg \* \{[^}]*vector-effect:\s*non-scaling-stroke/.test(styles),
   "a stretched chart must keep its stroke width",
@@ -580,9 +594,9 @@ const guide = probe.querySelector(".chart-guide");
 assert(Math.abs(parseFloat(guide.style.left) - 340) < 0.1, "the guide must follow the pointer column, got " + guide.style.left);
 assert(Math.abs(parseFloat(guide.style.top) - 0) < 0.1 && Math.abs(parseFloat(guide.style.height) - 120) < 0.1, "the guide must stay inside the plot, got " + guide.style.top + "/" + guide.style.height);
 assert.equal(probe.querySelectorAll(".chart-tip i.lc0, .chart-tip i.lc1").length, 2, "each series keeps its own colour chip");
-// 读数框摆进绘图区正中：贴在图上方会压住标题行。jsdom 里 offsetHeight 为 0，所以取到的
-// 正好是绘图区的垂直中点（120 高的一半）。
-assert.equal(tip.style.top, "60px", "the readout must sit inside the plot, got " + tip.style.top);
+// 读数框先试绘图区正中，那一带有曲线就让到空的一侧。探针两条序列在 y=59 / 89.6，居中的
+// 那一带被占住、曲线整体偏下，于是贴上沿（y=0）。jsdom 里 offsetHeight 为 0。
+assert.equal(tip.style.top, "0px", "the readout must dodge the curve instead of covering it, got " + tip.style.top);
 assert.equal(tip.querySelectorAll("span")[0].title, "四川 · 电信 · 118.112.1.144", "each row keeps the full target in its title");
 assert(parseFloat(tip.style.left) >= 0 && parseFloat(tip.style.left) <= 680, "the readout must stay inside the chart, got " + tip.style.left);
 // 单序列：数据点必须落在曲线的同一点上（value 20 在 120 高的绘图区里是 y=89.6）。
@@ -591,6 +605,8 @@ singleBody.dispatchEvent(new w.MouseEvent("pointermove", { clientX: 340, clientY
 const singleTip = single.querySelector(".chart-tip");
 const dot = single.querySelector(".chart-dot");
 assert(/20\.0 ms/.test(singleTip.textContent), "a single-line chart reports its value, got " + singleTip.textContent);
+// 曲线不在中点那一带时，读数框就留在正中（value 20 → y=89.6，离中心很远）。
+assert.equal(singleTip.style.top, "60px", "a clear centre keeps the readout centred, got " + singleTip.style.top);
 assert(!dot.hidden, "a single-line chart must mark the point it is reading");
 assert(Math.abs(parseFloat(dot.style.left) - 340) < 0.1 && Math.abs(parseFloat(dot.style.top) - 89.6) < 0.1, "the dot must sit on the line, got " + dot.style.left + "/" + dot.style.top);
 chartBody.dispatchEvent(new w.MouseEvent("pointerleave", { bubbles: true }));

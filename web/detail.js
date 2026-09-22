@@ -97,7 +97,7 @@ export async function detail(id, focus = null) {
           : `<div id="network-overview"></div>`
         : `<div id="network-overview"></div><div id="route-details"></div>`
       : `<p class="hint">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
-  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3><select id="history-range" aria-label="历史时间范围"><option value="1">最近 1 小时</option><option value="24" selected>最近 24 小时</option><option value="168">最近 7 天</option><option value="720">最近 30 天</option></select></div><div id="charts">${hostCharts(history, 24)}</div>`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused ? '<button type="button" id="show-all">查看全部信息</button>' : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际观测到的骨干命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG）；ASN 优先、跳地址前缀兜底，CN2 跳之后仍走 59.43.* 到目标省份记为 GIA、转回 163 骨干（202.97.*）落地记为 GT，一条电信线路只给一个标签，仍不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
+  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24)}</div>`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际观测到的骨干命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG）；ASN 优先、跳地址前缀兜底，CN2 跳之后仍走 59.43.* 到目标省份记为 GIA、转回 163 骨干（202.97.*）落地记为 GT，一条电信线路只给一个标签，仍不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
@@ -116,7 +116,8 @@ export async function detail(id, focus = null) {
     // 每个目标一条线，悬停就能读出任意时刻的延迟或丢包；单目标的「查看趋势」折叠图已删掉
     // ——同一份数据重复一遍，只会让人分不清哪条是延迟、哪条是回程。
     const series = networkSeries.filter((s) => s.family === selectedFamily);
-    overview.innerHTML = networkOverview(series, overviewMetric, selectedHours);
+    // 网络历史最多 7 天：下拉选到 30 天时，曲线和标题都按实际能查到的窗口说。
+    overview.innerHTML = networkOverview(series, overviewMetric, Math.min(selectedHours, 168));
     d.querySelectorAll("[data-network-metric]").forEach((b) => (b.onclick = () => {
       overviewMetric = b.dataset.networkMetric;
       renderNetwork();
@@ -152,8 +153,6 @@ export async function detail(id, focus = null) {
         renderRoutes(b.dataset.detailFamily);
       }),
   );
-  const showAll = d.querySelector("#show-all");
-  if (showAll) showAll.onclick = guard(() => detail(id));
   d.querySelector("#history-range")?.addEventListener("change", guard(async (e) => {
     const hours = Number(e.target.value);
     const [samples, net] = await withDeadline(() =>
@@ -170,13 +169,28 @@ export async function detail(id, focus = null) {
       return;
     selectedHours = hours;
     networkSeries = focused ? net.filter((x) => carrierOf(x.carrier) === focusCarrier) : net;
-    d.querySelector("#charts").innerHTML = hostCharts(samples, hours);
+    // 聚焦视图没有主机历史，只有网络曲线——那里没有 #charts，别把整段交互打断。
+    const hosts = d.querySelector("#charts");
+    if (hosts) hosts.innerHTML = hostCharts(samples, hours);
     renderNetwork();
   }));
 }
 
 function targetLabel(series) {
   return [series.region, series.carrier || "自定义"].filter(Boolean).join(" · ") || series.name || "网络目标";
+}
+
+// 时间范围下拉：主机历史支持 30 天，网络历史（/network-history）最多只有 7 天，
+// 聚焦视图因此只给前三档——选了 30 天却只画 7 天是骗人的。
+function spanLabel(hours) {
+  return hours >= 24 && hours % 24 === 0 ? hours / 24 + " 天" : hours + " 小时";
+}
+
+function historyRange(maxHours = 720) {
+  return `<select id="history-range" aria-label="历史时间范围">${[[1, "最近 1 小时"], [24, "最近 24 小时"], [168, "最近 7 天"], [720, "最近 30 天"]]
+    .filter(([hours]) => hours <= maxHours)
+    .map(([hours, text]) => `<option value="${hours}"${hours === 24 ? " selected" : ""}>${text}</option>`)
+    .join("")}</select>`;
 }
 
 function hostCharts(samples, hours) {
@@ -213,5 +227,5 @@ function networkOverview(series, metric, hours) {
     return `<polyline class="overview-line ${colorClass(i)}" points="${points}" />`;
   }).join("");
   const legend = usable.map((s, i) => `<span title="${esc(seriesFull(s))}"><i class="legend-dot ${colorClass(i)}"></i>${esc(seriesName(s))}</span>`).join("");
-  return `<figure class="network-overview chart" data-series="${esc(JSON.stringify(hover))}" data-range="${first},${last}" data-ceiling="${maxValue}"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${hours} 小时 · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><div class="chart-plot">${yAxis}<div class="chart-body"><svg viewBox="0 0 680 120" preserveAspectRatio="none" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线，纵轴 0 到 ${esc(tick(maxValue))}"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg>${axisRow(first, last)}<div class="overview-legend">${legend}</div></div></div></figure>`;
+  return `<figure class="network-overview chart" data-series="${esc(JSON.stringify(hover))}" data-range="${first},${last}" data-ceiling="${maxValue}"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${spanLabel(hours)} · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><div class="chart-plot">${yAxis}<div class="chart-body"><svg viewBox="0 0 680 120" preserveAspectRatio="none" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线，纵轴 0 到 ${esc(tick(maxValue))}"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg>${axisRow(first, last)}<div class="overview-legend">${legend}</div></div></div></figure>`;
 }

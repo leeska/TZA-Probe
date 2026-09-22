@@ -104,13 +104,14 @@ export function wireCharts(root) {
       guide.style.top = px(top);
       guide.style.height = px(rect.height);
       const only = rows.length === 1 ? rows[0] : null;
+      // 数值 → 绘图区里的 y：纵轴 0 在 110、量程在 8（viewBox 高 120）。
+      const plotY = (value) =>
+        top + ((110 - (Math.min(ceiling, Math.max(0, value)) / ceiling) * 102) / 120) * rect.height;
       if (only && only.value != null && Number.isFinite(only.value) && ceiling > 0) {
-        const y = top +
-          ((110 - (Math.min(ceiling, Math.max(0, only.value)) / ceiling) * 102) / 120) * rect.height;
         dot.hidden = false;
         dot.className = "chart-dot " + (only.color || "");
         dot.style.left = px(x);
-        dot.style.top = px(y);
+        dot.style.top = px(plotY(only.value));
       } else {
         dot.hidden = true;
       }
@@ -123,13 +124,25 @@ export function wireCharts(root) {
           )
           .join("");
       overlay.hidden = false;
-      // 读数框摆在绘图区正中间：贴在图上方会压住标题行（手机上一行标不出来时最明显），
-      // 横向仍跟着指针走并夹在图表里，纵向夹在绘图区内不掉出去。
+      // 读数框的位置：先试绘图区正中，那一带正好压着曲线就让到曲线更少的一侧——看这一列
+      // 各条曲线的 y，整体偏上就贴下沿、偏下就贴上沿。横向仍跟着指针走并夹在图表里。
       const tipWidth = tip.offsetWidth;
       const tipHeight = tip.offsetHeight;
       tip.style.left = px(Math.min(Math.max(x - tipWidth / 2, 0), Math.max(0, box.width - tipWidth)));
-      const centered = top + (rect.height - tipHeight) / 2;
-      tip.style.top = px(Math.min(Math.max(centered, top), Math.max(top, top + rect.height - tipHeight)));
+      const plotTop = top;
+      const plotBottom = top + rect.height;
+      const clampTop = (value) => Math.min(Math.max(value, plotTop), Math.max(plotTop, plotBottom - tipHeight));
+      const curve = rows
+        .filter((row) => row.value != null && Number.isFinite(row.value) && ceiling > 0)
+        .map((row) => plotY(row.value));
+      let chosen = clampTop(plotTop + (rect.height - tipHeight) / 2);
+      const covers = (candidate) =>
+        curve.some((y) => y > candidate - 6 && y < candidate + tipHeight + 6);
+      if (curve.length && covers(chosen)) {
+        const mean = curve.reduce((sum, y) => sum + y, 0) / curve.length;
+        chosen = clampTop(mean < plotTop + rect.height / 2 ? plotBottom - tipHeight : plotTop);
+      }
+      tip.style.top = px(chosen);
     };
     body.addEventListener("pointermove", draw);
     body.addEventListener("pointerleave", () => {

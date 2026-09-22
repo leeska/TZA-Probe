@@ -1723,8 +1723,10 @@ pre,
 
 .section-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 8px 12px;
   margin: 22px 0 12px;
 }
 
@@ -1732,6 +1734,19 @@ pre,
   font-size: 14px;
   font-weight: 650;
   margin: 0;
+  min-width: 0;
+}
+
+/* 头部右侧的动作区（协议切换、时间范围下拉）在窄屏上换行，别把标题挤没。 */
+.heading-actions {
+  flex-wrap: wrap;
+}
+
+.section-head select,
+.heading-actions select {
+  padding: 4px 8px;
+  font-size: 11px;
+  max-width: 100%;
 }
 
 /* Charts */
