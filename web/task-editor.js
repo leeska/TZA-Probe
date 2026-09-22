@@ -1,4 +1,5 @@
 import { esc, modal, guard, toast, send } from "./api.js";
+import { searchMatch } from "./search.js";
 import { regionOptions } from "./regions.js";
 
 const carriers = ["电信", "联通", "移动", "其他"];
@@ -107,7 +108,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     <form id="task-form">
       <section class="form-section"><h3>1. 选择目标</h3>
         <div class="catalog-filters">
-          <label>搜索目录<input id="catalog-search" placeholder="输入地区、运营商或地址" type="search"></label>
+          <label>搜索目录<input id="catalog-search" placeholder="地区、运营商、地址（支持 hb、ct、hk 这类拼音与缩写）" type="search"></label>
           <label>地区<select id="catalog-region"><option value="">全部地区</option>${options([...new Set(catalog.targets.map((x) => x.region))])}</select></label>
           <label>运营商<select id="catalog-carrier"><option value="">全部运营商</option>${options(carriers)}</select></label>
         </div>
@@ -199,16 +200,14 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     el("route_interval").disabled = !el("route").checked;
   }
   function renderCatalog() {
-    const query = d.querySelector("#catalog-search").value.trim().toLowerCase();
+    const query = d.querySelector("#catalog-search").value;
     const region = d.querySelector("#catalog-region").value;
     const carrier = d.querySelector("#catalog-carrier").value;
     visible = [...groups].filter(
       ([key, xs]) =>
         (!region || xs[0].region === region) &&
         (!carrier || xs[0].carrier === carrier) &&
-        (key + " " + xs.map((x) => x.host).join(" "))
-          .toLowerCase()
-          .includes(query),
+        searchMatch(query, key, ...xs.map((x) => x.host)),
     );
     d.querySelector("#catalog-count").textContent = `${visible.length} 组目标`;
     d.querySelector("#catalog-results").innerHTML =

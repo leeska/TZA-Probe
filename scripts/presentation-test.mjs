@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { chart } from "../web/charts.js";
+import { fold, searchKeys, searchMatch } from "../web/search.js";
 const samples = [0, 60, 3600, 3660].map((at) => ({
   at,
   metrics: { cpu: 25, memory_used: 50, memory_total: 100 },
@@ -65,3 +66,36 @@ assert.throws(() => stampISO("2026-09-01"), /YYYY-MM-DD/, "缺时刻要报错");
 assert.throws(() => stampISO("2026-02-31 00:00:00"), /不存在/, "2 月 31 日必须挡住，不能被 Date 顺延");
 assert.throws(() => stampISO(""), /YYYY-MM-DD/);
 console.log("PASS: subdivided two-line time axis, hover payload and palette classes.");
+
+// 筛选：中文、全拼、拼音首字母、英文与代号都要命中（web/search.js）。
+for (const [text, query] of [
+  ["香港", "香港"], ["香港", "xianggang"], ["香港", "XG"], ["香港", "hk"], ["香港", "hongkong"], ["香港", "Hong Kong"],
+  ["河北", "河北"], ["河北", "hebei"], ["河北", "hb"], ["湖北", "hb"],
+  ["四川", "sc"], ["四川", "sichuan"], ["重庆", "cq"], ["黑龙江", "hlj"], ["内蒙古", "nmg"],
+  ["上海", "上海"], ["上海", "shanghai"], ["深圳", "shenzhen"],
+  ["电信", "电信"], ["电信", "dianxin"], ["电信", "dx"], ["电信", "ct"], ["电信", "telecom"],
+  ["联通", "cu"], ["联通", "liantong"], ["联通", "unicom"], ["移动", "cmcc"], ["移动", "yd"],
+  ["美国", "us"], ["美国", "usa"], ["美国", "meiguo"], ["美国", "united states"], ["美国", "los angeles"],
+  ["新加坡", "sg"], ["日本", "jp"], ["德国", "de"], ["英国", "uk"], ["加拿大", "ca"], ["澳大利亚", "au"],
+])
+  assert(searchMatch(query, text), `「${query}」应命中「${text}」`);
+for (const [text, query] of [
+  ["香港", "beijing"], ["香港", "us"], ["电信", "cu"], ["美国", "jp"], ["河北", "xianggang"], ["河北", "nmg"],
+])
+  assert(!searchMatch(query, text), `「${query}」不该命中「${text}」`);
+// 目录里的「地区 / 运营商」和地址串在一起时，三者任一处命中都算命中。
+assert(searchMatch("hb ct", "河北 / 电信", "219.148.62.1"));
+assert(searchMatch("219.148", "河北 / 电信", "219.148.62.1"));
+assert(!searchMatch("hb cu", "河北 / 电信", "219.148.62.1"), "空格分隔的关键词是 AND");
+assert(searchMatch("", "河北 / 电信"), "空关键词保留全部");
+assert(searchMatch("  ", "河北 / 电信"));
+assert(searchMatch("hb/ct", "河北 / 电信"), "斜杠也算词间分隔");
+assert(!searchMatch("河北", "香港", "1.1.1.1"));
+// 拼音表外的汉字退回纯文本匹配，不会因为查不到拼音而误命中。
+assert(searchMatch("鲸落机房", "鲸落机房 香港"));
+assert(!searchMatch("jingluojifang", "鲸落机房 香港"));
+assert.equal(fold("Hong Kong / 香港"), "hongkong香港");
+assert(searchKeys("河北 / 电信").includes("hebeidianxin"), "全拼");
+assert(searchKeys("河北 / 电信").includes("hbdx"), "首字母");
+assert(searchKeys("河北 / 电信").includes("ct"), "代号");
+console.log("PASS: catalog search matches Chinese, pinyin, initials, English and carrier codes.");

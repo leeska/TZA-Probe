@@ -1,4 +1,5 @@
 import { api, send, esc, modal, guard, toast } from "./api.js";
+import { searchMatch } from "./search.js";
 import { date, statusName, reasonName } from "./format.js";
 
 export async function controlTask(id, action, refresh) {
@@ -9,9 +10,9 @@ export async function controlTask(id, action, refresh) {
 
 export function bindTasks(tasks, nodes, refresh) {
   const selected = new Set(tasks.length === 1 ? tasks[0].node_ids.filter((id) => nodes.some((n) => n.id === id)) : []);
-  const d = modal("批量绑定节点", `<form><p>为 ${tasks.length} 个任务设置相同的节点列表，将替换原绑定。取消全部选择会停止这些任务的调度。</p><label>搜索节点<input id="node-search" type="search" placeholder="名称 / 分组 / 地区"></label><div class="catalog-toolbar"><button type="button" id="select-visible">选中筛选结果</button><button type="button" id="clear-nodes">清空选择</button></div><div id="binding-nodes"></div><p id="binding-count"></p><div class="form-footer"><button type="submit" class="primary">保存绑定</button></div></form>`);
+  const d = modal("批量绑定节点", `<form><p>为 ${tasks.length} 个任务设置相同的节点列表，将替换原绑定。取消全部选择会停止这些任务的调度。</p><label>搜索节点<input id="node-search" type="search" placeholder="名称 / 分组 / 地区（支持拼音与缩写）"></label><div class="catalog-toolbar"><button type="button" id="select-visible">选中筛选结果</button><button type="button" id="clear-nodes">清空选择</button></div><div id="binding-nodes"></div><p id="binding-count"></p><div class="form-footer"><button type="submit" class="primary">保存绑定</button></div></form>`);
   let query = "";
-  const matches = () => nodes.filter((n) => [n.name,n.group,n.region].join(" ").toLowerCase().includes(query));
+  const matches = () => nodes.filter((n) => searchMatch(query, n.name, n.group, n.region));
   const render = () => {
     d.querySelector("#binding-nodes").innerHTML = matches().map((n) => `<label class="checkbox"><input type="checkbox" data-node="${esc(n.id)}" ${selected.has(n.id) ? "checked" : ""}>${esc(n.name)} · ${esc(n.group || "默认")}</label>`).join("") || '<p class="hint">没有匹配节点</p>';
     d.querySelector("#binding-count").textContent = `已选 ${selected.size} 个节点`;
@@ -20,7 +21,7 @@ export function bindTasks(tasks, nodes, refresh) {
       d.querySelector("#binding-count").textContent = `已选 ${selected.size} 个节点`;
     });
   };
-  d.querySelector("#node-search").oninput = (e) => {query = e.target.value.trim().toLowerCase(); render();};
+  d.querySelector("#node-search").oninput = (e) => {query = e.target.value; render();};
   d.querySelector("#select-visible").onclick = () => {matches().forEach((n) => selected.add(n.id)); render();};
   d.querySelector("#clear-nodes").onclick = () => {selected.clear(); render();};
   render();

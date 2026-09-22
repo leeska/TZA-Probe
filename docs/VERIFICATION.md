@@ -307,3 +307,12 @@ node scripts/ui-smoke.mjs
 - 原因：候选来自内置三网目录的 `region` 集合，目录只覆盖国内三网，海外地区从来没有进入过列表；输入框本身允许自由填写，所以只是"看不到、要手打"。
 - 改法：新增 `web/regions.js`（`overseasRegions` + `regionOptions()`），把 40 个常用海外地区与目录地区、已有历史值合并后按拼音排序，节点表单的地区输入/两个地区下拉和任务编辑器的自定义目标地区共用这一份；仍然可以填列表外的值。
 - 验证：真实 Chrome 打开节点编辑页，建议列表 71 项，含香港、美国、日本、新加坡、澳大利亚、英国、德国，输入框保持自由填写；打开「卡片代表地区」下拉截图确认海外地区与目录省份同列可见。「编辑节点」的既有地区值（香港/上海）不受影响。`ui-smoke.mjs` 断言节点建议列表含香港/美国等四项且总数大于 30、仍带 `list` 属性（可自由输入）、任务编辑器的自定义目标地区候选同样含海外地区。`go test ./...`、`go vet`、`gofmt`、`node --check`、`presentation-test.mjs`、`ui-smoke.mjs` 全绿。
+
+## 2026-09-22 搜索统一支持拼音、英文与代号
+
+- 现场反馈（附面板截图）：任务目录的搜索框只认字面文字，"hb"、"hk" 这类输入搜不到东西。
+- 改法：新增 `web/search.js`（`fold` / `searchKeys` / `searchMatch`）与 `web/pinyin.js`（285 个字、213 个词的拼音表，由 `scripts/gen-pinyin.mjs` 用 pinyin-pro 生成，运行时不带依赖），目录搜索、任务页的批量绑定节点搜索、公开面板搜索全部改为走它。命中键 = 原文 + 全拼 + 首字母 + 地区/运营商代号（hk / hongkong / ct / telecom / us / usa…）；查询按空白、斜杠、顿号拆词，词间是「且」。
+- 多音字地名按词定音：重庆写作 chongqing（逐字会读成 zhongqing）、厦门 xiamen、蚌埠 bengbu。表外的汉字（如“鲸落机房”）退回纯文本匹配，不会误报。
+- 验证：真机 Chrome，目录搜索 `hebei` → 3 组目标（全部河北）、`hb` → 6 组（河北 + 湖北，首字母撞名的正确行为）、`hb ct` → 2 组（两省的电信）、`ct` / `telecom` → 31 组（全部电信）、`chongqing` → 3 组（重庆）、`us` / `hk` → 0 组（目录里没有海外目标）；节点搜索 `香港` / `hk` / `hongkong` / `xg` / `xianggang` 都只命中香港节点（示例 `hk-nat`），`美国` / `shanghai` 命中 0。
+- 顺带修掉一个真 bug：`web/task-controls.js` 用了 `searchMatch` 却没 import，批量绑定节点弹窗打开后在控制台报 `Uncaught ReferenceError: searchMatch is not defined`，节点列表整块空白（`ui-smoke` 的新断言先抓到的）。
+- 回归：`presentation-test.mjs` 新增 60 余条匹配断言（含正反例、AND、斜杠分词、表外汉字）；`ui-smoke.mjs` 断言目录搜索的中文/全拼/首字母/代号/AND/地址、节点搜索的 8 种写法、公开面板的拼音搜索。`go test ./...`、`go vet`、`gofmt`、`node --check`、两套脚本全绿。

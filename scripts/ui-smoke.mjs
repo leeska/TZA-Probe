@@ -94,6 +94,7 @@ assert(form);
 const name = "UI 验收 " + Date.now();
 set(form, "name", name);
 set(form, "representative", "上海");
+set(form, "region", "香港");
 set(form, "quota", 2000);
 set(form, "price", 12.8);
 set(form, "expires_at", "2027-09-18 03:04:05");
@@ -268,6 +269,32 @@ picker.value = "不存在地区";
 picker.dispatchEvent(new w.Event("input", { bubbles: true }));
 assert.equal(w.document.querySelectorAll("[data-target]").length, 0);
 assert.equal(w.document.querySelectorAll("[data-remove]").length, 3);
+// 搜索同时支持中文、全拼、拼音首字母和代号（web/search.js）：
+// 上海 = 上海 / shanghai / sh…，电信 = 电信 / dianxin / dx / ct / telecom。
+const searchCatalog = (text) => {
+  picker.value = text;
+  picker.dispatchEvent(new w.Event("input", { bubbles: true }));
+  return [...w.document.querySelectorAll("[data-target]")].map((i) => i.dataset.target);
+};
+const regionOf = (target) => target.split(" / ")[0];
+assert.deepEqual(searchCatalog("hebei"), searchCatalog("河北"), "全拼 hebei 必须与中文同结果");
+assert.equal(searchCatalog("hebei").length, 3);
+assert(searchCatalog("hebei").every((t) => regionOf(t) === "河北"));
+// hb 是河北与湖北共同的首字母，两个都应命中：不能漏，也不能只挑一个。
+const initialHit = searchCatalog("hb").map(regionOf);
+assert(initialHit.length === 6 && new Set(initialHit).size === 2 && ["河北", "湖北"].every((r) => initialHit.includes(r)), `hb 应命中河北与湖北，实际 ${JSON.stringify(initialHit)}`);
+assert.equal(searchCatalog("ct").length, 31, "代号 ct 必须命中全部电信目标");
+assert(searchCatalog("ct").every((t) => t.endsWith("电信")));
+assert.equal(searchCatalog("telecom").length, 31, "英文 telecom 与代号 ct 同结果");
+// hb 同时是河北与湖北的首字母，AND 之后两个省各剩电信一组。
+assert.equal(searchCatalog("hb ct").length, 2, "空格分隔的关键词是 AND：hb + ct");
+assert.deepEqual(searchCatalog("hb ct").map(regionOf).sort(), ["河北", "湖北"]);
+assert.equal(searchCatalog("hebei ct").length, 1, "全拼 hebei 只命中河北");
+assert.equal(searchCatalog("hb dx").length, 2, "混用首字母与拼音缩写也要能命中");
+const catalogHosts = (await (await fetch(base + "/api/v1/admin/catalog", { headers: adminHeaders })).json()).targets.map((x) => x.host);
+assert(searchCatalog(catalogHosts[0]).length >= 1, "目录地址本身也要能搜到");
+picker.value = "";
+picker.dispatchEvent(new w.Event("input", { bubbles: true }));
 form = $("#dialog form");
 assert(form.elements.tcp.checked && form.elements.route.checked);
 assert(form.elements.ipv4.checked && form.elements.ipv6.checked);
@@ -377,6 +404,20 @@ const editedTask = (
 assert.equal(editedTask.targets.length, 7, "5 catalog addresses (电信 only IPv4) plus the custom dual-stack pair");
 assert.equal(editedTask.targets.filter((x) => x.carrier === "其他").length, 2);
 assert.equal(editedTask.node_ids.length, 1);
+// 节点搜索同样支持拼音与代号（web/search.js）：香港节点用 hk / hongkong / xg / xianggang / 中文 都能搜到。
+$('[data-bind-task="' + createdTask.id + '"]').click();
+await until(() => $("#node-search"), "bind dialog");
+const nodeQuery = $("#node-search");
+const shownNodes = () => [...w.document.querySelectorAll("[data-node]")].map((i) => i.closest("label").textContent.trim());
+for (const query of ["香港", "hk", "HK", "hongkong", "xg", "xianggang", "xiang", "gang"]) {
+  nodeQuery.value = query;
+  nodeQuery.dispatchEvent(new w.Event("input", { bubbles: true }));
+  assert(shownNodes().some((t) => t.includes(name)), `「${query}」应搜到香港节点，实际 ${JSON.stringify(shownNodes())}`);
+}
+nodeQuery.value = "美国";
+nodeQuery.dispatchEvent(new w.Event("input", { bubbles: true }));
+assert(!shownNodes().some((t) => t.includes(name)), "美国 不该命中香港节点");
+$(".close").click();
 $('[data-tab="alerts"]').click();
 await until(() => $("#configure-webhook"), "alert page");
 $("#configure-webhook").click();
@@ -415,6 +456,12 @@ const publicSearch = publicDOM.window.document.querySelector("#search");
 publicSearch.value = "no-such-node-fixture";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
 assert(publicDOM.window.document.querySelector(".empty"));
+// 公开页搜索同样吃拼音与代号：hk / xianggang / 香港 都要能搜到那台香港节点。
+for (const query of ["hk", "xianggang", "xg", "香港"]) {
+  publicSearch.value = query;
+  publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+  assert(publicDOM.window.document.body.textContent.includes(name), `公开页「${query}」应搜到香港节点`);
+}
 publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
 // 延迟按运营商分四格显示，与三网回程同构；地区取延迟地区，其次代表地区。
