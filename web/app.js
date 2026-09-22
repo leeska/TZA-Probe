@@ -176,7 +176,12 @@ const scrolling = () => Date.now() - lastScrollAt < 1200;
 
 // 文本 / HTML 先比一遍再写：数值没变就不碰 DOM（每秒那层刷新因此只写真正在动的几个数字）。
 function setHTML(el, html) {
-  if (el && el.innerHTML !== html) el.innerHTML = html;
+  if (!el || el.__html === html) return;
+  // 补丁而不是替换：元素本身不换，WebKit 才不会重挑滚动锚点（数据见 patchInto 上方注释）。
+  const fresh = document.createElement("div");
+  fresh.innerHTML = html;
+  if (!patchInto(el, fresh)) el.innerHTML = html;
+  el.__html = html;
 }
 function setText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
@@ -213,6 +218,37 @@ async function liveTick() {
 // 每张卡片上一次渲染出来的 HTML：下次比对用，内容没变就不碰 DOM。
 const renderedHTML = new WeakMap();
 
+// 只写变化、不换元素的 DOM 补丁。替换元素会让 WebKit 重新挑选滚动锚点，用户看到的是内容整块位移：
+// 线上实测停在离底 40px 处，30 秒位移 9 次、每次 163px；把页面定时器全停掉则 0 次。
+// 所以结构相同（标签、层级、兄弟数一致）时只改文本与属性，element 本身一个都不换。
+const PATCH_ATTRS = (el) => {
+  const names = new Set();
+  for (const a of el.attributes || []) names.add(a.name);
+  return names;
+};
+function patchInto(el, next) {
+  const a = el.childNodes;
+  const b = next.childNodes;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (x.nodeType !== y.nodeType) return false;
+    if (x.nodeType === 3) {
+      if (x.data !== y.data) x.data = y.data;
+      continue;
+    }
+    if (x.nodeType !== 1) continue;
+    if (x.tagName !== y.tagName || x.childNodes.length !== y.childNodes.length) return false;
+    if (!patchInto(x, y)) return false;
+    for (const name of PATCH_ATTRS(x)) if (!y.hasAttribute(name)) x.removeAttribute(name);
+    for (const attr of y.attributes || []) {
+      if (x.getAttribute(attr.name) !== attr.value) x.setAttribute(attr.name, attr.value);
+    }
+  }
+  return true;
+}
+
 function renderCards() {
   const filtered = nodes.filter(
     (n) =>
@@ -231,10 +267,12 @@ function renderCards() {
   const sameSet = shown.length === filtered.length && shown.every((el, i) => el.dataset.node === filtered[i].id);
   if (sameSet) {
     shown.forEach((el, i) => {
-      if (renderedHTML.get(el) !== wanted[i]) {
-        el.innerHTML = wanted[i];
-        renderedHTML.set(el, wanted[i]);
-      }
+      if (renderedHTML.get(el) === wanted[i]) return;
+      const fresh = document.createElement("div");
+      fresh.innerHTML = wanted[i];
+      // 结构一样就只写变化的文本/属性；结构真变了（行数增减）才兜底替换这一张卡的内容。
+      if (!patchInto(el, fresh)) el.innerHTML = wanted[i];
+      renderedHTML.set(el, wanted[i]);
     });
   } else {
     list.innerHTML = wanted.length

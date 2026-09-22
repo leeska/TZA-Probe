@@ -383,7 +383,8 @@ assert(
 );
 // 没变就不写 DOM：每秒那层只该写真正在动的数字。
 assert(
-  /function setHTML\(el, html\) \{\n\s*if \(el && el\.innerHTML !== html\)/.test(appSource) &&
+  /function setHTML\(el, html\) \{\n\s*if \(!el \|\| el\.__html === html\) return;/.test(appSource) &&
+    /if \(!patchInto\(el, fresh\)\) el\.innerHTML = html;/.test(appSource) &&
     /function setText\(el, text\) \{\n\s*if \(el && el\.textContent !== text\)/.test(appSource),
   "the one-second tick must compare before writing so untouched numbers never hit the DOM",
 );
@@ -403,7 +404,7 @@ assert(
 // 必须逐张比 HTML，只替换内容真的变了的那几张。
 assert(
   /const sameSet = shown\.length === filtered\.length && shown\.every\(\(el, i\) => el\.dataset\.node === filtered\[i\]\.id\)/.test(appSource) &&
-    /if \(renderedHTML\.get\(el\) !== wanted\[i\]\) \{\n\s*el\.innerHTML = wanted\[i\];/.test(appSource) &&
+    /if \(renderedHTML\.get\(el\) === wanted\[i\]\) return;/.test(appSource) &&
     /const renderedHTML = new WeakMap\(\)/.test(appSource),
   "an unchanged card list must be updated card by card, never re-rendered wholesale",
 );
@@ -419,8 +420,9 @@ assert(
   /const wanted = filtered\.map\(cardInner\)/.test(appSource) &&
     /const cardShell = \(n, inner\) =>/.test(appSource) &&
     /function card\(n\) \{\n\s*return cardShell\(n, cardInner\(n\)\);/.test(appSource) &&
-    /el\.innerHTML = wanted\[i\];/.test(appSource),
-  "a per-card re-render must swap the card's inner HTML, never the card element itself",
+    /function patchInto\(el, next\)/.test(appSource) &&
+    /if \(!patchInto\(el, fresh\)\) el\.innerHTML = wanted\[i\];/.test(appSource),
+  "a per-card re-render must patch the card in place (whole-card replacement only as a structure fallback)",
 );
 // 桌面 Chrome 会把 body 的 overflow 传播给视口，WebKit 不一定：html/body 上不留 overflow-y: auto，
 // 免得 body 自己变成滚动元素（那时 scrollY 恒 0、所有 scrollTop 写入落空）。
