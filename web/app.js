@@ -80,6 +80,19 @@ async function refresh() {
   const ticket = ++generation;
   const next = await api("/nodes");
   if (ticket !== generation) return;
+  // 同 liveTick：取数途中开始滑动就推迟——但等待期间不重复取数，还在滑就继续等。
+  if (scrolling()) {
+    const retry = () => {
+      if (document.hidden) return;
+      if (scrolling()) {
+        setTimeout(retry, 400);
+        return;
+      }
+      refresh().catch((e) => toast(e.message));
+    };
+    setTimeout(retry, 400);
+    return;
+  }
   nodes = next;
   const groups = [...new Set(nodes.map((n) => n.group).filter(Boolean))];
   if (group && !groups.includes(group)) group = "";
@@ -184,6 +197,8 @@ async function liveTick() {
   liveBusy = true;
   try {
     const next = await api("/nodes");
+    // 取数期间用户可能刚起步滑动：写入前再查一次，别把手指下的内容动了（这一步是「还是跳」的漏洞）。
+    if (scrolling()) return;
     nodes = next;
     setHTML(document.querySelector("#overview"), overviewInner());
     for (const el of document.querySelectorAll("#nodes .node-card")) {

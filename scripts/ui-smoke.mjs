@@ -387,6 +387,13 @@ assert(
     /function setText\(el, text\) \{\n\s*if \(el && el\.textContent !== text\)/.test(appSource),
   "the one-second tick must compare before writing so untouched numbers never hit the DOM",
 );
+// 取数要花时间，用户可能正好在这期间起步滑动，所以写入前必须再查一次守卫（这是「还是跳」的漏洞）。
+assert(
+  /const next = await api\("\/nodes"\);\n\s*\/\/ 取数期间用户可能刚起步滑动：写入前再查一次/.test(appSource) &&
+    /if \(scrolling\(\)\) return;\n\s*nodes = next;/.test(appSource) &&
+    /if \(scrolling\(\)\) \{\n\s*const retry = \(\) => \{/.test(appSource),
+  "both loops must re-check the scroll guard after the fetch, before touching the DOM",
+);
 // 贴底时重绘要续贴底部；iOS Safari 没有浏览器级滚动锚定，所以还必须有手动锚回同一张卡片。
 assert(
   /if \(atBottom\) setScroll\(scroller\.scrollHeight\)/.test(appSource),
