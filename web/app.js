@@ -156,6 +156,9 @@ function watchScrolling() {
   const mark = () => {
     lastScrollAt = Date.now();
   };
+  // scroll 不冒泡，而且 iOS 上滚动可能发生在 body（而不是视口）上，所以用捕获阶段听 document，
+  // window 上再听一遍，元素滚动的动静就不会漏。
+  document.addEventListener("scroll", mark, { passive: true, capture: true });
   window.addEventListener("scroll", mark, { passive: true });
   window.addEventListener("touchmove", mark, { passive: true });
   window.addEventListener("wheel", mark, { passive: true });
@@ -209,6 +212,12 @@ function renderCards() {
   // 滚动锚定（overflow-anchor），在手机上等于没有，所以这里手动锚：先记住视口顶部第一张完整
   // 可见的卡片及其相对位置，重绘后把滚动调回同一张卡片的同一位置。贴底的情况另外兜住。
   const scroller = document.scrollingElement || document.documentElement;
+  // 滚动位置写两边：正常只有 documentElement 是滚动元素；iOS 在 html/body 带 overflow 时会让
+  // body 自己滚（这次就是踩了这个坑），多写一次 body 是免费保险。
+  const setScroll = (top) => {
+    scroller.scrollTop = top;
+    if (document.body && document.body !== scroller) document.body.scrollTop = top;
+  };
   const anchorOf = () => {
     const list = [...document.querySelectorAll(".node-card")];
     const card = list.find((c) => c.getBoundingClientRect().top >= -4) || list[list.length - 1];
@@ -225,11 +234,13 @@ function renderCards() {
     // 重绘前后同一张卡片的视口位置差多少，就把滚动补回多少（浏览器已经自己补过时这里是 0）。
     // iOS 上主线程的 scrollTop 写入可能被合成器那一步覆盖掉，所以接下来两帧各再校一次；
     // 已经对齐时是空操作，不会多写。
+    // 滚动位置写两边：正常只有 documentElement 是滚动元素；iOS 在 html/body 带 overflow 时会让
+    // body 自己滚，那时写 documentElement 是空操作。多写一次 body 是免费保险。
     const hold = () => {
       const el = document.querySelector(`.node-card[data-node="${anchor.id}"]`);
       if (!el) return;
       const off = el.getBoundingClientRect().top - anchor.offset;
-      if (Math.abs(off) > 0.5) scroller.scrollTop += off;
+      if (Math.abs(off) > 0.5) setScroll(scroller.scrollTop + off);
     };
     hold();
     nextFrame(() => {
@@ -237,7 +248,7 @@ function renderCards() {
       nextFrame(hold);
     });
   }
-  if (atBottom) scroller.scrollTop = scroller.scrollHeight;
+  if (atBottom) setScroll(scroller.scrollHeight);
   // 单元格子只展示那一格的内容（延迟 / 回程），整张卡片才展示综合信息。
   for (const b of document.querySelectorAll("[data-detail]"))
     b.onclick = guard((e) => {

@@ -33,10 +33,10 @@
   --indigo: #5856d6;
 }
 
-html {
-  overflow-y: auto;
-  overscroll-behavior-y: auto;
-}
+/* 不要在 html / body 上写 overflow-y: auto：iOS(WebKit) 会因此让 body 自己变成滚动容器——
+   window.scrollY 恒为 0，手动锚定写 documentElement.scrollTop 变成空操作，scroll 事件也落在
+   body 上、window 收不到（守卫失效）。Chrome 会把 body 的 overflow 传播给视口，所以桌面看不出来。
+   交给视口滚动：document.scrollingElement 才是所有内核下唯一正确的滚动元素。 */
 
 html[data-theme="light"] { color-scheme: light; }
 html[data-theme="dark"] { color-scheme: dark; }
@@ -49,8 +49,6 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--ink);
-  overflow-y: auto;
-  overscroll-behavior-y: auto;
 }
 
 a {

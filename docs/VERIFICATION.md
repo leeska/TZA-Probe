@@ -467,3 +467,21 @@ node scripts/ui-smoke.mjs
   - 10 秒那一轮不再「等 1.2 秒试一次」，而是每 400ms 复查直到确实不在滑动才动 DOM；
     守卫窗口 0.9 → 1.2 秒。
 - 验证（本地面板，各跨一个完整周期）：离底 40px 563→563（零移动）、紧贴底部 603→603、中部 302→302。
+
+## 2026-09-22 真凶：html / body 上的 overflow-y: auto（桌面测不出来）
+
+- 现象：桌面 Chromium 怎么量都零位移，手机上（iOS Chrome = WebKit）一直「还是跳」。
+- 机理：`html { overflow-y: auto }` + `body { overflow-y: auto }` 会让 **iOS/WebKit 把 body 变成
+  滚动容器**：`window.scrollY` 恒为 0，手动锚定写 `documentElement.scrollTop` 是空操作（等于没接），
+  `scroll` 事件目标是 body、`window` 上收不到，于是「滚动期间不动 DOM」的守卫在 iOS 上也从未生效——
+  所以每次重绘都直接表现成跳。Chrome 会把 body 的 overflow 传播给视口，桌面端完全看不出差别，
+  这就是我前面所有桌面实测都「零位移」的原因。
+- 改法：
+  - 删掉 `html` / `body` 上的 `overflow-y: auto` 与 `overscroll-behavior-y: auto`，交给视口滚动
+    （`document.scrollingElement` 因此是所有内核下唯一正确的滚动元素）；
+  - 守卫改在 **捕获阶段** 监听 `document` 的 scroll（元素级滚动也能触发），window 上再听一遍；
+  - 位置写入同时写 `documentElement` 与 `body`（`setScroll`），多内核下都是免费保险。
+- 验证（本地面板）：`scrollingElement=documentElement`、`body 不可滚动`、页面可滚 603px；
+  用「在 body 上派发 scroll 事件」模拟 iOS 的事件落点：干净窗口 5 秒 **DOM 变更 0 次**、
+  「最近同步」定在 13:28:04 不动，停止 2.5 秒后恢复（13:28:14）；
+  三个位置各跨一个周期零位移：离底 40px 563→563、贴底 603→603、中部 302→302。

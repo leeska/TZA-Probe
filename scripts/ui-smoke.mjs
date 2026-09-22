@@ -389,13 +389,25 @@ assert(
 );
 // 贴底时重绘要续贴底部；iOS Safari 没有浏览器级滚动锚定，所以还必须有手动锚回同一张卡片。
 assert(
-  /if \(atBottom\) scroller\.scrollTop = scroller\.scrollHeight/.test(appSource),
+  /if \(atBottom\) setScroll\(scroller\.scrollHeight\)/.test(appSource),
   "a re-render while pinned to the page bottom must stay pinned",
+);
+// 桌面 Chrome 会把 body 的 overflow 传播给视口，iOS 不会：html/body 上绝不能留 overflow-y: auto，
+// 否则 body 自己变成滚动元素，scrollY 恒 0、锚定写 documentElement 全是空操作。
+const cssSource = await (await fetch(base + "/styles.css")).text();
+assert(
+  !/html\s*\{[^}]*overflow-y/.test(cssSource) && !/body\s*\{[^}]*overflow-y/.test(cssSource),
+  "html and body must not carry overflow-y - iOS turns body into the scroller and every scroll write goes nowhere",
+);
+assert(
+  /document\.addEventListener\("scroll", mark, \{ passive: true, capture: true \}\)/.test(appSource),
+  "the scroll guard must listen in the capture phase so element-level scrolls arm it too",
 );
 assert(
   /anchorOf\(\)/.test(appSource) &&
     /const hold = \(\) => \{/.test(appSource) &&
-    /if \(Math\.abs\(off\) > 0\.5\) scroller\.scrollTop \+= off;/.test(appSource) &&
+    /if \(Math\.abs\(off\) > 0\.5\) setScroll\(scroller\.scrollTop \+ off\);/.test(appSource) &&
+    /const setScroll = \(top\) => \{\n\s*scroller\.scrollTop = top;\n\s*if \(document\.body && document\.body !== scroller\) document\.body\.scrollTop = top;/.test(appSource) &&
     /nextFrame\(\(\) => \{\n\s*hold\(\);\n\s*nextFrame\(hold\);/.test(appSource),
   "the card re-render must re-anchor the visible card, and re-check over the next two frames (iOS drops main-thread scroll writes)",
 );
