@@ -1,10 +1,35 @@
 # 部署、更新、备份
 
+## 0. 一键安装（推荐）
+
+Linux 主机（amd64 / arm64），一条命令装成 systemd 服务：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
+```
+
+脚本拉取当前 `main` 源码构建（需要 Go 1.27 与 git），也可以 `--version vX.Y.Z` 直接取 GitHub Release 的发布包（免 Go 与 git）：
+
+- 安装 `/usr/local/bin/tza-server`，旧二进制保留为 `tza-server.previous`，重复执行即升级。
+- 创建 `tza-probe` 系统账户与 `/var/lib/tza-probe`（0700），数据目录不会被覆盖。
+- 安装 `deploy/tza-server.service` 并 `systemctl enable --now`，等待 `/healthz` 通过后打印管理地址与密钥位置。
+- 源码构建时顺带编译 amd64 / arm64 两个 Agent 放进 `<数据目录>/agents/`，后台的一键安装命令开箱可用（Server 分发 Agent 时优先用数据目录里这份，升级 Agent 不必重编 Server）。
+- 其他参数：`--listen ADDR`（默认 `127.0.0.1:25774`）、`--data DIR`（默认 `/var/lib/tza-probe`）、`--no-systemd`（只装二进制与数据目录）。无 systemd 的环境下脚本会跳过服务注册并打印手动启动命令。
+
+Docker 部署用 `deploy/docker-compose.yml`（数据放命名卷）：
+
+```sh
+git clone --depth 1 https://github.com/leeska/TZA-Probe && cd TZA-Probe
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+以下手工步骤用于定制安装、更新与备份。
+
 ## 先选运行方式
 
 本地预览按 README 的“快速运行”启动。长期运行使用 Linux systemd；Docker 只用于 Server，Agent 直接运行在被监控主机。Server 和 Agent 可以在同一台或不同机器上，网页已嵌入 Server，不需要额外部署前端。
 
-以下 Linux 命令从仓库根目录执行。需要 Go 1.25+；目标机器使用编译好的二进制时不需要 Go、Node 或外部数据库。
+以下 Linux 命令从仓库根目录执行。需要 Go 1.27；目标机器使用编译好的二进制时不需要 Go、Node 或外部数据库。
 
 ## 1. 构建
 

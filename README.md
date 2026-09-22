@@ -16,9 +16,30 @@
 - 月度计费周期、流量额度、四种流量计费方式、价格、到期日期。
 - 续费 / 流量 / 持续 CPU 或内存负载 / 离线提醒，触发与恢复事件、Telegram / Webhook 和有限重试。
 
+## 一键部署
+
+Linux 主机（amd64 / arm64），一条命令装成 systemd 服务：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
+```
+
+脚本拉取当前 `main` 源码构建（需要 Go 1.27 与 git），安装 `/usr/local/bin/tza-server` 与 systemd 单元，建好 `/var/lib/tza-probe`，把 amd64 / arm64 两个 Agent 一并放进数据目录，最后打印登录地址与密钥位置。重复执行即升级：旧二进制保留为 `tza-server.previous`，数据目录不动。可选参数：`--version vX.Y.Z` 改用 GitHub Release（免 Go 与 git）、`--listen ADDR`、`--data DIR`、`--no-systemd`。
+
+装完访问 `http://127.0.0.1:25774/admin`，密钥在 `/var/lib/tza-probe/admin-token`。跨主机接入请在前面配置 HTTPS 反代，见 [部署说明](docs/DEPLOYMENT.md)。
+
+Docker 部署（镜像本地构建，数据放命名卷）：
+
+```sh
+git clone --depth 1 https://github.com/leeska/TZA-Probe && cd TZA-Probe
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+被监控主机不需要装 Go：在后台新增节点后，“接入”弹窗给出的 `curl ... | sh -s -- --endpoint ... --token ...` 命令会自动下载并启动 Agent。
+
 ## 快速运行
 
-需要 Go 1.25 或更新版本。不需要 CGO、外部数据库或 Node。
+本地预览用源码直接跑，需要 Go 1.27（更旧的 Go 会自动下载 go.mod 指定的工具链）。不需要 CGO、外部数据库或 Node。
 
 ```sh
 go build -o bin/tza-server ./cmd/server
@@ -84,9 +105,9 @@ TCP 指标是连接耗时和连接失败比例，**不声称是 ICMP 丢包率**
 
 ## 部署与维护
 
-项目范围和代码入口见 [需求对照](docs/SCOPE.md)。历史验收记录见 [验收记录](docs/VERIFICATION.md)，不代表后续所有修改已完成真实环境验收。
+长期部署用上面的[一键部署](#一键部署)；`deploy/` 放安装脚本、systemd 单元与 compose 文件，手工步骤与备份方式见 [部署说明](docs/DEPLOYMENT.md)。项目范围和代码入口见 [需求对照](docs/SCOPE.md)。历史验收记录见 [验收记录](docs/VERIFICATION.md)，不代表后续所有修改已完成真实环境验收。
 
-参见 [部署说明](docs/DEPLOYMENT.md)、[组件边界](docs/ARCHITECTURE.md) 和 [HTTP 协议](docs/API.md)。
+参见 [组件边界](docs/ARCHITECTURE.md) 和 [HTTP 协议](docs/API.md)。
 
 ```sh
 go test -race ./...
