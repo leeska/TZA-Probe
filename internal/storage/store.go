@@ -625,6 +625,14 @@ func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([
 				o.Result = model.Result{Status: "unknown"}
 			} else {
 				o.At = finished.Int64
+				// 线路标签是跳表的解释，不是实测数据本身：读的时候按当前规则重算，
+				// 判定规则修正后历史记录跟着更新，不必等下一次探测。
+				if o.Task.Kind == "route" {
+					o.Result.Route = model.RouteLabel(o.Result.Hops)
+					if o.Result.Status != "ok" {
+						o.Result.Route = "未知"
+					}
+				}
 			}
 		} else {
 			o.Result.Status = "pending"

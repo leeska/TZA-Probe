@@ -319,3 +319,45 @@ func TestLeaseSkipsUnavailableAddressFamilies(t *testing.T) {
 		t.Fatalf("IPv6 task not leased: jobs=%v err=%v", jobs, err)
 	}
 }
+
+// 线路标签是跳表的解释，读取时按当前规则重算：判定规则修正后，存量的旧结论
+// （例如移动回程被记成“CMI → CMIN2”）会跟着跳表一起更新，不必等下一次探测。
+func TestObservationsRelabelRouteOnRead(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	node, _ := makeNode(t, s)
+	now := time.Date(2026, 9, 22, 20, 8, 41, 0, time.UTC)
+	err := s.SaveTask(ctx, model.Task{
+		Name: "移动回程", Kind: "route", Family: "ipv6",
+		Host: "2409:8c62:e10:32::99:80", Region: "四川", Carrier: "移动", Port: 443,
+		Interval: 3600, RouteInterval: 3600, Enabled: true, NodeIDs: []string{node},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := s.Lease(ctx, node, now)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("lease: %+v %v", jobs, err)
+	}
+	hops := []model.Hop{
+		{TTL: 1, Address: "2602:f656:****"},
+		{TTL: 2, Address: "2602:f656:****", ASN: "AS1054"},
+		{TTL: 3, Address: "2402:4f00:****", ASN: "AS58453"},
+		{TTL: 4, Address: "2402:4f00:****", ASN: "AS58807"},
+		{TTL: 6, Address: "2409:8080:****", ASN: "AS9808"},
+		{TTL: 14, Address: "2409:8c62:****", ASN: "AS139080"},
+	}
+	// 存量数据里存的是修正前的标签。
+	latency := 159.8
+	stale := model.Result{JobID: jobs[0].ID, Status: "ok", Sent: 1, Received: 1, Latency: &latency, Route: "CMI → CMIN2", Hops: hops}
+	if err = s.Finish(ctx, node, stale, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	obs, err := s.Observations(ctx, node, now.Add(2*time.Second))
+	if err != nil || len(obs) != 1 {
+		t.Fatalf("observations: %+v %v", obs, err)
+	}
+	if obs[0].Result.Route != "CMIN2" {
+		t.Fatalf("route must be recomputed from the hops, got %q", obs[0].Result.Route)
+	}
+}

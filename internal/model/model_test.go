@@ -139,6 +139,20 @@ func TestRouteRequiresEvidence(t *testing.T) {
 	if got := RouteLabel([]Hop{{ASN: "AS9929", Address: "219.158.*.*"}}); got != "9929" {
 		t.Fatal(got)
 	}
+	// 移动 is one product too: CMI and CMIN2 are both 中移国际, and a trace that
+	// crosses both is the CMIN2 line — the same rule 电信 gets.
+	cmMixed := []Hop{
+		{ASN: "AS58453", Address: "2402:4f00:****"},
+		{ASN: "AS58807", Address: "2402:4f00:****"},
+		{ASN: "AS9808", Address: "2409:8080:****"},
+		{ASN: "AS139080", Address: "2409:8c62:****"},
+	}
+	if got := RouteLabel(cmMixed); got != "CMIN2" {
+		t.Fatalf("CMI then CMIN2: %s", got)
+	}
+	if got := RouteLabel([]Hop{{ASN: "AS58453", Address: "223.119.*.*"}}); got != "CMI" {
+		t.Fatalf("CMI only: %s", got)
+	}
 	for _, c := range []struct {
 		hops []Hop
 		want string
@@ -148,11 +162,24 @@ func TestRouteRequiresEvidence(t *testing.T) {
 		{[]Hop{{Address: "202.97.1.*"}}, "163"},
 		{[]Hop{{ASN: "AS23764", Address: "203.0.113.*"}}, "CTG"},
 		{[]Hop{{ASN: "AS58807"}}, "CMIN2"},
+		// 中国移动's own ASN carries its domestic backbone and its international
+		// entry alike, so it names no 中移国际 product on its own. Naming those
+		// hops CMI used to add a phantom CMI leg to every 移动 回程.
+		{[]Hop{{ASN: "AS9808"}}, "未知"},
+		{[]Hop{{ASN: "AS9808", Address: "2409:8080:****"}}, "未知"},
+		{[]Hop{{ASN: "AS139080", Address: "2409:8c62:****"}}, "未知"},
+		{[]Hop{{Address: "2409:8080:****"}}, "未知"},
+		{[]Hop{{Address: "221.183.*.*"}}, "未知"},
+		{[]Hop{{Address: "111.24.*.*"}}, "未知"},
+		{[]Hop{{Address: "111.13.*.*"}}, "未知"},
+		// 223.120.* is half CMI (AS58453) and half CMIN2 (AS58807); the mask
+		// cannot tell the halves apart, so it stays unknown.
+		{[]Hop{{Address: "223.120.*.*"}}, "未知"},
 		// The tool regularly returns no ASN at all. Prefixes carry those hops.
 		{[]Hop{{Address: "210.51.*.*"}}, "9929"},
 		{[]Hop{{Address: "219.158.*.*"}}, "4837"},
 		{[]Hop{{Address: "240e:1234:****"}}, "163"},
-		{[]Hop{{Address: "223.120.*.*"}}, "CMI"},
+		{[]Hop{{Address: "223.119.*.*"}}, "CMI"},
 		{[]Hop{{Address: "69.194.*.*"}}, "CTG"},
 		{[]Hop{{Address: "103.239.176.*"}}, "10099"},
 		{[]Hop{{Address: "2408:8120:****"}}, "4837"},
@@ -170,6 +197,34 @@ func TestRouteRequiresEvidence(t *testing.T) {
 		}
 	}
 }
+
+// A real 移动 回程 recorded on 2026-09-22 towards 四川移动 (2409:8c62:…, AS139080).
+// The trace leaves the node through AS58453 (CMI) and AS58807 (CMIN2), then
+// hands off to 中国移动's own backbone (AS9808) for hops 6-14. It used to read
+// "CMI → CMIN2" because every AS9808 hop was named CMI; the line is the CMIN2
+// product and the domestic hops are its landing side.
+func TestRouteLabelOnRecordedMobileTrace(t *testing.T) {
+	hops := []Hop{
+		{TTL: 1, Address: "2602:f656:****"},
+		{TTL: 2, Address: "2602:f656:****", ASN: "AS1054"},
+		{TTL: 3, Address: "2402:4f00:****", ASN: "AS58453"},
+		{TTL: 4, Address: "2402:4f00:****", ASN: "AS58807"},
+		{TTL: 5, Address: "2402:4f00:****", ASN: "AS58807"},
+		{TTL: 6, Address: "2409:8080:****", ASN: "AS9808"},
+		{TTL: 7, Address: "2409:8080:****", ASN: "AS9808"},
+		{TTL: 8, Address: "2409:8080:****", ASN: "AS9808"},
+		{TTL: 9, Address: "2409:8080:****", ASN: "AS9808"},
+		{TTL: 10, Address: "*"},
+		{TTL: 11, Address: "2409:8062:****", ASN: "AS9808"},
+		{TTL: 12, Address: "2409:8062:****", ASN: "AS139080"},
+		{TTL: 13, Address: "*"},
+		{TTL: 14, Address: "2409:8c62:****", ASN: "AS139080"},
+	}
+	if got := RouteLabel(hops); got != "CMIN2" {
+		t.Fatalf("recorded 四川移动 trace: %s", got)
+	}
+}
+
 func TestMasks(t *testing.T) {
 	for input, want := range map[string]string{"219.158.1.3": "219.158.*.*", "2001:db8::1": "2001:db8:****", "anything": "*"} {
 		if got := MaskAddress(input); got != want {

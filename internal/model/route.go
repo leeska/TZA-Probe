@@ -8,10 +8,12 @@ import (
 
 // backboneNames names the concrete backbone an observed ASN operates. CN2
 // (AS4809) is resolved separately because GIA and GT are different products
-// sold on the same ASN.
+// sold on the same ASN. 中国移动 is not listed: AS9808 carries its domestic
+// backbone and its international entry alike, so that ASN alone cannot name
+// 中移国际 — see prefixBackbones.
 var backboneNames = map[string]string{
 	"4134": "163", "23764": "CTG", "4837": "4837", "9929": "9929",
-	"10099": "10099", "58807": "CMIN2", "58453": "CMI", "9808": "CMI",
+	"10099": "10099", "58807": "CMIN2", "58453": "CMI",
 }
 
 // Address prefixes that identify a backbone on their own, without an ASN:
@@ -30,15 +32,22 @@ const (
 // entry on the first two hextets. The list is deliberately narrow: an address
 // that is not listed stays unknown instead of being guessed. Prefixes follow
 // the operator backbone allocations taken from the earlier classifier tables,
-// minus the entries the RIPE registry attributes to another carrier: 210.14.*
+// minus the entries the registry attributes to another carrier: 210.14.*
 // resolves to PLDT (AS9299) and a Beijing ISP rather than 联通 9929, and
 // 103.214.* to a Nepali and a Hong Kong/Orange block rather than 联通国际 10099.
 // Naming the wrong operator is worse than staying unknown, and the ASN path
-// still names both backbones when the tool resolves them. A CMIN2 entry is not
-// expressible here either: 58807 sits inside 2402:4f00:f000::/36 while the mask
-// keeps only two hextets, so "2402:4f00:****" would label plain CMI hops as
-// CMIN2. 202.96.* stays even though 202.96.0.0/21 is 联通: the rest of that /16
-// is 电信 (4134 and 4812), and the mask cannot split a /16.
+// still names the backbones when the tool resolves them.
+//
+// No 中移国际 entry fits here. The registry lists 221.183.*, 111.24.*,
+// 111.13.* and 2409:8080:* under CHINAMOBILE-CN (AS9808, China Mobile
+// Communications Group), which is the domestic backbone the international
+// 58453/58807 feed into — not CMI. 223.120.* is split as well: its lower /17
+// plus 223.120.0.0/22 belong to AS58453 (CMI) while 223.120.128.0/17 is
+// AS58807 (CMIN2), and the mask cannot tell the two halves apart. CMIN2 has no
+// entry for the same reason on IPv6: 58807 sits inside 2402:4f00:f000::/36
+// while the mask keeps two hextets, so "2402:4f00:****" would label plain CMI
+// hops as CMIN2. 202.96.* stays even though 202.96.0.0/21 is 联通: the rest of
+// that /16 is 电信 (4134 and 4812), and the mask cannot split a /16.
 var prefixBackbones = []struct {
 	prefix string
 	name   string
@@ -47,8 +56,7 @@ var prefixBackbones = []struct {
 	{"106.37.", "163"}, {"240e:", "163"},
 	{"219.158.", "4837"}, {"2408:", "4837"},
 	{"210.51.", "9929"}, {"210.78.", "9929"}, {"218.105.", "9929"},
-	{"223.120.", "CMI"}, {"223.119.", "CMI"}, {"221.183.", "CMI"}, {"111.24.", "CMI"},
-	{"111.13.", "CMI"}, {"2409:8080:", "CMI"},
+	{"223.119.", "CMI"},
 	{"203.22.178.", "CTG"}, {"203.22.179.", "CTG"}, {"203.22.182.", "CTG"},
 	{"203.128.224.", "CTG"}, {"69.194.", "CTG"}, {"2400:9380:", "CTG"},
 	{"103.239.176.", "10099"}, {"118.26.151.", "10099"},
@@ -69,6 +77,7 @@ func RouteLabel(hops []Hop) string {
 		}
 	}
 	ct := ctLabel(hops, firstCN2)
+	cm := cmLabel(hops)
 	out := []string{}
 	seen := map[string]bool{}
 	for _, h := range hops {
@@ -81,6 +90,9 @@ func RouteLabel(hops []Hop) string {
 			// China Telecom's own AS4134 ranges on both sides of it, so neither
 			// may be reported as a second backbone.
 			name = ct
+		case "CMI", "CMIN2":
+			// 移动同理：CMI 与 CMIN2 都是中移国际的网络，一条回程只给一个产品名。
+			name = cm
 		}
 		if name != "" && !seen[name] {
 			out = append(out, name)
@@ -115,6 +127,32 @@ func ctLabel(hops []Hop, firstCN2 int) string {
 		return cn2Label(hops, firstCN2)
 	case line163:
 		return "163"
+	}
+	return ""
+}
+
+// cmLabel names the single 移动 product a trace carries. CMI (AS58453) and
+// CMIN2 (AS58807) are both 中移国际 networks that feed the same domestic
+// backbone, so a trace crossing both is one product, not two: CMIN2 is the
+// newer network and the one adjacent to the China-side hand-off, which is the
+// rule cn2Label already applies to a CN2 run surrounded by 163 hops. A trace
+// that only shows 中国移动's own hops (AS9808 and friends) reports nothing —
+// that ASN is the domestic backbone, not an international product.
+func cmLabel(hops []Hop) string {
+	cmin2, cmi := false, false
+	for _, h := range hops {
+		switch hopBackbone(h) {
+		case "CMIN2":
+			cmin2 = true
+		case "CMI":
+			cmi = true
+		}
+	}
+	switch {
+	case cmin2:
+		return "CMIN2"
+	case cmi:
+		return "CMI"
 	}
 	return ""
 }
