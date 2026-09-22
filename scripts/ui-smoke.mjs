@@ -360,10 +360,14 @@ assert(
 // 所以那里的下拉只有 1 小时 / 24 小时 / 7 天三档，主机历史所在的综合视图保留 30 天。
 const detailSource = await (await fetch(base + "/detail.js")).text();
 const appSource = await (await fetch(base + "/app.js")).text();
-// 贴底时重绘要续贴底部：内容一矮就会被浏览器裁到新的最大值，看起来像“刷新把页面往上顶”。
+// 贴底时重绘要续贴底部；iOS Safari 没有浏览器级滚动锚定，所以还必须有手动锚回同一张卡片。
 assert(
   /if \(atBottom\) scroller\.scrollTop = scroller\.scrollHeight/.test(appSource),
   "a re-render while pinned to the page bottom must stay pinned",
+);
+assert(
+  /anchorOf\(\)/.test(appSource) && /scroller\.scrollTop \+= delta/.test(appSource),
+  "the card re-render must re-anchor the visible card (iOS Safari has no scroll anchoring)",
 );
 assert(!/show-all|查看全部信息/.test(detailSource), "the focused view must not keep a 查看全部信息 button");
 assert(
@@ -654,15 +658,23 @@ w.document.body.append(multi);
 w.TZACharts.wireCharts(w.document.body);
 const multiBody = multi.querySelector(".chart-body");
 multiBody.dispatchEvent(new w.MouseEvent("pointermove", { clientX: 340, clientY: 40, bubbles: true }));
-assert(multi.querySelector(".chart-tip").hidden, "a chart with a legend must not float a readout over the curve");
+assert(
+  !multi.querySelector(".chart-tip").hidden,
+  "a multi-line chart must still show its readout box (the user asked for it back)",
+);
+assert(
+  /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(multi.querySelector(".chart-tip b").textContent),
+  "the readout box must carry the hovered time, got " + multi.querySelector(".chart-tip b").textContent,
+);
+assert.equal(
+  multi.querySelectorAll(".chart-tip span").length,
+  2,
+  "the readout box must list every series of the hovered column",
+);
 assert.equal(
   [...multi.querySelectorAll("[data-legend-value]")].map((e) => e.textContent).join(" "),
   "20.0 ms 50.0 ms",
   "hovering must write the column values into the legend",
-);
-assert(
-  /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(multi.querySelector("[data-chart-stamp]").textContent),
-  "the hovered time must land in the caption, got " + multi.querySelector("[data-chart-stamp]").textContent,
 );
 multiBody.dispatchEvent(new w.MouseEvent("pointerleave", { bubbles: true }));
 assert.equal(

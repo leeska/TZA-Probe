@@ -116,14 +116,28 @@ function renderCards() {
       (!group || n.group === group) &&
       searchMatch(query, n.name, n.region),
   );
-  // 每 10 秒整块换掉卡片列表：内容一高一矮，贴着页面底部的人就会被浏览器裁到新的最大值，
-  // 看起来像“刷新把页面往上顶”。所以只处理这一种情况——原来就贴底，重绘后继续贴底。
-  // 其余位置不插手：内容在视口上方变高变矮时，交给浏览器自己的滚动锚定（别在 CSS 里关掉它）。
+  // 每 10 秒整块换掉卡片列表，卡片一高一矮页面就会自己走位。iOS Safari 至今没实现浏览器自己的
+  // 滚动锚定（overflow-anchor），在手机上等于没有，所以这里手动锚：先记住视口顶部第一张完整
+  // 可见的卡片及其相对位置，重绘后把滚动调回同一张卡片的同一位置。贴底的情况另外兜住。
   const scroller = document.scrollingElement || document.documentElement;
+  const anchorOf = () => {
+    const list = [...document.querySelectorAll(".node-card")];
+    const card = list.find((c) => c.getBoundingClientRect().top >= -4) || list[list.length - 1];
+    return card ? { id: card.dataset.node, offset: card.getBoundingClientRect().top } : null;
+  };
+  const anchor = anchorOf();
   const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
   document.querySelector("#nodes").innerHTML = filtered.length
     ? filtered.map(card).join("")
     : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点，并开启公开展示。"}</p></div>`;
+  if (anchor) {
+    const next = [...document.querySelectorAll(".node-card")].find((c) => c.dataset.node === anchor.id);
+    // 重绘前后同一张卡片的视口位置差多少，就把滚动补回多少（浏览器已经自己补过时这里是 0）。
+    if (next) {
+      const delta = next.getBoundingClientRect().top - anchor.offset;
+      if (Math.abs(delta) > 0.5) scroller.scrollTop += delta;
+    }
+  }
   if (atBottom) scroller.scrollTop = scroller.scrollHeight;
   // 单元格子只展示那一格的内容（延迟 / 回程），整张卡片才展示综合信息。
   for (const b of document.querySelectorAll("[data-detail]"))

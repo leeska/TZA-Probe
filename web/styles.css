@@ -1819,6 +1819,7 @@ pre,
   color: var(--ink);
   display: flex;
   flex-wrap: wrap;
+  gap: 4px 10px;
   justify-content: space-between;
   margin-bottom: 12px;
 }
@@ -1922,8 +1923,6 @@ pre,
 .overview-legend span { display: inline-flex; align-items: center; gap: 5px; }
 /* 图例右侧的读数：平时是最新一次采样，悬停换成那一列。等宽数字 + 预留宽度，切换时不跳动。 */
 .overview-legend em { font-style: normal; min-width: 52px; color: var(--ink); font-variant-numeric: tabular-nums; }
-/* 标题行中间的悬停时间：同样预留宽度，避免一悬停整行就重排。 */
-.chart figcaption [data-chart-stamp] { min-width: 92px; }
 .overview-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
 /* 多折线配色：class 只定义变量，折线、图例点、悬停点共用同一个来源。标记里的
    stroke="…" 属性敌不过样式表里的 `.chart polyline`，颜色必须由 CSS 给出。 */
@@ -1964,16 +1963,44 @@ pre,
   padding: 6px 8px;
   border-radius: 10px;
   border: 1px solid var(--glass-border);
-  background: var(--glass-bg-elevated);
+  /* 半透明：曲线铺满绘图区时浮层免不了压线，透出来一点至少还能看清走势。 */
+  background: color-mix(in srgb, var(--glass-bg-elevated) 88%, transparent);
   box-shadow: var(--glass-shadow);
   font-size: 10px;
   color: var(--ink);
+  pointer-events: none;
   white-space: nowrap;
 }
 .chart-tip b { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .chart-tip span { display: flex; align-items: center; gap: 6px; }
 .chart-tip i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--series, var(--accent)); }
 .chart-tip em { margin-left: auto; font-style: normal; font-variant-numeric: tabular-nums; }
+
+/* 手机上的绘图区只有 ~120px 高，桌面尺寸的读数框（时间 + 四行数据）要 80~90px，压掉大半张图。
+   窄图里把行距、字号和圆角收一收，同样的内容压到 ~65px，剩下的一侧留给曲线。 */
+.chart {
+  container-type: inline-size;
+  container-name: chart;
+}
+
+@container chart (max-width: 320px) {
+  .chart-tip {
+    min-width: 84px;
+    padding: 4px 6px;
+    gap: 1px;
+    border-radius: 8px;
+    font-size: 9px;
+  }
+
+  .chart-tip b {
+    font-size: 9px;
+  }
+
+  .chart-tip i {
+    width: 6px;
+    height: 6px;
+  }
+}
 
 /* 延迟与回程分成两组，行首再标一次类型，避免同地区两条记录看着一样。 */
 .trace-group { margin: 0 0 16px; }

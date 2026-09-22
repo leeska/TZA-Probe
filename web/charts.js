@@ -81,11 +81,9 @@ export function wireCharts(root) {
     const guide = overlay.querySelector(".chart-guide");
     const dot = overlay.querySelector(".chart-dot");
     const tip = overlay.querySelector(".chart-tip");
-    // 有图例的多折线图不飘浮层：浮层有 80~90px 高，手机上的绘图区也才 120px，怎么放都会
-    // 压住曲线。读数改写到图例右侧（平时是最近一次采样，悬停换成那一列的值），时间写在
-    // 标题行——曲线区域一个像素都不遮。单序列的主机图没有图例，仍用跟着指针的浮层。
+    // 有图例的多折线图：图例右侧常驻最新值、悬停跟着换成那一列的值；读数框仍跟着指针，
+    // 位置逻辑会挑曲线更空的一侧。单序列的主机图没有图例，走同一套浮层。
     const legendCells = [...figure.querySelectorAll("[data-legend-value]")];
-    const stampCell = figure.querySelector("[data-chart-stamp]");
     const legendMode = legendCells.length > 0;
     const latestValue = (s) => {
       const points = Array.isArray(s.points) ? s.points : [];
@@ -99,7 +97,6 @@ export function wireCharts(root) {
         const cell = legendCells[index];
         if (cell) cell.textContent = formatValue(latestValue(s), s.unit);
       });
-      if (stampCell) stampCell.textContent = "";
     };
     const draw = (event) => {
       const rect = svg.getBoundingClientRect();
@@ -136,15 +133,13 @@ export function wireCharts(root) {
         dot.hidden = true;
       }
       overlay.hidden = false;
-      // 有图例的图：读数写进图例行 + 标题行时间，图上不出现任何浮层。
+      // 有图例的多折线图：图例右侧同步这一列的数值，读数框照样跟着手指走。曲线铺满绘图区时
+      // 浮层不可能完全不压线，所以压哪条线由下面的位置逻辑挑更空的一侧，再加上半透明底。
       if (legendMode) {
         rows.forEach((row, index) => {
           const cell = legendCells[index];
           if (cell) cell.textContent = formatValue(row.value, row.unit);
         });
-        if (stampCell) stampCell.textContent = stamp(rows[0].at).full;
-        tip.hidden = true;
-        return;
       }
       tip.hidden = false;
       tip.innerHTML =
