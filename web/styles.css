@@ -1919,11 +1919,46 @@ pre,
 .network-overview { margin: 0 0 14px; }
 .overview-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
 .overview-head .segmented button { padding: 4px 9px; font-size: 10px; }
-.overview-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 14px; margin-top: 8px; font-size: 10px; color: var(--muted); }
-.overview-legend span { display: inline-flex; align-items: center; gap: 5px; }
-/* 图例右侧的读数：平时是最新一次采样，悬停换成那一列。等宽数字 + 预留宽度，切换时不跳动。 */
-.overview-legend em { font-style: normal; min-width: 52px; color: var(--ink); font-variant-numeric: tabular-nums; }
-.overview-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+/* 图下方的常驻读数框（同时兼作图例）。浮层在图上无论怎么摆都会压住曲线——手机上四条线铺满
+   绘图区时尤其明显——所以读数干脆留在图外：框顶一行是时间，下面是每个目标的值。平时显示最近
+   一次采样，手指按上去换成那一刻。窄图排两列，宽图一行排开。 */
+.chart-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--glass-bg-elevated) 50%, transparent);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.chart-readout b {
+  flex: 0 0 100%;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-readout span { display: inline-flex; align-items: center; gap: 5px; }
+.chart-readout em { font-style: normal; margin-left: auto; color: var(--ink); font-variant-numeric: tabular-nums; }
+.chart-readout i { width: 7px; height: 7px; border-radius: 2px; flex: 0 0 auto; display: inline-block; }
+.chart-readout i { background: var(--series, var(--accent)); }
+
+@container chart (max-width: 320px) {
+  .chart-readout {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px 10px;
+    padding: 6px 8px;
+    font-size: 9px;
+  }
+
+  .chart-readout b { grid-column: 1 / -1; }
+  .chart-readout em { min-width: 0; }
+}
 /* 多折线配色：class 只定义变量，折线、图例点、悬停点共用同一个来源。标记里的
    stroke="…" 属性敌不过样式表里的 `.chart polyline`，颜色必须由 CSS 给出。 */
 .lc0 { --series: #ff625f; }

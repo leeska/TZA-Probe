@@ -648,28 +648,23 @@ multi.dataset.series = JSON.stringify([
 multi.dataset.range = "0,1200";
 multi.dataset.ceiling = "100";
 multi.innerHTML =
-  '<figcaption><strong>延迟趋势</strong><span data-chart-stamp></span><span>最近 24 小时</span></figcaption>' +
+  '<figcaption><strong>延迟趋势</strong><span>最近 24 小时</span></figcaption>' +
   '<div class="chart-body"><svg viewBox="0 0 680 120"></svg></div>' +
-  '<div class="overview-legend">' +
-  '<span><i class="legend-dot lc0"></i>四川 · 电信<em data-legend-value="0">30.0 ms</em></span>' +
-  '<span><i class="legend-dot lc1"></i>四川 · 联通<em data-legend-value="1">60.0 ms</em></span>' +
+  '<div class="chart-readout"><b data-readout-time>2020/01/01 00:00</b>' +
+  '<span><i class="lc0"></i>四川 · 电信<em data-legend-value="0">30.0 ms</em></span>' +
+  '<span><i class="lc1"></i>四川 · 联通<em data-legend-value="1">60.0 ms</em></span>' +
   "</div>";
 w.document.body.append(multi);
 w.TZACharts.wireCharts(w.document.body);
 const multiBody = multi.querySelector(".chart-body");
 multiBody.dispatchEvent(new w.MouseEvent("pointermove", { clientX: 340, clientY: 40, bubbles: true }));
 assert(
-  !multi.querySelector(".chart-tip").hidden,
-  "a multi-line chart must still show its readout box (the user asked for it back)",
+  multi.querySelector(".chart-tip").hidden,
+  "the readout box must live outside the plot (the floating box covered the curves)",
 );
 assert(
-  /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(multi.querySelector(".chart-tip b").textContent),
-  "the readout box must carry the hovered time, got " + multi.querySelector(".chart-tip b").textContent,
-);
-assert.equal(
-  multi.querySelectorAll(".chart-tip span").length,
-  2,
-  "the readout box must list every series of the hovered column",
+  /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(multi.querySelector("[data-readout-time]").textContent),
+  "the readout must carry the hovered time, got " + multi.querySelector("[data-readout-time]").textContent,
 );
 assert.equal(
   [...multi.querySelectorAll("[data-legend-value]")].map((e) => e.textContent).join(" "),
@@ -677,6 +672,11 @@ assert.equal(
   "hovering must write the column values into the legend",
 );
 multiBody.dispatchEvent(new w.MouseEvent("pointerleave", { bubbles: true }));
+assert.notEqual(
+  multi.querySelector("[data-readout-time]").textContent,
+  "2020/01/01 00:00",
+  "leaving the chart must put the readout back to the latest sample",
+);
 assert.equal(
   [...multi.querySelectorAll("[data-legend-value]")].map((e) => e.textContent).join(" "),
   "30.0 ms 60.0 ms",

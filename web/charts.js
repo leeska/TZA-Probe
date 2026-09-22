@@ -81,10 +81,11 @@ export function wireCharts(root) {
     const guide = overlay.querySelector(".chart-guide");
     const dot = overlay.querySelector(".chart-dot");
     const tip = overlay.querySelector(".chart-tip");
-    // 有图例的多折线图：图例右侧常驻最新值、悬停跟着换成那一列的值；读数框仍跟着指针，
-    // 位置逻辑会挑曲线更空的一侧。单序列的主机图没有图例，走同一套浮层。
+    // 有常驻读数框的多折线图：指针只驱动竖线、圆点和图下方的读数框，图上不出现浮层；
+    // 单序列的主机图没有读数框，仍用跟着指针的浮层（位置逻辑挑曲线更空的一侧）。
     const legendCells = [...figure.querySelectorAll("[data-legend-value]")];
     const legendMode = legendCells.length > 0;
+    const readoutTime = figure.querySelector("[data-readout-time]");
     const latestValue = (s) => {
       const points = Array.isArray(s.points) ? s.points : [];
       for (let i = points.length - 1; i >= 0; i -= 1) {
@@ -92,11 +93,20 @@ export function wireCharts(root) {
       }
       return null;
     };
+    // 指针离开后，图下方的读数框回到“最近一次采样”。
     const showLatest = () => {
       series.forEach((s, index) => {
         const cell = legendCells[index];
         if (cell) cell.textContent = formatValue(latestValue(s), s.unit);
       });
+      if (readoutTime) {
+        const at = series.reduce((value, s) => {
+          const points = Array.isArray(s.points) ? s.points : [];
+          const last = points.length ? points[points.length - 1][0] : 0;
+          return last > value ? last : value;
+        }, 0);
+        if (at) readoutTime.textContent = stamp(at).full;
+      }
     };
     const draw = (event) => {
       const rect = svg.getBoundingClientRect();
@@ -133,13 +143,15 @@ export function wireCharts(root) {
         dot.hidden = true;
       }
       overlay.hidden = false;
-      // 有图例的多折线图：图例右侧同步这一列的数值，读数框照样跟着手指走。曲线铺满绘图区时
-      // 浮层不可能完全不压线，所以压哪条线由下面的位置逻辑挑更空的一侧，再加上半透明底。
+      // 有常驻读数框的图（多折线）：读数写进图下方的框里，图上只留竖线和圆点，曲线不被任何浮层遮住。
       if (legendMode) {
         rows.forEach((row, index) => {
           const cell = legendCells[index];
           if (cell) cell.textContent = formatValue(row.value, row.unit);
         });
+        if (readoutTime) readoutTime.textContent = stamp(rows[0].at).full;
+        tip.hidden = true;
+        return;
       }
       tip.hidden = false;
       tip.innerHTML =
