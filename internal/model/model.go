@@ -352,6 +352,24 @@ type Observation struct {
 	Result Result `json:"result"`
 	Stale  bool   `json:"stale"`
 }
+
+// Redact returns the observation as the public contract exposes it: the bound
+// node ids drop out, hop addresses keep only their masked prefix, and a stale or
+// failed probe reports no route instead of the label of an older, successful run.
+// The hop slice is masked in place, which is what the shared caller already owned.
+func (o Observation) Redact() Observation {
+	o.Task.NodeIDs = nil
+	for i := range o.Result.Hops {
+		hop := &o.Result.Hops[i]
+		hop.Address = PublicAddress(hop.Address)
+		hop.ASN = NormalizeASN(hop.ASN)
+	}
+	if o.Stale || o.Result.Status != "ok" {
+		o.Result.Route = "未知"
+	}
+	return o
+}
+
 type Event struct {
 	LastError string `json:"last_error"`
 	ID        int64  `json:"id"`

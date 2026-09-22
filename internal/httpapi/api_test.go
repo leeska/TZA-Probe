@@ -19,6 +19,61 @@ import (
 	"github.com/leeska/TZA-Probe/web"
 )
 
+// The MCP endpoint is part of the administrator surface: the same key, sent as a
+// bearer token, and the same cross-origin rule as the admin API.
+func TestMCPEndpointUsesTheAdministratorKey(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "mcp.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	message := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+	call := func(token, origin string) (int, []byte) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", server.URL+"/mcp", strings.NewReader(message))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "tools/list")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, body
+	}
+	if code, _ := call("", ""); code != 401 {
+		t.Fatalf("anonymous MCP request: %d", code)
+	}
+	if code, _ := call(model.Secret(), ""); code != 401 {
+		t.Fatalf("non-administrator key: %d", code)
+	}
+	code, body := call(admin, "")
+	if code != 200 || !strings.Contains(string(body), "list_nodes") {
+		t.Fatalf("administrator MCP request: %d %s", code, body)
+	}
+	if code, _ := call(admin, "https://evil.example"); code != 403 {
+		t.Fatalf("cross-origin MCP request: %d", code)
+	}
+	resp, err := server.Client().Get(server.URL + "/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 405 || resp.Header.Get("Allow") != "POST" {
+		t.Fatalf("GET /mcp: %d %v", resp.StatusCode, resp.Header)
+	}
+}
+
 func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 	s, err := storage.Open(filepath.Join(t.TempDir(), "api.db"))
 	if err != nil {

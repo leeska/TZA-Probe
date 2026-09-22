@@ -16,6 +16,7 @@
 - 公开面板、节点管理与任务目录的搜索同时认中文、全拼、拼音首字母、英文和代号：香港 = 香港 / xianggang / xg / hk / hongkong，电信 = 电信 / dianxin / dx / ct / telecom，目录里按空格分隔多个词是「且」的关系（如 `hb ct`）。首字母可能撞名（`hb` 同时是河北与湖北），要精确就用全拼。拼音表在 `web/pinyin.js`，由 `scripts/gen-pinyin.mjs` 生成（多音字地名按词定音，重庆 = chongqing）；表外的汉字退回纯文本匹配。搜索框里贴目录地址同样能筛出对应目标。
 - 月度计费周期、流量额度、四种流量计费方式、价格、到期日期。
 - 续费 / 流量 / 持续 CPU 或内存负载 / 离线提醒，触发与恢复事件、Telegram / Webhook 和有限重试。
+- MCP 接口 `/mcp`：AI 客户端用同一个管理密钥读取节点、主机历史、TCP 延迟与回程标签，只读、无会话状态，不新增或修改任何配置。
 
 ## 一键部署
 
@@ -103,6 +104,22 @@ TCP 指标是连接耗时和连接失败比例，**不声称是 ICMP 丢包率**
 - 可手动校正当前周期已用流量，后续增量继续累计，下周期自动失效。修改重置时间或统计方向会清除校正。续费后在节点编辑页更新到期时间（UTC，精确到秒）。
 
 网络任务支持暂停 / 恢复、立即安排执行、复制和批量绑定节点。暂停不取消已领取的探测，重新绑定保留历史；编辑检测目标会清除旧结果。执行记录显示当前绑定节点各已执行目标的最近时间与失败原因。
+
+## MCP 接口
+
+Server 在 `POST /mcp` 上提供 [Model Context Protocol](https://modelcontextprotocol.io) 端点：用同一个管理密钥（`Authorization: Bearer`）调用只读工具，可以问节点状态、主机历史、TCP 延迟和回程标签，但改不了节点与任务。跨源写入与节点密钥都不通行。
+
+客户端配置（通用的 `mcpServers` 写法）：
+
+```json
+{ "mcpServers": { "tza-probe": { "type": "http", "url": "https://probe.example.com/mcp", "headers": { "Authorization": "Bearer 管理密钥" } } } }
+```
+
+任何支持 HTTP 端点或 `mcpServers` 配置的客户端填同一个 URL 与管理密钥即可，改完重载客户端。
+
+工具：`list_nodes`、`list_tasks`、`node_history`（主机历史 1–720 小时）、`node_network_history`（网络历史 1–168 小时）、`node_observations`（每个检测项最新结果，含回程标签）、`recent_events`、`latency_samples`。回程跳地址与管理接口同样脱敏，过期或失败的探测不返回线路标签。
+
+同一个地址同时说两代协议：`2026-07-28`（无握手，版本与客户端信息按请求放在 `_meta` 并镜像到 `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` 头）与 `2025-11-25` / `2025-06-18`（`initialize` 握手）。版本不认识时返回 `UnsupportedProtocolVersionError` 并列出支持的版本，头与请求体不一致时按规范返回 `HeaderMismatch`。协议细节见 [HTTP 协议](docs/API.md)。
 
 ## 部署与维护
 

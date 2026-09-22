@@ -1,0 +1,278 @@
+package mcp
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/leeska/TZA-Probe/internal/model"
+)
+
+// tool is one entry of tools/list. inputSchema is a JSON Schema object; the
+// modern revision loosened it to any JSON Schema 2020-12 keywords, so the plain
+// object schema below works for both eras.
+type tool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"inputSchema"`
+}
+
+// tools are read-only by design: the endpoint answers questions about the fleet
+// and cannot change a node or a probe. They are always advertised in this order,
+// which the modern revision asks for so a client can cache the list.
+var tools = []tool{
+	{
+		Name:        "list_nodes",
+		Description: "列出全部节点：在线状态、最近一次上报的 CPU / 内存 / 磁盘 / 上下行速率、当前计费周期的已用流量、额度与到期时间。",
+		InputSchema: schema(map[string]any{}),
+	},
+	{
+		Name:        "list_tasks",
+		Description: "列出探测任务定义：名称、检测项（tcp 延迟 / route 回程）、目标地址与运营商、间隔、启停状态和绑定的节点 id。",
+		InputSchema: schema(map[string]any{}),
+	},
+	{
+		Name:        "node_history",
+		Description: "读取单个节点的主机历史曲线（CPU、内存、磁盘、上下行速率），按小时聚合，最多约 240 个采样点。",
+		InputSchema: schema(map[string]any{
+			"node_id": map[string]any{"type": "string", "description": "节点 id，来自 list_nodes"},
+			"hours":   map[string]any{"type": "integer", "minimum": 1, "maximum": 720, "description": "回看小时数，默认 24"},
+		}, "node_id"),
+	},
+	{
+		Name:        "node_network_history",
+		Description: "读取单个节点的 TCP 网络历史：按目标地址与 IP 协议分开的延迟（毫秒）与连接失败率（%）序列，最多 168 小时。",
+		InputSchema: schema(map[string]any{
+			"node_id": map[string]any{"type": "string", "description": "节点 id，来自 list_nodes"},
+			"hours":   map[string]any{"type": "integer", "minimum": 1, "maximum": 168, "description": "回看小时数，默认 24"},
+		}, "node_id"),
+	},
+	{
+		Name:        "node_observations",
+		Description: "读取单个节点每个检测项的最新网络结果，包含回程线路标签（163 / CN2GIA / CN2GT / CTG / 4837 / 9929 / 10099 / CMIN2 / CMI）。跳地址已脱敏，标签未知时不猜。",
+		InputSchema: schema(map[string]any{
+			"node_id": map[string]any{"type": "string", "description": "节点 id，来自 list_nodes"},
+		}, "node_id"),
+	},
+	{
+		Name:        "recent_events",
+		Description: "读取最近的告警事件与通知投递结果：离线、续费、流量、负载的触发与恢复。",
+		InputSchema: schema(map[string]any{}),
+	},
+	{
+		Name:        "latency_samples",
+		Description: "读取逐次 TCP 探测结果：每个「节点 / 运营商 / 协议 / 地区」最近若干次连接耗时，失败的那次 latency 为空。",
+		InputSchema: schema(map[string]any{
+			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 60, "description": "每组保留的最近次数，默认 20"},
+		}),
+	},
+}
+
+func schema(properties map[string]any, required ...string) map[string]any {
+	out := map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
+	if len(required) > 0 {
+		out["required"] = required
+	}
+	return out
+}
+
+// toolList adds the caching hints the modern revision requires of list results;
+// the handshake revisions have no such field.
+func (s *Server) toolList(modern bool) map[string]any {
+	out := map[string]any{"tools": tools}
+	if modern {
+		out["ttlMs"] = 3600000
+		out["cacheScope"] = "public"
+	}
+	return out
+}
+
+func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rpcError, int) {
+	if params.Name == "" {
+		return nil, &rpcError{Code: codeInvalidParams, Message: "tools/call requires a tool name"}, http.StatusOK
+	}
+	switch params.Name {
+	case "list_nodes":
+		if e := arguments(params.Arguments, &struct{}{}); e != nil {
+			return nil, e, http.StatusOK
+		}
+		nodes, err := s.Source.Nodes(ctx, time.Now())
+		if err != nil {
+			return toolFailure("读取节点失败", err)
+		}
+		return toolResult(map[string]any{"nodes": nodes, "count": len(nodes)}), nil, 0
+
+	case "list_tasks":
+		if e := arguments(params.Arguments, &struct{}{}); e != nil {
+			return nil, e, http.StatusOK
+		}
+		tasks, err := s.Source.Tasks(ctx)
+		if err != nil {
+			return toolFailure("读取任务失败", err)
+		}
+		return toolResult(map[string]any{"tasks": tasks, "count": len(tasks)}), nil, 0
+
+	case "recent_events":
+		if e := arguments(params.Arguments, &struct{}{}); e != nil {
+			return nil, e, http.StatusOK
+		}
+		events, err := s.Source.Events(ctx, false, time.Now())
+		if err != nil {
+			return toolFailure("读取告警事件失败", err)
+		}
+		return toolResult(map[string]any{"events": events, "count": len(events)}), nil, 0
+
+	case "node_history":
+		var args nodeArgs
+		if e := arguments(params.Arguments, &args); e != nil {
+			return nil, e, http.StatusOK
+		}
+		node, failure := s.lookupNode(ctx, args.NodeID)
+		if failure != nil {
+			return failure, nil, 0
+		}
+		hours := window(args.Hours, 24, 720)
+		samples, err := s.Source.History(ctx, node.ID, hours, time.Now())
+		if err != nil {
+			return toolFailure("读取主机历史失败", err)
+		}
+		return toolResult(map[string]any{"node_id": node.ID, "name": node.Name, "hours": hours, "samples": samples, "count": len(samples)}), nil, 0
+
+	case "node_network_history":
+		var args nodeArgs
+		if e := arguments(params.Arguments, &args); e != nil {
+			return nil, e, http.StatusOK
+		}
+		node, failure := s.lookupNode(ctx, args.NodeID)
+		if failure != nil {
+			return failure, nil, 0
+		}
+		hours := window(args.Hours, 24, 168)
+		series, err := s.Source.NetworkHistory(ctx, node.ID, hours, time.Now())
+		if err != nil {
+			return toolFailure("读取网络历史失败", err)
+		}
+		return toolResult(map[string]any{"node_id": node.ID, "name": node.Name, "hours": hours, "series": series, "count": len(series)}), nil, 0
+
+	case "node_observations":
+		var args nodeArgs
+		if e := arguments(params.Arguments, &args); e != nil {
+			return nil, e, http.StatusOK
+		}
+		node, failure := s.lookupNode(ctx, args.NodeID)
+		if failure != nil {
+			return failure, nil, 0
+		}
+		observations, err := s.Source.Observations(ctx, node.ID, time.Now())
+		if err != nil {
+			return toolFailure("读取观测结果失败", err)
+		}
+		// Same masking as the HTTP contract: node bindings drop out and hop
+		// addresses keep only their prefix.
+		out := make([]model.Observation, 0, len(observations))
+		for _, o := range observations {
+			out = append(out, o.Redact())
+		}
+		return toolResult(map[string]any{"node_id": node.ID, "name": node.Name, "observations": out, "count": len(out)}), nil, 0
+
+	case "latency_samples":
+		var args struct {
+			Limit int `json:"limit"`
+		}
+		if e := arguments(params.Arguments, &args); e != nil {
+			return nil, e, http.StatusOK
+		}
+		limit := window(args.Limit, 20, 60)
+		nodes, err := s.Source.Nodes(ctx, time.Now())
+		if err != nil {
+			return toolFailure("读取节点失败", err)
+		}
+		ids := make([]string, 0, len(nodes))
+		for _, n := range nodes {
+			ids = append(ids, n.ID)
+		}
+		samples, err := s.Source.RecentLatencySamples(ctx, ids, limit)
+		if err != nil {
+			return toolFailure("读取延迟样本失败", err)
+		}
+		return toolResult(map[string]any{"limit": limit, "samples": samples, "count": len(samples)}), nil, 0
+	}
+	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + params.Name}, http.StatusOK
+}
+
+type nodeArgs struct {
+	NodeID string `json:"node_id"`
+	Hours  int    `json:"hours"`
+}
+
+// lookupNode resolves an id against the current fleet so a typo comes back as a
+// readable tool error instead of an empty history. It returns exactly one of a
+// node or a finished tool error.
+func (s *Server) lookupNode(ctx context.Context, id string) (model.NodeView, map[string]any) {
+	if id == "" {
+		return model.NodeView{}, toolError("缺少 node_id；先用 list_nodes 获取可用 id。")
+	}
+	nodes, err := s.Source.Nodes(ctx, time.Now())
+	if err != nil {
+		return model.NodeView{}, toolError("读取节点失败：" + err.Error())
+	}
+	for _, n := range nodes {
+		if n.ID == id {
+			return n, nil
+		}
+	}
+	return model.NodeView{}, toolError("节点不存在：" + id + "；先用 list_nodes 获取可用 id。")
+}
+
+// arguments decodes tool arguments, rejecting unknown fields the way the HTTP
+// contract does so a misspelled parameter fails loudly.
+func arguments(raw json.RawMessage, v any) *rpcError {
+	if len(raw) == 0 || string(raw) == "null" {
+		raw = json.RawMessage("{}")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(v); err != nil {
+		return &rpcError{Code: codeInvalidParams, Message: "invalid arguments: " + err.Error()}
+	}
+	return nil
+}
+
+// window applies the same "0 means default, otherwise clamp" rule the HTTP
+// endpoints use, so both surfaces answer with the range they actually read.
+func window(value, fallback, highest int) int {
+	if value == 0 {
+		return fallback
+	}
+	if value < 1 {
+		return 1
+	}
+	if value > highest {
+		return highest
+	}
+	return value
+}
+
+// toolResult returns the payload as both readable text and structured content.
+// Erroring tools answer with a result instead of a JSON-RPC error, which is what
+// the specification asks for: the model can read the failure and retry.
+func toolResult(payload map[string]any) map[string]any {
+	text, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return toolError("结果序列化失败：" + err.Error())
+	}
+	return map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": string(text)}},
+		"structuredContent": payload,
+	}
+}
+
+func toolError(message string) map[string]any {
+	return map[string]any{"content": []map[string]any{{"type": "text", "text": message}}, "isError": true}
+}
+
+func toolFailure(message string, err error) (map[string]any, *rpcError, int) {
+	return toolError(message + "：" + err.Error()), nil, 0
+}

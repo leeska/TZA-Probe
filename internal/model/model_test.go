@@ -291,6 +291,39 @@ func TestCombinedTaskValidation(t *testing.T) {
 	}
 }
 
+// TestObservationRedact pins the masking both the panel and the MCP endpoint
+// apply: bound node ids and unmasked hop addresses must never leave the server.
+func TestObservationRedact(t *testing.T) {
+	fresh := Observation{
+		Task: Task{ID: "t1", Kind: "route", NodeIDs: []string{"n1", "n2"}},
+		Result: Result{
+			Status: "ok", Route: "CN2GT",
+			Hops: []Hop{{TTL: 1, Address: "59.43.1.2", ASN: "4134"}, {TTL: 2, Address: "202.97.5.6", ASN: "as4134"}},
+		},
+	}
+	out := fresh.Redact()
+	if out.Task.NodeIDs != nil {
+		t.Fatalf("node bindings leaked: %v", out.Task.NodeIDs)
+	}
+	if out.Result.Hops[0].Address != "59.43.*.*" || out.Result.Hops[1].Address != "202.97.*.*" {
+		t.Fatalf("hop addresses not masked: %v", out.Result.Hops)
+	}
+	if out.Result.Hops[0].ASN != "AS4134" || out.Result.Hops[1].ASN != "AS4134" {
+		t.Fatalf("asn not normalised: %v", out.Result.Hops)
+	}
+	if out.Result.Route != "CN2GT" {
+		t.Fatalf("a successful probe keeps its label: %v", out.Result.Route)
+	}
+	stale := Observation{Result: Result{Status: "ok", Route: "CN2GIA"}, Stale: true}
+	if stale.Redact().Result.Route != "未知" {
+		t.Fatalf("a stale probe must not show a label: %v", stale.Redact().Result.Route)
+	}
+	failed := Observation{Result: Result{Status: "timeout", Route: "CN2GIA"}}
+	if failed.Redact().Result.Route != "未知" {
+		t.Fatalf("a failed probe must not show a label: %v", failed.Redact().Result.Route)
+	}
+}
+
 func TestMetricsAddressFamilyCapability(t *testing.T) {
 	valid := Metrics{MemoryTotal: 1}
 	if err := valid.Validate(); err != nil {

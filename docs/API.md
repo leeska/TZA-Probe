@@ -18,11 +18,23 @@
 | GET /admin/events | 最近 100 条告警与发送结果 |
 | GET、PUT /admin/settings | 查询是否配置通知、设置 webhook |
 | POST /admin/settings/test | 显式测试已配置 Webhook |
+| POST /mcp | Model Context Protocol 只读工具（不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |
 | GET /agent/jobs | 获取最多两个有限租约任务 |
 | POST /agent/results | 上传与租约绑定的结果 |
 
 准确字段由 `internal/model` 中的 JSON 标签定义。未知 JSON 字段、超大请求、额外 JSON 值会被拒绝。非公开节点对未登录请求返回 404。任务为空绑定不执行，不表示所有节点。
+
+## Model Context Protocol（`POST /mcp`）
+
+同一个管理面：`Authorization: Bearer <管理密钥>`（浏览器会话 Cookie 同样可用），节点密钥不通行，跨源写入按原有规则拒绝。只接受 POST 与 `application/json`，GET / DELETE 返回 405；响应默认为 `application/json`，客户端只接受 `text/event-stream` 时用一条 SSE 消息回复同一条 JSON-RPC 消息。没有会话状态，每个请求独立处理。
+
+同一个地址支持两代协议：
+
+- `2026-07-28`（无握手）：每个请求在 `_meta` 里声明版本，并在头部镜像 `MCP-Protocol-Version`、`Mcp-Method`（`tools/call` 还有 `Mcp-Name`，非 ASCII 用 `=?base64?…?=`），三者必须与请求体一致，缺失或不符返回 400 与 `-32020 HeaderMismatch`；版本不认识返回 400 与 `-32022 UnsupportedProtocolVersionError`（`data.supported` 列出支持版本）；方法不认识返回 404 与 `-32601`。结果带 `resultType: "complete"` 与 `_meta["io.modelcontextprotocol/serverInfo"]`，`server/discover` 与 `tools/list` 带 `ttlMs` / `cacheScope`。
+- `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
+
+工具都是只读的：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`、`latency_samples`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id`、未知工具返回 `-32602`；节点不存在或存储读取失败按工具结果返回 `isError: true` 与说明文字，而不是 JSON-RPC 错误。回程跳地址与管理接口一样脱敏，过期或失败的探测不返回线路标签。
 
 ## 通知渠道
 

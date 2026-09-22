@@ -19,6 +19,7 @@ import (
 
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/catalog"
+	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
 )
@@ -252,6 +253,17 @@ func (a *API) Handler() http.Handler {
 		respond(w, a.Store.Finish(r.Context(), id, v, time.Now()))
 	}))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { write(w, 404, map[string]string{"error": "not found"}) })
+	// Model Context Protocol: the same administrator key as the API, sent as a
+	// bearer token by the AI client. Read-only tools, so this adds no way to
+	// change a node or a task.
+	probe := &mcp.Server{Source: a.Store}
+	mux.HandleFunc("POST /mcp", a.admin(probe.ServeHTTP))
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		// The modern revision dropped the standalone SSE stream (GET) and
+		// session termination (DELETE), so both answer 405.
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "MCP endpoint accepts POST only", http.StatusMethodNotAllowed)
+	})
 	// Agent distribution: the install script is public and secret-free; the
 	// node key travels only as an argument of the command shown to the admin.
 	mux.HandleFunc("GET /install.sh", func(w http.ResponseWriter, r *http.Request) {
@@ -452,16 +464,7 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range out {
-		o := &out[i]
-		o.Task.NodeIDs = nil
-		for h := range o.Result.Hops {
-			hop := &o.Result.Hops[h]
-			hop.Address = model.PublicAddress(hop.Address)
-			hop.ASN = model.NormalizeASN(hop.ASN)
-		}
-		if o.Stale || o.Result.Status != "ok" {
-			o.Result.Route = "未知"
-		}
+		out[i] = out[i].Redact()
 	}
 	write(w, 200, out)
 }

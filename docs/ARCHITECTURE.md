@@ -3,12 +3,11 @@
 所有运行组件统一版本发布，但保持依赖方向单向。解耦不要求运行消息队列或额外服务。
 
 ```text
-web (HTTP JSON only) ───> httpapi ───> Repository port <── storage (SQLite)
-                                             │
-notify.Engine ───> Repository port             │
-       └────────> Sender port <── Telegram / Webhook      │
-                                             │
-Agent ───> Transport port <── HTTPTransport ──┘
+web (HTTP JSON) ───> httpapi ───> Repository port <── storage (SQLite)
+                        └──> mcp（MCP 只读工具，同一个持久化端口）
+notify.Engine ───> Repository port
+       └────────> Sender port <── Telegram / Webhook
+Agent ───> Transport port <── HTTPTransport ───> httpapi
   ├─────> Collector port <── SystemCollector (gopsutil)
   └─────> Prober port <── probe.Runner (TCP / 内置 NTrace-core)
 
@@ -19,6 +18,7 @@ cmd/server and cmd/agent: composition roots and lifecycle
 - `model` 仅依赖标准库，不导入数据库、HTTP、UI。
 - `storage` 实现持久化，没有服务端路由和探测逻辑。
 - `httpapi` 只依赖持久化接口；从 `cmd/server` 注入 SQLite 实现。
+- `mcp` 复用同一个持久化接口，只暴露只读工具；它不知道路由与鉴权，由 `httpapi` 挂在管理密钥后面，因此 AI 客户端拿不到写能力，也无法绕过公开/管理员可见性规则。
 - `notify` 的规则和发送器使用独立接口，Telegram / Webhook 发送器不影响采集模块。
 - `agent` 的采集、传输、探测接口可分别替换；CPU 采集不会被最长 60 秒的回程执行阻塞。
 - `probe` 不知道数据库或 HTTP；任务执行只允许固定动作，拒绝超频任务和无效目标。

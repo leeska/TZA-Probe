@@ -572,6 +572,30 @@ node scripts/ui-smoke.mjs
 - 存活性对照（防止「不跳」只是页面变静态）：12 秒内文本节点更新 120 次，卡片数值实测
   `CPU 23.3% → 2.5% → 1.0%`、内存 33.5% → 33.7%，数值照常每秒在走。
 
+## MCP 接口：AI 客户端只读接入（2026-09-22）
+
+**需求**
+给 TZA-Probe 增加 MCP：AI 客户端（各 MCP 客户端均可）能直接读探针数据，不用去抓面板页面。
+
+**做法**
+- 先查规范再写代码：现行修订是 `2026-07-28`（**无握手、去会话**，版本与客户端信息按请求放在 `_meta`，并强制镜像 `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` 头；`server/discover` 必须实现；结果带 `resultType`；`tools/list` 带 `ttlMs` / `cacheScope`），上一版是 `2025-11-25`（`initialize` 握手，`Mcp-Session-Id` 可选用）。规范给出「dual-era 服务器」这一形态（现代请求走无状态路径、`initialize` 走握手路径），因此同一个 `/mcp` 同时说两代协议。
+- 只做只读工具：写能力（建节点、改任务）不进 MCP，管理员仍走 `/api/v1/admin/*`。
+
+**改法**
+- 新增 `internal/mcp`：`server.go` 负责 JSON-RPC 信封、代际协商、头校验、结果整形（现代加成 `resultType` / `_meta.serverInfo` / 缓存字段），`tools.go` 负责 7 个只读工具与参数规则。只用标准库，不加依赖。
+- `internal/httpapi` 把 `/mcp` 挂到 `a.admin` 后面（同一管理密钥，支持 Bearer 与浏览器会话；跨源写入仍 403），GET / DELETE 返回 405。`internal/model` 新增 `Observation.Redact()`，把脱敏逻辑从 `api.go` 的 handler 里提取出来，面板与 MCP 共用一份实现。
+
+**验证（本地真实进程）**
+- 用**官方 MCP TypeScript SDK**（`@modelcontextprotocol/sdk@1.30.0`，即真实客户端的同款库）连 `http://127.0.0.1:25774/mcp`，走的是握手代际：`connected {"name":"tza-probe","version":"2.0.0-dev"}`，7 个工具全部列出；`list_nodes` 1 个节点、`list_tasks` 9 个任务、`node_history(24)` 240 个采样点、`node_network_history(24)` 5 条序列（电信/移动/联通，各 240 点）、`node_observations` 9 条（`route=CN2GIA`，首跳 `45.78.*.*`，`node_ids=null`）、`latency_samples(limit=5)` 17 条（首条四川电信 ipv4 48.2ms）。
+- 错误路径实测：不存在的节点 → `isError=true`「节点不存在：nope…」；未知工具 → `-32602`；拼错的参数 `{"boom":1}` → `-32602 unknown field "boom"`。
+- 现代代际用 curl 对同一二进制逐条验：`server/discover` 返回 `supportedVersions ['2026-07-28','2025-11-25','2025-06-18']` + `resultType complete` + `serverInfo`；`tools/call` 缺 `Mcp-Name` 头 → 400 `-32020 Header mismatch: Mcp-Name header is missing`；匿名 → 401；GET → 405。
+- 单元测试 `internal/mcp`：头校验（缺版本头/缺方法头/方法不符/版本不符 → `-32020`）、未知版本 → `-32022` 并列出支持版本且 `requested` 回填、`initialize` 版本回显与未知版本拒绝、`Mcp-Name` 的 Base64 哨兵解码后比对、SSE-only 客户端、通知 202、解析错误、工具参数与窗口截断、脱敏跳地址；`internal/httpapi` 新增 `/mcp` 鉴权/跨源/405 断言；`internal/model` 新增 `Redact` 断言。
+- 回归：`gofmt -l` 干净、`go vet ./...`、`go test -race ./...` 全绿；`scripts/ui-smoke.mjs` 与 `presentation-test.mjs` 全 PASS（api.go 改动没有影响面板）。
+
+**待确认**
+- 现代代际（`2026-07-28`）目前只有本地 curl 与单元测试验证；官方 SDK 1.30.0 仍以 `2025-11-25` 为最新版本，所以没有真实客户端跑过这条路径，等客户端跟上后再实测一次。
+- 线上是否要长期暴露 `/mcp` 由部署方决定：它复用管理密钥，建议只在内网或反代鉴权后暴露。
+
 ## 删掉滚动守卫：数字不必再停下来（2026-09-22）
 
 守卫原本的理由是「滚动中替换元素会让 WebKit 重挑滚动锚点、把位置弹回去」，而写入现在只改文本与属性

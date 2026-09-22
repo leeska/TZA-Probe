@@ -17,6 +17,7 @@
 | Telegram 机器人通知 | 告警与通知 → 配置出口 | notify/transport.go |
 | 前后台重构、克制的玻璃效果 | 公开页、后台 | web/styles.css、web/glass.css |
 | 各组件解耦 | 依赖接口和版本化 HTTP 协议 | docs/ARCHITECTURE.md |
+| AI 客户端读取探针数据（只读） | `POST /mcp` 的 MCP 工具 | internal/mcp、internal/httpapi |
 | 不迁移旧数据 | 新建独立数据库，拒绝旧版数据库 | storage.Open |
 
 ## 简单使用所需的配套能力
