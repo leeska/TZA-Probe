@@ -371,10 +371,15 @@ assert(
 );
 // iOS（WebKit）在惯性滚动里被改 DOM 会弹位置，所以滚动期间两拍都要让开。
 assert(
-  /const scrolling = \(\) => Date\.now\(\) - lastScrollAt < 900/.test(appSource) &&
+  /const scrolling = \(\) => Date\.now\(\) - lastScrollAt < 1200/.test(appSource) &&
     /if \(liveBusy \|\| scrolling\(\)\) return;/.test(appSource) &&
-    /if \(scrolling\(\)\) \{/.test(appSource),
+    /const run = \(\) => \{\n\s*if \(scrolling\(\)\) \{\n\s*setTimeout\(run, 400\)/.test(appSource),
   "both refresh loops must stand down while the user is scrolling",
+);
+// 贴底判定只认 8px：以前 48px，把停在离底 40px 的人每 10 秒拽到最底（现场反馈的「停下还是会跳」）。
+assert(
+  /const atBottom = scroller\.scrollHeight - scroller\.scrollTop - scroller\.clientHeight < 8;/.test(appSource),
+  "the bottom pin must only apply within 8px - 48px yanked everyone sitting just above the bottom",
 );
 // 没变就不写 DOM：每秒那层只该写真正在动的数字。
 assert(
@@ -388,8 +393,11 @@ assert(
   "a re-render while pinned to the page bottom must stay pinned",
 );
 assert(
-  /anchorOf\(\)/.test(appSource) && /scroller\.scrollTop \+= delta/.test(appSource),
-  "the card re-render must re-anchor the visible card (iOS Safari has no scroll anchoring)",
+  /anchorOf\(\)/.test(appSource) &&
+    /const hold = \(\) => \{/.test(appSource) &&
+    /if \(Math\.abs\(off\) > 0\.5\) scroller\.scrollTop \+= off;/.test(appSource) &&
+    /nextFrame\(\(\) => \{\n\s*hold\(\);\n\s*nextFrame\(hold\);/.test(appSource),
+  "the card re-render must re-anchor the visible card, and re-check over the next two frames (iOS drops main-thread scroll writes)",
 );
 assert(!/show-all|查看全部信息/.test(detailSource), "the focused view must not keep a 查看全部信息 button");
 assert(

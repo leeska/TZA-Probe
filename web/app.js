@@ -51,13 +51,15 @@ async function start() {
   }, 1000);
   setInterval(() => {
     if (document.hidden) return;
-    if (scrolling()) {
-      setTimeout(() => {
-        if (!document.hidden) refresh().catch((e) => toast(e.message));
-      }, 1200);
-      return;
-    }
-    refresh().catch((e) => toast(e.message));
+    // iOS 的惯性可以比手指多滑一两秒，所以不是等一次就算：还在滑就 400ms 后再看，停下才动 DOM。
+    const run = () => {
+      if (scrolling()) {
+        setTimeout(run, 400);
+        return;
+      }
+      if (!document.hidden) refresh().catch((e) => toast(e.message));
+    };
+    run();
   }, 10000);
 }
 
@@ -158,7 +160,7 @@ function watchScrolling() {
   window.addEventListener("touchmove", mark, { passive: true });
   window.addEventListener("wheel", mark, { passive: true });
 }
-const scrolling = () => Date.now() - lastScrollAt < 900;
+const scrolling = () => Date.now() - lastScrollAt < 1200;
 
 // 文本 / HTML 先比一遍再写：数值没变就不碰 DOM（每秒那层刷新因此只写真正在动的几个数字）。
 function setHTML(el, html) {
@@ -167,6 +169,9 @@ function setHTML(el, html) {
 function setText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }
+// 下一帧再跑一次：iOS 上主线程写的 scrollTop 可能被合成器覆盖，要补；测试环境没有 rAF 时退回定时器。
+const nextFrame = (fn) =>
+  typeof requestAnimationFrame === "function" ? requestAnimationFrame(fn) : setTimeout(fn, 16);
 
 // 每秒一次的轻刷新：只动数值——顶部四个数字、每张卡片的指标与速率、在线状态。不重建卡片列表，
 // 也就不动滚动位置（重建那一轮走 renderCards，里面另有滚动锚定）。
@@ -210,17 +215,27 @@ function renderCards() {
     return card ? { id: card.dataset.node, offset: card.getBoundingClientRect().top } : null;
   };
   const anchor = anchorOf();
-  const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
+  // 真·贴底才续贴：以前这里写 48px，凡是停在离底 48px 以内的人每 10 秒会被拽到最底——
+  // 现场看到的就是「停下之后还是跳」。8px 以内才算贴在底部。
+  const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
   document.querySelector("#nodes").innerHTML = filtered.length
     ? filtered.map(card).join("")
     : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点，并开启公开展示。"}</p></div>`;
   if (anchor) {
-    const next = [...document.querySelectorAll(".node-card")].find((c) => c.dataset.node === anchor.id);
     // 重绘前后同一张卡片的视口位置差多少，就把滚动补回多少（浏览器已经自己补过时这里是 0）。
-    if (next) {
-      const delta = next.getBoundingClientRect().top - anchor.offset;
-      if (Math.abs(delta) > 0.5) scroller.scrollTop += delta;
-    }
+    // iOS 上主线程的 scrollTop 写入可能被合成器那一步覆盖掉，所以接下来两帧各再校一次；
+    // 已经对齐时是空操作，不会多写。
+    const hold = () => {
+      const el = document.querySelector(`.node-card[data-node="${anchor.id}"]`);
+      if (!el) return;
+      const off = el.getBoundingClientRect().top - anchor.offset;
+      if (Math.abs(off) > 0.5) scroller.scrollTop += off;
+    };
+    hold();
+    nextFrame(() => {
+      hold();
+      nextFrame(hold);
+    });
   }
   if (atBottom) scroller.scrollTop = scroller.scrollHeight;
   // 单元格子只展示那一格的内容（延迟 / 回程），整张卡片才展示综合信息。
