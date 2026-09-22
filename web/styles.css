@@ -790,6 +790,63 @@ button.node-name:hover {
 /* 一次失败探测（拿不到延迟）：空心红格，与"无数据"的灰格区分。 */
 .quality-bar.fail { background: transparent; box-shadow: inset 0 0 0 1px #e5484d; }
 
+/* 卡片自己就是宽度容器：窄卡片（手机、多列列表）里四个运营商挤成四列，会把“延迟”两个字折成两行、
+   数值也跟着换行。窄下来时改成一家一行——名字占左列并跨两行，右边两行分别是延迟 / 丢包的数值加色带，
+   色带因此能从名字右边一直拉到卡片边。宽卡片保持原来的四列。
+   这段必须排在 .route-label / .quality-* 之后，否则同权重的基础规则会把它盖掉。 */
+.node-card {
+  container-type: inline-size;
+  container-name: node-card;
+}
+
+@container node-card (max-width: 430px) {
+  .latency-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .latency-label {
+    display: grid;
+    grid-template-columns: auto auto minmax(56px, 1fr);
+    align-items: center;
+    justify-items: start;
+    gap: 3px 8px;
+    padding: 7px 10px;
+  }
+
+  .latency-label .carrier-name {
+    grid-area: 1 / 1 / 3 / 2;
+    font-size: 12px !important;
+  }
+
+  .latency-label .quality-row {
+    gap: 6px;
+  }
+
+  .latency-label .latency-row {
+    grid-area: 1 / 2;
+  }
+
+  .latency-label .loss-row {
+    grid-area: 2 / 2;
+  }
+
+  .latency-label .quality-bars {
+    grid-area: 1 / 3;
+    height: 7px;
+    min-height: 7px;
+  }
+
+  .latency-label .loss-bars {
+    grid-area: 2 / 3;
+  }
+
+  .latency-label .quality-bar {
+    height: 7px !important;
+    min-height: 7px;
+  }
+}
+
 /* Card Bottom */
 .card-bottom {
   margin: auto -22px 0 -22px;

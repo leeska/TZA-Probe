@@ -506,6 +506,17 @@ const cardText = card.textContent;
 for (const carrier of ["电信", "联通", "移动", "其他"])
   assert(cardText.includes(carrier), `latency grid must list ${carrier}`);
 assert.equal(card.querySelector(".latency-grid").children.length, 4, "latency grid has four carrier cells");
+// 窄卡片里四个运营商改成一家一行（容器查询），行内用 latency-row / loss-row 定位。
+assert.equal(
+  card.querySelectorAll(".latency-grid .latency-row").length,
+  4,
+  "each latency cell must mark its latency row for the stacked layout",
+);
+assert.equal(card.querySelectorAll(".latency-grid .loss-row").length, 4, "each latency cell must mark its loss row");
+assert(
+  /@container node-card \(max-width: 430px\)/.test(styles),
+  "narrow cards must stack the carrier cells one per line",
+);
 assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
 assert(cardText.includes("上海"), "the card shows the latency region it was configured with");
 // 延迟 / 丢包条按 styles.css 的 q1..q20 上色：颜色必须来自 class，不能是行内 style，

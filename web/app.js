@@ -215,7 +215,7 @@ function card(n) {
       const title = matches.length
         ? `${date(recent)} · 成功 ${received}/${sent} 次`
         : "尚未检测";
-      return `<button class="route-label latency-label ${value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(carrier)}" data-focus-family="${effectiveFamily}" title="${esc(title)}"><span class="carrier-name">${carrier}</span><span class="quality-row"><span>延迟</span><strong class="${value == null ? "muted" : ""}">${value == null ? (matches.length ? "超时" : "未检测") : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms"}</strong></span><span class="quality-bars">${latencyBars}</span><span class="quality-row"><span>丢包</span><strong class="${loss == null ? "muted" : ""}">${loss == null ? "—" : loss.toFixed(1) + "%"}</strong></span><span class="quality-bars loss-bars">${lossBars}</span></button>`;
+      return `<button class="route-label latency-label ${value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(carrier)}" data-focus-family="${effectiveFamily}" title="${esc(title)}"><span class="carrier-name">${carrier}</span><span class="quality-row latency-row"><span>延迟</span><strong class="${value == null ? "muted" : ""}">${value == null ? (matches.length ? "超时" : "未检测") : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms"}</strong></span><span class="quality-bars">${latencyBars}</span><span class="quality-row loss-row"><span>丢包</span><strong class="${loss == null ? "muted" : ""}">${loss == null ? "—" : loss.toFixed(1) + "%"}</strong></span><span class="quality-bars loss-bars">${lossBars}</span></button>`;
     })
     .join("");
 
