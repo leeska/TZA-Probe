@@ -1761,6 +1761,7 @@ pre,
   font-size: 12px;
   color: var(--ink);
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   margin-bottom: 12px;
 }
@@ -1862,6 +1863,10 @@ pre,
 .overview-head .segmented button { padding: 4px 9px; font-size: 10px; }
 .overview-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 14px; margin-top: 8px; font-size: 10px; color: var(--muted); }
 .overview-legend span { display: inline-flex; align-items: center; gap: 5px; }
+/* 图例右侧的读数：平时是最新一次采样，悬停换成那一列。等宽数字 + 预留宽度，切换时不跳动。 */
+.overview-legend em { font-style: normal; min-width: 52px; color: var(--ink); font-variant-numeric: tabular-nums; }
+/* 标题行中间的悬停时间：同样预留宽度，避免一悬停整行就重排。 */
+.chart figcaption [data-chart-stamp] { min-width: 92px; }
 .overview-legend i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
 /* 多折线配色：class 只定义变量，折线、图例点、悬停点共用同一个来源。标记里的
    stroke="…" 属性敌不过样式表里的 `.chart polyline`，颜色必须由 CSS 给出。 */

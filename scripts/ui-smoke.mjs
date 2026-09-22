@@ -611,6 +611,43 @@ assert(!dot.hidden, "a single-line chart must mark the point it is reading");
 assert(Math.abs(parseFloat(dot.style.left) - 340) < 0.1 && Math.abs(parseFloat(dot.style.top) - 89.6) < 0.1, "the dot must sit on the line, got " + dot.style.left + "/" + dot.style.top);
 chartBody.dispatchEvent(new w.MouseEvent("pointerleave", { bubbles: true }));
 assert(probe.querySelector(".chart-hover").hidden, "leaving the chart must hide the readout");
+// 多折线图（带图例）不飘浮层：读数写进图例、时间写进标题行，曲线区域不被遮挡。
+const multi = w.document.createElement("figure");
+multi.className = "chart";
+multi.dataset.series = JSON.stringify([
+  { label: "四川 · 电信", unit: "ms", color: "lc0", points: [[0, 10], [600, 20], [1200, 30]] },
+  { label: "四川 · 联通", unit: "ms", color: "lc1", points: [[0, 40], [600, 50], [1200, 60]] },
+]);
+multi.dataset.range = "0,1200";
+multi.dataset.ceiling = "100";
+multi.innerHTML =
+  '<figcaption><strong>延迟趋势</strong><span data-chart-stamp></span><span>最近 24 小时</span></figcaption>' +
+  '<div class="chart-body"><svg viewBox="0 0 680 120"></svg></div>' +
+  '<div class="overview-legend">' +
+  '<span><i class="legend-dot lc0"></i>四川 · 电信<em data-legend-value="0">30.0 ms</em></span>' +
+  '<span><i class="legend-dot lc1"></i>四川 · 联通<em data-legend-value="1">60.0 ms</em></span>' +
+  "</div>";
+w.document.body.append(multi);
+w.TZACharts.wireCharts(w.document.body);
+const multiBody = multi.querySelector(".chart-body");
+multiBody.dispatchEvent(new w.MouseEvent("pointermove", { clientX: 340, clientY: 40, bubbles: true }));
+assert(multi.querySelector(".chart-tip").hidden, "a chart with a legend must not float a readout over the curve");
+assert.equal(
+  [...multi.querySelectorAll("[data-legend-value]")].map((e) => e.textContent).join(" "),
+  "20.0 ms 50.0 ms",
+  "hovering must write the column values into the legend",
+);
+assert(
+  /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(multi.querySelector("[data-chart-stamp]").textContent),
+  "the hovered time must land in the caption, got " + multi.querySelector("[data-chart-stamp]").textContent,
+);
+multiBody.dispatchEvent(new w.MouseEvent("pointerleave", { bubbles: true }));
+assert.equal(
+  [...multi.querySelectorAll("[data-legend-value]")].map((e) => e.textContent).join(" "),
+  "30.0 ms 60.0 ms",
+  "leaving the chart must fall back to the latest sample",
+);
+multi.remove();
 probe.remove();
 single.remove();
 assert.deepEqual(errors, []);

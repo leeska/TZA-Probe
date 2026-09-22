@@ -81,6 +81,26 @@ export function wireCharts(root) {
     const guide = overlay.querySelector(".chart-guide");
     const dot = overlay.querySelector(".chart-dot");
     const tip = overlay.querySelector(".chart-tip");
+    // 有图例的多折线图不飘浮层：浮层有 80~90px 高，手机上的绘图区也才 120px，怎么放都会
+    // 压住曲线。读数改写到图例右侧（平时是最近一次采样，悬停换成那一列的值），时间写在
+    // 标题行——曲线区域一个像素都不遮。单序列的主机图没有图例，仍用跟着指针的浮层。
+    const legendCells = [...figure.querySelectorAll("[data-legend-value]")];
+    const stampCell = figure.querySelector("[data-chart-stamp]");
+    const legendMode = legendCells.length > 0;
+    const latestValue = (s) => {
+      const points = Array.isArray(s.points) ? s.points : [];
+      for (let i = points.length - 1; i >= 0; i -= 1) {
+        if (points[i][1] != null && Number.isFinite(points[i][1])) return points[i][1];
+      }
+      return null;
+    };
+    const showLatest = () => {
+      series.forEach((s, index) => {
+        const cell = legendCells[index];
+        if (cell) cell.textContent = formatValue(latestValue(s), s.unit);
+      });
+      if (stampCell) stampCell.textContent = "";
+    };
     const draw = (event) => {
       const rect = svg.getBoundingClientRect();
       const box = body.getBoundingClientRect();
@@ -115,6 +135,18 @@ export function wireCharts(root) {
       } else {
         dot.hidden = true;
       }
+      overlay.hidden = false;
+      // 有图例的图：读数写进图例行 + 标题行时间，图上不出现任何浮层。
+      if (legendMode) {
+        rows.forEach((row, index) => {
+          const cell = legendCells[index];
+          if (cell) cell.textContent = formatValue(row.value, row.unit);
+        });
+        if (stampCell) stampCell.textContent = stamp(rows[0].at).full;
+        tip.hidden = true;
+        return;
+      }
+      tip.hidden = false;
       tip.innerHTML =
         `<b>${esc(stamp(rows[0].at).full)}</b>` +
         rows
@@ -123,7 +155,6 @@ export function wireCharts(root) {
               `<span title="${esc(row.full || row.label || "")}"><i class="${esc(row.color || "")}"></i>${esc(row.label || "")}<em>${esc(formatValue(row.value, row.unit))}</em></span>`,
           )
           .join("");
-      overlay.hidden = false;
       // 读数框的位置：先试绘图区正中，那一带正好压着曲线就让到曲线更少的一侧——看这一列
       // 各条曲线的 y，整体偏上就贴下沿、偏下就贴上沿。横向仍跟着指针走并夹在图表里。
       const tipWidth = tip.offsetWidth;
@@ -147,6 +178,7 @@ export function wireCharts(root) {
     body.addEventListener("pointermove", draw);
     body.addEventListener("pointerleave", () => {
       overlay.hidden = true;
+      if (legendMode) showLatest();
     });
   }
 }

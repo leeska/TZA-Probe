@@ -1,6 +1,6 @@
 import { api, esc, modal, guard } from "./api.js";
 import { bytes, date, statusName, reasonName } from "./format.js";
-import { chart, wireCharts, colorClass, axisRow } from "./charts.js";
+import { chart, wireCharts, colorClass, axisRow, formatValue } from "./charts.js";
 // 详情页要发三个请求，任何一个失败或长时间无响应，弹窗都会停在“读取节点详情…”：
 // 每个请求都带截止时间，失败时把原因和重试按钮写进弹窗。
 const requestTimeout = 15000;
@@ -226,6 +226,11 @@ function networkOverview(series, metric, hours) {
     const points = s.samples.map((p) => `${(((p.at - first) / Math.max(1, last - first)) * 680).toFixed(1)},${(110 - ((p[metric] || 0) / maxValue) * 102).toFixed(1)}`).join(" ");
     return `<polyline class="overview-line ${colorClass(i)}" points="${points}" />`;
   }).join("");
-  const legend = usable.map((s, i) => `<span title="${esc(seriesFull(s))}"><i class="legend-dot ${colorClass(i)}"></i>${esc(seriesName(s))}</span>`).join("");
-  return `<figure class="network-overview chart" data-series="${esc(JSON.stringify(hover))}" data-range="${first},${last}" data-ceiling="${maxValue}"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span>最近 ${spanLabel(hours)} · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><div class="chart-plot">${yAxis}<div class="chart-body"><svg viewBox="0 0 680 120" preserveAspectRatio="none" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线，纵轴 0 到 ${esc(tick(maxValue))}"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg>${axisRow(first, last)}<div class="overview-legend">${legend}</div></div></div></figure>`;
+  // 图例右侧常驻最新一次采样值，悬停时换成那一列的值——读数因此永远在图外，不会盖住曲线。
+  const latestOf = (s) => {
+    const values = s.samples.map((p) => p[metric]).filter((value) => value != null && Number.isFinite(value));
+    return values.length ? values[values.length - 1] : null;
+  };
+  const legend = usable.map((s, i) => `<span title="${esc(seriesFull(s))}"><i class="legend-dot ${colorClass(i)}"></i>${esc(seriesName(s))}<em data-legend-value="${i}">${esc(formatValue(latestOf(s), unit))}</em></span>`).join("");
+  return `<figure class="network-overview chart" data-series="${esc(JSON.stringify(hover))}" data-range="${first},${last}" data-ceiling="${maxValue}"><div class="overview-head"><figcaption><strong>${metric === "failure" ? "丢包率" : "延迟"}趋势</strong><span data-chart-stamp></span><span>最近 ${spanLabel(hours)} · ${usable.length} 个目标</span></figcaption><div class="segmented"><button class="${metric === "latency" ? "active" : ""}" data-network-metric="latency">延迟</button><button class="${metric === "failure" ? "active" : ""}" data-network-metric="failure">丢包</button></div></div><div class="chart-plot">${yAxis}<div class="chart-body"><svg viewBox="0 0 680 120" preserveAspectRatio="none" role="img" aria-label="网络${metric === "failure" ? "丢包率" : "延迟"}历史曲线，纵轴 0 到 ${esc(tick(maxValue))}"><path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />${lines}</svg>${axisRow(first, last)}<div class="overview-legend">${legend}</div></div></div></figure>`;
 }
