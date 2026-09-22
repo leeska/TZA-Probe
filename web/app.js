@@ -17,8 +17,24 @@ let nodes = [],
 
 export const brand = `<a class="brand" href="/" aria-label="TZA Probe 首页"><span class="brand-mark">t<span>z</span>a</span><span>PROBE<small>基础设施观测</small></span></a>`;
 
+// 滚动页面时不要顺手改掉已填好的值：数字、日期时间与下拉在被滚动时先失焦
+// （失焦后浏览器不会再按滚轮改值），页面滚动不受影响。
+const WHEEL_SENSITIVE =
+  'input[type="number"],input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"],input[type="week"],select';
+function noWheelStepping() {
+  document.addEventListener(
+    "wheel",
+    (e) => {
+      const el = e.target instanceof Element ? e.target.closest(WHEEL_SENSITIVE) : null;
+      if (el) el.blur();
+    },
+    { passive: true },
+  );
+}
+
 async function start() {
   applyTheme();
+  noWheelStepping();
   if (adminPage) {
     await mountAdmin(app, brand);
     return;

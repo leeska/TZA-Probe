@@ -7,21 +7,40 @@ import (
 
 func TestBillingCycleClampAndLeapYear(t *testing.T) {
 	cases := []struct {
-		now        string
-		day        int
-		start, end string
-	}{
-		{"2026-02-27T12:00:00Z", 31, "2026-01-31T00:00:00Z", "2026-02-28T00:00:00Z"},
-		{"2026-02-28T00:00:00Z", 31, "2026-02-28T00:00:00Z", "2026-03-31T00:00:00Z"},
-		{"2024-02-29T10:00:00Z", 31, "2024-02-29T00:00:00Z", "2024-03-31T00:00:00Z"},
-		{"2026-01-01T00:00:00Z", 1, "2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"},
+		now, anchor string
+		start, end  string
+	}{ // 锚点的「日」与时分秒逐月顺延，短月取当月最后一天。
+		{"2026-02-27T12:00:00Z", "2000-01-31T00:00:00Z", "2026-01-31T00:00:00Z", "2026-02-28T00:00:00Z"},
+		{"2026-02-28T00:00:00Z", "2000-01-31T00:00:00Z", "2026-02-28T00:00:00Z", "2026-03-31T00:00:00Z"},
+		{"2024-02-29T10:00:00Z", "2000-01-31T00:00:00Z", "2024-02-29T00:00:00Z", "2024-03-31T00:00:00Z"},
+		{"2026-01-01T00:00:00Z", "2000-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"},
+		// 周期时刻精确到秒：重置在 12:30:45 时边界也是 12:30:45。
+		{"2026-09-01T12:30:44Z", "2026-09-01T12:30:45Z", "2026-08-01T12:30:45Z", "2026-09-01T12:30:45Z"},
+		{"2026-09-01T12:30:45Z", "2026-09-01T12:30:45Z", "2026-09-01T12:30:45Z", "2026-10-01T12:30:45Z"},
+		{"2026-09-22T12:30:45Z", "2026-09-01T12:30:45Z", "2026-09-01T12:30:45Z", "2026-10-01T12:30:45Z"},
+		// 锚点在将来时，周期起点也必须落在 now 之前。
+		{"2026-01-15T00:00:00Z", "2026-03-10T08:00:00Z", "2026-01-10T08:00:00Z", "2026-02-10T08:00:00Z"},
 	}
 	for _, c := range cases {
 		now, _ := time.Parse(time.RFC3339, c.now)
-		start, end := Cycle(now, c.day)
+		anchor, _ := time.Parse(time.RFC3339, c.anchor)
+		start, end := Cycle(now, anchor)
 		if start.Format(time.RFC3339) != c.start || end.Format(time.RFC3339) != c.end {
-			t.Fatalf("%s: %s -> %s", c.now, start, end)
+			t.Fatalf("%s anchor %s: %s -> %s", c.now, c.anchor, start, end)
 		}
+	}
+}
+
+func TestBillingAnchorFallsBack(t *testing.T) {
+	now, _ := time.Parse(time.RFC3339, "2026-09-22T12:00:00Z")
+	for _, raw := range []string{"", "1", "2026-09-01 00:00:00"} {
+		// 缺省或格式不对时退回「当月 1 日 00:00:00Z」，而不是让整个周期算不出来。
+		if got := BillingAnchor(raw, now).Format(time.RFC3339); got != "2026-09-01T00:00:00Z" {
+			t.Fatalf("anchor %q = %s", raw, got)
+		}
+	}
+	if got := BillingAnchor("2026-08-31T06:07:08Z", now).Format(time.RFC3339); got != "2026-08-31T06:07:08Z" {
+		t.Fatalf("anchor = %s", got)
 	}
 }
 func TestRouteRequiresEvidence(t *testing.T) {

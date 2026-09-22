@@ -58,7 +58,7 @@ func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 			t.Fatal("task history authentication", code)
 		}
 	}
-	node := model.Node{Name: "private", BillingDay: 1, TrafficMode: "sum"}
+	node := model.Node{Name: "private", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}
 	code, data := request("POST", "/api/v1/admin/nodes", admin, node)
 	if code != 200 {
 		t.Fatalf("create: %d %s", code, data)

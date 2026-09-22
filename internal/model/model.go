@@ -53,13 +53,15 @@ type Node struct {
 	LatencyCarriers []string `json:"latency_carriers,omitempty"`
 	TrafficLimit    int64    `json:"traffic_limit"`
 	TrafficMode     string   `json:"traffic_mode"`
-	BillingDay      int      `json:"billing_day"`
-	Price           float64  `json:"price"`
-	Currency        string   `json:"currency"`
-	PricePeriod     string   `json:"price_period"`
-	ExpiresAt       string   `json:"expires_at"`
-	Alerts          Alerts   `json:"alerts"`
-	CreatedAt       int64    `json:"created_at"`
+	// BillingAt is the cycle anchor: its day and time of day repeat every month
+	// (RFC3339, second precision). See Cycle.
+	BillingAt   string  `json:"billing_at"`
+	Price       float64 `json:"price"`
+	Currency    string  `json:"currency"`
+	PricePeriod string  `json:"price_period"`
+	ExpiresAt   string  `json:"expires_at"`
+	Alerts      Alerts  `json:"alerts"`
+	CreatedAt   int64   `json:"created_at"`
 }
 
 func (n Node) Validate() error {
@@ -73,15 +75,18 @@ func (n Node) Validate() error {
 		}
 		seenCarriers[carrier] = true
 	}
-	if n.BillingDay < 1 || n.BillingDay > 31 || n.TrafficLimit < 0 || n.Price < 0 || !finite(n.Price) || len(n.Currency) > 12 || len(n.PricePeriod) > 30 {
+	if _, err := parseUTC(n.BillingAt); err != nil {
+		return errors.New("重置时间须为 RFC3339（精确到秒）")
+	}
+	if n.TrafficLimit < 0 || n.Price < 0 || !finite(n.Price) || len(n.Currency) > 12 || len(n.PricePeriod) > 30 {
 		return errors.New("计费配置无效")
 	}
 	if n.TrafficMode != "sum" && n.TrafficMode != "max" && n.TrafficMode != "in" && n.TrafficMode != "out" {
 		return errors.New("流量方式须为 sum/max/in/out")
 	}
 	if n.ExpiresAt != "" {
-		if _, err := time.Parse(time.RFC3339, n.ExpiresAt); err != nil {
-			return errors.New("到期时间须为 RFC3339")
+		if _, err := parseUTC(n.ExpiresAt); err != nil {
+			return errors.New("到期时间须为 RFC3339（精确到秒）")
 		}
 	}
 	a := n.Alerts
@@ -365,19 +370,45 @@ func Hash(s string) string   { h := sha256.Sum256([]byte(s)); return hex.EncodeT
 func finite(v float64) bool  { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 func percent(v float64) bool { return finite(v) && v >= 0 && v <= 100 }
 
-// Cycle uses UTC monthly boundaries, clamping days such as the 31st in February.
-func Cycle(now time.Time, day int) (time.Time, time.Time) {
-	now = now.UTC()
-	boundary := func(y int, m time.Month) time.Time {
-		last := time.Date(y, m+1, 0, 0, 0, 0, 0, time.UTC).Day()
-		d := min(max(day, 1), last)
-		return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+// parseUTC accepts second-precision timestamps and returns them in UTC.
+func parseUTC(value string) (time.Time, error) {
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, err
 	}
-	start := boundary(now.Year(), now.Month())
-	if now.Before(start) {
-		start = boundary(now.Year(), now.Month()-1)
+	return parsed.UTC(), nil
+}
+
+// Cycle uses UTC monthly boundaries anchored at an instant: the anchor's day and
+// time of day repeat every month, clamping days such as the 31st in February.
+// The anchor keeps its seconds, so a cycle can start at e.g. 12:30:45 UTC.
+func Cycle(now time.Time, anchor time.Time) (time.Time, time.Time) {
+	now, anchor = now.UTC(), anchor.UTC()
+	shift := func(months int) time.Time {
+		year, month := anchor.Year(), int(anchor.Month())-1+months
+		year += month / 12
+		month = ((month % 12) + 12) % 12
+		last := time.Date(year, time.Month(month+1)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+		return time.Date(year, time.Month(month+1), min(anchor.Day(), last),
+			anchor.Hour(), anchor.Minute(), anchor.Second(), 0, time.UTC)
 	}
-	return start, boundary(start.Year(), start.Month()+1)
+	// Months between the anchor month and now, corrected by one when the day
+	// clamp pushes the boundary past now.
+	index := (now.Year()-anchor.Year())*12 + int(now.Month()) - int(anchor.Month())
+	if shift(index).After(now) {
+		index--
+	}
+	return shift(index), shift(index + 1)
+}
+
+// BillingAnchor parses a stored cycle anchor; the zero value falls back to the
+// first of the current month so a config without one still bills monthly.
+func BillingAnchor(at string, now time.Time) time.Time {
+	parsed, err := time.Parse(time.RFC3339, at)
+	if err != nil {
+		return time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	}
+	return parsed.UTC()
 }
 func Traffic(in, out int64, mode string) int64 {
 	switch mode {

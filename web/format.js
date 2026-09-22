@@ -18,6 +18,35 @@ export function days(value) {
   if (!value) return null;
   return Math.ceil((new Date(value) - Date.now()) / 86400000);
 }
+// 表单里的 UTC 时刻统一写成「YYYY-MM-DD HH:MM:SS」，与接口的 RFC3339 互转。
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+export function stamp(value) {
+  if (!value) return "";
+  const at = new Date(typeof value === "number" ? value * 1000 : value);
+  if (Number.isNaN(at.getTime())) return "";
+  return `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())} ${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}:${pad(at.getUTCSeconds())}`;
+}
+export function stampISO(text) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?Z?$/.exec(
+    String(text ?? "").trim(),
+  );
+  if (!m) throw new Error("时间格式应为 YYYY-MM-DD HH:MM:SS（UTC）");
+  const [, y, mo, d, h, mi, s = "00"] = m;
+  const at = new Date(`${y}-${mo}-${d}T${h}:${mi}:${s}Z`);
+  // 2 月 31 日这类溢出会被 Date 顺延到下个月，必须挡掉而不是悄悄改日期。
+  if (
+    Number.isNaN(at.getTime()) ||
+    at.getUTCMonth() + 1 !== Number(mo) ||
+    at.getUTCDate() !== Number(d) ||
+    at.getUTCHours() !== Number(h) ||
+    at.getUTCMinutes() !== Number(mi)
+  ) {
+    throw new Error("时间不存在，请检查日期与时刻");
+  }
+  return `${y}-${mo}-${d}T${h}:${mi}:${s}Z`;
+}
 export function percent(used, total) {
   return total > 0 ? Math.min(100, (used / total) * 100) : 0;
 }

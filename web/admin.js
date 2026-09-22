@@ -3,7 +3,7 @@ import { themeButton } from "./theme.js";
 import { showToken } from "./agent-setup.js";
 import { taskEditor, taskSummary } from "./task-editor.js";
 import { api, send, esc, toast, modal, guard } from "./api.js";
-import { bytes, date, days, kindName } from "./format.js";
+import { bytes, date, days, kindName, stamp, stampISO } from "./format.js";
 import { detail } from "./detail.js";
 let container,
   brandHTML,
@@ -23,7 +23,7 @@ const defaults = {
   latency_carriers: [],
   traffic_limit: 0,
   traffic_mode: "sum",
-  billing_day: 1,
+  billing_at: "",
   price: 0,
   currency: "CNY",
   price_period: "月",
@@ -166,6 +166,11 @@ function renderNodes() {
 function field(label, name, value, type = "text", extra = "") {
   return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
 }
+// 新节点的默认重置时间：当月 1 日 00:00:00 UTC，与旧默认「每月 1 日」一致。
+function monthStartStamp() {
+  const now = new Date();
+  return stamp(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+}
 function check(label, name, value) {
   return `<label class="checkbox"><input type="checkbox" name="${name}" ${value ? "checked" : ""}>${label}</label>`;
 }
@@ -240,7 +245,7 @@ function nodeForm(existing) {
         ["out", "仅上传"],
       ],
       n.traffic_mode,
-    )}${field("每月重置日（UTC）", "billing_day", n.billing_day, "number", 'min="1" max="31" required')}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${field("货币", "currency", n.currency, "text", 'maxlength="12"')}${field("价格周期", "price_period", n.price_period, "text", 'maxlength="30"')}${field("到期日期（UTC 当日 00:00）", "expires", n.expires_at?.slice(0, 10) || "", "date")}</div><p class="hint">月底不足指定日期时取当月最后一天。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数", "offline_seconds", a.offline_seconds || 0, "number", 'min="0" max="86400"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费", "renewal_days", a.renewal_days, "number", 'min="0" max="365"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100"')}</div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100"')}${field("内存阈值 %", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100"')}${field("负载持续秒数", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5"')}<p class="hint">45 秒未上报判定离线，再按设置等待后通知；恢复通知一次。重复间隔至少 5 分钟。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${field("货币", "currency", n.currency, "text", 'maxlength="12"')}${field("价格周期", "price_period", n.price_period, "text", 'maxlength="30"')}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}</div><p class="hint">重置时间只取这一时刻的「日 + 时分秒」，逐月顺延；当月没有该日时取当月最后一天。到期时间同样精确到秒，续费提醒按它计算。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数（默认 60）", "offline_seconds", a.offline_seconds || 0, "number", 'min="0" max="86400" placeholder="默认 60"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费（默认 7）", "renewal_days", a.renewal_days, "number", 'min="0" max="365" placeholder="默认 7"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比（默认 80）", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100" placeholder="默认 80"')}</div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %（默认 90）", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("内存阈值 %（默认 90）", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("负载持续秒数（默认 300）", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400" placeholder="默认 300"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次；默认 0）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"')}<p class="hint">新建节点的默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU/内存 90%、负载持续 300 秒、重复间隔 0（只提醒一次）；未勾选的规则不生效。45 秒未上报判定离线，再按设置等待后通知；恢复通知一次。重复间隔至少 5 分钟。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
   // 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
   const form = d.querySelector("form"),
@@ -276,11 +281,11 @@ function nodeForm(existing) {
       public: f.has("public"),
       traffic_limit: Math.round(num("quota") * 1e9),
       traffic_mode: get("traffic_mode"),
-      billing_day: num("billing_day"),
+      billing_at: stampISO(get("billing_at")),
       price: num("price"),
       currency: get("currency"),
       price_period: get("price_period"),
-      expires_at: get("expires") ? get("expires") + "T00:00:00Z" : "",
+      expires_at: get("expires_at") ? stampISO(get("expires_at")) : "",
       alerts: {
         offline: f.has("offline"),
         offline_seconds: num("offline_seconds"),

@@ -32,7 +32,7 @@ func (s *Store) CorrectTraffic(ctx context.Context, id string, used int64, cycle
 	if err = json.Unmarshal([]byte(raw), &n); err != nil {
 		return err
 	}
-	start, end := model.Cycle(now, n.BillingDay)
+	start, end := model.Cycle(now, model.BillingAnchor(n.BillingAt, now))
 	if cycle != start.Unix() {
 		return model.ErrConflict
 	}

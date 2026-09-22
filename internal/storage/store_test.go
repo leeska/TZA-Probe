@@ -22,7 +22,7 @@ func openTest(t *testing.T) *Store {
 }
 func makeNode(t *testing.T, s *Store) (string, string) {
 	t.Helper()
-	token, err := s.SaveNode(context.Background(), model.Node{Name: "node", BillingDay: 1, TrafficMode: "sum"}, true)
+	token, err := s.SaveNode(context.Background(), model.Node{Name: "node", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

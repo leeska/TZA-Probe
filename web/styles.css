@@ -175,6 +175,19 @@ select:focus {
   outline: none;
 }
 
+/* 数字框不再画步进箭头：页面上滑动或误触箭头都会改动已填好的值，值只靠键入修改。
+   （滚轮改值由 app.js 的 noWheelStepping 兜住。） */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* 被禁用的输入（未启用的提醒规则、未勾选的检测类型）整体变淡 */
 label:has(> input:disabled),
 label:has(> select:disabled) {

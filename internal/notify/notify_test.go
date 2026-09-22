@@ -12,6 +12,12 @@ import (
 	"github.com/leeska/TZA-Probe/internal/storage"
 )
 
+// billingAt keeps the old "reset on the 1st at 00:00 UTC" behaviour for a test
+// running at now, without pinning the test to a calendar date.
+func billingAt(now time.Time) string {
+	return time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+}
+
 func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 	ctx := context.Background()
 	s, err := storage.Open(filepath.Join(t.TempDir(), "alerts.db"))
@@ -20,7 +26,7 @@ func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Now()
-	n := model.Node{Name: "test", BillingDay: 1, TrafficMode: "sum", Alerts: model.Alerts{Load: true, CPUPercent: 80, MemoryPercent: 80, HoldSeconds: 30}}
+	n := model.Node{Name: "test", BillingAt: billingAt(now), TrafficMode: "sum", Alerts: model.Alerts{Load: true, CPUPercent: 80, MemoryPercent: 80, HoldSeconds: 30}}
 	token, err := s.SaveNode(ctx, n, true)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +85,7 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Now()
-	node := model.Node{Name: "billing", BillingDay: 1, TrafficMode: "sum", TrafficLimit: 1000, ExpiresAt: now.Add(2 * 24 * time.Hour).UTC().Format(time.RFC3339), Alerts: model.Alerts{Offline: true, Renewal: true, RenewalDays: 7, Traffic: true, TrafficPercent: 80}}
+	node := model.Node{Name: "billing", BillingAt: billingAt(now), TrafficMode: "sum", TrafficLimit: 1000, ExpiresAt: now.Add(2 * 24 * time.Hour).UTC().Format(time.RFC3339), Alerts: model.Alerts{Offline: true, Renewal: true, RenewalDays: 7, Traffic: true, TrafficPercent: 80}}
 	token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +130,7 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	token, err := s.SaveNode(ctx, model.Node{Name: "grace", BillingDay: 1, TrafficMode: "sum", Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}}, true)
+	token, err := s.SaveNode(ctx, model.Node{Name: "grace", BillingAt: billingAt(time.Now()), TrafficMode: "sum", Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

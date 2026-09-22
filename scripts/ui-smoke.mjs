@@ -23,6 +23,16 @@ const bundle = await build({
   write: false,
 });
 const errors = [];
+// 数字框的步进箭头靠样式表关掉。伪元素在 jsdom 里算不出来，所以箭头样式按内容断言，
+// 「已生效」则单独起一个小文档确认计算值。
+const styles = await readFile(path.join(root, "web/styles.css"), "utf8");
+assert.match(styles, /::-webkit-inner-spin-button/, "WebKit 的步进箭头同样要关掉");
+const cssProbe = new JSDOM(`<style>${styles}</style><input type="number" id="probe">`);
+assert.equal(
+  cssProbe.window.getComputedStyle(cssProbe.window.document.getElementById("probe")).appearance,
+  "textfield",
+  "数字框不应再画步进箭头",
+);
 const consoleAdapter = new VirtualConsole();
 consoleAdapter.on("jsdomError", (e) => errors.push(e.message));
 const dom = new JSDOM(
@@ -86,7 +96,26 @@ set(form, "name", name);
 set(form, "representative", "上海");
 set(form, "quota", 2000);
 set(form, "price", 12.8);
-set(form, "expires", "2027-09-18");
+set(form, "expires_at", "2027-09-18 03:04:05");
+// 重置时间与到期时间都精确到秒：重置时间默认落在当月 1 日 00:00:00（UTC），
+// 旧的「每月重置日」数字框与步进箭头整体取消。
+assert.equal(form.elements.billing_day, undefined, "旧的每月重置日数字框应已删除");
+assert.equal(form.elements.billing_at.type, "text");
+assert.match(form.elements.billing_at.value, /^\d{4}-\d{2}-01 00:00:00$/, "重置时间默认值: " + form.elements.billing_at.value);
+assert.match(form.elements.billing_at.placeholder, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/, "输入框要给出带秒的格式示例");
+assert.match(form.elements.expires_at.placeholder, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+// 滚动不再误改数值：滚到数字框上时先失焦（jsdom 自身不会按滚轮改值，只验证这个约定）。
+const quota = form.elements.quota;
+quota.focus();
+assert.equal(w.document.activeElement, quota);
+quota.dispatchEvent(new w.Event("wheel", { bubbles: true }));
+assert.notEqual(w.document.activeElement, quota, "滚轮经过数字框时必须失焦，避免滑动页面时误改数值");
+// 每个提醒阈值都要在界面上写明默认值（标签里写明，或提示行里列出）。
+const rules = $("#node-form").textContent;
+for (const d of ["（默认 60）", "（默认 7）", "（默认 80）", "（默认 90）", "（默认 300）"])
+  assert(rules.includes(d), "提醒规则缺少默认值提示: " + d);
+assert(rules.includes("新建节点的默认值：离线等待 60 秒"), "提示行要列出各项默认值");
+assert.equal(form.elements.repeat_minutes.placeholder, "默认 0（只提醒一次）");
 form.elements.offline.checked = true;
 form.elements.renewal.checked = true;
 form.elements.traffic.checked = true;
@@ -104,6 +133,8 @@ let list = await (
 const created = list.find((n) => n.name === name);
 assert(created?.alerts.load);
 assert.equal(created.traffic_limit, 2e12);
+assert.equal(created.expires_at, "2027-09-18T03:04:05Z", "到期时间要带上输入框里的秒");
+assert.match(created.billing_at, /^\d{4}-\d{2}-01T00:00:00Z$/, "重置时间 = " + created.billing_at);
 // 还没上报地址族的节点：不给出无从探测的 IPv4/IPv6 切换，网络区块整体隐藏。
 $(`[data-inspect="${created.id}"]`).click();
 await until(() => $("#history-range"), "node detail and history controls");
@@ -173,6 +204,8 @@ $(`[data-edit="${created.id}"]`).click();
 form = $("#node-form");
 assert.equal(form.elements.name.value, name);
 assert.equal(form.elements.hold_seconds.value, "300");
+assert.match(form.elements.billing_at.value, /^\d{4}-\d{2}-01 00:00:00$/, "重置时间要能原样回填");
+assert.equal(form.elements.expires_at.value, "2027-09-18 03:04:05", "到期时间回填必须保留秒");
 assert.equal(form.elements.latency_region.value, "", "latency region defaults to empty (falls back to the representative region)");
 set(form, "latency_region", "上海");
 submit(form);
@@ -195,7 +228,7 @@ $(".close").click();
 // 通过 API 造一个阈值全 0 的节点（旧数据或脚本创建），编辑表单必须回填可保存的值
 const zeroAlerts = {
   name: "UI 零阈值 " + Date.now(), group: "", region: "", order: 0, public: false,
-  representative: "", traffic_limit: 0, traffic_mode: "sum", billing_day: 1, price: 0,
+  representative: "", traffic_limit: 0, traffic_mode: "sum", billing_at: "2026-09-01T00:00:00Z", price: 0,
   currency: "CNY", price_period: "月", expires_at: "",
   alerts: { offline: false, offline_seconds: 0, repeat_seconds: 0, renewal: false, renewal_days: 0, traffic: false, traffic_percent: 0, load: false, cpu_percent: 0, memory_percent: 0, hold_seconds: 0 },
 };

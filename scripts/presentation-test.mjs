@@ -51,4 +51,17 @@ assert.equal(colorClass(9), "lc1", "the palette wraps around");
 assert.equal(formatValue(null, "ms"), "—", "a missing value must not print as a number");
 assert.equal(formatValue(12.34, "ms"), "12.3 ms");
 assert.equal(formatValue(42, "%"), "42%");
+
+// 计费表单的 UTC 时刻：显示格式带秒，接口格式为 RFC3339，两者必须能往返。
+const { stamp, stampISO } = await import("../web/format.js");
+assert.equal(stamp("2026-09-01T12:30:45Z"), "2026-09-01 12:30:45", "显示格式精确到秒");
+assert.equal(stamp(Math.floor(Date.parse("2026-09-01T12:30:45Z") / 1000)), "2026-09-01 12:30:45", "秒时间戳同样按 UTC 显示");
+assert.equal(stamp(""), "");
+assert.equal(stamp("不是时间"), "", "无法解析的值不能渲染成 NaN 字符串");
+assert.equal(stampISO("2026-09-01 12:30:45"), "2026-09-01T12:30:45Z");
+assert.equal(stampISO("2026-09-01T12:30:45Z"), "2026-09-01T12:30:45Z", "RFC3339 输入也能接受");
+assert.equal(stampISO("2026-09-01 12:30"), "2026-09-01T12:30:00Z", "省略秒按 00 处理");
+assert.throws(() => stampISO("2026-09-01"), /YYYY-MM-DD/, "缺时刻要报错");
+assert.throws(() => stampISO("2026-02-31 00:00:00"), /不存在/, "2 月 31 日必须挡住，不能被 Date 顺延");
+assert.throws(() => stampISO(""), /YYYY-MM-DD/);
 console.log("PASS: subdivided two-line time axis, hover payload and palette classes.");

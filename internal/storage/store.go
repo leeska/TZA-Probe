@@ -54,7 +54,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 2 {
+	if version > 3 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -81,7 +81,90 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	if version < 3 {
+		// 重置日从「每月第几天」改成带秒的锚点时刻，旧的 config 就地转换。
+		if err = migrateBillingAnchor(db, nowFunc()); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	return s, nil
+}
+
+// nowFunc is swapped in tests so the anchor migration can be asserted exactly.
+var nowFunc = time.Now
+
+// migrateBillingAnchor rewrites every node config that still carries billing_day
+// (a day of month) into billing_at (a full instant).
+func migrateBillingAnchor(db *sql.DB, now time.Time) error {
+	rows, err := db.Query("SELECT id, config FROM nodes")
+	if err != nil {
+		return err
+	}
+	type change struct{ id, config string }
+	var changes []change
+	for rows.Next() {
+		var id, config string
+		if err = rows.Scan(&id, &config); err != nil {
+			rows.Close()
+			return err
+		}
+		var fields map[string]any
+		if err = json.Unmarshal([]byte(config), &fields); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, migrated := fields["billing_at"]; migrated {
+			continue
+		}
+		day := 1
+		if raw, ok := fields["billing_day"].(float64); ok && raw >= 1 && raw <= 31 {
+			day = int(raw)
+		}
+		fields["billing_at"] = anchorFromDay(day, now).Format(time.RFC3339)
+		delete(fields, "billing_day")
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		changes = append(changes, change{id, string(encoded)})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, c := range changes {
+		if _, err = tx.Exec("UPDATE nodes SET config=? WHERE id=?", c.config, c.id); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec("PRAGMA user_version=3"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// anchorFromDay picks the anchor for a legacy day of month: the newest date not
+// after now whose month really has that day. time.Date rolls a too-long day into
+// the next month, which is how a mismatch is detected — clamping here would move
+// the configured day for every later cycle.
+func anchorFromDay(day int, now time.Time) time.Time {
+	now = now.UTC()
+	day = min(max(day, 1), 31)
+	for i := 0; i < 48; i++ {
+		candidate := time.Date(now.Year(), time.Month(int(now.Month())-i), day, 0, 0, 0, 0, time.UTC)
+		if candidate.Day() == day && !candidate.After(now) {
+			return candidate
+		}
+	}
+	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
 const schema = `BEGIN;
@@ -136,7 +219,7 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 			}
 		}
 		v.Online = v.LastSeen > 0 && now.Unix()-v.LastSeen < int64(model.OfflineAfter.Seconds())
-		start, end := model.Cycle(now, v.BillingDay)
+		start, end := model.Cycle(now, model.BillingAnchor(v.BillingAt, now))
 		v.CycleStart = start.Unix()
 		v.CycleEnd = end.Unix()
 		views = append(views, v)
@@ -187,7 +270,7 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 	n.CreatedAt = prior.CreatedAt
 	n.TrafficAdjustment = prior.TrafficAdjustment
 	n.AdjustmentCycle = prior.AdjustmentCycle
-	if n.BillingDay != prior.BillingDay || n.TrafficMode != prior.TrafficMode {
+	if n.BillingAt != prior.BillingAt || n.TrafficMode != prior.TrafficMode {
 		n.TrafficAdjustment = 0
 		n.AdjustmentCycle = 0
 	}

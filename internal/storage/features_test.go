@@ -22,7 +22,7 @@ func TestCycleCorrectionPreservesCountersAndExpires(t *testing.T) {
 	if err := s.Report(ctx, id, m, now.Add(10*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	start, _ := model.Cycle(now, 1)
+	start, _ := model.Cycle(now, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
 	if err := s.CorrectTraffic(ctx, id, 500, start.Unix()-1, now); err != model.ErrConflict {
 		t.Fatal(err)
 	}
