@@ -356,6 +356,7 @@ h1 {
   padding: 18px 22px;
   border-radius: 18px;
   min-height: 96px;
+  min-width: 0;
 }
 
 .tile-header {
@@ -380,14 +381,20 @@ h1 {
 }
 
 .overview-tile strong {
-  font-size: 28px;
+  /* 数值必须单行：这一行一旦折行，磁贴就长高 33px，而磁贴行是内容撑高的，整页高度随之跳动
+     （WebKit 实测每 1 秒跳一次、文档高度 10410↔10443 来回）——手机上看到的就是「一直跳」。
+     字号按视口收缩保证放得下，再配上 nowrap 兜底，宁可省略号也绝不换行。 */
+  font-size: clamp(17px, 5.2vw, 28px);
   font-weight: 650;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
 .overview-tile strong small {
-  font-size: 15px;
+  font-size: clamp(12px, 3.4vw, 15px);
+  white-space: nowrap;
   font-weight: 400;
   color: var(--muted);
 }
