@@ -359,6 +359,12 @@ assert(
 // 聚焦视图（点卡片上的某一格）不再给「查看全部信息」，改成时间范围下拉；网络历史最多 7 天，
 // 所以那里的下拉只有 1 小时 / 24 小时 / 7 天三档，主机历史所在的综合视图保留 30 天。
 const detailSource = await (await fetch(base + "/detail.js")).text();
+const appSource = await (await fetch(base + "/app.js")).text();
+// 贴底时重绘要续贴底部：内容一矮就会被浏览器裁到新的最大值，看起来像“刷新把页面往上顶”。
+assert(
+  /if \(atBottom\) scroller\.scrollTop = scroller\.scrollHeight/.test(appSource),
+  "a re-render while pinned to the page bottom must stay pinned",
+);
 assert(!/show-all|查看全部信息/.test(detailSource), "the focused view must not keep a 查看全部信息 button");
 assert(
   /focusKind !== "route" \? historyRange\(168\)/.test(detailSource),
@@ -516,6 +522,12 @@ assert.equal(card.querySelectorAll(".latency-grid .loss-row").length, 4, "each l
 assert(
   /@container node-card \(max-width: 430px\)/.test(styles),
   "narrow cards must stack the carrier cells one per line",
+);
+// 滚动锚定必须留给浏览器：每 10 秒整块替换卡片列表，内容在视口上方变高变矮时靠它稳住视图，
+// 关掉反而会让页面自己移动。贴底的情况由 app.js 的 renderCards 单独兜住。
+assert(
+  !/overflow-anchor:\s*none/.test(styles),
+  "the stylesheet must not disable the browser's scroll anchoring",
 );
 assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
 assert(cardText.includes("上海"), "the card shows the latency region it was configured with");

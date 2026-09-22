@@ -116,9 +116,15 @@ function renderCards() {
       (!group || n.group === group) &&
       searchMatch(query, n.name, n.region),
   );
+  // 每 10 秒整块换掉卡片列表：内容一高一矮，贴着页面底部的人就会被浏览器裁到新的最大值，
+  // 看起来像“刷新把页面往上顶”。所以只处理这一种情况——原来就贴底，重绘后继续贴底。
+  // 其余位置不插手：内容在视口上方变高变矮时，交给浏览器自己的滚动锚定（别在 CSS 里关掉它）。
+  const scroller = document.scrollingElement || document.documentElement;
+  const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
   document.querySelector("#nodes").innerHTML = filtered.length
     ? filtered.map(card).join("")
     : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点，并开启公开展示。"}</p></div>`;
+  if (atBottom) scroller.scrollTop = scroller.scrollHeight;
   // 单元格子只展示那一格的内容（延迟 / 回程），整张卡片才展示综合信息。
   for (const b of document.querySelectorAll("[data-detail]"))
     b.onclick = guard((e) => {
