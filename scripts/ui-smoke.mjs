@@ -362,12 +362,25 @@ const detailSource = await (await fetch(base + "/detail.js")).text();
 const appSource = await (await fetch(base + "/app.js")).text();
 // 数值每秒轻刷一次（只换数字，不重建卡片），探测明细仍是 10 秒一轮。
 assert(
-  /\}, 1000\);\n\s*setInterval\(\(\) => \{\n\s*if \(!document\.hidden\) refresh\(\)/.test(appSource),
+  /\}, 1000\);\n\s*setInterval\(\(\) => \{\n\s*if \(document\.hidden\) return;/.test(appSource),
   "the page must refresh the numbers every second and the probe details every 10s",
 );
 assert(
   /async function liveTick\(\)/.test(appSource) && /liveBusy/.test(appSource),
   "the one-second tick must exist and skip itself while a request is in flight",
+);
+// iOS（WebKit）在惯性滚动里被改 DOM 会弹位置，所以滚动期间两拍都要让开。
+assert(
+  /const scrolling = \(\) => Date\.now\(\) - lastScrollAt < 900/.test(appSource) &&
+    /if \(liveBusy \|\| scrolling\(\)\) return;/.test(appSource) &&
+    /if \(scrolling\(\)\) \{/.test(appSource),
+  "both refresh loops must stand down while the user is scrolling",
+);
+// 没变就不写 DOM：每秒那层只该写真正在动的数字。
+assert(
+  /function setHTML\(el, html\) \{\n\s*if \(el && el\.innerHTML !== html\)/.test(appSource) &&
+    /function setText\(el, text\) \{\n\s*if \(el && el\.textContent !== text\)/.test(appSource),
+  "the one-second tick must compare before writing so untouched numbers never hit the DOM",
 );
 // 贴底时重绘要续贴底部；iOS Safari 没有浏览器级滚动锚定，所以还必须有手动锚回同一张卡片。
 assert(

@@ -41,14 +41,23 @@ async function start() {
     return;
   }
   renderShell();
+  watchScrolling();
   await refresh();
   // 数值类数据（负载、实时速率、用量）约 1 秒一笔，所以每秒轻刷一次——只换数字，不重建卡片；
   // 探测明细（每个目标的观测与最近样本）仍是 10 秒一轮，那一轮要打十几个请求。
+  // 用户正在滑动时两拍都让开，等停下来再补。
   setInterval(() => {
     if (!document.hidden) liveTick().catch(() => {});
   }, 1000);
   setInterval(() => {
-    if (!document.hidden) refresh().catch((e) => toast(e.message));
+    if (document.hidden) return;
+    if (scrolling()) {
+      setTimeout(() => {
+        if (!document.hidden) refresh().catch((e) => toast(e.message));
+      }, 1200);
+      return;
+    }
+    refresh().catch((e) => toast(e.message));
   }, 10000);
 }
 
@@ -72,15 +81,15 @@ async function refresh() {
   nodes = next;
   const groups = [...new Set(nodes.map((n) => n.group).filter(Boolean))];
   if (group && !groups.includes(group)) group = "";
-  document.querySelector("#group-filter").innerHTML =
+  setHTML(document.querySelector("#group-filter"),
     `<option value="">全部分组</option>` +
-    groups
-      .map((g) => `<option ${g === group ? "selected" : ""}>${esc(g)}</option>`)
-      .join("");
-  document.querySelector("#updated").textContent =
-    new Date().toLocaleTimeString("zh-CN", { hour12: false });
+      groups
+        .map((g) => `<option ${g === group ? "selected" : ""}>${esc(g)}</option>`)
+        .join(""));
+  setText(document.querySelector("#updated"),
+    new Date().toLocaleTimeString("zh-CN", { hour12: false }));
 
-  paintOverview();
+  setHTML(document.querySelector("#overview"), overviewInner());
 
   renderCards();
 
@@ -138,38 +147,51 @@ function speedsInner(n) {
   return `<div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateIn}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOut}</strong></div></div>`;
 }
 
+// 手指或滚轮还在滚的时候，一个字节的 DOM 都不要改：WebKit（iOS 的 Chrome / Safari 都是它）在
+// 惯性滚动里被改 DOM 会把滚动位置弹回去，每秒改几十处文字就表现成持续“跳”。停止约 0.9 秒后照常。
+let lastScrollAt = 0;
+function watchScrolling() {
+  const mark = () => {
+    lastScrollAt = Date.now();
+  };
+  window.addEventListener("scroll", mark, { passive: true });
+  window.addEventListener("touchmove", mark, { passive: true });
+  window.addEventListener("wheel", mark, { passive: true });
+}
+const scrolling = () => Date.now() - lastScrollAt < 900;
+
+// 文本 / HTML 先比一遍再写：数值没变就不碰 DOM（每秒那层刷新因此只写真正在动的几个数字）。
+function setHTML(el, html) {
+  if (el && el.innerHTML !== html) el.innerHTML = html;
+}
+function setText(el, text) {
+  if (el && el.textContent !== text) el.textContent = text;
+}
+
 // 每秒一次的轻刷新：只动数值——顶部四个数字、每张卡片的指标与速率、在线状态。不重建卡片列表，
 // 也就不动滚动位置（重建那一轮走 renderCards，里面另有滚动锚定）。
 let liveBusy = false;
 async function liveTick() {
-  if (liveBusy) return; // 上一拍还没回来就跳过这一拍，别把请求堆起来
+  if (liveBusy || scrolling()) return; // 上一拍没回来、或用户正在滑动，都跳过这一拍
   liveBusy = true;
   try {
     const next = await api("/nodes");
     nodes = next;
-    paintOverview();
+    setHTML(document.querySelector("#overview"), overviewInner());
     for (const el of document.querySelectorAll("#nodes .node-card")) {
       const n = nodes.find((x) => x.id === el.dataset.node);
       if (!n) continue;
       el.classList.toggle("is-online", !!n.online);
       el.classList.toggle("is-offline", !n.online);
       el.querySelector(".node-dot")?.classList.toggle("offline", !n.online);
-      const os = el.querySelector(".os-tag");
-      if (os) os.textContent = n.metrics?.os || (n.online ? "在线" : "等待接入");
-      const grid = el.querySelector(".metrics-grid");
-      if (grid) grid.innerHTML = metricsInner(n);
-      const speeds = el.querySelector(".speeds");
-      if (speeds) speeds.innerHTML = speedsInner(n);
+      setText(el.querySelector(".os-tag"), n.metrics?.os || (n.online ? "在线" : "等待接入"));
+      setHTML(el.querySelector(".metrics-grid"), metricsInner(n));
+      setHTML(el.querySelector(".speeds"), speedsInner(n));
     }
-    document.querySelector("#updated").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    setText(document.querySelector("#updated"), new Date().toLocaleTimeString("zh-CN", { hour12: false }));
   } finally {
     liveBusy = false;
   }
-}
-
-function paintOverview() {
-  const el = document.querySelector("#overview");
-  if (el) el.innerHTML = overviewInner();
 }
 
 function renderCards() {
