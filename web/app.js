@@ -162,19 +162,15 @@ function speedsInner(n) {
   return `<div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateIn}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOut}</strong></div></div>`;
 }
 
-// 手指或滚轮还在滚的时候，一个字节的 DOM 都不要改：WebKit（iOS 的 Chrome / Safari 都是它）在
-// 惯性滚动里被改 DOM 会把滚动位置弹回去，每秒改几十处文字就表现成持续“跳”。停止约 0.9 秒后照常。
+// 滚动期间不改 DOM：WebKit（iOS 上的 Chrome / Safari）在滚动中改 DOM 会把位置弹回去。
 let lastScrollAt = 0;
 function watchScrolling() {
   const mark = () => {
     lastScrollAt = Date.now();
   };
-  // scroll 不冒泡，而且 iOS 上滚动可能发生在 body（而不是视口）上，所以用捕获阶段听 document，
-  // window 上再听一遍，元素滚动的动静就不会漏。
+  // scroll 不冒泡，用捕获阶段听 document，元素级滚动也能触发。
   document.addEventListener("scroll", mark, { passive: true, capture: true });
-  window.addEventListener("scroll", mark, { passive: true });
   window.addEventListener("touchmove", mark, { passive: true });
-  window.addEventListener("wheel", mark, { passive: true });
 }
 const scrolling = () => Date.now() - lastScrollAt < 1200;
 
@@ -185,9 +181,6 @@ function setHTML(el, html) {
 function setText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }
-// 下一帧再跑一次：iOS 上主线程写的 scrollTop 可能被合成器覆盖，要补；测试环境没有 rAF 时退回定时器。
-const nextFrame = (fn) =>
-  typeof requestAnimationFrame === "function" ? requestAnimationFrame(fn) : setTimeout(fn, 16);
 
 // 每秒一次的轻刷新：只动数值——顶部四个数字、每张卡片的指标与速率、在线状态。不重建卡片列表，
 // 也就不动滚动位置（重建那一轮走 renderCards，里面另有滚动锚定）。
@@ -217,53 +210,39 @@ async function liveTick() {
   }
 }
 
+// 每张卡片上一次渲染出来的 HTML：下次比对用，内容没变就不碰 DOM。
+const renderedHTML = new WeakMap();
+
 function renderCards() {
   const filtered = nodes.filter(
     (n) =>
       (!group || n.group === group) &&
       searchMatch(query, n.name, n.region),
   );
-  // 每 10 秒整块换掉卡片列表，卡片一高一矮页面就会自己走位。iOS Safari 至今没实现浏览器自己的
-  // 滚动锚定（overflow-anchor），在手机上等于没有，所以这里手动锚：先记住视口顶部第一张完整
-  // 可见的卡片及其相对位置，重绘后把滚动调回同一张卡片的同一位置。贴底的情况另外兜住。
+  // 每 10 秒的明细刷新。卡片只在内容变了的时候逐张替换，集合变了才整块重绘——整块重绘会把整个
+  // 滚动子树重建，是最容易被感知为「跳」的动作。滚动位置的保持交给浏览器自己的滚动锚定
+  // （WebKit / Chromium 都已实现），只有在真贴着页面底部时才手动续贴。
   const scroller = document.scrollingElement || document.documentElement;
-  // 滚动位置写两边：正常只有 documentElement 是滚动元素；iOS 在 html/body 带 overflow 时会让
-  // body 自己滚（这次就是踩了这个坑），多写一次 body 是免费保险。
-  const setScroll = (top) => {
-    scroller.scrollTop = top;
-    if (document.body && document.body !== scroller) document.body.scrollTop = top;
-  };
-  const anchorOf = () => {
-    const list = [...document.querySelectorAll(".node-card")];
-    const card = list.find((c) => c.getBoundingClientRect().top >= -4) || list[list.length - 1];
-    return card ? { id: card.dataset.node, offset: card.getBoundingClientRect().top } : null;
-  };
-  const anchor = anchorOf();
-  // 真·贴底才续贴：以前这里写 48px，凡是停在离底 48px 以内的人每 10 秒会被拽到最底——
-  // 现场看到的就是「停下之后还是跳」。8px 以内才算贴在底部。
+  // 真·贴底才续贴：8px 以内才算贴在底部（写 48px 时，停在离底 40px 的人每轮会被拽到最底）。
   const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
-  document.querySelector("#nodes").innerHTML = filtered.length
-    ? filtered.map(card).join("")
-    : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点，并开启公开展示。"}</p></div>`;
-  if (anchor) {
-    // 重绘前后同一张卡片的视口位置差多少，就把滚动补回多少（浏览器已经自己补过时这里是 0）。
-    // iOS 上主线程的 scrollTop 写入可能被合成器那一步覆盖掉，所以接下来两帧各再校一次；
-    // 已经对齐时是空操作，不会多写。
-    // 滚动位置写两边：正常只有 documentElement 是滚动元素；iOS 在 html/body 带 overflow 时会让
-    // body 自己滚，那时写 documentElement 是空操作。多写一次 body 是免费保险。
-    const hold = () => {
-      const el = document.querySelector(`.node-card[data-node="${anchor.id}"]`);
-      if (!el) return;
-      const off = el.getBoundingClientRect().top - anchor.offset;
-      if (Math.abs(off) > 0.5) setScroll(scroller.scrollTop + off);
-    };
-    hold();
-    nextFrame(() => {
-      hold();
-      nextFrame(hold);
+  const list = document.querySelector("#nodes");
+  const wanted = filtered.map(cardInner);
+  const shown = [...list.querySelectorAll(".node-card")];
+  const sameSet = shown.length === filtered.length && shown.every((el, i) => el.dataset.node === filtered[i].id);
+  if (sameSet) {
+    shown.forEach((el, i) => {
+      if (renderedHTML.get(el) !== wanted[i]) {
+        el.innerHTML = wanted[i];
+        renderedHTML.set(el, wanted[i]);
+      }
     });
+  } else {
+    list.innerHTML = wanted.length
+      ? filtered.map(card).join("")
+      : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点，并开办公开展示。"}</p></div>`;
+    [...list.querySelectorAll(".node-card")].forEach((el, i) => renderedHTML.set(el, wanted[i]));
   }
-  if (atBottom) setScroll(scroller.scrollHeight);
+  if (atBottom) scroller.scrollTop = scroller.scrollHeight;
   // 单元格子只展示那一格的内容（延迟 / 回程），整张卡片才展示综合信息。
   for (const b of document.querySelectorAll("[data-detail]"))
     b.onclick = guard((e) => {
@@ -285,7 +264,16 @@ function renderCards() {
     b.onclick = () => { cardFamilies.set(b.dataset.cardNode, b.dataset.cardFamily); renderCards(); };
 }
 
+// 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
+// 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
+const cardShell = (n, inner) =>
+  `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}">${inner}</article>`;
+
 function card(n) {
+  return cardShell(n, cardInner(n));
+}
+
+function cardInner(n) {
   const cardFamily = cardFamilies.get(n.id) || "ipv4";
   const allObs = observations.get(n.id) || [];
   // The Agent reports which address families this host actually has. Older
@@ -389,7 +377,7 @@ function card(n) {
     ? `<div class="route-heading"><span>TCP 延迟 <b>${familyLabel}</b></span><span class="rep-label">${esc(latencyRegion || "全部地区")}</span></div><div class="route-grid latency-grid">${latencies}</div><div class="route-heading"><span>三网回程 <b>${familyLabel}</b></span><span class="rep-label">${esc(n.representative || "自动匹配地区")}</span></div><div class="route-grid">${routes}</div>`
     : `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
 
-  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}"><div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${hasIPv4 && hasIPv6 ? `<div class="segmented card-family" aria-label="${esc(n.name)} IP 协议"><button data-card-family="ipv4" data-card-node="${n.id}" class="${effectiveFamily === "ipv4" ? "active" : ""}">IPv4</button><button data-card-family="ipv6" data-card-node="${n.id}" class="${effectiveFamily === "ipv6" ? "active" : ""}">IPv6</button></div>` : `<span class="family-tag">${hasIPv6 ? "IPv6" : hasIPv4 ? "IPv4" : "无探测"}</span>`}<span class="os-tag">${esc(m?.os || (n.online ? "在线" : "等待接入"))}</span></div></div>${`<div class="metrics-grid">${metricsInner(n)}</div><div class="speeds">${speedsInner(n)}</div>`}${networkSections}<div class="card-bottom"><span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span></div></article>`;
+  return `<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${hasIPv4 && hasIPv6 ? `<div class="segmented card-family" aria-label="${esc(n.name)} IP 协议"><button data-card-family="ipv4" data-card-node="${n.id}" class="${effectiveFamily === "ipv4" ? "active" : ""}">IPv4</button><button data-card-family="ipv6" data-card-node="${n.id}" class="${effectiveFamily === "ipv6" ? "active" : ""}">IPv6</button></div>` : `<span class="family-tag">${hasIPv6 ? "IPv6" : hasIPv4 ? "IPv4" : "无探测"}</span>`}<span class="os-tag">${esc(m?.os || (n.online ? "在线" : "等待接入"))}</span></div></div>${`<div class="metrics-grid">${metricsInner(n)}</div><div class="speeds">${speedsInner(n)}</div>`}${networkSections}<div class="card-bottom"><span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span></div>`;
 }
 
 // 一行 20 格，每格代表一次探测结果，按那次的数值落到 20 档色带上

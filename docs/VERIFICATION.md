@@ -511,3 +511,36 @@ node scripts/ui-smoke.mjs
   `small` 单位和 `.overview-tile` 加 `min-width: 0`。
 - 验证：新增 `scripts/layout-webkit.mjs`（真 WebKit 布局/滚动回归）——本地面板 28 秒
   **文档高度恒定 15319、四个磁贴恒定 96、盯住卡片屏幕位置 198→198**。
+
+## 逐张替换卡片 + 删掉空转的补偿（2026-09-22）
+
+这一轮做两件事：把每 10 秒的「整块重绘」换掉，以及把审计下来确认空转的补偿删掉。
+
+**审计：哪些补偿在空转（真 WebKit、线上页面、滚到中部、静置 30 秒）**
+- 滚动位置取值只有一个（3400）：整段没有任何位移，锚定校正与贴底写入一次都没生效。
+- 文档高度取值只有一个（10373）；DOM 变更 191 次/30 秒 ≈ 6.4 次/秒，全部是数值本身在变。
+- 逐条结论：磁贴单行化（根因）、比较后再写、取数后再查守卫、贴底 8px 保留；
+  手动锚定实测每次差值都是 0（读 rect 前浏览器已经锚好）→ 删；
+  双写 body、监听 wheel、后两帧校正、`nextFrame` 兜底 → 删。
+
+**改法**
+- `card()` 拆成 `cardShell(n, inner)` + `cardInner(n)`；`renderCards` 在卡片集合/顺序没变时
+  **逐张比对 HTML，只替换内容真的变了的那几张**（`renderedHTML` 用 `WeakMap` 记上次的 HTML），
+  集合变了（增删节点、改筛选/搜索）才整块重绘。
+- 删除手动锚定 `anchorOf()`/`hold()`、`setScroll()` 双写、`wheel` 监听、后两帧校正与 `nextFrame()`。
+- 保留：每秒轻刷 / 10 秒明细两层刷新、滚动期间不碰 DOM（捕获阶段监听 + 取数后再查守卫）、
+  比较后再写、贴底 8px 内续贴、`.overview-tile` 单行化、`html/body` 不写 `overflow-y: auto`。
+
+**过程中抓到的自身 bug（已修）**
+- 逐张替换第一版把 `card(n)`（整张 `<article>`）喂给了 `el.innerHTML` → 卡片把自己嵌进自己里面：
+  测试库 31 个节点渲染出 **39 张卡，8 张是嵌套的同名卡**（`#nodes` 直接子元素仍是 31，多出来的全在卡片内部）。
+  浏览器复现时间线：t=70ms `childList +31`（31 张），t=459ms **无 childList** 却变成 39 张 → 多出来的是嵌套的。
+  改法即上面的 `cardInner` 分离。
+
+**验证**
+- 本地 Chromium（390×800，测试库 31 节点）：首次加载与三轮筛选/清空、一个 10 秒周期后
+  都是 `cards=31, unique=31, nested=0, direct=31`。
+- 真 WebKit（`scripts/layout-webkit.mjs`）：文档高度恒定 23327、四个磁贴恒定 96、盯住卡片 198→198。
+- `scripts/ui-smoke.mjs` 新增断言：卡片列表必须与接口节点一一对应、卡片里不许套卡片、
+  逐张替换必须喂 `cardInner`、手动锚定必须已删除；全套 PASS。
+- `gofmt` / `go vet` / `go test -race ./...` / `git diff --check` / `presentation-test.mjs` 全绿。

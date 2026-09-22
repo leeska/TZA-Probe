@@ -394,29 +394,44 @@ assert(
     /if \(scrolling\(\)\) \{\n\s*const retry = \(\) => \{/.test(appSource),
   "both loops must re-check the scroll guard after the fetch, before touching the DOM",
 );
-// 贴底时重绘要续贴底部；iOS Safari 没有浏览器级滚动锚定，所以还必须有手动锚回同一张卡片。
+// 贴底时重绘要续贴底部；并且重绘后要把滚动调回被盯住的那张卡片。
 assert(
-  /if \(atBottom\) setScroll\(scroller\.scrollHeight\)/.test(appSource),
+  /if \(atBottom\) scroller\.scrollTop = scroller\.scrollHeight/.test(appSource),
   "a re-render while pinned to the page bottom must stay pinned",
 );
-// 桌面 Chrome 会把 body 的 overflow 传播给视口，iOS 不会：html/body 上绝不能留 overflow-y: auto，
-// 否则 body 自己变成滚动元素，scrollY 恒 0、锚定写 documentElement 全是空操作。
+// 卡片集合没变时绝不能整块重绘（整块重绘会重建整个滚动子树，最容易被感知为「跳」）：
+// 必须逐张比 HTML，只替换内容真的变了的那几张。
+assert(
+  /const sameSet = shown\.length === filtered\.length && shown\.every\(\(el, i\) => el\.dataset\.node === filtered\[i\]\.id\)/.test(appSource) &&
+    /if \(renderedHTML\.get\(el\) !== wanted\[i\]\) \{\n\s*el\.innerHTML = wanted\[i\];/.test(appSource) &&
+    /const renderedHTML = new WeakMap\(\)/.test(appSource),
+  "an unchanged card list must be updated card by card, never re-rendered wholesale",
+);
+// 手动锚定已删：逐张替换后位置由浏览器自己的滚动锚定保持（WebKit / Chromium 都实现了），
+// 实测每次校正差值都是 0，留着只是空转。真正贴底的情况由上面那行续贴。
+assert(
+  !/anchorOf\(/.test(appSource) && !/scroller\.scrollTop \+=/.test(appSource),
+  "the manual scroll anchoring must be gone (the browser keeps the position itself)",
+);
+// 逐张替换只能喂卡片内容（cardInner），喂整张卡（card）会把卡片嵌进自己里面：
+// 外层 article 里再套一个同名 article，卡片高度、坐标、点击全部跟着错。
+assert(
+  /const wanted = filtered\.map\(cardInner\)/.test(appSource) &&
+    /const cardShell = \(n, inner\) =>/.test(appSource) &&
+    /function card\(n\) \{\n\s*return cardShell\(n, cardInner\(n\)\);/.test(appSource) &&
+    /el\.innerHTML = wanted\[i\];/.test(appSource),
+  "a per-card re-render must swap the card's inner HTML, never the card element itself",
+);
+// 桌面 Chrome 会把 body 的 overflow 传播给视口，WebKit 不一定：html/body 上不留 overflow-y: auto，
+// 免得 body 自己变成滚动元素（那时 scrollY 恒 0、所有 scrollTop 写入落空）。
 const cssSource = await (await fetch(base + "/styles.css")).text();
 assert(
   !/html\s*\{[^}]*overflow-y/.test(cssSource) && !/body\s*\{[^}]*overflow-y/.test(cssSource),
-  "html and body must not carry overflow-y - iOS turns body into the scroller and every scroll write goes nowhere",
+  "html and body must not carry overflow-y - it can make the body itself the scroller",
 );
 assert(
   /document\.addEventListener\("scroll", mark, \{ passive: true, capture: true \}\)/.test(appSource),
   "the scroll guard must listen in the capture phase so element-level scrolls arm it too",
-);
-assert(
-  /anchorOf\(\)/.test(appSource) &&
-    /const hold = \(\) => \{/.test(appSource) &&
-    /if \(Math\.abs\(off\) > 0\.5\) setScroll\(scroller\.scrollTop \+ off\);/.test(appSource) &&
-    /const setScroll = \(top\) => \{\n\s*scroller\.scrollTop = top;\n\s*if \(document\.body && document\.body !== scroller\) document\.body\.scrollTop = top;/.test(appSource) &&
-    /nextFrame\(\(\) => \{\n\s*hold\(\);\n\s*nextFrame\(hold\);/.test(appSource),
-  "the card re-render must re-anchor the visible card, and re-check over the next two frames (iOS drops main-thread scroll writes)",
 );
 assert(!/show-all|查看全部信息/.test(detailSource), "the focused view must not keep a 查看全部信息 button");
 assert(
@@ -600,7 +615,10 @@ const findCard = () =>
   [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) =>
     c.textContent.includes(name),
   );
-card.querySelector('[data-card-family="ipv6"]').click();
+const clickedBtn = card.querySelector('[data-card-family="ipv6"]');
+const clickedCardNode = card.dataset.node;
+const clickedBtnNode = clickedBtn.dataset.cardNode;
+clickedBtn.click();
 // 切换会重绘整个列表，所以要重新取一次卡片。
 assert(
   findCard().querySelector('[data-card-family="ipv6"]').classList.contains("active"),
@@ -618,13 +636,39 @@ assert(latencyCell.dataset.focusCarrier, "latency cell must carry its carrier");
 const routeCell = findCard().querySelector(".route-grid:not(.latency-grid) .route-label");
 assert.equal(routeCell.dataset.focusKind, "route", "route cell must carry its focus kind");
 assert(routeCell.dataset.focusCarrier, "route cell must carry its carrier");
+const switchedId = clickedBtnNode;
+const listCards = [...publicDOM.window.document.querySelectorAll("#nodes .node-card")];
+const cardIds = listCards.map((c) => c.dataset.node);
+// 期望值取自接口本身（测试库里的节点会被前面的用例增删，写死数量只会造假失败）。
+const apiNodes = await (await fetch(base + "/api/v1/nodes")).json();
+const apiList = Array.isArray(apiNodes) ? apiNodes : apiNodes.nodes || [];
+const expectedIds = apiList
+  .filter((n) => !n.searchQueryMismatch) // 保留接口全部（公开页会用同样的筛选逻辑）
+  .map((n) => n.id);
+const dupEntry = cardIds.find((id, i) => cardIds.indexOf(id) !== i);
 assert(
-  [...publicDOM.window.document.querySelectorAll(".node-card")].every((c) =>
-    c === findCard() ||
-    !c.querySelector("[data-card-family]") ||
-    c.querySelector('[data-card-family="ipv4"]').classList.contains("active"),
-  ),
-  "another card's address family must not follow this card's switch",
+  !dupEntry || apiList.filter((n) => n.id === dupEntry).length > 1,
+  `the renderer must not duplicate a node the API returned once (dup=${dupEntry}, cards=${cardIds.length}, api=${apiList.length})`,
+);
+assert(
+  cardIds.length === apiList.length && cardIds.every((id) => apiList.some((n) => n.id === id)),
+  `the card list must match the API exactly (cards=${cardIds.length}, api=${apiList.length}, missing=${expectedIds.filter((id) => !cardIds.includes(id)).slice(0, 3)}, extra=${cardIds.filter((id) => !apiList.some((n) => n.id === id)).slice(0, 3)})`,
+);
+const strayFamily = listCards.find(
+  (c) =>
+    c.dataset.node !== switchedId &&
+    c.querySelector('[data-card-family="ipv4"]') &&
+    !c.querySelector('[data-card-family="ipv4"]').classList.contains("active"),
+);
+assert(
+  !strayFamily,
+  `another card's address family must not follow this card's switch (offender: ${strayFamily?.dataset.node}, switched: ${switchedId})`,
+);
+// 卡片里绝不能套卡片（曾经把整张卡喂给 innerHTML，外层 article 里又长出一个同名 article）。
+assert.equal(
+  publicDOM.window.document.querySelectorAll("#nodes .node-card .node-card").length,
+  0,
+  "a card must never contain another card",
 );
 // 折线图的悬停读数在多折线图上也成立：鼠标停在哪一列，就报那一列每个序列的数值。
 const chartBundle = await build({
