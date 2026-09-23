@@ -635,3 +635,11 @@ node scripts/ui-smoke.mjs
 - 面板截图复核：会话 Cookie 登录后节点页只有 MCP 建的那台（`mcp-创建的东京节点`，私有 · 代表地区 上海 · MCP / 日本 · 1.2 GB / 500 GB），任务页显示 `mcp-任务-上海电信延迟`「已启用 · 延迟 · 1 个地址 IPv4 · 上海 电信 · 延迟 120 秒 · 1 个」。
 - 测试与静态检查：`go test -race ./...` 全绿（新增 `TestAdminToolsChangeTheFleet`、`TestCatalogAndNotificationTools` 覆盖合并语义、枚举校验、凭据不回显、无发送器时的降级）；`go vet ./...`、`gofmt -l`、`git diff --check`、`presentation-test.mjs`、`ui-smoke.mjs`（通知页与设置表单回归）全绿。
 - **线上验收（2026-09-22）**：`775db9b` 已部署到线上站点。远端构建 `tza-probe:775db9b`（镜像 `sha256:5c3a22f0…`）后在 `127.0.0.1:25999` 用**线上数据副本**预检：`tools/list` 出 21 个工具，`create_node` → `delete_node` 前后节点数都是 15。备份落到 `<数据目录上级>/backups/20260922T202625Z-pre-775db9b`，随后把 compose 的镜像改成新 digest 并 `up -d`。切换后线上读数：`healthz` 200、匿名 `tools/list` 401、带密钥 `GET /mcp` 405、`tools/list` 21、`list_nodes` 15 与 `list_tasks` 1；线上写入往返 `create_node`（`cf2372a5…`）→ `update_node {public:true}` → `delete_node` 后节点数仍为 15，无残留。经 CDN 侧复核 `healthz` 200、匿名 `/mcp` 401、公开 `/api/v1/nodes` 15 台。
+
+## 2026-09-23 去掉第三方品牌信息，并复查公开面的信息暴露
+
+- 需求：仓库对外只呈现自己的品牌，不留其它项目 / 厂商的品牌痕迹；同时检查有没有把不该公开的信息写进仓库。
+- 做法：逐文件核对品牌字样（项目名、版权方、同类工具名、客户端名、设计归属），把仓库 + 文档 + 脚本注释当成唯一读者的视角通读一遍；凭据类信息用正则扫工作树与全部提交（GitHub / Telegram / AWS / PEM 私钥 / 长十六进制串 / 管理密钥形态）。
+- 改法：`LICENSE`、`NOTICE` 的版权方改为 `leeska`；README、`docs/DEPLOYMENT.md`、`docs/VERIFICATION.md`、`docs/source-snapshot.json`、`internal/model/route.go` 注释、`scripts/presentation-test.mjs` 固件与 `web/glass.css` 的设计归属注释去掉其它项目名与厂商名；内置目录 `targets.json` 的 `id` 去掉源站主机名后缀（`he-ct-v4.ip.<vendor>` → `he-ct-v4`），`source_host` 一并删除（面板、MCP 与管理接口只读 `host` / `port` / `region` / `carrier` / `family`，`scripts/refresh-catalog.py` 同步改）；验收记录里的线上面板地址、主机数据目录路径与真实节点名改成中性表述。
+- 验证：`gofmt -l` 无输出、`go vet ./...`、`go test ./...`、`go test -race ./...` 全绿；`node --input-type=module --check` 对 `web/*.js` 全过；`presentation-test.mjs` 与 `ui-smoke.mjs`（临时 Server 25874，含目录搜索 31 条电信目标的断言）通过；目录仍是 186 条、`id` 唯一；品牌字样复查后只剩目录数据源 URL（数据来源标注）与 `-apple-system` 字体栈 token；凭据扫描 0 命中（工作树与历史均无 token / 私钥 / 真实密钥）。
+- 待确认：目录数据源 URL 保留（数据来源标注，删了刷新脚本就没有默认源）。仓库历史另行处理：`main` 已重写成从重建提交 `ac81977` 开始的孤儿历史，重构前那 9 个提交只留在本机备份里；`force push` 之后 GitHub 侧旧的不可达对象在服务端回收前仍可能按 SHA 直接访问，要彻底清除只能删库重建。
