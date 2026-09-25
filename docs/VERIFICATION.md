@@ -752,3 +752,10 @@ node scripts/ui-smoke.mjs
   - `GET /api/v1/nodes`：17 台里 16 台带 `cpu_cores`（`us-advin-standard` 8 核、`us-hostodo-tampa` 4 核、`us-isvoro-9950x` 3 核、`sh-tencent-lite`/`sz-aliyun-ecs` 2 核、其余 1 核），`tw-isvoro-hinet` 0（老 Agent `-e0e18b7`）。
   - 列表视图逐行核对：16 行 CPU 副标是「N 核」，`tw-isvoro-hinet` 显示「系统计算负载」（回退生效）。
 - 测试：`ui-smoke.mjs` 的上报载荷补 `cpu_cores: 4`，并断言 CPU 那格副标就是「4 核」。
+
+## 2026-09-25 补上 tw-isvoro-hinet：NAT 入口用 ISVORO 的端口转发地址
+
+- 机队升级时这台是唯一没升上的（`ssh: connect to host hinet.mymonitor.space port 20100: Connection timed out`），它的 Agent 停在 `2.0.0-dev-e0e18b7`、`cpu_cores` 一直是 0。
+- 原因：`hinet.mymonitor.space` 的 A 记录是错的（解析到 104.219.250.37 / 2.59.170.20，都连不上）。这台在 ISVORO 是 **NAT 机器**，真实入口要从端口转发里查：`isvoro servers --all` 认机器（`5574 hinet-free`，NAT `1.168.166.150`，到期 2027-09-22 与面板节点一致），`isvoro ports 5574` 得到 `ext:20100 -> 192.168.66.109:22`，所以 `ssh -p 20100 root@1.168.166.150` 直接通。
+- 处理：直连 NAT IP 跑远端升级脚本 → `openrc before=2.0.0-dev-e0e18b7 after=2.0.0-dev-bcafa42 svc=started sha=4203b893e424`；`/root/work/tza-hosts.tsv` 里该行改成 NAT IP 并注明域名不可用；再跑一次 `tza-agent-upgrade.sh` 确认清单已修好（`before=after=bcafa42`，幂等）。
+- 验证：`GET /api/v1/nodes` 17 台全部带 `cpu_cores`（hinet=1），「仍缺核心数：无」；列表视图逐行核对 CPU 副标 17 行全是「N 核」（2 / 2 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 8 / 1 / 4 / 3 / 1 / 1），没有一行还是「系统计算负载」。
