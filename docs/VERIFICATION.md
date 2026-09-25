@@ -759,3 +759,23 @@ node scripts/ui-smoke.mjs
 - 原因：`hinet.mymonitor.space` 的 A 记录是错的（解析到 104.219.250.37 / 2.59.170.20，都连不上）。这台在 ISVORO 是 **NAT 机器**，真实入口要从端口转发里查：`isvoro servers --all` 认机器（`5574 hinet-free`，NAT `1.168.166.150`，到期 2027-09-22 与面板节点一致），`isvoro ports 5574` 得到 `ext:20100 -> 192.168.66.109:22`，所以 `ssh -p 20100 root@1.168.166.150` 直接通。
 - 处理：直连 NAT IP 跑远端升级脚本 → `openrc before=2.0.0-dev-e0e18b7 after=2.0.0-dev-bcafa42 svc=started sha=4203b893e424`；`/root/work/tza-hosts.tsv` 里该行改成 NAT IP 并注明域名不可用；再跑一次 `tza-agent-upgrade.sh` 确认清单已修好（`before=after=bcafa42`，幂等）。
 - 验证：`GET /api/v1/nodes` 17 台全部带 `cpu_cores`（hinet=1），「仍缺核心数：无」；列表视图逐行核对 CPU 副标 17 行全是「N 核」（2 / 2 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 1 / 8 / 1 / 4 / 3 / 1 / 1），没有一行还是「系统计算负载」。
+
+## 2026-09-25 首页延迟/回程要等好几秒：把探测查询切窗口 + 读走独立连接池
+
+- 用户反馈：首页的延迟、回程数据要等好久才出来，点开详情页也慢。
+- 实测（线上本机 `127.0.0.1:25774`，改前）：`/latency-samples?limit=20` **3.3–3.7s**、单台节点 `/nodes/{id}/observations` **0.53–0.67s**；从远端经 Cloudflare 模拟首页那 18 个请求（`/nodes` + 17 台观测 + 样本）一次刷新 **7.6s** 才全部回来。
+- 两个原因，都不是网络：
+  - 这两条查询没有任何时间界，每次都把 jobs 保留期（7 天）里的行全部重新 `json_extract` 一遍：单台节点上万行、全局十几万行（线上 17 台 / 175k 行 / 192MB 库）。
+  - `storage.Open` 里 `db.SetMaxOpenConns(1)`：整个进程只有一个 SQLite 连接，首页那 18 个请求在服务端一个接一个排队，单台几十毫秒的查询也被串成好几秒；每秒钟一次的轻刷同样排在后面。
+- 改法：
+  - 加 `storage.ProbeWindow = 24h`，`Observations` 与 `RecentLatencySamples` 都用 `issued>=?` 切窗口，靠已有的 `jobs_node(node_id,issued)` 索引裁掉要解析的行。探测间隔是 30–60s（tcp）/ 1h（route），而结果超过几分钟就已经被判为过期，一天的窗口比面板能画的还多。
+  - 读走第二套只读连接池（`openReadOnly`，4 个连接，`_pragma=busy_timeout(5000)` + `_pragma=query_only(1)` 写在 DSN 里——普通 `Exec` 只作用在已存在的连接上，池子后面新建的连接会漏掉 PRAGMA）。写路径完全不变，仍是原来那一条连接；`query_only` 让「不小心把写挂到读连接上」直接报错而不是默默写进去。
+  - `/observations?slim=1`：卡片只需要回程标签，跳表占载荷九成（单台 40KB → 9KB），首页 17 台从 500KB 降到 107KB。详情页不带这个参数，仍拿完整跳表。
+- 验证：
+  - 输出一致性（同一份线上库副本，新旧两个二进制各起一个服务对比）：观测条数逐台相同；样本 2720 条 / 136 个分组**逐条相同**（`git worktree` 出的旧版本 `6411063` 对比）。
+  - 本机（3 核，库副本）：首页刷新 **1.92s → 0.54s**、样本 0.86s → 0.41s、单台观测 0.166s → 0.067s。
+  - 线上部署 `99b69ad` / 镜像 `sha256:0ba8d58b8d74…`，备份 `20260925T201240Z-pre-99b69ad`；本机实测同一组请求 **1.46–1.58s**（改前约 7.2s）；线上各端点：样本 3.5s → 1.25s、单台观测 0.53s → 0.21s、`history` 0.034s → 0.005s、`network-history` 0.44s → 0.27s。
+  - 经 Cloudflare 从远端浏览器实测首页：HTML 93ms；17 个 `observations?slim=1` 全部在 **0.07–0.67s** 内返回（合计 107KB）；`latency-samples` 1991ms（400KB）；详情页三个请求并发全部完成 **0.91s**（改前 0.53+0.67+0.44 串行约 1.6s）。
+  - 公开卡片渲染无变化：17 张卡片各 160 个 `.quality-bar`（4 格延迟 + 4 格丢包 × 20 次），有数据的机器 idle=40；`us-vmiss-tri` 卡片仍是「电信 161ms / 联通 165ms / 移动 154ms」+「CNGIA / 10099 → 9929 / CMIN2」。
+  - `go test ./...`、`go test -race ./internal/storage ./internal/httpapi`、`go vet ./...`、`gofmt`、`git diff --check` 全过；`tza-ui-regression.sh`（presentation + jsdom smoke）PASS。CI `Check and build` 成功。
+- 待确认/可再收：`latency-samples` 仍是首页最长的一环（线上 1.25s，因为它一次要按节点/运营商/协议/地区分组取最近 20 次，扫的是 24h 内约 24k 行）。窗口从 24h 收到 6h 可以再快约 4 倍，代价是「最近 6 小时没探测过的目标」不再显示旧色带——目前线上只有 `hk-isvoro-lite-v6` 的 IPv4 分组（11 小时前停的）会受影响。用户没确认前不动。
