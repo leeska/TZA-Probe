@@ -451,16 +451,14 @@ function nodeFacts(n) {
 }
 
 // IPv4 / IPv6 开关：两个协议都在才给按钮，只有一个就给静态标签。
-// 地址族开关：只要上报了地址族就一律给这个小开关（IPv4 / IPv6 两段），缺哪一族就把那一段置灰。
-// 以前单栈机器只有一个 .family-tag、双栈机器是两段开关，同一列里每行的开关宽度不一样（40px vs 94px），
-// 后面那颗 linux / 架构标签的起始位置跟着每行都不同，列表看着就不齐。
+// 地址族开关：机器有几族就给几段——双栈两段（IPv4 / IPv6），单栈只给那一段，
+// 不摆一个点不动的灰段。外面套一层 .family-slot：列表里这层是定宽的，所以单栈那行
+// 后面的 linux / 架构标签与双栈行对齐（以前单栈是一颗 40px 窄标签，整列都对不齐）。
 function familySwitch(n, f) {
   if (!f.hasIPv4 && !f.hasIPv6) return `<span class="family-tag">无探测</span>`;
-  const seg = (fam, label, has) =>
-    has
-      ? `<button data-card-family="${fam}" data-card-node="${n.id}" class="${f.effectiveFamily === fam ? "active" : ""}">${label}</button>`
-      : `<button data-card-family="${fam}" data-card-node="${n.id}" disabled aria-disabled="true" title="这台机器没有 ${label} 地址">${label}</button>`;
-  return `<div class="segmented card-family" aria-label="${esc(n.name)} IP 协议">${seg("ipv4", "IPv4", f.hasIPv4)}${seg("ipv6", "IPv6", f.hasIPv6)}</div>`;
+  const seg = (fam, label) =>
+    `<button data-card-family="${fam}" data-card-node="${n.id}" class="${f.effectiveFamily === fam ? "active" : ""}">${label}</button>`;
+  return `<span class="family-slot"><div class="segmented card-family" aria-label="${esc(n.name)} IP 协议">${f.hasIPv4 ? seg("ipv4", "IPv4") : ""}${f.hasIPv6 ? seg("ipv6", "IPv6") : ""}</div></span>`;
 }
 
 // 计费两块：到期与价格。卡片里横排在卡底，列表里竖排在计费格，文本完全一样。

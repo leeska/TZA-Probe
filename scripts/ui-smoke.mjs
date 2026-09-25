@@ -623,8 +623,8 @@ assert(
   findCard().querySelector('[data-card-family="ipv6"]').classList.contains("active"),
   "the public card switches to IPv6 on its own",
 );
-// 机器只上报 IPv4 时：开关仍是同一个两段小开关（不再是一颗窄标签），缺的 IPv6 那一段置灰——
-// 这样每一行开关宽度一致，后面的 linux / 架构标签才对得齐。
+// 机器只上报 IPv4 时：开关里就只剩 IPv4 这一段（不摆一个点不动的灰段），
+// 宽度由外层定宽的 .family-slot 补齐，所以后面的 linux / 架构标签整列对齐。
 // Server 侧 3 秒内不受理第二次上报（ErrConflict），所以先等过这个窗口。
 await new Promise((resolve) => setTimeout(resolve, 3200));
 const singleReport = await fetch(base + "/api/v1/agent/report", {
@@ -642,30 +642,29 @@ publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
 await until(() => {
   const c = findCard();
-  return c && c.querySelector('[data-card-family="ipv6"]')?.disabled;
+  return c && c.querySelectorAll(".segmented.card-family button").length === 1;
 }, "single-stack address-family switch");
 {
   const single = findCard();
-  const pair = single.querySelectorAll(".segmented.card-family button");
-  assert.equal(pair.length, 2, "单栈机器也要给同一个两段小开关");
+  const segs = single.querySelectorAll(".segmented.card-family button");
+  assert.equal(segs.length, 1, "单栈机器只给一段（不摆点不动的灰段）");
+  assert.equal(segs[0].textContent, "IPv4", "留下的就是机器真有的那一族");
+  assert(segs[0].classList.contains("active"), "唯一那段是选中态");
   assert.equal(
-    single.querySelectorAll(".card-actions .family-tag").length,
-    0,
-    "上报了地址族就不该退化成单栈专用的小标签",
+    single.querySelector('[data-card-family="ipv6"]'),
+    null,
+    "没有 IPv6 就不给 IPv6 那一段",
   );
-  assert(
-    single.querySelector('[data-card-family="ipv4"]').classList.contains("active"),
-    "有 IPv4 的那一段是选中的",
-  );
-  assert.equal(
-    single.querySelector('[data-card-family="ipv6"]').hasAttribute("disabled"),
-    true,
-    "没有 IPv6 的那一段置灰",
-  );
+  assert(single.querySelector(".family-slot"), "开关要套在定宽槽位里");
   assert.equal(
     single.querySelectorAll(".os-box .os-tag, .os-box .arch-tag").length,
     2,
     "系统与架构标签照旧在开关后面",
+  );
+  // 槽位定宽，单栈与双栈行后面的标签才对得齐（真机实测两行标签同在同一个 x）。
+  assert(
+    /\.node-grid\.node-list \.family-slot \{[^}]*min-width: 94px/.test(styles),
+    "列表里地址族开关的槽位要定宽",
   );
 }
 // 整张卡片现在可点开综合信息，所以卡片内的控件必须被排除，否则点协议开关会误弹详情

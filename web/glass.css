@@ -468,15 +468,6 @@ h1 {
   color: var(--ink);
 }
 
-/* 机器没有的那一族：留位置但点不动，这样每一行的开关一样宽、后面的标签对齐。
-   透明度别压太狠（0.42 目视已经低于可读对比度，看着像坏掉），0.55 仍明确是禁用态。 */
-.segmented button:disabled,
-.segmented button:disabled:hover {
-  color: var(--muted);
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .segmented button.active {
   background: #ffffff;
   color: var(--ink);
