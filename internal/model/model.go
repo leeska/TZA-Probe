@@ -116,7 +116,10 @@ type Metrics struct {
 	Uptime      uint64  `json:"uptime"`
 	OS          string  `json:"os"`
 	Arch        string  `json:"arch"`
-	Version     string  `json:"version"`
+	// Cores is the host's logical CPU count (runtime.NumCPU), shown as the CPU
+	// metric's subtitle. 0 means an older Agent that has not reported it yet.
+	Cores   int    `json:"cpu_cores"`
+	Version string `json:"version"`
 	// IPFamilies is the set of usable public address families the Agent
 	// reported for this host: the host has an address of that family and the
 	// kernel has a route for it. nil means the Agent has not reported them yet;
@@ -125,7 +128,7 @@ type Metrics struct {
 }
 
 func (m Metrics) Validate() error {
-	if len(m.CounterID) > 64 || !percent(m.CPU) || m.MemoryTotal == 0 || m.MemoryUsed > m.MemoryTotal || m.DiskUsed > m.DiskTotal || !finite(m.RateIn) || !finite(m.RateOut) || m.RateIn < 0 || m.RateOut < 0 || len(m.OS) > 100 || len(m.Arch) > 30 || len(m.Version) > 40 || m.NetIn > math.MaxInt64 || m.NetOut > math.MaxInt64 {
+	if len(m.CounterID) > 64 || !percent(m.CPU) || m.MemoryTotal == 0 || m.MemoryUsed > m.MemoryTotal || m.DiskUsed > m.DiskTotal || !finite(m.RateIn) || !finite(m.RateOut) || m.RateIn < 0 || m.RateOut < 0 || m.Cores < 0 || m.Cores > 4096 || len(m.OS) > 100 || len(m.Arch) > 30 || len(m.Version) > 40 || m.NetIn > math.MaxInt64 || m.NetOut > math.MaxInt64 {
 		return errors.New("invalid metrics")
 	}
 	if len(m.IPFamilies) > 2 {

@@ -168,7 +168,8 @@ function overviewInner() {
 function metricsInner(n) {
   const m = n.metrics,
     hasMetrics = !!m;
-  const cpuSub = hasMetrics ? "系统计算负载" : "等待采集";
+  // CPU 那格的副标给核心数（Agent 报的 runtime.NumCPU），老 Agent 没报就退回原来的说明文字。
+  const cpuSub = hasMetrics ? (m.cpu_cores ? `${m.cpu_cores} 核` : "系统计算负载") : "等待采集";
   const memSub = hasMetrics ? `${bytes(m.memory_used)} / ${bytes(m.memory_total)}` : "未报告";
   const diskSub = hasMetrics ? `${bytes(m.disk_used)} / ${bytes(m.disk_total)}` : "未报告";
   const trafficSub = n.traffic_limit ? `${bytes(n.traffic_limit)} 额度 · ${esc({ sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.traffic_mode])}` : "无限制额度";

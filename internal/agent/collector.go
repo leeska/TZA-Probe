@@ -29,7 +29,7 @@ type SystemCollector struct {
 }
 
 func (c *SystemCollector) Collect(ctx context.Context) (model.Metrics, error) {
-	m := model.Metrics{OS: runtime.GOOS, Arch: runtime.GOARCH, Version: model.Version}
+	m := model.Metrics{OS: runtime.GOOS, Arch: runtime.GOARCH, Cores: runtime.NumCPU(), Version: model.Version}
 	cp, err := cpu.PercentWithContext(ctx, time.Second, false)
 	if err != nil || len(cp) == 0 {
 		return m, errors.New("CPU collection failed")

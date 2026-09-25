@@ -194,7 +194,7 @@ const report = await fetch(base + "/api/v1/agent/report", {
   headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
   body: JSON.stringify({
     protocol: 1,
-    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64", version: "smoke", ip_families: ["ipv4", "ipv6"] },
+    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4", "ipv6"] },
   }),
 });
 assert.equal(report.status, 204, "agent report carrying both address families must be accepted");
@@ -632,7 +632,7 @@ const singleReport = await fetch(base + "/api/v1/agent/report", {
   headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
   body: JSON.stringify({
     protocol: 1,
-    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64", version: "smoke", ip_families: ["ipv4"] },
+    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4"] },
   }),
 });
 assert.equal(singleReport.status, 204, "agent report carrying a single address family must be accepted");
@@ -742,6 +742,8 @@ for (const line of listRow.querySelectorAll(".net-line")) {
 }
 const listSubs = [...listRow.querySelectorAll(".metrics-grid .metric small")].map((s) => s.textContent);
 assert.equal(listSubs.length, 4, "四个指标各留一行副标");
+// CPU 那格的副标是核心数（Agent 报的 runtime.NumCPU），不再写「系统计算负载」。
+assert.equal(listSubs[0], "4 核", `CPU 副标要是核心数，实际是「${listSubs[0]}」`);
 assert(
   listSubs.every((t) => t.trim().length),
   "指标副标不能为空",
