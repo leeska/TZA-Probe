@@ -225,6 +225,93 @@ func TestRouteLabelOnRecordedMobileTrace(t *testing.T) {
 	}
 }
 
+// Recorded 中国联通 回程 (masked addresses, measured ASNs, `*` gaps preserved),
+// replayed from the production store on 2026-09-25. AS4837 is 联通's own 169
+// backbone and the network its 9929 international line lands on, so a trace
+// that crossed 9929 names that line, not the 169 hops behind it; the same task
+// towards a 联通 target without 9929 keeps 4837, because there the 169 backbone
+// is the line the traffic crossed.
+func TestRouteLabelOnRecordedUnicomTrace(t *testing.T) {
+	// 734 of the stored 联通 results read "10099 → 9929 → 4837": 联通国际 entry
+	// (AS10099, 162.219.*), the 9929 line (218.105.*), then 169 (219.158.*,
+	// 58.144.*) all the way to the 四川 target.
+	on9929 := []Hop{
+		{TTL: 1, Address: "10.29.*.*"},
+		{TTL: 2, Address: "*"},
+		{TTL: 3, Address: "45.78.*.*", ASN: "AS25820"},
+		{TTL: 4, Address: "142.0.*.*", ASN: "AS25820"},
+		{TTL: 5, Address: "118.26.*.*"},
+		{TTL: 6, Address: "162.219.*.*", ASN: "AS10099"},
+		{TTL: 7, Address: "218.105.*.*", ASN: "AS9929"},
+		{TTL: 8, Address: "*"},
+		{TTL: 9, Address: "*"},
+		{TTL: 10, Address: "210.14.*.*"},
+		{TTL: 11, Address: "219.158.*.*", ASN: "AS4837"},
+		{TTL: 12, Address: "219.158.*.*", ASN: "AS4837"},
+		{TTL: 13, Address: "58.144.*.*", ASN: "AS4837"},
+		{TTL: 14, Address: "*"},
+		{TTL: 15, Address: "58.144.*.*", ASN: "AS4837"},
+	}
+	// 358 stored results went straight from 联通国际 to 169 ("10099 → 4837"):
+	// no 9929 hop anywhere, so 4837 is the 联通 name.
+	on169 := []Hop{
+		{TTL: 1, Address: "10.29.*.*"},
+		{TTL: 2, Address: "*"},
+		{TTL: 3, Address: "45.78.*.*", ASN: "AS25820"},
+		{TTL: 4, Address: "142.0.*.*", ASN: "AS25820"},
+		{TTL: 5, Address: "118.26.*.*"},
+		{TTL: 6, Address: "162.219.*.*", ASN: "AS10099"},
+		{TTL: 7, Address: "210.14.*.*"},
+		{TTL: 8, Address: "*"},
+		{TTL: 9, Address: "*"},
+		{TTL: 10, Address: "210.14.*.*"},
+		{TTL: 11, Address: "219.158.*.*", ASN: "AS4837"},
+		{TTL: 12, Address: "219.158.*.*", ASN: "AS4837"},
+		{TTL: 13, Address: "58.144.*.*", ASN: "AS4837"},
+		{TTL: 14, Address: "*"},
+		{TTL: 15, Address: "58.144.*.*", ASN: "AS4837"},
+	}
+	// An IPv6 trace from the same task (2401:8a00:* = 联通国际): the tool left
+	// hop 5 without an ASN, so the prefix table reads 2408:8120:* as 4837 even
+	// though hop 6 resolves that same address space as AS9929. The 169 hops
+	// behind the 9929 line are its landing side either way.
+	on9929v6 := []Hop{
+		{TTL: 1, Address: "2602:f656:****"},
+		{TTL: 2, Address: "2602:f656:****", ASN: "AS1054"},
+		{TTL: 3, Address: "2401:8a00:****", ASN: "AS10099"},
+		{TTL: 4, Address: "2401:8a00:****", ASN: "AS10099"},
+		{TTL: 5, Address: "2408:8120:****"},
+		{TTL: 6, Address: "2408:8120:****", ASN: "AS9929"},
+		{TTL: 7, Address: "*"},
+		{TTL: 8, Address: "2408:8000:****", ASN: "AS4837"},
+		{TTL: 9, Address: "2408:8001:****", ASN: "AS4837"},
+		{TTL: 10, Address: "2408:8762:****", ASN: "AS4837"},
+		{TTL: 11, Address: "*"},
+		{TTL: 12, Address: "2408:8763:****", ASN: "AS4837"},
+	}
+	for _, c := range []struct {
+		name string
+		hops []Hop
+		want string
+	}{
+		{"9929 line with 169 behind it", on9929, "10099 → 9929"},
+		{"169 only, no 9929", on169, "10099 → 4837"},
+		{"IPv6 9929 line with 169 behind it", on9929v6, "10099 → 9929"},
+	} {
+		if got := RouteLabel(c.hops); got != c.want {
+			t.Fatalf("%s: %s", c.name, got)
+		}
+	}
+	// 9929 alone keeps its own name, and another carrier's backbone still joins
+	// the chain: the rule only removes 联通's 169 landing side.
+	if got := RouteLabel([]Hop{{Address: "218.105.*.*"}}); got != "9929" {
+		t.Fatalf("9929 only: %s", got)
+	}
+	if got := RouteLabel([]Hop{{ASN: "AS4134", Address: "202.97.1.*"}, {ASN: "AS9929", Address: "218.105.*.*"}, {ASN: "AS4837", Address: "219.158.*.*"}}); got != "163 → 9929" {
+		t.Fatalf("163 then the 9929 line: %s", got)
+	}
+}
+
 func TestMasks(t *testing.T) {
 	for input, want := range map[string]string{"219.158.1.3": "219.158.*.*", "2001:db8::1": "2001:db8:****", "anything": "*"} {
 		if got := MaskAddress(input); got != want {

@@ -64,10 +64,13 @@ var prefixBackbones = []struct {
 }
 
 // RouteLabel names the concrete backbones seen in a trace, in hop order, for
-// example "CN2GT" or "4837 → 9929". Every hop is read by ASN first and by
+// example "CN2GT" or "163 → 4837". Every hop is read by ASN first and by
 // address prefix second, so the backbone evidence survives a trace whose CN2
 // hops came back without an ASN. China Telecom is one product per trace, so its
-// hops share the name ctLabel resolves; unmatched traces read "未知".
+// hops share the name ctLabel resolves; 中国联通's 169 backbone is dropped once
+// the trace shows the 9929 line it lands on, so a 联通 回程 reads
+// "10099 → 9929" rather than "10099 → 9929 → 4837". Unmatched traces read
+// "未知".
 func RouteLabel(hops []Hop) string {
 	firstCN2 := -1
 	for i, h := range hops {
@@ -78,6 +81,7 @@ func RouteLabel(hops []Hop) string {
 	}
 	ct := ctLabel(hops, firstCN2)
 	cm := cmLabel(hops)
+	cu9929 := cuOn9929Line(hops)
 	out := []string{}
 	seen := map[string]bool{}
 	for _, h := range hops {
@@ -90,6 +94,17 @@ func RouteLabel(hops []Hop) string {
 			// China Telecom's own AS4134 ranges on both sides of it, so neither
 			// may be reported as a second backbone.
 			name = ct
+		case "4837":
+			// 4837 is 中国联通's own 169 backbone (AS4837, 219.158.*/2408:*),
+			// and the network the 9929 international line feeds on the China
+			// side. A trace that crossed 9929 has already named the line that
+			// carried it, so 4837 here is that line's landing side rather than a
+			// second line — the rule the 163 hops around a CN2 run get. Without
+			// 9929 the trace crossed the 169 backbone itself, which is a
+			// different 联通 line and keeps its name (10099 → 4837).
+			if cu9929 {
+				continue
+			}
 		case "CMI", "CMIN2":
 			// 移动同理：CMI 与 CMIN2 都是中移国际的网络，一条回程只给一个产品名。
 			name = cm
@@ -155,6 +170,21 @@ func cmLabel(hops []Hop) string {
 		return "CMI"
 	}
 	return ""
+}
+
+// cuOn9929Line reports whether the trace crossed 中国联通's 9929 international
+// line (AS9929; 210.51.*, 210.78.*, 218.105.*). That line is 联通国际's own
+// network, and the 169 hops behind it (AS4837) are where it lands on the China
+// side, so RouteLabel names one 联通 line instead of a chain. 10099 (联通国际)
+// stays in front of it: it is the international entry the trace crossed, and a
+// trace that never shows 9929 keeps 4837 as its 联通 name.
+func cuOn9929Line(hops []Hop) bool {
+	for _, h := range hops {
+		if hopBackbone(h) == "9929" {
+			return true
+		}
+	}
+	return false
 }
 
 // hopBackbone names the backbone a single hop proves. The ASN is authoritative;
