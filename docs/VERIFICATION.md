@@ -717,3 +717,11 @@ node scripts/ui-smoke.mjs
 - 验证（本地，Chrome 打本地 Server，1440 / 1321 / 390）：`os-box` 54×44，两颗胶囊各 52 / 54px 宽、左边对齐同一列、上下相差 24px（也就是真的落在下面一行）；`.speed-line` 两条各 120px、数值右端同在 735；17 行 0 裁剪、0 占位字样；390 仍横向滚动（1230 vs 358）。
 - 验证（线上 `probe.tza.cc`，部署 `f9b8c0e` / 镜像 `sha256:483add6bf941…`，备份 `20260925T182955Z-pre-f9b8c0e`）：1440 下列表 17 行、行宽 1336、0 裁剪；`us-vmiss-tri` 行上 `linux` 与 `amd64` 上下相差 24px、都在列首（x=170），三个小标题是「实时网速 / TCP 延迟 IPv4 / 三网回程 IPv4」，占位字样 0 处；网速两条 120px、数值右端 735、分别 `↓6.4 KB/s` / `↑6.8 KB/s`（title 实时下载 / 实时上传）；390 下同一行的标签同样竖排，横向滚动照旧。卡片视图未受影响：`os-box` 102×20、两个标签同一行。
 - 顺带修掉一个会让断言「莫名其妙地挂」的坑：`/root/work/tza-ui-regression.sh` 现在自己 `go build` 一份 `/tmp/tza-ui-run/tza-server`。`web/` 是 `go:embed` 进二进制里的，用旧二进制跑时 jsdom 那半边用的是磁盘上的新 `app.js`（esbuild 现读），而 HTTP 取到的 `/app.js` 是二进制里那份旧的，于是只有 `appSource` 类断言会挂，DOM 断言全过——很难查。
+
+## 2026-09-25 地址族开关统一（单栈 / 双栈同一形状）
+
+- 问题（用户看图后指出「没有ip单栈的机器和双栈的不一样…样式不统一」）：双栈机器渲染的是两段小开关（`.segmented.card-family`，行内实测 94×30），单栈机器渲染的是一颗窄标签（`.family-tag`，40×18）。列表是一行一台的表格式布局，开关宽度不同，后面那颗 `linux` / 架构标签的起始位置就每行都不一样（x=116 vs x=170），整列看着不齐。
+- 改法：`familySwitch(n, f)`（卡片与列表共用）与 `web/detail.js` 的详情开关都改成——只要上报了地址族，就一律给同一个两段开关，缺的那一族渲染成 `disabled` + `aria-disabled`，并在 `glass.css` 里给 `.segmented button:disabled` 一句（`color: var(--muted); opacity: .55; cursor: not-allowed`）。两段都带 `data-card-family` / `data-detail-family`（禁用的那段点不动，事件自然不会触发），所以选择器与测试与以前一致。完全没有上报地址族的节点（既没 IPv4 也没 IPv6）仍然给「无探测」标签——那种状态本来就没有可切换的对象。
+- 透明度一开始给了 0.42，放大看接近不可读（目视低于可读对比度，像坏掉），改成 0.55：仍明确是禁用态，但灰字看得清。
+- 验证（线上 `probe.tza.cc`，部署 `974953d` / 镜像 `sha256:e20a794110ab…`，备份 `20260925T184933Z-pre-974953d`；随后 `3f89816` / `sha256:…`，备份 `20260925T185318Z-pre-3f89816` 只调透明度）：1440 深色列表视图，17 行的开关尺寸集合 = `{94x30}`、开关左边界集合 = `{68}`、后面标签块左边界集合 = `{170}`，也就是三个集合都只剩一个值——单栈、双栈、只有 IPv6 的机器现在完全同一形状同一位置。抽样 `sh-tencent-lite`：IPv4 `active`、IPv6 `disabled=true` / `opacity 0.55` / `cursor not-allowed` / `title=这台机器没有 IPv6 地址`；`hk-isvoro-lite-v6` 反过来 IPv4 置灰、IPv6 选中。顺带确认架构标签确实有 arm64 的机器：`kr-isvoro-oracle`、`sg-isvoro-oracle`（`arm64` 与 `amd64` 字符数相同，左对齐不会因文字长短抖动）。
+- 测试：`ui-smoke.mjs` 现在在双栈断言之后用同一台机器再上报一次 `ip_families: ["ipv4"]`（Server 3 秒内不受理第二次上报，所以先等过窗口），断言开关仍是两段、IPv4 选中、IPv6 置灰、`.os-box` 两个标签还在。为让公开页自己那套定时器在测试里真的跑起来，`publicDOM` 补了 `pretendToBeVisual: true`——**jsdom 默认 `document.hidden` 是 true，面板里「每秒轻刷 / 10 秒全量」两处 `setInterval` 都被 `if (!document.hidden)` 挡掉，不补这个就测不到自动刷新后的界面**（本次就卡在这上面）。
