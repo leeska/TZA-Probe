@@ -77,10 +77,19 @@ export async function detail(id, focus = null) {
   const hasIPv6 = reported
     ? reported.has("ipv6")
     : obs.some((o) => o.task.family === "ipv6" && o.task.enabled);
+  // 与公开面板同一套：只要上报了地址族就给两段小开关，缺的那一段置灰（单栈机器不再是一颗窄标签）。
   const familyControl =
-    hasIPv4 && hasIPv6
-      ? `<div class="segmented" role="group" aria-label="IP 协议"><button data-detail-family="ipv4" class="active">IPv4</button><button data-detail-family="ipv6">IPv6</button></div>`
-      : `<span class="family-tag">${hasIPv4 ? "IPv4" : hasIPv6 ? "IPv6" : "无探测"}</span>`;
+    !hasIPv4 && !hasIPv6
+      ? `<span class="family-tag">无探测</span>`
+      : `<div class="segmented" role="group" aria-label="IP 协议">${
+          hasIPv4
+            ? `<button data-detail-family="ipv4" class="active">IPv4</button>`
+            : `<button data-detail-family="ipv4" disabled aria-disabled="true" title="这台机器没有 IPv4 地址">IPv4</button>`
+        }${
+          hasIPv6
+            ? `<button data-detail-family="ipv6">IPv6</button>`
+            : `<button data-detail-family="ipv6" disabled aria-disabled="true" title="这台机器没有 IPv6 地址">IPv6</button>`
+        }</div>`;
   // 点击卡片上的某一格时只展示那一格的详情：延迟格看该运营商 TCP 延迟，
   // 回程格看该运营商回程路径；点整张卡片才给综合信息。
   const focused = !!focus && (focus.kind === "latency" || focus.kind === "route");

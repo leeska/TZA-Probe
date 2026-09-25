@@ -468,6 +468,14 @@ h1 {
   color: var(--ink);
 }
 
+/* 机器没有的那一族：留位置但点不动，这样每一行的开关一样宽、后面的标签对齐 */
+.segmented button:disabled,
+.segmented button:disabled:hover {
+  color: var(--muted);
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .segmented button.active {
   background: #ffffff;
   color: var(--ink);

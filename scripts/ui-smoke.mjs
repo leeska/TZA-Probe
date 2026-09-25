@@ -539,6 +539,9 @@ const publicDOM = new JSDOM(
     url: base + "/",
     runScripts: "outside-only",
     virtualConsole: consoleAdapter,
+    // 少了这个，jsdom 的 document.hidden 就是 true，面板里「每秒轻刷 / 10 秒全量」两处
+    // setInterval 会被 if (!document.hidden) 全部跳过，测不到自动刷新后的界面。
+    pretendToBeVisual: true,
   },
 );
 publicDOM.window.fetch = (input, opts) => fetch(new URL(input, base), opts);
@@ -620,6 +623,51 @@ assert(
   findCard().querySelector('[data-card-family="ipv6"]').classList.contains("active"),
   "the public card switches to IPv6 on its own",
 );
+// 机器只上报 IPv4 时：开关仍是同一个两段小开关（不再是一颗窄标签），缺的 IPv6 那一段置灰——
+// 这样每一行开关宽度一致，后面的 linux / 架构标签才对得齐。
+// Server 侧 3 秒内不受理第二次上报（ErrConflict），所以先等过这个窗口。
+await new Promise((resolve) => setTimeout(resolve, 3200));
+const singleReport = await fetch(base + "/api/v1/agent/report", {
+  method: "POST",
+  headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    protocol: 1,
+    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64", version: "smoke", ip_families: ["ipv4"] },
+  }),
+});
+assert.equal(singleReport.status, 204, "agent report carrying a single address family must be accepted");
+// 公开页每 10 秒才全量刷一次（每秒那层只换数字），所以等过一轮再让它重画。
+await new Promise((resolve) => setTimeout(resolve, 11500));
+publicSearch.value = "";
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+await until(() => {
+  const c = findCard();
+  return c && c.querySelector('[data-card-family="ipv6"]')?.disabled;
+}, "single-stack address-family switch");
+{
+  const single = findCard();
+  const pair = single.querySelectorAll(".segmented.card-family button");
+  assert.equal(pair.length, 2, "单栈机器也要给同一个两段小开关");
+  assert.equal(
+    single.querySelectorAll(".card-actions .family-tag").length,
+    0,
+    "上报了地址族就不该退化成单栈专用的小标签",
+  );
+  assert(
+    single.querySelector('[data-card-family="ipv4"]').classList.contains("active"),
+    "有 IPv4 的那一段是选中的",
+  );
+  assert.equal(
+    single.querySelector('[data-card-family="ipv6"]').hasAttribute("disabled"),
+    true,
+    "没有 IPv6 的那一段置灰",
+  );
+  assert.equal(
+    single.querySelectorAll(".os-box .os-tag, .os-box .arch-tag").length,
+    2,
+    "系统与架构标签照旧在开关后面",
+  );
+}
 // 整张卡片现在可点开综合信息，所以卡片内的控件必须被排除，否则点协议开关会误弹详情
 assert(
   !publicDOM.window.document.querySelector("#dialog[data-node-id]"),
