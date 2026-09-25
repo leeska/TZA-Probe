@@ -2580,18 +2580,24 @@ pre,
   flex: 0 0 30px;
 }
 
+/* 数值与丢包各占固定宽度并右对齐：四行（含「未检测」那行）的数字因此排成一列，
+   色带固定 120px 且右对齐，四行右端自然对齐。 */
 .node-grid.node-list .net-line strong {
+  flex: 0 0 46px;
   font-size: 12px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-align: right;
 }
 
 .node-grid.node-list .net-loss {
+  flex: 0 0 58px;
   font-size: 11px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-align: right;
 }
 
 /* 回程标签完整写出：长标签（4837 → 9929 → 163 之类）换行，不省略 */
@@ -2601,6 +2607,7 @@ pre,
   white-space: normal;
   overflow-wrap: anywhere;
   color: var(--accent);
+  text-align: left;
 }
 
 .node-grid.node-list .route-line strong.muted {
