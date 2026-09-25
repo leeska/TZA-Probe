@@ -174,7 +174,7 @@ func parse(data []byte, target string) ([]model.Hop, int, *float64) {
 		if err != nil || math.IsNaN(ms) || math.IsInf(ms, 0) || ms < 0 || ms > 60000 {
 			ms = 0
 		}
-		h := model.Hop{TTL: ttl, Address: model.MaskAddress(address.String()), ASN: model.NormalizeASN(f[4]), RTT: ms}
+		h := model.Hop{TTL: ttl, Address: model.MaskAddress(address.String()), ASN: asnOrCarrierRange(model.NormalizeASN(f[4]), address.String()), RTT: ms}
 		if previous, ok := hops[ttl]; !ok || previous.Address == "*" || ms < previous.RTT {
 			hops[ttl] = h
 		}

@@ -114,7 +114,7 @@ func mapTraceResult(res *trace.Result, err error, target net.IP) traceOutcome {
 			out.Hops = append(out.Hops, model.Hop{
 				TTL:     index + 1,
 				Address: hopAddress(hop),
-				ASN:     hopASN(hop),
+				ASN:     asnOrCarrierRange(hopASN(hop), hopRawAddress(hop)),
 				RTT:     hopRTT(hop),
 			})
 			// The tool's own stop reason is the primary signal, but a hop
@@ -167,6 +167,13 @@ func destinationHop(res *trace.Result) (trace.Hop, bool) {
 		return trace.Hop{}, false
 	}
 	return winningAttempt(res.Hops[index]), true
+}
+
+func hopRawAddress(hop trace.Hop) string {
+	if hop.Address == nil {
+		return ""
+	}
+	return hop.Address.String()
 }
 
 func hopAddress(hop trace.Hop) string {
