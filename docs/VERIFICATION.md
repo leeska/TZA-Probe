@@ -740,3 +740,15 @@ node scripts/ui-smoke.mjs
 - 上一版给单栈机器补了一个置灰的 IPv6 段来对齐宽度，用户不认可（「不是这个意思，没有双ip的，只显示单独的就行了」）。
 - 现方案（`familySwitch` 与 `web/detail.js`）：机器有几族就给几段——双栈两段，单栈只留那一段（IPv6-only 的那台只剩 `IPv6` 一段），不渲染任何 disabled 段；外层套一层 `.family-slot`，列表视图里该槽位 `min-width: 94px`（双栈两段开关实测宽度），宽度差由槽位吸收，所以两种行的 `linux` / 架构标签仍然整列对齐。完全没有上报地址族的节点仍给「无探测」标签。
 - 验证（线上 `probe.tza.cc`，部署 `dd9e6b6` / 备份 `20260925T190457Z-pre-dd9e6b6`）：17 行里 7 行只有一段（6 台纯 IPv4 + 1 台纯 IPv6），10 行两段；`.family-slot` 宽度集合 `{94}`、后面标签块左边界集合 `{170}`，即单栈与双栈行完全对齐。
+
+## 2026-09-25 CPU 副标改成核心数（Agent 上报 cpu_cores）
+
+- 需求：CPU 那格的副标把「系统计算负载」换成核心数。
+- 改法：`model.Metrics` 加 `Cores int \`json:"cpu_cores"\``（校验 0–4096，0 表示老 Agent 还没报）；`internal/agent/collector.go` 里 `Cores: runtime.NumCPU()`；面板 `metricsInner` 的 `cpuSub` 改成 `m.cpu_cores ? \`${m.cpu_cores} 核\` : "系统计算负载"`，所以老 Agent 仍显示原文字，不会空着。
+- **顺序很重要**：Agent 上报接口的 JSON 解码用了 `DisallowUnknownFields`，新 Agent 报 `cpu_cores` 给旧 Server 会被判 400、节点直接掉线。所以先升服务端（`bcafa42`，镜像内已带两个架构的新 Agent），再升机队。
+- 验证（线上 `probe.tza.cc`，部署 `bcafa42` / 备份 `20260925T191930Z-pre-bcafa42`）：
+  - `/dl/tza-agent-linux-amd64.sha256` 与下载到的二进制 `sha256sum` 一致（`4203b893…`），即面板下发的就是本次构建。
+  - `bash /root/work/tza-agent-upgrade.sh`：15 台 systemd/OpenRC 主机 `before=2.0.0-dev-d8dd968 after=2.0.0-dev-bcafa42`、服务 active/started（含两台 Alpine 走 OpenRC 的 arm64 机）；`tw-isvoro-hinet` 仍是 `ssh: connect … Connection timed out`（清单里就标注了本机到它不通）。
+  - `GET /api/v1/nodes`：17 台里 16 台带 `cpu_cores`（`us-advin-standard` 8 核、`us-hostodo-tampa` 4 核、`us-isvoro-9950x` 3 核、`sh-tencent-lite`/`sz-aliyun-ecs` 2 核、其余 1 核），`tw-isvoro-hinet` 0（老 Agent `-e0e18b7`）。
+  - 列表视图逐行核对：16 行 CPU 副标是「N 核」，`tw-isvoro-hinet` 显示「系统计算负载」（回退生效）。
+- 测试：`ui-smoke.mjs` 的上报载荷补 `cpu_cores: 4`，并断言 CPU 那格副标就是「4 核」。
