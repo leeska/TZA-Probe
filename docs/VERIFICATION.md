@@ -778,4 +778,19 @@ node scripts/ui-smoke.mjs
   - 经 Cloudflare 从远端浏览器实测首页：HTML 93ms；17 个 `observations?slim=1` 全部在 **0.07–0.67s** 内返回（合计 107KB）；`latency-samples` 1991ms（400KB）；详情页三个请求并发全部完成 **0.91s**（改前 0.53+0.67+0.44 串行约 1.6s）。
   - 公开卡片渲染无变化：17 张卡片各 160 个 `.quality-bar`（4 格延迟 + 4 格丢包 × 20 次），有数据的机器 idle=40；`us-vmiss-tri` 卡片仍是「电信 161ms / 联通 165ms / 移动 154ms」+「CNGIA / 10099 → 9929 / CMIN2」。
   - `go test ./...`、`go test -race ./internal/storage ./internal/httpapi`、`go vet ./...`、`gofmt`、`git diff --check` 全过；`tza-ui-regression.sh`（presentation + jsdom smoke）PASS。CI `Check and build` 成功。
-- 待确认/可再收：`latency-samples` 仍是首页最长的一环（线上 1.25s，因为它一次要按节点/运营商/协议/地区分组取最近 20 次，扫的是 24h 内约 24k 行）。窗口从 24h 收到 6h 可以再快约 4 倍，代价是「最近 6 小时没探测过的目标」不再显示旧色带——目前线上只有 `hk-isvoro-lite-v6` 的 IPv4 分组（11 小时前停的）会受影响。用户没确认前不动。
+- 后续：窗口已做成后台可调（默认 60 分钟，见下一节），所以这里不再需要「改常量再发版」。
+
+## 2026-09-25 延迟色带窗口：收成 1 小时，并交给后台调
+
+- 需求：首页卡片的延迟色带原来是写死的 24 小时窗口，用户要收成 1 小时，而且**这个时间要能在后台改**。
+- 改法：
+  - 设置键 `latency_window_minutes`（`internal/model/settings.go`）：空值/写坏回落 60 分钟，越界按 1–1440 夹取；`ValidateLatencyWindowMinutes` 给写入口做校验。`storage.RecentLatencySamples` 的窗口改成由调用方传入（`since time.Time`），存储层不再自己认定窗口。
+  - 读写口：`GET /api/v1/admin/settings` 顺带回生效值；新的 `PUT /api/v1/admin/panel` 只改显示项。**不并进通知那个 PUT**：它的语义是「空值即清空」，同一个请求体里带显示项会顺手把 Webhook 或 Bot Token 清掉。
+  - MCP 同源：`get_settings` 回时间窗，`update_settings` 收 `latency_window_minutes`，且**只报时间窗时不碰通知配置**（原有「空值即清空」的行为对纯通知调用保持不变）。
+  - 界面：后台「告警与通知」页新增「面板显示」块（数字输入 + 保存），保存后重渲染并读回生效值；样式复用现有面板块，只补了一条与按钮同高的输入框规则。
+- 验证：
+  - `go test ./...` 全过；新增 `TestLatencyWindowMinutesFallsBackAndClamps`（model）、`TestPanelLatencyWindowControlsSampleLookBack`（HTTP：默认 60 → 改 1440 → 取到 3 小时前的旧样本、越界 400、匿名 401）、`TestProbeWindowSkipsHistoryThePanelCannotShow` 改为按传入窗口断言（1 小时窗口只留最近一条、24 小时两条）、MCP 侧断言「只改时间窗不动通知配置」；`tza-ui-regression.sh` PASS（新增断言：输入框默认 60、保存 30 后读回生效、再改回 60）。
+  - 本机（线上库副本 + 时间戳前移，浏览器实测）：色带请求 **24 小时 0.416s / 400KB / 2720 条 → 60 分钟 0.019s / 288KB / 1970 条**（浏览器 resource timing：776ms → 70ms）；2 小时 0.038s / 367KB。
+  - 数据面（库内按节点/运营商/协议/地区分组统计）：60 分钟窗口下 136 组里 124 组仍有样本——28 组满 20 格、96 组 14–15 格；24 小时窗口 136 组全部满 20 格。消失的 12 组全部是 `hk-isvoro-lite-v6` 的 IPv4 分组（电信/移动/联通 × 四川/广东/湖南/重庆），这台机器的 IPv4 目标早就停在了 11 小时前。
+  - 公开卡片：密采组（每组约 1 分钟一次）显示的内容不变——分组查询本来就是取「最近 20 次」，60 分钟和 24 小时的 20 格实测都是 16:12:35 → 16:31:45 同一批；变的是稀疏组：窗口内不足 20 次时左边留空，窗口越窄空得越多。
+  - 越界写入的实际响应：`PUT /admin/panel {"latency_window_minutes":0}` → `400 {"error":"延迟色带时间窗须为 1–1440 分钟"}`。

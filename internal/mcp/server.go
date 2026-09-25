@@ -78,7 +78,7 @@ type Source interface {
 	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
 	Observations(context.Context, string, time.Time) ([]model.Observation, error)
 	Events(context.Context, bool, time.Time) ([]model.Event, error)
-	RecentLatencySamples(context.Context, []string, int) ([]model.LatencySample, error)
+	RecentLatencySamples(context.Context, []string, int, time.Time) ([]model.LatencySample, error)
 	SaveNode(context.Context, model.Node, bool) (string, string, error)
 	DeleteNode(context.Context, string) error
 	Rotate(context.Context, string) (string, error)

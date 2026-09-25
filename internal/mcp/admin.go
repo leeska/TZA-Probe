@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -471,23 +472,56 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if err != nil {
 			return toolFailure("读取通知配置失败", err)
 		}
-		return toolResult(config.Public()), nil, 0
+		stored, err := s.Source.Setting(ctx, model.SettingLatencyWindowMinutes)
+		if err != nil {
+			return toolFailure("读取面板设置失败", err)
+		}
+		view := config.Public()
+		view[model.SettingLatencyWindowMinutes] = model.LatencyWindowMinutes(stored)
+		return toolResult(view), nil, 0
 
 	case "update_settings":
-		var args notify.Config
+		var args struct {
+			notify.Config
+			LatencyWindowMinutes *int `json:"latency_window_minutes"`
+		}
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		next, err := notify.Normalize(ctx, s.Source, args)
+		// 只报 latency_window_minutes 的调用不该动通知出口：通知那套的语义是
+		// 「空值即清空」，所以通知部分一个字段都没给就跳过它。
+		notifyTouched := args.Channel != "" || args.Webhook != "" || args.BotToken != "" || args.ChatID != ""
+		config, err := notify.Status(ctx, s.Source)
 		if err != nil {
-			// The caller has to fix its input, so this is a protocol error.
-			return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
+			return toolFailure("读取通知配置失败", err)
 		}
-		if err := notify.Persist(ctx, s.Source, next); err != nil {
-			return toolFailure("保存通知配置失败", err)
+		if notifyTouched || args.LatencyWindowMinutes == nil {
+			next, err := notify.Normalize(ctx, s.Source, args.Config)
+			if err != nil {
+				// The caller has to fix its input, so this is a protocol error.
+				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
+			}
+			if err := notify.Persist(ctx, s.Source, next); err != nil {
+				return toolFailure("保存通知配置失败", err)
+			}
+			config = next
+		}
+		if args.LatencyWindowMinutes != nil {
+			if err := model.ValidateLatencyWindowMinutes(*args.LatencyWindowMinutes); err != nil {
+				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
+			}
+			if err := s.Source.SetSetting(ctx, model.SettingLatencyWindowMinutes, strconv.Itoa(*args.LatencyWindowMinutes)); err != nil {
+				return toolFailure("保存面板设置失败", err)
+			}
+		}
+		stored, err := s.Source.Setting(ctx, model.SettingLatencyWindowMinutes)
+		if err != nil {
+			return toolFailure("读取面板设置失败", err)
 		}
 		// Never echo the credentials back, only what is configured.
-		return toolResult(next.Public()), nil, 0
+		view := config.Public()
+		view[model.SettingLatencyWindowMinutes] = model.LatencyWindowMinutes(stored)
+		return toolResult(view), nil, 0
 
 	case "test_notification":
 		if e := arguments(params.Arguments, &struct{}{}); e != nil {

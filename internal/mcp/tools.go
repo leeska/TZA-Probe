@@ -217,11 +217,17 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 		for _, n := range nodes {
 			ids = append(ids, n.ID)
 		}
-		samples, err := s.Source.RecentLatencySamples(ctx, ids, limit)
+		// 与公开面板同一个时间窗（settings 里的 latency_window_minutes）。
+		stored, err := s.Source.Setting(ctx, model.SettingLatencyWindowMinutes)
+		if err != nil {
+			return toolFailure("读取时间窗设置失败", err)
+		}
+		minutes := model.LatencyWindowMinutes(stored)
+		samples, err := s.Source.RecentLatencySamples(ctx, ids, limit, time.Now().Add(-time.Duration(minutes)*time.Minute))
 		if err != nil {
 			return toolFailure("读取延迟样本失败", err)
 		}
-		return toolResult(map[string]any{"limit": limit, "samples": samples, "count": len(samples)}), nil, 0
+		return toolResult(map[string]any{"limit": limit, "window_minutes": minutes, "samples": samples, "count": len(samples)}), nil, 0
 	}
 	return s.callAdminTool(ctx, params)
 }

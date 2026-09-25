@@ -139,6 +139,110 @@ func TestObservationsSlimDropsHopTables(t *testing.T) {
 	}
 }
 
+// 延迟色带的时间窗是后台可控的：默认 60 分钟，PUT /admin/panel 改它，
+// 越界被拒，样本查询按这个窗口取（而不是写死的 24 小时）。
+func TestPanelLatencyWindowControlsSampleLookBack(t *testing.T) {
+	ctx := context.Background()
+	s, err := storage.Open(filepath.Join(t.TempDir(), "window.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	request := func(method, path, token string, body any) (int, []byte) {
+		t.Helper()
+		var data []byte
+		if body != nil {
+			data, _ = json.Marshal(body)
+		}
+		req, _ := http.NewRequest(method, server.URL+path, bytes.NewReader(data))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
+	windowOf := func() float64 {
+		t.Helper()
+		code, body := request("GET", "/api/v1/admin/settings", admin, nil)
+		if code != 200 {
+			t.Fatalf("settings: %d %s", code, body)
+		}
+		var view struct {
+			LatencyWindowMinutes float64 `json:"latency_window_minutes"`
+		}
+		json.Unmarshal(body, &view)
+		return view.LatencyWindowMinutes
+	}
+	sampleCount := func() int {
+		t.Helper()
+		code, body := request("GET", "/api/v1/latency-samples?limit=20", admin, nil)
+		if code != 200 {
+			t.Fatalf("samples: %d %s", code, body)
+		}
+		var out struct {
+			Samples []model.LatencySample `json:"samples"`
+		}
+		json.Unmarshal(body, &out)
+		return len(out.Samples)
+	}
+
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "window", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := model.Task{Name: "延迟", Kind: "tcp", Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 60, Enabled: true, NodeIDs: []string{id}}
+	if _, err = s.SaveTask(ctx, task, true); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	// 两次探测：三小时前一次、刚刚一次。三小时前那次只在窗口 >= 3 小时时该出现。
+	for _, at := range []time.Time{now.Add(-3 * time.Hour), now.Add(-time.Minute)} {
+		jobs, err := s.Lease(ctx, id, at)
+		if err != nil || len(jobs) != 1 {
+			t.Fatalf("lease at %s: %v %+v", at, err, jobs)
+		}
+		latency := 20.0
+		if err = s.Finish(ctx, id, model.Result{JobID: jobs[0].ID, Status: "ok", Sent: 1, Received: 1, Latency: &latency}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := windowOf(); got != model.DefaultLatencyWindowMinutes {
+		t.Fatalf("未设置时该是默认 %d 分钟，得到 %v", model.DefaultLatencyWindowMinutes, got)
+	}
+	if got := sampleCount(); got != 1 {
+		t.Fatalf("默认 60 分钟窗口只该取到最近一次探测，得到 %d 条", got)
+	}
+
+	if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]int{"latency_window_minutes": 1440}); code != 204 {
+		t.Fatalf("PUT panel: %d %s", code, body)
+	}
+	if got := windowOf(); got != 1440 {
+		t.Fatalf("设置没保存: %v", got)
+	}
+	if got := sampleCount(); got != 2 {
+		t.Fatalf("24 小时窗口该取到两次探测，得到 %d 条", got)
+	}
+
+	for _, bad := range []int{0, model.MaxLatencyWindowMinutes + 1} {
+		if code, _ := request("PUT", "/api/v1/admin/panel", admin, map[string]int{"latency_window_minutes": bad}); code != 400 {
+			t.Fatalf("越界值 %d 该被拒绝，得到 %d", bad, code)
+		}
+	}
+	if code, _ := request("PUT", "/api/v1/admin/panel", "", map[string]int{"latency_window_minutes": 30}); code != 401 {
+		t.Fatalf("匿名不该能改面板设置: %d", code)
+	}
+}
+
 func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 	s, err := storage.Open(filepath.Join(t.TempDir(), "api.db"))
 	if err != nil {

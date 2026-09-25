@@ -17,6 +17,7 @@
 | GET /admin/catalog | 内置离线目标目录 |
 | GET /admin/events | 最近 100 条告警与发送结果 |
 | GET、PUT /admin/settings | 查询是否配置通知、设置 webhook |
+| PUT /admin/panel | 面板显示项：延迟色带时间窗（`latency_window_minutes`，1–1440 分钟） |
 | POST /admin/settings/test | 显式测试已配置 Webhook |
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |
@@ -35,11 +36,11 @@
 - `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
 
 工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`）、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`alerts`）按字段合并。
-`create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
+`create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（`get_settings` 另外回面板延迟色带时间窗，`update_settings` 只报 `latency_window_minutes` 时不动通知配置）；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
 
 ## 通知渠道
 
-`GET /admin/settings` 返回当前渠道状态，不返回凭据。`PUT /admin/settings` 支持 Telegram、Webhook 或关闭通知；`POST /admin/settings/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。
+`GET /admin/settings` 返回当前渠道状态，不返回凭据。`PUT /admin/settings` 支持 Telegram、Webhook 或关闭通知；`POST /admin/settings/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项与通知出口分开保存：`GET /admin/settings` 会带上生效值（`latency_window_minutes`，未设置时 60），改动走 `PUT /admin/panel`，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
 
 HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：报告过频、租约失效、重复结果；400：无效输入；500：内部错误（详细内容仅记录服务日志）。成功变更通常返回 204；创建节点/轮换令牌返回 200 JSON。
 

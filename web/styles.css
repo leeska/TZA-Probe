@@ -2722,3 +2722,17 @@ pre,
     margin-bottom: 12px;
   }
 }
+
+/* 「面板显示」里的时间窗：和旁边的按钮同高，不要撑成一整行。
+   双类 + 元素选择器是为了压过 glass.css 里同权重的 label/input 规则。 */
+.webhook-actions .window-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.webhook-actions .window-field input {
+  width: 96px;
+  text-align: center;
+}

@@ -43,7 +43,7 @@ type Repository interface {
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
 	Observations(context.Context, string, time.Time) ([]model.Observation, error)
-	RecentLatencySamples(context.Context, []string, int) ([]model.LatencySample, error)
+	RecentLatencySamples(context.Context, []string, int, time.Time) ([]model.LatencySample, error)
 	Setting(context.Context, string) (string, error)
 	SetSetting(context.Context, string, string) error
 	Events(context.Context, bool, time.Time) ([]model.Event, error)
@@ -152,7 +152,33 @@ func (a *API) Handler() http.Handler {
 			fail(w, err)
 			return
 		}
-		write(w, 200, config.Public())
+		window, _, err := a.latencyWindow(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		view := config.Public()
+		view[model.SettingLatencyWindowMinutes] = window
+		write(w, 200, view)
+	}))
+	// 面板显示项单独一个出口：通知那套的语义是「空值即清空」，混在同一个 PUT 里
+	// 会让只想改显示项的人顺手把 webhook 或 Bot Token 清掉。
+	mux.HandleFunc("PUT /api/v1/admin/panel", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			LatencyWindowMinutes *int `json:"latency_window_minutes"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		if v.LatencyWindowMinutes == nil {
+			write(w, 400, map[string]string{"error": "latency_window_minutes 必填"})
+			return
+		}
+		if err := model.ValidateLatencyWindowMinutes(*v.LatencyWindowMinutes); err != nil {
+			write(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		respond(w, a.Store.SetSetting(r.Context(), model.SettingLatencyWindowMinutes, strconv.Itoa(*v.LatencyWindowMinutes)))
 	}))
 	mux.HandleFunc("PUT /api/v1/admin/settings", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		var v notify.Config
@@ -451,6 +477,17 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, out)
 }
 
+// latencyWindow is the configured look-back for the public latency bands
+// (model.SettingLatencyWindowMinutes), falling back to the default when unset.
+func (a *API) latencyWindow(ctx context.Context) (int, time.Time, error) {
+	stored, err := a.Store.Setting(ctx, model.SettingLatencyWindowMinutes)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	minutes := model.LatencyWindowMinutes(stored)
+	return minutes, time.Now().Add(-time.Duration(minutes) * time.Minute), nil
+}
+
 // latencySamples feeds the per-probe cells on the public card. Only nodes the
 // caller may already see are included, so this adds no new visibility.
 func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
@@ -459,6 +496,11 @@ func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
 		if n, err := strconv.Atoi(v); err == nil {
 			limit = min(max(n, 1), 60)
 		}
+	}
+	_, since, err := a.latencyWindow(r.Context())
+	if err != nil {
+		fail(w, err)
+		return
 	}
 	nodes, err := a.Store.Nodes(r.Context(), time.Now())
 	if err != nil {
@@ -472,7 +514,7 @@ func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
 			ids = append(ids, n.ID)
 		}
 	}
-	out, err := a.Store.RecentLatencySamples(r.Context(), ids, limit)
+	out, err := a.Store.RecentLatencySamples(r.Context(), ids, limit, since)
 	if err != nil {
 		fail(w, err)
 		return

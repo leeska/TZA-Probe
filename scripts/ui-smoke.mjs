@@ -525,6 +525,31 @@ await until(() => $("#configure-webhook"), "alert page");
 $("#configure-webhook").click();
 assert($('#dialog input[name="webhook"]'));
 $(".close").click();
+// 面板显示：延迟色带的时间窗后台可控（默认 60 分钟）。改完读回来确认落库，再改回默认，
+// 免得后面那批色带断言跑在更窄的窗口上。
+const windowField = $("#latency-window");
+assert.equal(windowField.value, "60", "未设置时该显示默认 60 分钟");
+const saveWindow = async (minutes) => {
+  // 保存成功会重渲染整页，所以每次都要重新取输入框和按钮。
+  $("#latency-window").value = String(minutes);
+  $("#save-window").click();
+  await until(
+    async () => {
+      const view = await (
+        await fetch(base + "/api/v1/admin/settings", { headers: { Cookie: cookie } })
+      ).json();
+      return Number(view.latency_window_minutes) === minutes;
+    },
+    `latency window ${minutes}`,
+  );
+  assert.equal(
+    $("#latency-window").value,
+    String(minutes),
+    "重渲染后输入框该显示已保存的时间窗",
+  );
+};
+await saveWindow(30);
+await saveWindow(60);
 $("#logout").click();
 await until(() => $("#login"), "logout");
 assert.equal(

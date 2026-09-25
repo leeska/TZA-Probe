@@ -14,11 +14,11 @@ import (
 // aggregated observation it already has.
 //
 // Results are capped per group so a busy node cannot turn the panel payload
-// into a full history dump, and the scan is bounded to ProbeWindow: 20 samples
-// of a 30-60s probe is a quarter of an hour, so a day of jobs is already more
-// than the card can draw while the seven-day table made every poll walk the
-// whole history (3.5s for 17 nodes on the production host).
-func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perGroup int) ([]model.LatencySample, error) {
+// into a full history dump, and the scan starts at `since` — the caller passes
+// the window the panel is configured with (model.SettingLatencyWindowMinutes),
+// because walking the seven-day table made every poll parse the whole history
+// (3.5s for 17 nodes on the production host).
+func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perGroup int, since time.Time) ([]model.LatencySample, error) {
 	if len(nodeIDs) == 0 {
 		return []model.LatencySample{}, nil
 	}
@@ -29,7 +29,7 @@ func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perG
 	}
 	args := make([]any, 0, len(nodeIDs)+2)
 	// 占位符顺序：issued 的界在 IN 列表之前，参数必须按 SQL 里的先后绑定。
-	args = append(args, time.Now().Add(-ProbeWindow).Unix())
+	args = append(args, since.Unix())
 	for _, id := range nodeIDs {
 		args = append(args, id)
 	}

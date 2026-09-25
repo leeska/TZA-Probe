@@ -238,12 +238,22 @@ func TestProbeWindowSkipsHistoryThePanelCannotShow(t *testing.T) {
 		}
 	}
 
-	samples, err := s.RecentLatencySamples(ctx, []string{id}, 20)
+	// 色带的窗口由调用方给（后台设置 latency_window_minutes）：面板设 1 小时时，
+	// 三小时前的样本就不该再画成格子；设 24 小时时又要都在。
+	insert("mid-tcp", "tcp", now.Add(-3*time.Hour))
+	hour, err := s.RecentLatencySamples(ctx, []string{id}, 20, now.Add(-time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(samples) != 1 || samples[0].At < now.Add(-ProbeWindow).Unix() {
-		t.Fatalf("样本也只在窗口内保留: %+v", samples)
+	if len(hour) != 1 || hour[0].At < now.Add(-time.Hour).Unix() {
+		t.Fatalf("1 小时窗口只该留下最近的样本: %+v", hour)
+	}
+	day, err := s.RecentLatencySamples(ctx, []string{id}, 20, now.Add(-ProbeWindow))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(day) != 2 {
+		t.Fatalf("24 小时窗口该留下两条: %+v", day)
 	}
 }
 
@@ -277,7 +287,7 @@ func TestRecentLatencySamplesKeepsPerProbeResults(t *testing.T) {
 	insert(5, "联通", "ipv4", nil, 3, 3, now.Add(4*time.Minute))
 
 	// 每个分组只要最近 2 次
-	out, err := s.RecentLatencySamples(ctx, []string{id}, 2)
+	out, err := s.RecentLatencySamples(ctx, []string{id}, 2, now.Add(-ProbeWindow))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +308,7 @@ func TestRecentLatencySamplesKeepsPerProbeResults(t *testing.T) {
 	}
 
 	// 空节点列表不应触碰数据库
-	empty, err := s.RecentLatencySamples(ctx, nil, 20)
+	empty, err := s.RecentLatencySamples(ctx, nil, 20, now.Add(-ProbeWindow))
 	if err != nil || len(empty) != 0 {
 		t.Fatalf("空列表: %v %+v", err, empty)
 	}
@@ -312,7 +322,7 @@ func TestRecentLatencySamplesKeepsPerProbeResults(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 上限相同才能比较数量
-	baseline, err := s.RecentLatencySamples(ctx, []string{id}, 20)
+	baseline, err := s.RecentLatencySamples(ctx, []string{id}, 20, now.Add(-ProbeWindow))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +330,7 @@ func TestRecentLatencySamplesKeepsPerProbeResults(t *testing.T) {
 		"routejob2", route.ID, id, encode(route), now.Add(5*time.Minute).Unix(), now.Add(5*time.Minute).Unix(), encode(model.Result{Status: "ok", Sent: 1, Received: 1, Route: "未知"})); err != nil {
 		t.Fatal(err)
 	}
-	again, err := s.RecentLatencySamples(ctx, []string{id}, 20)
+	again, err := s.RecentLatencySamples(ctx, []string{id}, 20, now.Add(-ProbeWindow))
 	if err != nil {
 		t.Fatal(err)
 	}

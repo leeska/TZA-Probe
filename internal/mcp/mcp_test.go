@@ -25,6 +25,7 @@ type fakeSource struct {
 	samples      []model.LatencySample
 	askedHours   []int
 	askedLimit   int
+	askedSince   time.Time
 
 	// write side
 	failure    error
@@ -34,7 +35,7 @@ type fakeSource struct {
 	savedNodes []model.Node
 	savedTasks []model.Task
 	runs       []model.TaskRun
-	setting    string
+	settings   map[string]string
 	corrected  []int64
 }
 
@@ -54,8 +55,9 @@ func (f *fakeSource) Observations(context.Context, string, time.Time) ([]model.O
 func (f *fakeSource) Events(context.Context, bool, time.Time) ([]model.Event, error) {
 	return f.events, nil
 }
-func (f *fakeSource) RecentLatencySamples(_ context.Context, ids []string, limit int) ([]model.LatencySample, error) {
+func (f *fakeSource) RecentLatencySamples(_ context.Context, ids []string, limit int, since time.Time) ([]model.LatencySample, error) {
 	f.askedLimit = limit
+	f.askedSince = since
 	if len(ids) == 0 {
 		return []model.LatencySample{}, nil
 	}
@@ -153,13 +155,18 @@ func (f *fakeSource) TaskRuns(context.Context, string, time.Time) ([]model.TaskR
 	return f.runs, nil
 }
 
-func (f *fakeSource) Setting(context.Context, string) (string, error) { return f.setting, nil }
+func (f *fakeSource) Setting(_ context.Context, key string) (string, error) {
+	return f.settings[key], nil
+}
 
-func (f *fakeSource) SetSetting(_ context.Context, _, value string) error {
+func (f *fakeSource) SetSetting(_ context.Context, key, value string) error {
 	if f.failure != nil {
 		return f.failure
 	}
-	f.setting = value
+	if f.settings == nil {
+		f.settings = map[string]string{}
+	}
+	f.settings[key] = value
 	return nil
 }
 
@@ -840,6 +847,9 @@ func TestCatalogAndNotificationTools(t *testing.T) {
 	if _, ok := settings["bot_token"]; ok {
 		t.Fatalf("settings leaked a credential: %v", settings)
 	}
+	if settings["latency_window_minutes"] != float64(model.DefaultLatencyWindowMinutes) {
+		t.Fatalf("延迟色带默认窗口: %v", settings["latency_window_minutes"])
+	}
 	if result := invoke(t, env, "test_notification", `{}`); result["isError"] != true || !strings.Contains(text(t, result), "请先配置") {
 		t.Fatalf("test without a channel: %v", result)
 	}
@@ -854,8 +864,8 @@ func TestCatalogAndNotificationTools(t *testing.T) {
 	if updated["channel"] != "webhook" || updated["webhook_configured"] != true {
 		t.Fatalf("update_settings: %v", updated)
 	}
-	if !strings.Contains(env.source.setting, "https://example.com/hook") || strings.Contains(updated["channel"].(string), "https://") {
-		t.Fatalf("stored settings: %q result %v", env.source.setting, updated)
+	if !strings.Contains(env.source.settings["notification"], "https://example.com/hook") || strings.Contains(updated["channel"].(string), "https://") {
+		t.Fatalf("stored settings: %q result %v", env.source.settings["notification"], updated)
 	}
 	// A Telegram token has a fixed shape; build it here so no secret-looking
 	// literal has to live in the test.
@@ -868,11 +878,27 @@ func TestCatalogAndNotificationTools(t *testing.T) {
 	if carried["telegram_configured"] != true || carried["chat_id"] != "-1001234567890" {
 		t.Fatalf("telegram fields: %v", carried)
 	}
-	if !strings.Contains(env.source.setting, token) {
-		t.Fatalf("a blank token must keep the stored one: %q", env.source.setting)
+	if !strings.Contains(env.source.settings["notification"], token) {
+		t.Fatalf("a blank token must keep the stored one: %q", env.source.settings["notification"])
 	}
 	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"channel":"telegram","bot_token":"nope","chat_id":"@channel"}`); codeOf(t, out) != codeInvalidParams {
 		t.Fatalf("invalid token format: %v", out)
+	}
+
+	// 面板时间窗与通知出口共用一个设置工具，但只报时间窗的调用不该动通知配置，
+	// 越界值按协议错误回。
+	window := structured(t, invoke(t, env, "update_settings", `{"latency_window_minutes":120}`))
+	if window["latency_window_minutes"] != float64(120) || window["channel"] != "telegram" {
+		t.Fatalf("只改时间窗的调用动了通知配置: %v", window)
+	}
+	if !strings.Contains(env.source.settings["notification"], token) {
+		t.Fatalf("通知配置被清掉了: %q", env.source.settings["notification"])
+	}
+	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"latency_window_minutes":0}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("越界时间窗该被拒: %v", out)
+	}
+	if again := structured(t, invoke(t, env, "get_settings", `{}`)); again["latency_window_minutes"] != float64(120) {
+		t.Fatalf("时间窗没保存: %v", again)
 	}
 
 	// The explicit test sends one event and reports the channel, not the URL.
