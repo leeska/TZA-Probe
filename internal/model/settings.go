@@ -16,7 +16,9 @@ const (
 
 	DefaultLatencyWindowMinutes = 60
 	MinLatencyWindowMinutes     = 1
-	MaxLatencyWindowMinutes     = 1440
+	// MaxLatencyWindowMinutes 是探测结果的保留期（storage.JobsRetention，7 天）：
+	// 再长的窗口取到的还是这些行，只会更慢。storage 的测试把两者钉在一起。
+	MaxLatencyWindowMinutes = 7 * 24 * 60
 )
 
 // LatencyWindowMinutes 把存下来的值变成可用分钟数：空值或读不出来的值退回默认，

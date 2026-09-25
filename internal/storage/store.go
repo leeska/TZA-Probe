@@ -716,6 +716,17 @@ func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([
 	}
 	return out, rows.Err()
 }
+
+// 保留期：Clean 按这几个时长删旧行。JobsRetention 是公开的，因为面板的延迟色带时间窗
+// 上限就是它——窗口再大也取不到更早的探测（model.MaxLatencyWindowMinutes 与它一致，
+// storage 的测试会把两者钉在一起）。
+const (
+	samplesRetention = 30 * 24 * time.Hour
+	trafficRetention = 400 * 24 * time.Hour
+	JobsRetention    = 7 * 24 * time.Hour
+	eventsRetention  = 90 * 24 * time.Hour
+)
+
 func (s *Store) Clean(ctx context.Context, now time.Time) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -727,7 +738,7 @@ func (s *Store) Clean(ctx context.Context, now time.Time) error {
 	for _, q := range []struct {
 		query string
 		age   time.Duration
-	}{{"DELETE FROM samples WHERE at<?", 30 * 24 * time.Hour}, {"DELETE FROM traffic WHERE day<?", 400 * 24 * time.Hour}, {"DELETE FROM jobs WHERE issued<?", 7 * 24 * time.Hour}, {"DELETE FROM events WHERE at<?", 90 * 24 * time.Hour}} {
+	}{{"DELETE FROM samples WHERE at<?", samplesRetention}, {"DELETE FROM traffic WHERE day<?", trafficRetention}, {"DELETE FROM jobs WHERE issued<?", JobsRetention}, {"DELETE FROM events WHERE at<?", eventsRetention}} {
 		if _, err = tx.ExecContext(ctx, q.query, now.Add(-q.age).Unix()); err != nil {
 			return err
 		}

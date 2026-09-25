@@ -98,7 +98,7 @@ export async function detail(id, focus = null) {
           : `<div id="network-overview"></div>`
         : `<div id="network-overview"></div><div id="route-details"></div>`
       : `<p class="hint">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
-  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24)}</div>`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际观测到的骨干命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG）；ASN 优先、跳地址前缀兜底，CN2 跳之后仍走 59.43.* 到目标省份记为 GIA、转回 163 骨干（202.97.*）落地记为 GT，一条电信线路只给一个标签、联通轨迹里出现过 9929 就不再另记 4837，仍不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
+  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div></div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24)}</div>`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际观测到的骨干命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG）；ASN 优先、跳地址前缀兜底，CN2 跳之后仍走 59.43.* 到目标省份记为 GIA、连续两跳及以上 202.97.*（163 骨干）才记为 GT（单个 202.97 跳是途中偶发回包的骨干路由器，不算落地），一条电信线路只给一个标签、联通轨迹里出现过 9929 就不再另记 4837，仍不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
@@ -182,13 +182,14 @@ function targetLabel(series) {
 }
 
 // 时间范围下拉：主机历史支持 30 天，网络历史（/network-history）最多只有 7 天，
-// 聚焦视图因此只给前三档——选了 30 天却只画 7 天是骗人的。
+// 聚焦视图因此只给到 7 天——选了 30 天却只画 7 天是骗人的。
+// 7 天也是探测结果（回程、延迟色带）的保留上限，所以这就是「全部」。
 function spanLabel(hours) {
   return hours >= 24 && hours % 24 === 0 ? hours / 24 + " 天" : hours + " 小时";
 }
 
 function historyRange(maxHours = 720) {
-  return `<select id="history-range" aria-label="历史时间范围">${[[1, "最近 1 小时"], [24, "最近 24 小时"], [168, "最近 7 天"], [720, "最近 30 天"]]
+  return `<select id="history-range" aria-label="历史时间范围">${[[1, "最近 1 小时"], [6, "最近 6 小时"], [24, "最近 24 小时"], [72, "最近 3 天"], [168, "最近 7 天"], [720, "最近 30 天"]]
     .filter(([hours]) => hours <= maxHours)
     .map(([hours, text]) => `<option value="${hours}"${hours === 24 ? " selected" : ""}>${text}</option>`)
     .join("")}</select>`;

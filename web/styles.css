@@ -2732,7 +2732,8 @@ pre,
   white-space: nowrap;
 }
 
-.webhook-actions .window-field input {
-  width: 96px;
+.webhook-actions .window-field input,
+.webhook-actions .window-field .select-shell {
+  width: 132px;
   text-align: center;
 }

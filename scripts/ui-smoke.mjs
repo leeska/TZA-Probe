@@ -436,9 +436,14 @@ assert(
 );
 assert(/hours <= maxHours/.test(detailSource), "the period dropdown must drop ranges the history cannot serve");
 assert.equal(
+  [...$("#history-range").options].map((o) => o.value).join(","),
+  "1,6,24,72,168,720",
+  "the combined view offers every host-history range up to the 30-day retention",
+);
+assert.equal(
   [...$("#history-range").options].length,
-  4,
-  "the combined view keeps all four host-history ranges",
+  [...$("#history-range").options].filter((o) => /最近/.test(o.textContent)).length,
+  "every range option is labelled",
 );
 assert(
   /\.chart svg \* \{[^}]*vector-effect:\s*non-scaling-stroke/.test(styles),
@@ -528,7 +533,12 @@ $(".close").click();
 // 面板显示：延迟色带的时间窗后台可控（默认 60 分钟）。改完读回来确认落库，再改回默认，
 // 免得后面那批色带断言跑在更窄的窗口上。
 const windowField = $("#latency-window");
-assert.equal(windowField.value, "60", "未设置时该显示默认 60 分钟");
+assert.equal(windowField.value, "60", "未设置时该显示默认 60 分钟（1 小时）");
+assert.equal(
+  [...windowField.options].map((o) => o.value).join(","),
+  "60,360,1440,4320,10080",
+  "时间范围该给到保留上限为止的档位",
+);
 const saveWindow = async (minutes) => {
   // 保存成功会重渲染整页，所以每次都要重新取输入框和按钮。
   $("#latency-window").value = String(minutes);
@@ -548,7 +558,7 @@ const saveWindow = async (minutes) => {
     "重渲染后输入框该显示已保存的时间窗",
   );
 };
-await saveWindow(30);
+await saveWindow(1440);
 await saveWindow(60);
 $("#logout").click();
 await until(() => $("#login"), "logout");

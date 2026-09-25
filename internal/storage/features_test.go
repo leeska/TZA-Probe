@@ -343,3 +343,11 @@ func TestRecentLatencySamplesKeepsPerProbeResults(t *testing.T) {
 		t.Fatalf("回程任务不应进入延迟采样: %d vs %d", len(again), len(baseline))
 	}
 }
+
+// 面板的延迟色带时间窗上限就是探测结果的保留期：改清理策略时必须同步这个上限，
+// 否则设置里能选到一个永远取不到更早数据的窗口。
+func TestLatencyWindowCeilingMatchesJobsRetention(t *testing.T) {
+	if got := int(JobsRetention.Minutes()); got != model.MaxLatencyWindowMinutes {
+		t.Fatalf("jobs 保留 %d 分钟，面板上限 %d 分钟，两者必须一致", got, model.MaxLatencyWindowMinutes)
+	}
+}

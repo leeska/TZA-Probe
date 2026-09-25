@@ -17,7 +17,7 @@
 | GET /admin/catalog | 内置离线目标目录 |
 | GET /admin/events | 最近 100 条告警与发送结果 |
 | GET、PUT /admin/settings | 查询是否配置通知、设置 webhook |
-| PUT /admin/panel | 面板显示项：延迟色带时间窗（`latency_window_minutes`，1–1440 分钟） |
+| PUT /admin/panel | 面板显示项：延迟色带时间窗（`latency_window_minutes`，1–10080 分钟；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
 | POST /admin/settings/test | 显式测试已配置 Webhook |
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |
@@ -40,7 +40,7 @@
 
 ## 通知渠道
 
-`GET /admin/settings` 返回当前渠道状态，不返回凭据。`PUT /admin/settings` 支持 Telegram、Webhook 或关闭通知；`POST /admin/settings/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项与通知出口分开保存：`GET /admin/settings` 会带上生效值（`latency_window_minutes`，未设置时 60），改动走 `PUT /admin/panel`，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
+`GET /admin/settings` 返回当前渠道状态，不返回凭据。`PUT /admin/settings` 支持 Telegram、Webhook 或关闭通知；`POST /admin/settings/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项与通知出口分开保存：`GET /admin/settings` 会带上生效值（`latency_window_minutes`，未设置时 60 分钟），改动走 `PUT /admin/panel`，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
 
 HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：报告过频、租约失效、重复结果；400：无效输入；500：内部错误（详细内容仅记录服务日志）。成功变更通常返回 204；创建节点/轮换令牌返回 200 JSON。
 

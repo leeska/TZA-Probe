@@ -13,7 +13,8 @@ func TestLatencyWindowMinutesFallsBackAndClamps(t *testing.T) {
 		{"-5", MinLatencyWindowMinutes},
 		{"0", MinLatencyWindowMinutes},
 		{"60", 60},
-		{"1440", MaxLatencyWindowMinutes},
+		{"1440", 1440},
+		{"10080", MaxLatencyWindowMinutes},
 		{"99999", MaxLatencyWindowMinutes},
 	}
 	for _, c := range cases {
