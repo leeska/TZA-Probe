@@ -182,7 +182,10 @@ func TestRouteRequiresEvidence(t *testing.T) {
 		{[]Hop{{Address: "223.119.*.*"}}, "CMI"},
 		{[]Hop{{Address: "69.194.*.*"}}, "CTG"},
 		{[]Hop{{Address: "103.239.176.*"}}, "10099"},
-		{[]Hop{{Address: "2408:8120:****"}}, "4837"},
+		// 2408:8120::/32 is CUII's own IPv6 space inside 联通's 2408::/32,
+		// so an unresolved hop there reads 9929 — not the 2408: catch-all.
+		{[]Hop{{Address: "2408:8120:****"}}, "9929"},
+		{[]Hop{{Address: "2408:8001:****"}}, "4837"},
 		// Entries the RIPE registry attributes to another carrier, and the CMIN2
 		// IPv6 range the mask cannot split, stay unknown: a wrong operator is
 		// worse than an honest 未知.
@@ -272,9 +275,9 @@ func TestRouteLabelOnRecordedUnicomTrace(t *testing.T) {
 		{TTL: 15, Address: "58.144.*.*", ASN: "AS4837"},
 	}
 	// An IPv6 trace from the same task (2401:8a00:* = 联通国际): the tool left
-	// hop 5 without an ASN, so the prefix table reads 2408:8120:* as 4837 even
-	// though hop 6 resolves that same address space as AS9929. The 169 hops
-	// behind the 9929 line are its landing side either way.
+	// hop 5 without an ASN, and hop 6 resolves that same address space as
+	// AS9929 — the prefix table and the ASN agree on 2408:8120:* now. The 169
+	// hops behind the 9929 line are its landing side either way.
 	on9929v6 := []Hop{
 		{TTL: 1, Address: "2602:f656:****"},
 		{TTL: 2, Address: "2602:f656:****", ASN: "AS1054"},
@@ -289,6 +292,26 @@ func TestRouteLabelOnRecordedUnicomTrace(t *testing.T) {
 		{TTL: 11, Address: "*"},
 		{TTL: 12, Address: "2408:8763:****", ASN: "AS4837"},
 	}
+	// The same IPv6 path when the tool resolves nothing at all (the shape
+	// 湖南/重庆 showed at 14:2x on 2026-09-25): every hop falls back to the
+	// prefix table, and 2408:8120:* has to read 9929 for the label to stay
+	// "10099 → 9929" rather than "10099 → 4837".
+	on9929v6NoASN := []Hop{
+		{TTL: 1, Address: "2602:f656:****"},
+		{TTL: 2, Address: "2602:f656:****"},
+		{TTL: 3, Address: "2401:8a00:****"},
+		{TTL: 4, Address: "2401:8a00:****"},
+		{TTL: 5, Address: "2408:8120:****"},
+		{TTL: 6, Address: "2408:8120:****"},
+		{TTL: 7, Address: "*"},
+		{TTL: 8, Address: "*"},
+		{TTL: 9, Address: "*"},
+		{TTL: 10, Address: "2408:8001:****"},
+		{TTL: 11, Address: "2408:8762:****"},
+		{TTL: 12, Address: "*"},
+		{TTL: 13, Address: "*"},
+		{TTL: 14, Address: "2408:8762:****"},
+	}
 	for _, c := range []struct {
 		name string
 		hops []Hop
@@ -297,6 +320,7 @@ func TestRouteLabelOnRecordedUnicomTrace(t *testing.T) {
 		{"9929 line with 169 behind it", on9929, "10099 → 9929"},
 		{"169 only, no 9929", on169, "10099 → 4837"},
 		{"IPv6 9929 line with 169 behind it", on9929v6, "10099 → 9929"},
+		{"IPv6 9929 line, no ASN resolved", on9929v6NoASN, "10099 → 9929"},
 	} {
 		if got := RouteLabel(c.hops); got != c.want {
 			t.Fatalf("%s: %s", c.name, got)

@@ -48,13 +48,21 @@ const (
 // while the mask keeps two hextets, so "2402:4f00:****" would label plain CMI
 // hops as CMIN2. 202.96.* stays even though 202.96.0.0/21 is 联通: the rest of
 // that /16 is 电信 (4134 and 4812), and the mask cannot split a /16.
+//
+// The IPv6 mask keeps two hextets, which is fine enough to split 2408:8120::/32
+// out of 联通's 2408::/32: the registry lists AS9929's own blocks inside it
+// (2408:8120:1::/48, 2408:8120:2::/48, 2408:8120:7000::/36) and no other
+// carrier ASN announces anything there, while 2408:8000:*, 2408:8001:* and
+// 2408:8762:* are the 169 landing side. An unresolved hop in 2408:8120:* reads
+// 9929 instead of 4837 — the IPv6 half of the 重庆 flip, whose IPv4 half
+// (210.14.*) no /16 entry can name.
 var prefixBackbones = []struct {
 	prefix string
 	name   string
 }{
 	{"202.97.", "163"}, {"202.96.", "163"}, {"219.141.", "163"}, {"219.142.", "163"},
 	{"106.37.", "163"}, {"240e:", "163"},
-	{"219.158.", "4837"}, {"2408:", "4837"},
+	{"2408:8120:", "9929"}, {"219.158.", "4837"}, {"2408:", "4837"},
 	{"210.51.", "9929"}, {"210.78.", "9929"}, {"218.105.", "9929"},
 	{"223.119.", "CMI"},
 	{"203.22.178.", "CTG"}, {"203.22.179.", "CTG"}, {"203.22.182.", "CTG"},
