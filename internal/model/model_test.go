@@ -57,9 +57,9 @@ func TestRouteRequiresEvidence(t *testing.T) {
 		t.Fatal("ASN alone must not invent a GIA or GT product classification")
 	}
 	// GT hands the traffic to the 163 backbone on the China side of the trace, so
-	// a 202.97.* hop behind the CN2 hops is what separates it from GIA. The 163
-	// hops on either side of the CN2 run are that same product, not a second
-	// backbone, so the label stays a single name.
+	// a *stretch* of 202.97.* hops behind the CN2 hops is what separates it from
+	// GIA. The 163 hops on either side of the CN2 run are that same product, not
+	// a second backbone, so the label stays a single name.
 	gt := []Hop{
 		{ASN: "AS25820", Address: "45.78.*.*"},
 		{ASN: "AS4809", Address: "59.43.1.*"},
@@ -70,18 +70,46 @@ func TestRouteRequiresEvidence(t *testing.T) {
 	if got := RouteLabel(gt); got != "CN2GT" {
 		t.Fatalf("CN2GT: %s", got)
 	}
-	// A live 电信 trace: the CN2 hops came back without an ASN, so the 59.43.*
-	// addresses are the only CN2 evidence, and 163 shows up both in front of and
-	// behind them. The 202.97.* hop behind them is what proves CN2 GT.
+	// The CN2 hops may come back without an ASN; the 59.43.* addresses are then
+	// the only CN2 evidence and 163 shows up in front of them as well.
 	unresolved := []Hop{
 		{ASN: "AS25820", Address: "45.78.*.*"},
 		{ASN: "AS4134", Address: "218.30.*.*"},
 		{Address: "59.43.*.*"},
 		{Address: "59.43.*.*"},
 		{ASN: "AS4134", Address: "202.97.1.*"},
+		{ASN: "AS4134", Address: "202.97.2.*"},
 	}
 	if got := RouteLabel(unresolved); got != "CN2GT" {
 		t.Fatalf("unresolved CN2 hops: %s", got)
+	}
+	// A lone 202.97.* hop behind the CN2 run must not decide GIA vs GT: 电信's
+	// core routers reply on some runs and stay silent on others, so the same
+	// path flips GIA↔GT on one hop. These two are consecutive real runs of the
+	// 重庆电信 target from us-bwh-dc9 — the second answered the core router, the
+	// first did not — and both have to read the same label.
+	gtFlip := []Hop{
+		{ASN: "AS25820", Address: "45.78.*.*"},
+		{ASN: "AS4134", Address: "218.30.*.*"},
+		{Address: "59.43.*.*"},
+		{Address: "59.43.*.*"},
+		{Address: "59.43.*.*"},
+		{ASN: "AS4134", Address: "202.97.*.*"},
+		{ASN: "AS134420", Address: "113.250.*.*"},
+		{ASN: "AS134420", Address: "119.84.*.*"},
+	}
+	gtFlipSilent := []Hop{
+		{ASN: "AS25820", Address: "45.78.*.*"},
+		{ASN: "AS4134", Address: "218.30.*.*"},
+		{Address: "59.43.*.*"},
+		{Address: "59.43.*.*"},
+		{ASN: "AS134420", Address: "113.250.*.*"},
+		{ASN: "AS134420", Address: "119.84.*.*"},
+	}
+	for _, hops := range [][]Hop{gtFlip, gtFlipSilent} {
+		if got := RouteLabel(hops); got != "CN2GIA" {
+			t.Fatalf("一跳 202.97 不该把同一条路径翻成 GT: %s", got)
+		}
 	}
 	// The reported regression: a GIA trace whose China Telecom hops are AS4134
 	// must not become GT. 218.30.* is 电信's international entry and 110.184.* is

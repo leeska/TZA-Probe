@@ -25,6 +25,11 @@ var backboneNames = map[string]string{
 const (
 	cn2Prefix   = "59.43."
 	ct163Prefix = "202.97."
+
+	// ct163RunLength is how many consecutive 202.97.* hops prove the trace rode
+	// the 163 backbone rather than merely crossing one of its routers — see
+	// cn2Label.
+	ct163RunLength = 2
 )
 
 // prefixBackbones is the fallback used when the trace tool reports no ASN for a
@@ -228,12 +233,27 @@ func hopBackbone(h Hop) string {
 // 163 backbone. Only 202.97.* addresses prove the 163 backbone, and the split
 // needs 59.43.* evidence at all, so a trace that reports AS4809 alone stays
 // plain "CN2".
+//
+// One 202.97.* hop behind the CN2 run is not proof of GT: 电信's core routers
+// answer ICMP on some runs and stay silent on others, and a single hop flips the
+// very same path between GIA and GT. Two runs of the same 重庆电信 target:
+// `59.43 59.43 202.97 113.250 … 119.84` (GT) and `59.43 * 59.43 * 113.250 …
+// 119.84` (GIA) — the difference is one hop that sometimes replies, not the line.
+// Riding the 163 backbone means riding it for a stretch, so GT requires two
+// consecutive 202.97.* hops; a lone one is the border router the path crosses on
+// its way to the target's own province.
 func cn2Label(hops []Hop, firstCN2 int) string {
 	if !hasAddressPrefix(hops, cn2Prefix) {
 		return "CN2"
 	}
+	run := 0
 	for _, h := range hops[firstCN2+1:] {
-		if strings.HasPrefix(h.Address, ct163Prefix) {
+		if !strings.HasPrefix(h.Address, ct163Prefix) {
+			run = 0
+			continue
+		}
+		run++
+		if run >= ct163RunLength {
 			return "CN2GT"
 		}
 	}
