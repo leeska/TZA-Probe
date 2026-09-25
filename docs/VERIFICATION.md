@@ -643,3 +643,14 @@ node scripts/ui-smoke.mjs
 - 改法：`LICENSE`、`NOTICE` 的版权方改为 `leeska`；README、`docs/DEPLOYMENT.md`、`docs/VERIFICATION.md`、`docs/source-snapshot.json`、`internal/model/route.go` 注释、`scripts/presentation-test.mjs` 固件与 `web/glass.css` 的设计归属注释去掉其它项目名与厂商名；内置目录 `targets.json` 的 `id` 去掉源站主机名后缀（`he-ct-v4.ip.<vendor>` → `he-ct-v4`），`source_host` 一并删除（面板、MCP 与管理接口只读 `host` / `port` / `region` / `carrier` / `family`，`scripts/refresh-catalog.py` 同步改）；验收记录里的线上面板地址、主机数据目录路径与真实节点名改成中性表述。
 - 验证：`gofmt -l` 无输出、`go vet ./...`、`go test ./...`、`go test -race ./...` 全绿；`node --input-type=module --check` 对 `web/*.js` 全过；`presentation-test.mjs` 与 `ui-smoke.mjs`（临时 Server 25874，含目录搜索 31 条电信目标的断言）通过；目录仍是 186 条、`id` 唯一；品牌字样复查后只剩目录数据源 URL（数据来源标注）与 `-apple-system` 字体栈 token；凭据扫描 0 命中（工作树与历史均无 token / 私钥 / 真实密钥）。
 - 待确认：目录数据源 URL 保留（数据来源标注，删了刷新脚本就没有默认源）。仓库历史另行处理：`main` 已重写成从重建提交 `ac81977` 开始的孤儿历史，重构前那 9 个提交只留在本机备份里；`force push` 之后 GitHub 侧旧的不可达对象在服务端回收前仍可能按 SHA 直接访问，要彻底清除只能删库重建。
+
+## 2026-09-25 IP 协议可用性以「内核有路由」为准，而不只是「接口上有地址」
+
+- 现象：`hk-isvoro-litev6only` 的 IPv4 探测 24 小时全失败（12 个目录目标 229/230 次 TCP 连接失败，回程连一跳都没有），同机 IPv6 全部正常。它同时上报 IPv4 与 IPv6，面板照派 v4 任务、照显示「超时 / 100% 丢包」，看起来像线路问题。
+- 定位（先不改动，只量）：失败是**内核层瞬时不可达**，不是远端拦截或黑洞。该机 v4 任务 0–1 秒就结束，而同一任务里正常节点回程 6–10 秒、TCP 1–2 秒；只被丢弃的 TCP 三次 3 秒拨号要跑满 9 秒、ICMP 追踪要跑满 45 秒预算。本机复核签名：无路由 `dial udp4` 21µs 返回 `network is unreachable`，有路由但被丢包 10 秒才超时。该机 IPv4 由本机代理 / WARP 只提供给代理流量，系统默认路由上没有 IPv4，接口上却留着 `172.16.x.x` 地址 —— `localIPFamilies()` 只看接口地址，于是把它算成「支持 IPv4」。
+- 改法：`internal/agent/collector.go` 在地址分类（`ipFamilies`）之后加一道闸门 `routableFamilies` → `familyRoutable`：对每个候选族做一次**不发包**的路由查询（连一个 UDP 套接字到文档网段 `192.0.2.1:9` / `[2001:db8::1]:9`，内核据此选路与源地址；UDP `connect` 不产生报文，目标也不可能是真实主机），查不到路由就不上报该族。`internal/model` 的 `IPFamilies` 注释同步改成「有地址且有路由」。服务端 `AllowsFamily` 本来就会跳过未上报的族，因此无需改 Server、面板或存储。
+- 验证：`gofmt -l` 无输出、`go vet ./...`、`go test ./...`、`go test -race ./...` 全绿；新增 `TestRoutableFamiliesDropFamiliesWithoutARoute`（有地址无路由 → 丢掉该族；两族都无路由 → 空；只查宿主真有的族）与 `TestFamilyRoutableLooksUpRouteWithoutSendingPackets`（族→`udp4`/`udp6`，目标必须是 RFC 5737 / RFC 3849 文档地址加 9 端口）。
+- 真实路由表端到端：在 `unshare -n` 的命名空间里造出与故障机同形的环境（有 IPv4 地址 `10.7.7.1/24`、**没有** IPv4 默认路由；另有全局 IPv6 地址与 IPv6 默认路由），跑真实 `localIPFamilies()` → 上报 `[ipv6]`，v4 查询 21µs 返回 `network is unreachable`；把闸门临时改回 `ipFamilies(addrs)` 后同一命名空间上报 `[ipv4 ipv6]`（证明断言不是空跑）。宿主命名空间（双栈、有路由）仍上报 `[ipv4 ipv6]`，两次查询各 21–26µs，正常节点行为不变。
+- 面板表现：上报只剩 IPv6 后，卡片/详情的 IPv4–IPv6 切换变成静态 `IPv6` 标签，v4 的延迟/回程行不再渲染（`effectiveFamily` / `selectedFamily` 只取已上报的族）；已入库的 v4 历史样本仍留在库里，随时间窗口自然淘汰。
+- 待确认 / 已知边界：只看「有没有路由」，不看「路由通不通」。隧道接口与默认路由都在、出口却已死（拨号要等满超时才失败）的机器仍会上报该族并收满失败；要发现它需要一次真实连接，因而会引入「目标被墙即误判」的风险，等有需求再做（可由 `agent.json` 为每个族指定探测目标）。
+- 上线范围：改动只在 **Agent**，Server 不需要改；`hk-isvoro-litev6only` 要生效必须升级它上面的 Agent（客户端没有自更新机制，用面板「接入」弹窗的一行命令重跑即可），只部署 Server 不会改变已在跑的 Agent 行为。

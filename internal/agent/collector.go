@@ -102,18 +102,62 @@ func (c *SystemCollector) Collect(ctx context.Context) (model.Metrics, error) {
 }
 
 // localIPFamilies reports which public address families this host can use for
-// outbound probes. Loopback, link-local and unspecified addresses are not
-// usable; private IPv4 is kept because NAT'd hosts still have a working IPv4
-// path. IPv6 unique-local addresses are excluded because they cannot reach
-// public probe targets.
+// outbound probes. Two conditions must hold: a public address of that family
+// exists, and the kernel can actually route to it. An address alone proves
+// nothing — a host whose IPv4 lives on a tunnel interface that is down, or that
+// only lends its IPv4 to a userspace proxy, keeps the address while every IPv4
+// dial fails immediately with "network is unreachable".
 func localIPFamilies() []string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil
 	}
-	return ipFamilies(addrs)
+	return routableFamilies(ipFamilies(addrs))
 }
 
+// routableFamilies drops every family the kernel currently has no route for.
+func routableFamilies(families []string) []string {
+	out := make([]string, 0, len(families))
+	for _, family := range families {
+		if familyRoutable(family) {
+			out = append(out, family)
+		}
+	}
+	return out
+}
+
+// familyRoutable asks the kernel for a route and a source address in this
+// family: a connected UDP socket resolves both without sending a packet, and
+// the destination is from the documentation range (RFC 5737 / RFC 3849), so it
+// can never reach a real host. No route means the family is not offered for
+// probing at all, instead of reporting it and collecting 100% failures.
+const (
+	documentationV4 = "192.0.2.1:9"
+	documentationV6 = "[2001:db8::1]:9"
+)
+
+func familyRoutable(family string) bool {
+	network, target := "udp4", documentationV4
+	if family == "ipv6" {
+		network, target = "udp6", documentationV6
+	}
+	return routeLookup(network, target) == nil
+}
+
+// routeLookup is the route-lookup seam; tests replace it, production dials.
+var routeLookup = func(network, address string) error {
+	conn, err := net.Dial(network, address)
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
+// ipFamilies classifies interface addresses into candidate probe families.
+// Loopback, link-local and unspecified addresses are not usable; private IPv4
+// is kept because NAT'd hosts still have a working IPv4 path once a route
+// exists, while IPv6 unique-local addresses are excluded because they cannot
+// reach public probe targets. Candidates still have to pass routableFamilies.
 func ipFamilies(addrs []net.Addr) []string {
 	seen := map[string]bool{}
 	for _, addr := range addrs {

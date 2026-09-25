@@ -118,8 +118,9 @@ type Metrics struct {
 	Arch        string  `json:"arch"`
 	Version     string  `json:"version"`
 	// IPFamilies is the set of usable public address families the Agent
-	// reported for this host. nil means the Agent has not reported them yet;
-	// an empty non-nil slice means the host has neither IPv4 nor IPv6.
+	// reported for this host: the host has an address of that family and the
+	// kernel has a route for it. nil means the Agent has not reported them yet;
+	// an empty non-nil slice means the host can probe nothing.
 	IPFamilies []string `json:"ip_families"`
 }
 
