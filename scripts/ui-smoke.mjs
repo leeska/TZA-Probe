@@ -1014,6 +1014,49 @@ await fetch(base + "/api/v1/admin/nodes/" + created.id, {
   headers: adminHeaders,
 });
 dom.window.close();
+// 长期（按量付费）与免费机器：到期日填到十年以外要写「长期」而不是「剩余 72965 天」，
+// 0 价且周期写着「免费」要写「免费」而不是「未设置价格」。
+const longName = "长期免费验收 " + Date.now();
+const madeLong = await fetch(base + "/api/v1/admin/nodes", {
+  method: "POST",
+  headers: { ...adminHeaders, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: longName,
+    region: "香港",
+    public: true,
+    currency: "CNY",
+    price: 0,
+    price_period: "免费",
+    billing_at: "2026-09-01T00:00:00Z",
+    traffic_mode: "max",
+    expires_at: "2226-07-04T00:00:00Z",
+  }),
+});
+assert.equal(
+  madeLong.status,
+  200,
+  "creating a long-term free node must succeed: " + (await madeLong.clone().text()),
+);
+await new Promise((resolve) => setTimeout(resolve, 11500));
+publicSearch.value = longName;
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+await until(
+  () => publicDOM.window.document.querySelector("#nodes .node-card"),
+  "long-term node card",
+);
+{
+  const long = publicDOM.window.document.querySelector("#nodes .node-card");
+  const pill = long.querySelector(".expiry-pill");
+  assert.equal(pill.textContent, "长期", "长期机器写「长期」，不写天数");
+  assert(/\d{4}-\d{2}-\d{2}/.test(pill.getAttribute("title") || ""), "真实到期日放进 title");
+  assert.equal(
+    long.querySelector(".price-label").textContent,
+    "免费",
+    "0 价且周期写着免费就是「免费」",
+  );
+}
+publicSearch.value = "";
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
 publicDOM.window.close();
 console.log(
   "PASS: login, node creation/edit, billing and alerts, search/filter/batch catalog, combined checks and dual stack, overseas custom targets, edit round-trip and explicit binding, notifications page, logout, public cards/search/IPv6. DOM simulation; visual layout not covered.",

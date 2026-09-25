@@ -461,9 +461,27 @@ function familySwitch(n, f) {
   return `<span class="family-slot"><div class="segmented card-family" aria-label="${esc(n.name)} IP 协议">${f.hasIPv4 ? seg("ipv4", "IPv4") : ""}${f.hasIPv6 ? seg("ipv6", "IPv6") : ""}</div></span>`;
 }
 
+// 长期机器的判定线：到期日在十年以外就写「长期」——用户会把长期（按量付费）机器的年份填到很
+// 后面（例如 2226 年），照实写会变成「剩余 72965 天」，没有意义。真实日期留在 title 里。
+const LONG_TERM_DAYS = 3650;
+
 // 计费两块：到期与价格。卡片里横排在卡底，列表里竖排在计费格，文本完全一样。
+// 价格：0 价且周期写着「免费」就写「免费」，不再说成「未设置价格」。
 function billingInner(n, expiry) {
-  return `<span class="expiry-pill ${expiry != null && expiry <= 7 ? "warning" : ""}">${expiry == null ? "未设到期" : expiry < 0 ? "已过期 " + Math.abs(expiry) + " 天" : "剩余 " + expiry + " 天"}</span><span class="price-label">${n.price ? esc(n.currency || "CNY") + " " + n.price.toFixed(2) + " / " + esc(n.price_period || "月") : "未设置价格"}</span>`;
+  const pill =
+    expiry == null
+      ? `<span class="expiry-pill">未设到期</span>`
+      : expiry < 0
+        ? `<span class="expiry-pill warning">已过期 ${Math.abs(expiry)} 天</span>`
+        : expiry > LONG_TERM_DAYS
+          ? `<span class="expiry-pill" title="到期 ${esc(String(n.expires_at || "").slice(0, 10))}">长期</span>`
+          : `<span class="expiry-pill${expiry <= 7 ? " warning" : ""}">剩余 ${expiry} 天</span>`;
+  const price = n.price
+    ? `${esc(n.currency || "CNY")} ${n.price.toFixed(2)} / ${esc(n.price_period || "月")}`
+    : /免费/.test(n.price_period || "")
+      ? "免费"
+      : "未设置价格";
+  return `${pill}<span class="price-label">${price}</span>`;
 }
 
 function networkSections(n, f) {
