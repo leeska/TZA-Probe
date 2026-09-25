@@ -7,7 +7,8 @@
 # 可选参数：
 #   --interfaces eth0,eth1   只统计这些网卡的流量（默认统计全部非 loopback 网卡）
 #   --nexttrace /usr/bin/nexttrace   改用外部 NextTrace 二进制（默认用内置的 NTrace-core，无需安装）
-#   --geo-provider NAME      内置回程的 ASN/地区数据源，默认 NextTrace-API；也可 disable-geoip、IPAPI.com 等
+#   --geo-provider NAME      内置回程的 ASN/地区数据源，默认 IPAPI.com；也可 disable-geoip、NextTrace-API 等
+#                            （NextTrace-API 的 v3 通道靠 NextTrace CLI 自建 WebSocket，本进程内查询必然失败）
 #   --trace-method NAME      内置回程的探测方式：icmp（默认，与 NextTrace CLI 一致）、tcp 或 udp
 #   --allow-http             允许明文 HTTP 的 endpoint（仅限可信私网；endpoint 为 http:// 时自动开启）
 #   --uninstall              停止服务并删除程序、配置和 systemd 单元

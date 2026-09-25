@@ -71,7 +71,7 @@ func run() error {
 		slog.Info("route probing uses the configured nexttrace binary", "path", cfg.Nexttrace)
 	} else {
 		prober.Embedded = &probe.Embedded{GeoProvider: cfg.GeoProvider, Method: cfg.TraceMethod}
-		slog.Info("route probing runs in process through the embedded NTrace-core tracer", "geo_provider", cfg.GeoProvider, "trace_method", cfg.TraceMethod)
+		slog.Info("route probing runs in process through the embedded NTrace-core tracer", "geo_provider", probe.EffectiveGeoProvider(cfg.GeoProvider), "configured_geo_provider", cfg.GeoProvider, "trace_method", cfg.TraceMethod)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

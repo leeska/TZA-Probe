@@ -12,6 +12,24 @@ import (
 	"github.com/leeska/TZA-Probe/internal/model"
 )
 
+func TestEffectiveGeoProvider(t *testing.T) {
+	// An empty config used to mean the upstream default, whose v3 transport
+	// cannot work in-process: every lookup failed and the path came back with
+	// no ASN at all (two live nodes ran that way for three days).
+	if got := EffectiveGeoProvider(""); got != "IPAPI.com" {
+		t.Fatalf("empty: %q", got)
+	}
+	if got := EffectiveGeoProvider("  "); got != "IPAPI.com" {
+		t.Fatalf("blank: %q", got)
+	}
+	// An explicit choice is never overridden, not even to disable lookups.
+	for _, want := range []string{"IPAPI.com", "disable-geoip", "NextTrace-API", "IPInfo.io"} {
+		if got := EffectiveGeoProvider(" " + want + " "); got != want {
+			t.Fatalf("%s: %q", want, got)
+		}
+	}
+}
+
 // The recorded 重庆 联通 trace flipped between two labels from the same node and
 // the same target, one hour apart (2026-09-25): at 08:26 the hop on the 9929
 // line answered from a 210.14.x address the geo source left unresolved, at 09:26

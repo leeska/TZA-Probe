@@ -22,10 +22,33 @@ import (
 // same fixed parameters the external call used.
 //
 // NTrace-core is GPL-3.0 while the rest of this repository is MIT; see NOTICE.
+//
+// defaultGeoProvider is the ASN/geo source used when the node config names
+// none. The upstream default, "NextTrace-API", cannot work here: its v3
+// transport needs the WebSocket connection the NextTrace CLI's own supervisor
+// opens, and inside a long-running process that connection is nil, so every
+// lookup fails in microseconds and the whole path comes back without an ASN.
+// Two live nodes shipped that way and resolved 0 of 14336 and 0 of 7874 hop
+// addresses over three days — every label on them fell back to the prefix
+// table. IPAPI.com needs no key and answers in tens of milliseconds; on the
+// nodes where it is configured, 60–75% of answering hops resolve an ASN.
+const defaultGeoProvider = "IPAPI.com"
+
+// EffectiveGeoProvider resolves the configured source to the one actually
+// queried. An explicit provider (including "disable-geoip") is used verbatim.
+// The tracer and the node's startup log both read the source through it, so
+// what the log says is what the run queried.
+func EffectiveGeoProvider(configured string) string {
+	if strings.TrimSpace(configured) == "" {
+		return defaultGeoProvider
+	}
+	return strings.TrimSpace(configured)
+}
+
 type Embedded struct {
 	// GeoProvider selects the ASN/geo source for hop metadata, for example
-	// "NextTrace-API" (the upstream default), "IPAPI.com" or "disable-geoip".
-	// Empty keeps the upstream default.
+	// "IPAPI.com" (the default), "NextTrace-API" or "disable-geoip".
+	// Empty selects defaultGeoProvider.
 	GeoProvider string
 	// Method selects the probe protocol: "icmp" (default), "tcp" or "udp".
 	// ICMP is what the NextTrace CLI uses when no method flag is given, and it
@@ -64,7 +87,7 @@ func (e Embedded) Trace(ctx context.Context, ip net.IP, port int) traceOutcome {
 	if ip == nil {
 		return traceOutcome{Hops: []model.Hop{}, Reason: "dns"}
 	}
-	session := trace.CachedGeoSourceSession(ipgeo.GetSourceDescriptorSession(e.GeoProvider))
+	session := trace.CachedGeoSourceSession(ipgeo.GetSourceDescriptorSession(EffectiveGeoProvider(e.GeoProvider)))
 	// Bound the run below the caller's job budget so a trace that never
 	// reports its own stop reason still returns the hops it collected.
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) > traceBudget {

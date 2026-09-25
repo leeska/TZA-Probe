@@ -86,7 +86,7 @@ Agent 的 endpoint 必须是它能访问的 Server 地址。远程 Agent 不能�
 curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://probe.example.com --token <节点密钥>
 ```
 
-脚本从 **这台 Server** 的 `/dl/tza-agent-linux-<arch>` 下载与主机架构匹配的 Agent（x86_64 / arm64），校验 SHA-256，写入 `/etc/tza-probe/agent.json`（0600）和 systemd 单元并启动。可选参数：`--interfaces eth0,eth1` 指定统计网卡，`--trace-method icmp|tcp|udp` 指定内置回程的探测方式（默认 `icmp`），`--geo-provider NAME` 指定内置回程的 ASN 数据源（默认 `NextTrace-API`），`--nexttrace /path` 改用外部 NextTrace 二进制（默认用内置实现），`--uninstall` 卸载。不带 `--token` 再执行一次即为升级 Agent，会保留现有配置并备份旧二进制为 `tza-agent.previous`。脚本本身不含密钥，密钥只作为命令参数出现；不希望它进入 shell 历史时可改用 `TZA_TOKEN=<密钥>` 环境变量。
+脚本从 **这台 Server** 的 `/dl/tza-agent-linux-<arch>` 下载与主机架构匹配的 Agent（x86_64 / arm64），校验 SHA-256，写入 `/etc/tza-probe/agent.json`（0600）和 systemd 单元并启动。可选参数：`--interfaces eth0,eth1` 指定统计网卡，`--trace-method icmp|tcp|udp` 指定内置回程的探测方式（默认 `icmp`），`--geo-provider NAME` 指定内置回程的 ASN 数据源（默认 `IPAPI.com`；上游默认 `NextTrace-API` 的 v3 通道依赖 NextTrace CLI 自建的 WebSocket 连接，常驻进程里查询必然失败，故不作默认），`--nexttrace /path` 改用外部 NextTrace 二进制（默认用内置实现），`--uninstall` 卸载。不带 `--token` 再执行一次即为升级 Agent，会保留现有配置并备份旧二进制为 `tza-agent.previous`。脚本本身不含密钥，密钥只作为命令参数出现；不希望它进入 shell 历史时可改用 `TZA_TOKEN=<密钥>` 环境变量。
 
 Server 提供的 Agent 来自两处，前者优先：数据目录下的 `agents/tza-agent-linux-<arch>`（运维手动放置，升级 Agent 不必重编 Server），以及构建时嵌入在 Server 内的副本（CI 发布包已包含；自行编译见 `internal/agentdist/bin/README.md`）。两处都没有时 Server 启动日志会提示，安装脚本则报“该 Server 未提供此架构的 Agent”。
 
