@@ -633,6 +633,119 @@ const routeCell = findCard().querySelector(".route-grid:not(.latency-grid) .rout
 assert.equal(routeCell.dataset.focusKind, "route", "route cell must carry its focus kind");
 assert(routeCell.dataset.focusCarrier, "route cell must carry its carrier");
 const switchedId = clickedBtnNode;
+// 展示方式开关：工具栏右侧切「卡片 / 列表」。列表视图一行一台、六格横向对齐，
+// 在线绿点贴在名字前面（不单独占一列），并且所有文字给全——不省略、不截断。
+const viewSwitch = publicDOM.window.document.querySelector(".view-switch");
+assert(viewSwitch, "工具栏要有卡片 / 列表的展示方式开关");
+const cardTab = viewSwitch.querySelector('[data-view="card"]');
+const listTab = viewSwitch.querySelector('[data-view="list"]');
+assert(cardTab && listTab, "开关要给出卡片与列表两个选项");
+assert(cardTab.classList.contains("active"), "默认是卡片视图");
+const cardViewIds = [...publicDOM.window.document.querySelectorAll("#nodes .node-card")].map((c) => c.dataset.node);
+assert(
+  !publicDOM.window.document.querySelector("#nodes").classList.contains("node-list"),
+  "卡片视图不该带列表类名",
+);
+listTab.click();
+assert(
+  publicDOM.window.document.querySelector("#nodes").classList.contains("node-list"),
+  "切到列表视图后容器要换成列表布局",
+);
+assert(listTab.classList.contains("active") && !cardTab.classList.contains("active"), "开关的高亮要跟着换");
+assert.equal(
+  publicDOM.window.localStorage.getItem("tza-view"),
+  "list",
+  "展示方式要记在浏览器本地",
+);
+const listRows = [...publicDOM.window.document.querySelectorAll("#nodes .node-card")];
+assert.equal(listRows.length, cardViewIds.length, "切视图不能多出或少掉节点");
+assert.deepEqual(
+  listRows.map((c) => c.dataset.node),
+  cardViewIds,
+  "切视图要保持节点的顺序与身份",
+);
+const listRow = listRows.find((c) => c.textContent.includes(name));
+assert(listRow, "列表视图里也要有本轮创建的节点");
+assert.deepEqual(
+  [...listRow.children].map((c) => c.className.split(" ")[0]),
+  ["row-identity", "metrics-grid", "speeds", "net-cell", "route-cell", "billing-cell"],
+  "列表行固定六格：主机 / 指标 / 网速 / 延迟 / 回程 / 计费",
+);
+// 状态不单独占一列：绿点就在名字前面的 .node-identity 里。
+const identityCell = listRow.querySelector(".row-identity .node-identity");
+assert(identityCell, "主机格里要先给状态点与名字");
+assert(identityCell.querySelector(".node-dot"), "在线绿点要贴在名字前面，而不是另占一列");
+assert.equal(
+  identityCell.querySelector(".node-dot").classList.contains("offline"),
+  false,
+  "在线节点的点是绿的",
+);
+assert.equal(
+  identityCell.querySelector(".node-name").textContent,
+  name,
+  "节点名要给全，不做省略",
+);
+// 延迟与回程在列表视图里是行内文本（卡片那格是方形格子），每家运营商一行。
+assert.equal(listRow.querySelectorAll(".net-cell .net-line").length, 4, "延迟四行（含其他）");
+assert.equal(listRow.querySelectorAll(".route-cell .route-line").length, 3, "回程三行");
+for (const line of listRow.querySelectorAll(".net-line")) {
+  assert(line.dataset.focusKind === "latency" || line.dataset.focusKind === "route", "行内文本要带聚焦信息");
+  assert(line.dataset.focusCarrier, "行内文本要带运营商");
+  assert(line.getAttribute("title"), "行内文本要有各自的探测时间提示");
+}
+const listSubs = [...listRow.querySelectorAll(".metrics-grid .metric small")].map((s) => s.textContent);
+assert.equal(listSubs.length, 4, "四个指标各留一行副标");
+assert(
+  listSubs.every((t) => t.trim().length),
+  "指标副标不能为空",
+);
+assert(
+  /额度/.test(listSubs[3]),
+  `周期用量的副标要写明额度与计费方式，实际是「${listSubs[3]}」`,
+);
+// 文字完整性：省略号来自样式表，jsdom 不套用 CSS，所以按样式表文本断言。
+assert(
+  /\.node-grid\.node-list \.metric small \{[^}]*text-overflow:\s*clip/.test(styles),
+  "列表视图的指标副标要显式取消省略号",
+);
+assert(
+  /\.node-grid\.node-list \.route-line strong \{[^}]*white-space:\s*normal/.test(styles),
+  "列表视图的回程标签要换行显示完整值",
+);
+assert(
+  !/\.node-grid\.node-list[^{]*\{[^}]*text-overflow:\s*ellipsis/.test(styles),
+  "列表视图里不该有任何省略号",
+);
+cardTab.click();
+assert(
+  !publicDOM.window.document.querySelector("#nodes").classList.contains("node-list"),
+  "切回卡片视图要换回栅格布局",
+);
+assert.equal(publicDOM.window.localStorage.getItem("tza-view"), "card", "选择要跟着一起写回");
+// 刷新后仍然生效：新起一个页面，localStorage 里已经写着 list。
+const listDOM = new JSDOM(
+  '<div id="app"></div><div id="toast"></div><dialog id="dialog"></dialog>',
+  {
+    url: base + "/",
+    runScripts: "outside-only",
+    virtualConsole: consoleAdapter,
+    pretendToBeVisual: true,
+  },
+);
+listDOM.window.localStorage.setItem("tza-view", "list");
+listDOM.window.fetch = (input, opts) => fetch(new URL(input, base), opts);
+listDOM.window.HTMLDialogElement.prototype.showModal = function () {
+  this.open = true;
+};
+listDOM.window.HTMLDialogElement.prototype.close = function () {
+  this.open = false;
+};
+listDOM.window.eval(bundle.outputFiles[0].text);
+await until(
+  () => listDOM.window.document.querySelector("#nodes.node-list .node-card"),
+  "localStorage 里的列表选择要在打开页面时生效",
+);
+listDOM.window.close();
 const listCards = [...publicDOM.window.document.querySelectorAll("#nodes .node-card")];
 const cardIds = listCards.map((c) => c.dataset.node);
 // 期望值取自接口本身（测试库里的节点会被前面的用例增删，写死数量只会造假失败）。

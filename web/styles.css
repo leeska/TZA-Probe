@@ -2439,3 +2439,229 @@ pre,
     content: none;
   }
 }
+
+/* ==========================================================================
+   列表视图（一行一台）
+   与卡片视图共用同一份取数（app.js 的 nodeFacts），这里只换布局：宽屏一行六格横向对齐，
+   1280px 以下折成两列区块，760px 以下竖排。规则放在文件末尾（媒体查询之后）才能盖住上面
+   的 .node-grid 栅格——两处同权重，靠顺序取胜。
+   硬要求：文字不省略。名称、内存与额度的副标、回程标签都可能很长，宁可换行也不截断，
+   所以列表视图里去掉 .metric small 的省略号，回程标签也不做两行截断。
+   ========================================================================== */
+.view-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.view-switch {
+  flex-shrink: 0;
+}
+
+.node-grid.node-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  /* 六格宽度：主机 / 指标 / 网速 / 延迟 / 回程 / 计费 */
+  --row-cols:
+    minmax(180px, 0.9fr) minmax(300px, 1.5fr) minmax(150px, 0.8fr)
+    minmax(220px, 1.1fr) minmax(150px, 0.75fr) minmax(120px, 0.6fr);
+}
+
+.node-grid.node-list .node-card {
+  display: grid;
+  grid-template-columns: var(--row-cols);
+  align-items: start;
+  gap: 14px 18px;
+  padding: 16px 20px;
+  border-radius: 18px;
+}
+
+/* 整行不做悬浮位移：一行占满宽度，抬起 4px 只会让人眼花。 */
+.node-grid.node-list .node-card:hover {
+  transform: none;
+}
+
+/* 状态不占一列：绿点贴在名字前面，与卡片视图同一个 .node-identity 结构 */
+.node-grid.node-list .row-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.node-grid.node-list .row-identity .node-identity {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.node-grid.node-list .node-identity .node-dot {
+  margin-top: 6px;
+}
+
+.node-grid.node-list .node-name {
+  font-size: 15px;
+}
+
+.node-grid.node-list .card-actions {
+  justify-content: flex-start;
+}
+
+/* 标签可以缩、可以换行，不许顶出这一格 */
+.node-grid.node-list .os-tag,
+.node-grid.node-list .family-tag {
+  flex-shrink: 1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.node-grid.node-list .metrics-grid {
+  gap: 10px 16px;
+  margin-bottom: 0;
+}
+
+.node-grid.node-list .metric > div strong {
+  white-space: nowrap;
+}
+
+.node-grid.node-list .metric small {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+.node-grid.node-list .speeds {
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.node-grid.node-list .speed-box {
+  padding: 8px 10px;
+}
+
+.node-grid.node-list .net-cell,
+.node-grid.node-list .route-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.node-grid.node-list .billing-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* 行内一格 = 一家运营商：名字、延迟、丢包、最近 20 次色带，横向排开 */
+.node-grid.node-list .net-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 9px;
+  text-align: left;
+  transition: background 0.16s ease;
+}
+
+.node-grid.node-list .net-line:hover {
+  background: var(--glass-bg-subtle);
+}
+
+.node-grid.node-list .net-line .carrier-name {
+  flex: 0 0 30px;
+}
+
+.node-grid.node-list .net-line strong {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.node-grid.node-list .net-loss {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 回程标签完整写出：长标签（4837 → 9929 → 163 之类）换行，不省略 */
+.node-grid.node-list .route-line strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--accent);
+}
+
+.node-grid.node-list .route-line strong.muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.node-grid.node-list .net-line .quality-bars {
+  flex: 0 0 64px;
+  width: 64px;
+  gap: 1px;
+  margin-left: auto;
+}
+
+.node-grid.node-list .net-line .quality-bar {
+  height: 5px !important;
+  min-height: 5px;
+}
+
+/* 中等宽度：两列区块，别把六格挤成六条细缝 */
+@media (max-width: 1280px) {
+  .node-grid.node-list .node-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "identity identity"
+      "metrics speeds"
+      "net route"
+      "billing billing";
+  }
+
+  .node-grid.node-list .row-identity {
+    grid-area: identity;
+  }
+
+  .node-grid.node-list .metrics-grid {
+    grid-area: metrics;
+  }
+
+  .node-grid.node-list .speeds {
+    grid-area: speeds;
+  }
+
+  .node-grid.node-list .net-cell {
+    grid-area: net;
+  }
+
+  .node-grid.node-list .route-cell {
+    grid-area: route;
+  }
+
+  .node-grid.node-list .billing-cell {
+    grid-area: billing;
+  }
+}
+
+/* 窄屏：竖排成一列的区块（仍然一行一台，不是卡片网格） */
+@media (max-width: 760px) {
+  .node-grid.node-list .node-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "identity"
+      "metrics"
+      "speeds"
+      "net"
+      "route"
+      "billing";
+  }
+}
