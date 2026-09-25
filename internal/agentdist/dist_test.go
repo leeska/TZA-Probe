@@ -71,7 +71,10 @@ func TestScriptIsPOSIXAndSecretFree(t *testing.T) {
 	if !strings.HasPrefix(script, "#!/bin/sh\n") {
 		t.Fatal("script must start with a POSIX sh shebang")
 	}
-	for _, needle := range []string{"set -eu", "/dl/$NAME.sha256", "chmod 0600 \"$CONFIG\"", "systemctl restart tza-agent", "--uninstall", "<<'TZA_AGENT_SERVICE'", "--geo-provider", "--trace-method", "\"geo_provider\": \"%s\"", "\"trace_method\": \"%s\""} {
+	for _, needle := range []string{"set -eu", "/dl/$NAME.sha256", "chmod 0600 \"$CONFIG\"", "systemctl restart tza-agent", "--uninstall", "<<'TZA_AGENT_SERVICE'", "--geo-provider", "--trace-method", "\"geo_provider\": \"%s\"", "\"trace_method\": \"%s\"",
+		// 初始化系统两条路都要在：只写 systemd 时，Alpine/OpenRC 节点跑面板“接入”的一行命令
+		// 会直接 fail（实测 kr/sg 两台因此长期停在旧版本），只能手工替换二进制。
+		"INIT=openrc", "rc-service tza-agent start", "rc-update add tza-agent default", "<<'TZA_AGENT_INIT'"} {
 		if !strings.Contains(script, needle) {
 			t.Errorf("script missing %q", needle)
 		}

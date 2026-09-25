@@ -11,7 +11,7 @@
 #                            （NextTrace-API 的 v3 通道靠 NextTrace CLI 自建 WebSocket，本进程内查询必然失败）
 #   --trace-method NAME      内置回程的探测方式：icmp（默认，与 NextTrace CLI 一致）、tcp 或 udp
 #   --allow-http             允许明文 HTTP 的 endpoint（仅限可信私网；endpoint 为 http:// 时自动开启）
-#   --uninstall              停止服务并删除程序、配置和 systemd 单元
+#   --uninstall              停止服务并删除程序、配置与服务单元（systemd / OpenRC 均可）
 #
 # 不带 --token 再次执行时保留现有 /etc/tza-probe/agent.json，只更新二进制并重启，即升级。
 # 密钥也可通过环境变量 TZA_TOKEN 传入，避免出现在命令行。
@@ -28,6 +28,7 @@ UNINSTALL=""
 CONFIG=/etc/tza-probe/agent.json
 BIN=/usr/local/bin/tza-agent
 UNIT=/etc/systemd/system/tza-agent.service
+INITD=/etc/init.d/tza-agent
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,13 +69,31 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "非 root，改用 sudo 重新执行 ..." >&2
   exec sudo env TZA_TOKEN="$TOKEN" TZA_ENDPOINT="$ENDPOINT" sh -c "$get | sh -s --$quoted"
 fi
-command -v systemctl >/dev/null 2>&1 || fail "需要使用 systemd 的 Linux"
+# 初始化系统：systemd 优先，其次 OpenRC（Alpine 等）。两条路都要能用，否则后台“接入”
+# 给出的一行命令在非 systemd 主机上直接失败，那些节点只能靠手工替换二进制升级。
+INIT=""
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  INIT=systemd
+elif command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1; then
+  INIT=openrc
+else
+  fail "需要 systemd 或 OpenRC（rc-service / rc-update）的 Linux"
+fi
+
+service_stop() { if [ "$INIT" = systemd ]; then systemctl stop tza-agent 2>/dev/null || true; else rc-service tza-agent stop >/dev/null 2>&1 || true; fi; }
+service_active() { if [ "$INIT" = systemd ]; then systemctl is-active --quiet tza-agent; else rc-service tza-agent status >/dev/null 2>&1; fi; }
+service_logs() { if [ "$INIT" = systemd ]; then journalctl -u tza-agent -n 20 --no-pager; else tail -n 20 /var/log/tza-agent.log; fi; }
 
 if [ -n "$UNINSTALL" ]; then
-  systemctl disable --now tza-agent 2>/dev/null || true
-  rm -f "$UNIT" "$BIN"
+  if [ "$INIT" = systemd ]; then
+    systemctl disable --now tza-agent 2>/dev/null || true
+  else
+    rc-service tza-agent stop >/dev/null 2>&1 || true
+    rc-update del tza-agent default >/dev/null 2>&1 || true
+  fi
+  rm -f "$UNIT" "$INITD" "$BIN"
   rm -rf /etc/tza-probe
-  systemctl daemon-reload
+  [ "$INIT" = systemd ] && systemctl daemon-reload
   echo "已卸载 TZA Probe Agent"
   exit 0
 fi
@@ -135,7 +154,7 @@ chmod 0755 "$TMP/tza-agent"
 "$TMP/tza-agent" --version >/dev/null 2>&1 || fail "下载的程序无法运行"
 
 # 先停旧服务再替换，避免向运行中的文件写入
-systemctl stop tza-agent 2>/dev/null || true
+service_stop
 [ -f "$BIN" ] && cp -p "$BIN" "$BIN.previous"
 install -m 0755 "$TMP/tza-agent" "$BIN"
 
@@ -161,8 +180,9 @@ if [ -z "$UPGRADE" ]; then
   chmod 0600 "$CONFIG"
 fi
 
-install -d -m 0755 "$(dirname "$UNIT")"
-cat > "$UNIT" <<'TZA_AGENT_SERVICE'
+if [ "$INIT" = systemd ]; then
+  install -d -m 0755 "$(dirname "$UNIT")"
+  cat > "$UNIT" <<'TZA_AGENT_SERVICE'
 [Unit]
 Description=TZA Probe Agent
 After=network-online.target
@@ -182,18 +202,42 @@ ProtectHome=true
 [Install]
 WantedBy=multi-user.target
 TZA_AGENT_SERVICE
-chmod 0644 "$UNIT"
-systemctl daemon-reload
-systemctl enable tza-agent >/dev/null 2>&1
-systemctl restart tza-agent
+  chmod 0644 "$UNIT"
+  systemctl daemon-reload
+  systemctl enable tza-agent >/dev/null 2>&1
+  systemctl restart tza-agent
+else
+  # OpenRC 用 supervise-daemon 托管，等价于 systemd 的 Restart=on-failure；
+  # 二进制统一放 /usr/local/bin，旧布局（/opt/tza-probe/tza-agent）留档后让位。
+  cat > "$INITD" <<'TZA_AGENT_INIT'
+#!/sbin/openrc-run
+name="TZA Probe Agent"
+command="/usr/local/bin/tza-agent"
+command_args="--config /etc/tza-probe/agent.json"
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=0
+respawn_period=60
+pidfile="/run/tza-agent.pid"
+output_log="/var/log/tza-agent.log"
+error_log="/var/log/tza-agent.log"
+depend() { need net; after firewall; }
+TZA_AGENT_INIT
+  chmod 0755 "$INITD"
+  rc-update add tza-agent default >/dev/null 2>&1 || true
+  if [ -f /opt/tza-probe/tza-agent ]; then
+    mv /opt/tza-probe/tza-agent "/opt/tza-probe/tza-agent.previous-$(date +%Y%m%d%H%M)" 2>/dev/null || true
+  fi
+  rc-service tza-agent restart >/dev/null 2>&1 || rc-service tza-agent start >/dev/null 2>&1
+fi
 sleep 2
-if systemctl is-active --quiet tza-agent; then
+if service_active; then
   if [ -n "$UPGRADE" ]; then echo "Agent 已升级并重启"; else echo "Agent 已安装并启动，稍后后台节点会显示在线"; fi
   if [ -z "$NEXTTRACE" ] && [ -z "$UPGRADE" ]; then
     echo "提示: 三网回程使用内置 NTrace-core（NextTrace 同源），无需额外安装；如需改用外部二进制，在 $CONFIG 填写 nexttrace 路径并重启服务"
   fi
 else
   echo "Agent 未能启动，最近日志：" >&2
-  journalctl -u tza-agent -n 20 --no-pager >&2 || true
+  service_logs >&2 || true
   exit 1
 fi

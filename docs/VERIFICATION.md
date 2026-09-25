@@ -1307,3 +1307,10 @@ node scripts/ui-smoke.mjs
 - 机队升级顺序：**先部署 Server，再逐台升级 Agent**（老 Agent 不报能力，领不到解锁任务；
   反向顺序会让新 Agent 的上报被旧 Server 判 400 而掉线）。
 - 首轮上线只建一个解锁任务（间隔 6 小时、绑定全部节点）还是一台一个任务，按实际想看的粒度定。
+## 2026-09-25 install.sh 支持 OpenRC：Alpine 节点不再只能手工换二进制（2026-10-03 合入 main 并部署）
+
+- 现象：机队巡检发现两台 Alpine(OpenRC) 节点（kr-isvoro-oracle、sg-isvoro-oracle）长期停在 `e0e18b7`，其余节点已是当前构建 `d8dd968`。在这两台机器上执行后台「接入」给出的一行命令，脚本立即退出：`错误: 需要使用 systemd 的 Linux`（原 `install.sh` 的前置检查）。它们当初是手工把二进制放进 `/opt/tza-probe/tza-agent` 并自写 `/etc/init.d/tza-agent` 装起来的，此后每次升级都要重复这套手工步骤。
+- 改法：`internal/agentdist/install.sh` 增加初始化系统探测（`systemctl` 且 `/run/systemd/system` → systemd；`rc-service` + `rc-update` → openrc；两者都没有才失败），服务生命周期抽成按 INIT 分支的 `service_stop` / `service_active` / `service_logs`；OpenRC 分支写 `/etc/init.d/tza-agent`（`supervise-daemon` + `respawn_delay/max/period`，等价 systemd 的 `Restart=on-failure`）、`rc-update add tza-agent default`，并把旧的 `/opt/tza-probe/tza-agent` 留档成 `.previous-<时间戳>`，二进制统一到 `/usr/local/bin/tza-agent`；`--uninstall` 两条路都能清干净。
+- 验证（真机，不是容器）：把改后的脚本管道送进 `kr-isvoro-oracle`（Alpine 3.22 / arm64）走升级路径，输出 `下载 https://probe.tza.cc/dl/tza-agent-linux-arm64 ...` 与 `Agent 已升级并重启`；回读：`rc-service tza-agent status` = `started`、`/etc/init.d/tza-agent` 344 字节、`/usr/local/bin/tza-agent --version` = `2.0.0-dev-d8dd968`、`rc-update show default` 含 `tza-agent`、`/opt/tza-probe/tza-agent` 已改名为 `.previous-202609251637`、`/var/log/tza-agent.log` 末行 `version=2.0.0-dev-d8dd968`。`gofmt -l` 无输出、`go vet ./...`、`go test ./internal/agentdist/... ./internal/httpapi/...` 全绿；`TestScriptIsPOSIXAndSecretFree` 增加 OpenRC needle（`INIT=openrc`、`rc-service tza-agent start`、`rc-update add tza-agent default`、`<<'TZA_AGENT_INIT'`），删掉 OpenRC 分支该测试即失败。
+- 上线范围：Agent 安装脚本由 Server 内嵌分发（`/install.sh`），要让后台「接入」在 Alpine 上可用必须部署新 Server。本次机队升级没有依赖这一步：节点侧用 `/dl/tza-agent-linux-<arch>` + `.sha256` 校验后换二进制并重启，16/17 台已统一到 `d8dd968`（唯一未升级的 tw-isvoro-hinet 是 ISVORO NAT 转发整机不通，见运维记录）。
+- 待确认：OpenRC 分支依赖 `supervise-daemon`（Alpine 3.22 自带），更老的 OpenRC 发行版未实测；`us-moew-free` 只有 `wget` 没有 `curl`，升级脚本两条路已改成 curl/wget 自动选择。
