@@ -2626,6 +2626,12 @@ pre,
   border-radius: 2px;
 }
 
+/* 没有探测数据的那行（例如「其他」）也要看得见整整一条 120px 的轨道，
+   否则四行里少一行会显得色带没对齐。 */
+.node-grid.node-list .net-line .quality-bar.idle {
+  background: var(--line);
+}
+
 /* 网速竖排两行（一行一个方向），数值靠右——挤成两个小方框在窄格里又难看又放不下数值 */
 .node-grid.node-list .speeds {
   grid-template-columns: minmax(0, 1fr);
