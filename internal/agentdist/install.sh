@@ -94,8 +94,9 @@ if [ -n "$TOKEN" ]; then
 else
   [ -f "$CONFIG" ] || fail "缺少 --token；首次安装请使用后台“接入”给出的完整命令"
   UPGRADE=true
-  # 升级：endpoint 从现有配置读取
-  [ -n "$ENDPOINT" ] || ENDPOINT=$(sed -n 's/^[[:space:]]*"endpoint":[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -n 1)
+  # 升级：endpoint 从现有配置读取。旧版安装脚本写的是单行 JSON，这里不能只认
+  # 缩进过的多行格式，否则不带参数的升级会在这些节点上报“缺少 --endpoint”。
+  [ -n "$ENDPOINT" ] || ENDPOINT=$(sed -n 's/.*"endpoint"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -n 1)
 fi
 [ -n "$ENDPOINT" ] || fail "缺少 --endpoint（Agent 主机能访问的 Server 地址）"
 ENDPOINT=${ENDPOINT%/}

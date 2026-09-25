@@ -73,11 +73,18 @@ func TestMapTraceResultNamesUnicomInternationalRangesWithoutGeoSource(t *testing
 // splits it between PLDT and CUII.
 func TestCarrierANSRangesOnlyNameTheirOwnBlocks(t *testing.T) {
 	for addr, want := range map[string]string{
-		"210.14.195.13":    "AS9929",
-		"210.14.249.9":     "AS9929",
-		"218.105.200.1":    "AS9929",
-		"210.51.7.7":       "AS9929",
-		"2408:8120:2::9":   "AS9929",
+		"210.14.195.13":  "AS9929",
+		"210.14.249.9":   "AS9929",
+		"218.105.200.1":  "AS9929",
+		"210.51.7.7":     "AS9929",
+		"2408:8120:2::9": "AS9929",
+		// The Unicom-registered, unannounced part of 210.14.0.0/16: these are
+		// the addresses that answered as the CUII edge on the 重庆 trace while
+		// no ASN source could name them.
+		"210.14.178.234":   "AS9929",
+		"210.14.165.37":    "AS9929",
+		"210.14.178.106":   "AS9929",
+		"210.14.191.255":   "AS9929",
 		"118.26.144.7":     "AS10099",
 		"118.26.158.7":     "AS10099",
 		"162.219.33.7":     "AS10099",
@@ -86,7 +93,10 @@ func TestCarrierANSRangesOnlyNameTheirOwnBlocks(t *testing.T) {
 		"103.239.176.7":    "AS10099",
 		"2401:8a00:1:7::5": "AS10099",
 		"210.14.1.5":       "",
+		"210.14.31.255":    "",
 		"210.14.128.9":     "",
+		"210.14.150.9":     "",
+		"210.14.159.255":   "",
 		"118.26.16.7":      "",
 		"59.43.245.1":      "",
 		"203.0.113.9":      "",

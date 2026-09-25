@@ -34,9 +34,20 @@ var carrierASNRanges = []struct {
 	// 中国联通 9929 (CUII, the line sold as 联通 9929): its IPv4 backbone.
 	{netip.MustParsePrefix("218.105.0.0/16"), "AS9929"},
 	{netip.MustParsePrefix("210.51.0.0/16"), "AS9929"},
-	// 210.14.0.0/16 is split: 210.14.0.0/19 is PLDT (AS9299) while
-	// 210.14.192.0/18 and 210.14.249.0/24 are CUII. Only the CUII blocks are
-	// listed, which the masked /16 form cannot express.
+	// 210.14.0.0/16 is split. 210.14.0.0/19 is Philippine Long Distance
+	// Telephone (AS9299) and 210.14.144.0/20 is Beijing ShuJuJia; APNIC's RDAP
+	// registers 210.14.160.0 – 210.14.255.255 to China Unicom (object
+	// UNICOM-CN, "ChinaUnicom Hostmaster"), and AS9929 announces
+	// 210.14.192.0/18 and 210.14.249.0/24 inside it. The rest of that Unicom
+	// registration is announced by nobody and named by no ASN source, yet it
+	// answers as the CUII edge: 210.14.165.37, 210.14.178.106 and
+	// 210.14.178.238 were the hop that followed the 联通国际 entry on the
+	// 重庆 trace — the same position 218.105.2.x (AS9929) and 210.78.* take on
+	// other runs of that target and on its neighbours, and one stored trace
+	// carries both 218.105.*/AS9929 and 210.14.* side by side. Naming this
+	// /19 is what stops that target flipping between "10099 → 9929" and
+	// "10099 → 4837".
+	{netip.MustParsePrefix("210.14.160.0/19"), "AS9929"},
 	{netip.MustParsePrefix("210.14.192.0/18"), "AS9929"},
 	{netip.MustParsePrefix("210.14.249.0/24"), "AS9929"},
 	// The line's IPv6 space. The registry lists AS9929's own blocks inside
