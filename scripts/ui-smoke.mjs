@@ -668,7 +668,7 @@ const listRow = listRows.find((c) => c.textContent.includes(name));
 assert(listRow, "列表视图里也要有本轮创建的节点");
 assert.deepEqual(
   [...listRow.children].map((c) => c.className.split(" ")[0]),
-  ["row-identity", "metrics-grid", "speeds", "net-cell", "route-cell", "billing-cell"],
+  ["row-identity", "metrics-grid", "speeds-cell", "net-cell", "route-cell", "billing-cell"],
   "列表行固定六格：主机 / 指标 / 网速 / 延迟 / 回程 / 计费",
 );
 // 状态不单独占一列：绿点就在名字前面的 .node-identity 里。
@@ -729,9 +729,45 @@ assert(
   /\.node-grid\.node-list \.speeds \{[^}]*grid-template-columns: minmax\(0, 1fr\)/.test(styles),
   "列表里的实时网速要竖排两行",
 );
+// 观感（用户点名）：网速格不用那么宽，做成一行一个方向的窄条：图标 + 数值靠右，标签收进 title。
+const speedLines = [...listRow.querySelectorAll(".speeds-cell .speed-line")];
+assert.equal(speedLines.length, 2, "网速一行一个方向（下载 / 上传）");
+assert(
+  speedLines.every((l) => l.querySelector(".speed-icon") && l.querySelector("strong")),
+  "每条网速行要有图标与数值",
+);
+assert(
+  speedLines.every((l) => l.getAttribute("title")),
+  "标签收进 title，鼠标停上去仍能看出方向",
+);
+assert.equal(
+  listRow.querySelectorAll(".speeds-cell .speed-box").length,
+  0,
+  "列表视图不该再出现卡片里的宽方块",
+);
+assert(
+  /\.node-grid\.node-list \.speed-line \{[^}]*justify-content: space-between/.test(styles),
+  "网速行要图标靠左、数值靠右",
+);
+
+// 架构（Agent 报的 GOARCH）要标在系统标签下面；卡片视图不动，两边都出这个标签。
+assert(
+  /class="arch-tag"/.test(appSource) && /m\?\.arch/.test(appSource),
+  "要用 Agent 上报的架构渲染 arch-tag",
+);
+assert(
+  /\.node-grid\.node-list \.os-box \{[^}]*flex-direction: column/.test(styles),
+  "列表里系统标签要竖排，架构落在 linux 下面",
+);
+
+// 用户点名：「全部地区 / 自动匹配地区」是占位值不是信息，渲染层不能再出现这两个字样。
+assert(
+  !/"全部地区"|"自动匹配地区"/.test(appSource),
+  "不再渲染「全部地区 / 自动匹配地区」占位字样",
+);
 // 手机端：一行仍是六格表格，放不下就整块横向滚动，不能竖排成卡片（那就与卡片视图没区别了）。
 assert(
-  /@media \(max-width: 1340px\)[\s\S]*?\.node-grid\.node-list \{[^}]*overflow-x: auto/.test(styles),
+  /@media \(max-width: 1320px\)[\s\S]*?\.node-grid\.node-list \{[^}]*overflow-x: auto/.test(styles),
   "窄屏下列表要横向滚动",
 );
 assert(

@@ -509,7 +509,8 @@ h1 {
   color: var(--accent);
 }
 
-.os-tag {
+.os-tag,
+.arch-tag {
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
 }

@@ -175,12 +175,29 @@ function metricsInner(n) {
   return `${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small></div>`;
 }
 
+// 实时速率：卡片里是两个带标签的方框（图标 + 「实时下载」+ 数值）；
+// 列表里那格只有一百来像素宽，改成一行一条（图标 + 数值靠右，标签放进 title），
+// 两个视图的 HTML 都由这里出，liveTick 那一层跟着 view 走就不会串。
 function speedsInner(n) {
   const m = n.metrics,
     isLive = n.online && m;
   const rateIn = isLive ? `${bytes(m.rate_in)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
   const rateOut = isLive ? `${bytes(m.rate_out)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
+  if (view === "list")
+    return `<div class="speed-line" title="实时下载"><span class="speed-icon teal-icon">↓</span><strong>${rateIn}</strong></div><div class="speed-line" title="实时上传"><span class="speed-icon orange-icon">↑</span><strong>${rateOut}</strong></div>`;
   return `<div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateIn}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOut}</strong></div></div>`;
+}
+
+// 系统标签：操作系统 + 架构（Agent 报的 runtime.GOOS / GOARCH，老 Agent 没有 arch 就不给这个标签）。
+// 架构单独一个标签，因为它要在列表里换到 linux 下面那一行；写进 os-tag 里会被每秒刷新的
+// setText(.os-tag) 整段覆盖掉。
+function osTagsInner(n) {
+  const m = n.metrics;
+  const os = esc(m?.os || (n.online ? "在线" : "等待接入"));
+  const arch = m?.arch ? esc(m.arch) : "";
+  // 两个标签套一层 .os-box：卡片里是一行两个，列表里那层改成竖排，架构就落在 linux 下面
+  // （直接给 arch-tag 撑满一行的话，那颗胶囊的底色会横贯整格）。
+  return `<span class="os-box"><span class="os-tag">${os}</span>${arch ? `<span class="arch-tag">${arch}</span>` : ""}</span>`;
 }
 
 // 文本 / HTML 先比一遍再写：数值没变就不碰 DOM（每秒那层刷新因此只写真正在动的几个数字）。
@@ -447,7 +464,7 @@ function billingInner(n, expiry) {
 
 function networkSections(n, f) {
   return f.hasIPv4 || f.hasIPv6
-    ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span><span class="rep-label">${esc(f.latencyRegion || "全部地区")}</span></div><div class="route-grid latency-grid">${latencyCells(n, f)}</div><div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span><span class="rep-label">${esc(n.representative || "自动匹配地区")}</span></div><div class="route-grid">${routeCells(n, f)}</div>`
+    ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="route-grid latency-grid">${latencyCells(n, f)}</div><div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>`
     : `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
 }
 
@@ -493,7 +510,7 @@ function routeLines(n, f) {
 
 function gridInner(n) {
   const f = nodeFacts(n);
-  return `<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}<span class="os-tag">${esc(n.metrics?.os || (n.online ? "在线" : "等待接入"))}</span></div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds">${speedsInner(n)}</div>${networkSections(n, f)}<div class="card-bottom">${billingInner(n, f.expiry)}</div>`;
+  return `<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}</div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds">${speedsInner(n)}</div>${networkSections(n, f)}<div class="card-bottom">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。
@@ -501,9 +518,11 @@ function gridInner(n) {
 function listInner(n) {
   const f = nodeFacts(n);
   const detected = f.hasIPv4 || f.hasIPv6;
+  // 标题右侧只在真有地区时才给标签：以前空着会写上「全部地区 / 自动匹配地区」，
+  // 这两句是占位值不是信息，用户点名去掉。
   const head = (label, region) =>
-    `<div class="route-heading"><span>${label} <b>${f.familyLabel}</b></span><span class="rep-label">${esc(region)}</span></div>`;
-  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}<span class="os-tag">${esc(n.metrics?.os || (n.online ? "在线" : "等待接入"))}</span></div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds">${speedsInner(n)}</div><div class="net-cell">${detected ? head("TCP 延迟", f.latencyRegion || "全部地区") + latencyLines(n, f) : `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`}</div><div class="route-cell">${detected ? head("三网回程", n.representative || "自动匹配地区") + routeLines(n, f) : ""}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
+    `<div class="route-heading"><span>${label} <b>${f.familyLabel}</b></span>${region ? `<span class="rep-label">${esc(region)}</span>` : ""}</div>`;
+  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}</div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${detected ? head("TCP 延迟", f.latencyRegion) + latencyLines(n, f) : `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`}</div><div class="route-cell">${detected ? head("三网回程", n.representative) + routeLines(n, f) : ""}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 展示方式只在这里分叉：两个视图取数完全相同，liveTick 那一层找的也是同一批类名。

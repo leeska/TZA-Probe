@@ -554,7 +554,15 @@ button.node-name:hover {
   font-size: 11px;
 }
 
+.os-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .os-tag,
+.arch-tag,
 .family-tag {
   font-size: 11px;
   font-weight: 500;
@@ -2466,10 +2474,10 @@ pre,
   /* 六格宽度：主机 / 指标 / 网速 / 延迟 / 回程 / 计费。
      --row-min 是这六个 min 的和；窄到放不下时整块横向滚动（见文件末尾的媒体查询），
      所以改下面的 min 时要把 --row-min 一起改（ui-smoke 会断言两者相等）。 */
-  --row-min: 1120px;
+  --row-min: 1100px;
   --row-gap: 18px;
   --row-cols:
-    minmax(150px, 0.8fr) minmax(260px, 1.25fr) minmax(160px, 0.7fr)
+    minmax(150px, 0.8fr) minmax(280px, 1.35fr) minmax(120px, 0.5fr)
     minmax(300px, 1.3fr) minmax(145px, 0.6fr) minmax(105px, 0.5fr);
 }
 
@@ -2515,10 +2523,21 @@ pre,
 
 /* 标签可以缩、可以换行，不许顶出这一格 */
 .node-grid.node-list .os-tag,
+.node-grid.node-list .arch-tag,
 .node-grid.node-list .family-tag {
   flex-shrink: 1;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* 系统标签那一小摞在列表里竖排：linux 一行、架构（amd64 / arm64）在它下面，两颗胶囊各按内容宽。 */
+.node-grid.node-list .os-box {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  flex-shrink: 1;
+  max-width: 100%;
 }
 
 .node-grid.node-list .metrics-grid {
@@ -2639,47 +2658,46 @@ pre,
   background: var(--line);
 }
 
-/* 网速竖排两行（一行一个方向），数值靠右——挤成两个小方框在窄格里又难看又放不下数值 */
+/* 实时网速：一行一个方向（小图标 + 数值靠右），不再是一百多像素宽的两个方框；
+   标签「实时下载 / 实时上传」收进 title，格子上方给一个「实时网速」的小标题。 */
+.node-grid.node-list .speeds-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .node-grid.node-list .speeds {
   grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   margin-bottom: 0;
 }
 
-.node-grid.node-list .speed-box {
+.node-grid.node-list .speed-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
   padding: 4px 8px;
   border-radius: 9px;
-  gap: 8px;
 }
 
-.node-grid.node-list .speed-icon {
+.node-grid.node-list .speed-line .speed-icon {
   width: 20px;
   height: 20px;
   font-size: 11px;
 }
 
-.node-grid.node-list .speed-box > div {
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.node-grid.node-list .speed-box small {
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.node-grid.node-list .speed-box strong {
+.node-grid.node-list .speed-line strong {
   font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 /* 放不下六格时（窗口窄、手机）整块横向滚动：一行照样是主机 / 指标 / 网速 / 延迟 / 回程 / 计费，
    与卡片视图的区别才留得住。行撑到六格的最小宽度，滚动容器是 #nodes 本身。 */
-@media (max-width: 1340px) {
+@media (max-width: 1320px) {
   .node-grid.node-list {
     display: block;
     overflow-x: auto;
