@@ -2463,17 +2463,21 @@ pre,
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
-  /* 六格宽度：主机 / 指标 / 网速 / 延迟 / 回程 / 计费 */
+  /* 六格宽度：主机 / 指标 / 网速 / 延迟 / 回程 / 计费。
+     --row-min 是这六个 min 的和；窄到放不下时整块横向滚动（见文件末尾的媒体查询），
+     所以改下面的 min 时要把 --row-min 一起改（ui-smoke 会断言两者相等）。 */
+  --row-min: 1120px;
+  --row-gap: 18px;
   --row-cols:
-    minmax(180px, 0.9fr) minmax(300px, 1.5fr) minmax(150px, 0.8fr)
-    minmax(220px, 1.1fr) minmax(150px, 0.75fr) minmax(120px, 0.6fr);
+    minmax(150px, 0.8fr) minmax(260px, 1.25fr) minmax(160px, 0.7fr)
+    minmax(300px, 1.3fr) minmax(145px, 0.6fr) minmax(105px, 0.5fr);
 }
 
 .node-grid.node-list .node-card {
   display: grid;
   grid-template-columns: var(--row-cols);
   align-items: start;
-  gap: 14px 18px;
+  gap: 14px var(--row-gap);
   padding: 16px 20px;
   border-radius: 18px;
 }
@@ -2604,64 +2608,73 @@ pre,
   font-weight: 400;
 }
 
+/* 最近 20 次的色带：固定 120px、9px 高（每格约 5px），四家运营商右端对齐——
+   固定宽度而不是吃完剩余空间，四行的色带才一样长。卡片里那格只有约 4px 宽、6px 高，
+   列表里要更清楚一层，所以才给到 300px 的延迟列。 */
 .node-grid.node-list .net-line .quality-bars {
-  flex: 0 0 64px;
-  width: 64px;
+  flex: 0 0 120px;
+  width: 120px;
+  height: 9px;
+  min-height: 9px;
   gap: 1px;
   margin-left: auto;
 }
 
 .node-grid.node-list .net-line .quality-bar {
-  height: 5px !important;
-  min-height: 5px;
+  height: 9px !important;
+  min-height: 9px;
+  border-radius: 2px;
 }
 
-/* 中等宽度：两列区块，别把六格挤成六条细缝 */
-@media (max-width: 1280px) {
-  .node-grid.node-list .node-card {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "identity identity"
-      "metrics speeds"
-      "net route"
-      "billing billing";
-  }
-
-  .node-grid.node-list .row-identity {
-    grid-area: identity;
-  }
-
-  .node-grid.node-list .metrics-grid {
-    grid-area: metrics;
-  }
-
-  .node-grid.node-list .speeds {
-    grid-area: speeds;
-  }
-
-  .node-grid.node-list .net-cell {
-    grid-area: net;
-  }
-
-  .node-grid.node-list .route-cell {
-    grid-area: route;
-  }
-
-  .node-grid.node-list .billing-cell {
-    grid-area: billing;
-  }
+/* 网速竖排两行（一行一个方向），数值靠右——挤成两个小方框在窄格里又难看又放不下数值 */
+.node-grid.node-list .speeds {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin-bottom: 0;
 }
 
-/* 窄屏：竖排成一列的区块（仍然一行一台，不是卡片网格） */
-@media (max-width: 760px) {
+.node-grid.node-list .speed-box {
+  padding: 4px 8px;
+  border-radius: 9px;
+  gap: 8px;
+}
+
+.node-grid.node-list .speed-icon {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+
+.node-grid.node-list .speed-box > div {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.node-grid.node-list .speed-box small {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.node-grid.node-list .speed-box strong {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* 放不下六格时（窗口窄、手机）整块横向滚动：一行照样是主机 / 指标 / 网速 / 延迟 / 回程 / 计费，
+   与卡片视图的区别才留得住。行撑到六格的最小宽度，滚动容器是 #nodes 本身。 */
+@media (max-width: 1340px) {
+  .node-grid.node-list {
+    display: block;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
   .node-grid.node-list .node-card {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "identity"
-      "metrics"
-      "speeds"
-      "net"
-      "route"
-      "billing";
+    min-width: calc(var(--row-min) + 5 * var(--row-gap) + 40px);
+    margin-bottom: 12px;
   }
 }
