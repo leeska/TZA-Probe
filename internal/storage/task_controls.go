@@ -104,14 +104,14 @@ func (s *Store) ControlTask(ctx context.Context, id string, action model.TaskAct
 
 func (s *Store) TaskRuns(ctx context.Context, id string, now time.Time) ([]model.TaskRun, error) {
 	var exists int
-	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM tasks WHERE id=?", id).Scan(&exists); err != nil {
+	if err := s.queryRow(ctx, "SELECT count(*) FROM tasks WHERE id=?", id).Scan(&exists); err != nil {
 		return nil, err
 	}
 	if exists == 0 {
 		return nil, model.ErrNotFound
 	}
 	// Latest attempt for each bound node and probe target. Never expose raw hops.
-	rows, err := s.db.QueryContext(ctx, `SELECT n.id,json_extract(n.config,'$.name'),j.issued,j.finished,j.task,j.result FROM bindings b JOIN nodes n ON n.id=b.node_id LEFT JOIN jobs j ON j.id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY json_extract(task,'$.kind'),json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier') ORDER BY issued DESC,id DESC) pos FROM jobs WHERE task_id=b.task_id AND node_id=b.node_id) WHERE pos=1) WHERE b.task_id=? ORDER BY n.id,j.issued DESC`, id)
+	rows, err := s.query(ctx, `SELECT n.id,json_extract(n.config,'$.name'),j.issued,j.finished,j.task,j.result FROM bindings b JOIN nodes n ON n.id=b.node_id LEFT JOIN jobs j ON j.id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY json_extract(task,'$.kind'),json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier') ORDER BY issued DESC,id DESC) pos FROM jobs WHERE task_id=b.task_id AND node_id=b.node_id) WHERE pos=1) WHERE b.task_id=? ORDER BY n.id,j.issued DESC`, id)
 	if err != nil {
 		return nil, err
 	}

@@ -426,11 +426,17 @@ func (a *API) history(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, history)
 }
+
+// observations lists the newest result per target (see storage.ProbeWindow).
+// `slim=1` drops the hop tables: the public card only draws the route label and
+// the hop list is ~90% of the payload (40KB per node), while the detail dialog
+// asks for them without the flag.
 func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 	if !a.visible(r) {
 		write(w, 404, map[string]string{"error": "not found"})
 		return
 	}
+	slim := r.URL.Query().Get("slim") != ""
 	out, err := a.Store.Observations(r.Context(), r.PathValue("id"), time.Now())
 	if err != nil {
 		fail(w, err)
@@ -438,6 +444,9 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range out {
 		out[i] = out[i].Redact()
+		if slim {
+			out[i].Result.Hops = nil
+		}
 	}
 	write(w, 200, out)
 }

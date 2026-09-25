@@ -23,8 +23,54 @@ var ErrConflict = model.ErrConflict
 
 type Store struct {
 	db     *sql.DB
+	read   *sql.DB
 	writes sync.Mutex
 }
+
+// readConns is how many connections serve read-only queries. One writer
+// connection is enough for the write paths (they are serialized by writes), but
+// the panel fans out: the home page asks for the node list, the last probes of
+// every node and the per-target observations at once, and with a single
+// connection those 18 requests queue head to tail. 线上就是这样：延迟与回程要
+// 等好几秒才出来，而每次请求本身只要几十毫秒。
+const readConns = 4
+
+// openReadOnly opens the same file a second time for reads. WAL lets readers and
+// the writer run side by side, and query_only makes a stray write fail loudly
+// instead of quietly going through a connection that never sets foreign_keys.
+// The PRAGMAs ride in the DSN because a plain Exec only reaches the connections
+// that already exist, and a pool creates more later.
+func openReadOnly(path string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)&_pragma=query_only(1)")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(readConns)
+	db.SetMaxIdleConns(readConns)
+	return db, nil
+}
+
+// query / queryRow are the read paths: they go to the read pool so a slow panel
+// request cannot hold up the writer or a second panel request.
+func (s *Store) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return s.read.QueryContext(ctx, query, args...)
+}
+
+func (s *Store) queryRow(ctx context.Context, query string, args ...any) *sql.Row {
+	return s.read.QueryRowContext(ctx, query, args...)
+}
+
+// ProbeWindow bounds how far back the panel looks for each target's newest
+// result. Probes run every 30-60s (TCP) and every hour (route), and a result
+// older than a few minutes already renders as stale, so a day holds far more
+// history than the panel can show.
+//
+// 这个界不是装饰：jobs 保留七天，而「每个目标最新一次」与「每个分组最近 20 次」
+// 两条查询原先都要走完这台节点（或全部可见节点）七天的任务表，每次轮询都要把
+// 上万行的 task JSON 重新 json_extract 一遍——节点一多，首页的延迟与回程就要等
+// 好几秒才出来（线上实测 latency-samples 3.5s、单台节点 observations 0.5s）。
+// jobs_node(node_id,issued) 索引能把 issued 的范围先切出来，代价随窗口线性下降。
+const ProbeWindow = 24 * time.Hour
 
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -88,6 +134,12 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	read, err := openReadOnly(path)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	s.read = read
 	return s, nil
 }
 
@@ -183,7 +235,16 @@ CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 PRAGMA user_version=1;
 COMMIT;`
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	err := s.db.Close()
+	if s.read != nil {
+		if rerr := s.read.Close(); err == nil {
+			err = rerr
+		}
+	}
+	return err
+}
+
 func encode(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -192,7 +253,7 @@ func encode(v any) string {
 	return string(b)
 }
 func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT config,last_seen,metrics FROM nodes")
+	rows, err := s.query(ctx, "SELECT config,last_seen,metrics FROM nodes")
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +293,7 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 	for i := range views {
 		v := &views[i]
 		var in, out int64
-		if err = s.db.QueryRowContext(ctx, "SELECT coalesce(sum(incoming),0),coalesce(sum(outgoing),0) FROM traffic WHERE node_id=? AND day>=? AND day<?", v.ID, v.CycleStart, v.CycleEnd).Scan(&in, &out); err != nil {
+		if err = s.queryRow(ctx, "SELECT coalesce(sum(incoming),0),coalesce(sum(outgoing),0) FROM traffic WHERE node_id=? AND day>=? AND day<?", v.ID, v.CycleStart, v.CycleEnd).Scan(&in, &out); err != nil {
 			return nil, err
 		}
 		v.TrafficUsed = model.Traffic(in, out, v.TrafficMode)
@@ -261,7 +322,7 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 		return n.ID, token, err
 	}
 	var old string
-	if err := s.db.QueryRowContext(ctx, "SELECT config FROM nodes WHERE id=?", n.ID).Scan(&old); errors.Is(err, sql.ErrNoRows) {
+	if err := s.queryRow(ctx, "SELECT config FROM nodes WHERE id=?", n.ID).Scan(&old); errors.Is(err, sql.ErrNoRows) {
 		return "", "", ErrNotFound
 	} else if err != nil {
 		return "", "", err
@@ -314,7 +375,7 @@ func (s *Store) Authenticate(ctx context.Context, token string) (string, error) 
 		return "", ErrNotFound
 	}
 	var id string
-	err := s.db.QueryRowContext(ctx, "SELECT id FROM nodes WHERE token_hash=?", model.Hash(token)).Scan(&id)
+	err := s.queryRow(ctx, "SELECT id FROM nodes WHERE token_hash=?", model.Hash(token)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -373,7 +434,7 @@ func (s *Store) History(ctx context.Context, id string, hours int, now time.Time
 	// Aggregate into <= 240 buckets. Each bucket returns its last observed sample.
 	hours = min(max(hours, 1), 720)
 	step := max(60, hours*3600/240)
-	rows, err := s.db.QueryContext(ctx, `SELECT at,payload FROM samples WHERE node_id=? AND at IN (SELECT max(at) FROM samples WHERE node_id=? AND at>=? GROUP BY at/?) ORDER BY at`, id, id, now.Add(-time.Duration(hours)*time.Hour).Unix(), step)
+	rows, err := s.query(ctx, `SELECT at,payload FROM samples WHERE node_id=? AND at IN (SELECT max(at) FROM samples WHERE node_id=? AND at>=? GROUP BY at/?) ORDER BY at`, id, id, now.Add(-time.Duration(hours)*time.Hour).Unix(), step)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +461,7 @@ func (s *Store) History(ctx context.Context, id string, hours int, now time.Time
 	return out, rows.Err()
 }
 func (s *Store) Tasks(ctx context.Context) ([]model.Task, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT config FROM tasks ORDER BY id")
+	rows, err := s.query(ctx, "SELECT config FROM tasks ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -603,7 +664,9 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([]model.Observation, error) {
 	// json_valid 挡住坏掉的任务 JSON：json1 遇到非法 JSON 会让整条语句报 "malformed JSON"，
 	// 一条旧数据不该让整台节点的观测列表打不开。
-	rows, err := s.db.QueryContext(ctx, `SELECT task,issued,finished,result FROM jobs WHERE node_id=? AND id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY task_id,json_extract(task,'$.kind'),json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier') ORDER BY issued DESC,id DESC) n FROM jobs WHERE node_id=? AND json_valid(task)) WHERE n=1) ORDER BY task_id`, node, node)
+	// issued>=ProbeWindow 之外的行不参与分组：最新一次观测在探测间隔（30-60s / 1h）之后
+	// 早已被判为过期，读它们只会让每台节点的请求都去扫一遍七天的任务表。
+	rows, err := s.query(ctx, `SELECT task,issued,finished,result FROM jobs WHERE node_id=? AND id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY task_id,json_extract(task,'$.kind'),json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier') ORDER BY issued DESC,id DESC) n FROM jobs WHERE node_id=? AND json_valid(task) AND issued>=?) WHERE n=1) ORDER BY task_id`, node, node, now.Add(-ProbeWindow).Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -673,7 +736,7 @@ func (s *Store) Clean(ctx context.Context, now time.Time) error {
 }
 func (s *Store) Setting(ctx context.Context, key string) (string, error) {
 	var value string
-	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key=?", key).Scan(&value)
+	err := s.queryRow(ctx, "SELECT value FROM settings WHERE key=?", key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -743,7 +806,7 @@ func (s *Store) Events(ctx context.Context, pending bool, now time.Time) ([]mode
 	if pending {
 		args = append(args, now.Unix())
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts,last_error FROM events "+where+" ORDER BY id "+order+" LIMIT 100", args...)
+	rows, err := s.query(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts,last_error FROM events "+where+" ORDER BY id "+order+" LIMIT 100", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -766,7 +829,7 @@ func (s *Store) Delivery(ctx context.Context, e model.Event, ok bool, now time.T
 // IsPublic is a keyed lookup; detail requests must not reload all nodes and billing ledgers.
 func (s *Store) IsPublic(ctx context.Context, id string) (bool, error) {
 	var public bool
-	err := s.db.QueryRowContext(ctx, "SELECT json_extract(config,'$.public') FROM nodes WHERE id=?", id).Scan(&public)
+	err := s.queryRow(ctx, "SELECT json_extract(config,'$.public') FROM nodes WHERE id=?", id).Scan(&public)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, ErrNotFound
 	}

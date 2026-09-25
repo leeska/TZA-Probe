@@ -74,6 +74,71 @@ func TestMCPEndpointUsesTheAdministratorKey(t *testing.T) {
 	}
 }
 
+// 公开卡片只画回程标签，跳表占了观测载荷的九成：slim=1 必须把跳表去掉，
+// 而详情页用的默认形态仍然带着它。
+func TestObservationsSlimDropsHopTables(t *testing.T) {
+	ctx := context.Background()
+	s, err := storage.Open(filepath.Join(t.TempDir(), "slim.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	get := func(path string) (int, []byte) {
+		t.Helper()
+		resp, err := server.Client().Get(server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, body
+	}
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "slim", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := model.Task{Name: "回程", Kind: "route", Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 3600, Enabled: true, NodeIDs: []string{id}}
+	if _, err = s.SaveTask(ctx, task, true); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	jobs, err := s.Lease(ctx, id, now)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("lease: %v %+v", err, jobs)
+	}
+	// 真实的回程有十几二十跳，这里照数量造，才量得出 slim 到底省了多少。
+	hops := []model.Hop{}
+	for i := 1; i <= 20; i++ {
+		hops = append(hops, model.Hop{TTL: i, Address: "59.43.1.2", ASN: "AS4809", RTT: 3.5 + float64(i)})
+	}
+	latency := 8.0
+	if err = s.Finish(ctx, id, model.Result{JobID: jobs[0].ID, Status: "ok", Sent: 1, Received: 1, Latency: &latency, Hops: hops}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	code, full := get("/api/v1/nodes/" + id + "/observations")
+	// 跳表里的地址是脱敏过的（59.43.1.2 → 59.43.*.*），所以按 ASN / 跳数字段判形态。
+	if code != 200 || !strings.Contains(string(full), "AS4809") || !strings.Contains(string(full), `"ttl"`) {
+		t.Fatalf("默认形态必须带跳表: %d %s", code, full)
+	}
+	code, slim := get("/api/v1/nodes/" + id + "/observations?slim=1")
+	if code != 200 || strings.Contains(string(slim), "AS4809") || strings.Contains(string(slim), `"ttl"`) {
+		t.Fatalf("slim 必须去掉跳表: %d %s", code, slim)
+	}
+	// 卡片要用的字段一个不能少
+	for _, field := range []string{`"route"`, `"status"`, `"region"`, `"carrier"`, `"stale"`} {
+		if !strings.Contains(string(slim), field) {
+			t.Fatalf("slim 少了 %s: %s", field, slim)
+		}
+	}
+	if len(slim) >= len(full)/2 {
+		t.Fatalf("slim 没有变瘦: %d -> %d", len(full), len(slim))
+	}
+}
+
 func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 	s, err := storage.Open(filepath.Join(t.TempDir(), "api.db"))
 	if err != nil {

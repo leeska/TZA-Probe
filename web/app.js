@@ -139,7 +139,8 @@ async function refresh() {
       while (index < nodes.length) {
         const n = nodes[index++];
         try {
-          const data = await api(`/nodes/${n.id}/observations`);
+          // slim：卡片只画回程标签，不需要跳表（那部分占了九成体积）。
+          const data = await api(`/nodes/${n.id}/observations?slim=1`);
           if (ticket === generation) observations.set(n.id, data);
         } catch {
           observations.delete(n.id);

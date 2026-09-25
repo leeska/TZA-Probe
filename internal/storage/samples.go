@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
 )
@@ -13,7 +14,10 @@ import (
 // aggregated observation it already has.
 //
 // Results are capped per group so a busy node cannot turn the panel payload
-// into a full history dump.
+// into a full history dump, and the scan is bounded to ProbeWindow: 20 samples
+// of a 30-60s probe is a quarter of an hour, so a day of jobs is already more
+// than the card can draw while the seven-day table made every poll walk the
+// whole history (3.5s for 17 nodes on the production host).
 func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perGroup int) ([]model.LatencySample, error) {
 	if len(nodeIDs) == 0 {
 		return []model.LatencySample{}, nil
@@ -23,12 +27,14 @@ func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perG
 	if len(nodeIDs) > 200 {
 		nodeIDs = nodeIDs[:200]
 	}
-	args := make([]any, 0, len(nodeIDs)+1)
+	args := make([]any, 0, len(nodeIDs)+2)
+	// 占位符顺序：issued 的界在 IN 列表之前，参数必须按 SQL 里的先后绑定。
+	args = append(args, time.Now().Add(-ProbeWindow).Unix())
 	for _, id := range nodeIDs {
 		args = append(args, id)
 	}
 	args = append(args, perGroup)
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx, `
 		SELECT node_id, carrier, region, family, at, latency, sent, received FROM (
 			SELECT node_id,
 			       json_extract(task,'$.carrier') AS carrier,
@@ -43,7 +49,7 @@ func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perG
 			         ORDER BY finished DESC, id DESC
 			       ) AS n
 			FROM jobs
-			WHERE finished IS NOT NULL AND json_extract(task,'$.kind')='tcp'
+			WHERE finished IS NOT NULL AND json_extract(task,'$.kind')='tcp' AND issued>=?
 			  AND node_id IN (?`+strings.Repeat(",?", len(nodeIDs)-1)+`)
 		) WHERE n <= ? ORDER BY at, node_id, carrier`, args...)
 	if err != nil {

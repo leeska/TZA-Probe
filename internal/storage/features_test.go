@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -51,6 +52,54 @@ func TestCycleCorrectionPreservesCountersAndExpires(t *testing.T) {
 	nodes, _ = s.Nodes(ctx, now.AddDate(0, 1, 0))
 	if nodes[0].TrafficUsed != 0 {
 		t.Fatal("correction leaked across cycle")
+	}
+}
+
+// 读连接池与写连接并存：读要能并发，写要在读连接上被拒。
+func TestReadPoolServesConcurrentReadsWhileWriting(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, _ := makeNode(t, s)
+	now := time.Now()
+
+	if _, err := s.read.ExecContext(ctx, "INSERT INTO settings VALUES('x','y')"); err == nil {
+		t.Fatal("读连接必须拒绝写入（query_only）")
+	}
+
+	errs := make(chan error, 64)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.Observations(ctx, id, now); err != nil {
+				errs <- err
+			}
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.Nodes(ctx, now); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := s.Report(ctx, id, metrics(), now); err != nil {
+			errs <- err
+		}
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	// 写连接提交的结果对读连接立即可见。
+	nodes, err := s.Nodes(ctx, now)
+	if err != nil || len(nodes) != 1 || nodes[0].Metrics == nil {
+		t.Fatalf("读连接没看到写入: %v %+v", err, nodes)
 	}
 }
 
@@ -147,6 +196,54 @@ func TestNetworkHistorySeparatesTargetsAndNullLatency(t *testing.T) {
 	failed := series[0].Samples[1]
 	if failed.Latency != nil || failed.Failure == nil || *failed.Failure != 100 {
 		t.Fatal(failed)
+	}
+}
+
+// 面板只显示每个目标最新一次探测与每个分组最近 N 次样本，而 jobs 保留七天：
+// 读的时候必须把窗口切在 ProbeWindow 上，否则每次轮询都要把整段历史重新解析
+// 一遍（线上就是这条查询让首页的延迟与回程等了好几秒）。
+func TestProbeWindowSkipsHistoryThePanelCannotShow(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, _ := makeNode(t, s)
+	now := time.Now().Truncate(time.Second)
+
+	insert := func(name, kind string, at time.Time) {
+		task := model.Task{ID: "task-" + name, Kind: kind, Family: "ipv4", Host: "example.com", Port: 443, Region: "上海", Carrier: "电信"}
+		if _, err := s.db.Exec("INSERT INTO tasks VALUES(?,?) ON CONFLICT(id) DO NOTHING", task.ID, encode(task)); err != nil {
+			t.Fatal(err)
+		}
+		latency := 30.0
+		r := model.Result{Status: "ok", Sent: 3, Received: 3, Latency: &latency, Hops: []model.Hop{{TTL: 1, Address: "1.2.3.4", ASN: "AS4134"}}}
+		if _, err := s.db.Exec("INSERT INTO jobs(id,task_id,node_id,task,issued,finished,result) VALUES(?,?,?,?,?,?,?)",
+			"job-"+name, task.ID, id, encode(task), at.Unix(), at.Unix(), encode(r)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("fresh-tcp", "tcp", now.Add(-time.Minute))
+	insert("fresh-route", "route", now.Add(-time.Minute))
+	insert("old-tcp", "tcp", now.Add(-ProbeWindow-time.Hour))
+	insert("old-route", "route", now.Add(-ProbeWindow-time.Hour))
+
+	obs, err := s.Observations(ctx, id, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(obs) != 2 {
+		t.Fatalf("窗口外的观测不该出现: %+v", obs)
+	}
+	for _, o := range obs {
+		if o.At < now.Add(-ProbeWindow).Unix() {
+			t.Fatalf("窗口外的观测漏了出来: %+v", o)
+		}
+	}
+
+	samples, err := s.RecentLatencySamples(ctx, []string{id}, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 1 || samples[0].At < now.Add(-ProbeWindow).Unix() {
+		t.Fatalf("样本也只在窗口内保留: %+v", samples)
 	}
 }
 
