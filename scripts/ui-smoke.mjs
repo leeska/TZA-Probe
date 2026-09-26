@@ -203,7 +203,11 @@ await until(() => $(`[data-inspect="${created.id}"]`), "node list after the agen
 $(`[data-inspect="${created.id}"]`).click();
 // 关闭后的对话框只是 open=false，旧标记仍在文档里，所以要等新内容真的渲染出来。
 await until(() => $("[data-detail-family=ipv6]"), "address-family switch after the agent report");
-assert($("#network-overview"), "a dual-stack host must show the network blocks");
+// 这台节点此刻还没绑定任何探测任务：详情页不给空图表、不给「请在后台创建并绑定任务」，
+// 只给一行说明（探测段在任务绑定后、结果回来时才画）。
+assert(!$("#network-overview"), "没有任务的节点不该拿到一张空图表");
+assert(!$("#route-details"), "没有任务的节点不该拿到回程占位");
+assert.equal($(".probe-none")?.textContent, "仅主机指标", "没有任务时详情页给一行说明");
 $("[data-detail-family=ipv6]").click();
 assert($("[data-detail-family=ipv6]").classList.contains("active"));
 $(".close").click();
@@ -511,6 +515,24 @@ const editedTask = (
 assert.equal(editedTask.targets.length, 7, "5 catalog addresses (电信 only IPv4) plus the custom dual-stack pair");
 assert.equal(editedTask.targets.filter((x) => x.carrier === "其他").length, 2);
 assert.equal(editedTask.node_ids.length, 1);
+// 改任务会把该任务的历史探测结果一并清掉（storage.SaveTask 更新时 DELETE FROM jobs），
+// 所以公开页要看数值，就得在最后一次改完之后再租一次、把结果发回去——否则卡片只有结构和
+// 「未检测」，值那一层的断言全是空转。
+const leaseAgain = await (
+  await fetch(base + "/api/v1/agent/jobs", { headers: { Authorization: "Bearer " + nodeToken } })
+).json();
+assert(leaseAgain.length >= 2, "编辑后重新租约要能拿到作业（历史已被改任务清掉）");
+for (const job of leaseAgain) {
+  const result = job.task.kind === "route"
+    ? { job_id: job.id, status: "ok", sent: 1, received: 1, latency: 152.4, route: "CN2GIA", hops: [{ ttl: 1, address: "59.43.*.*", asn: "AS4809", rtt: 12.3 }] }
+    : { job_id: job.id, status: "ok", sent: 3, received: 3, latency: 21.5, route: "未知", hops: [] };
+  const posted = await fetch(base + "/api/v1/agent/results", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
+    body: JSON.stringify(result),
+  });
+  assert.equal(posted.status, 204, "an agent result must be accepted after the task edit");
+}
 // 节点搜索同样支持拼音与代号（web/search.js）：香港节点用 hk / hongkong / xg / xianggang / 中文 都能搜到。
 $('[data-bind-task="' + createdTask.id + '"]').click();
 await until(() => $("#node-search"), "bind dialog");
@@ -610,17 +632,65 @@ const card = [...publicDOM.window.document.querySelectorAll(".node-card")].find(
   c.textContent.includes(name),
 );
 assert(card, "the node created in this run must appear on the public panel");
+// 探测段的格子按服务端给的「探测计划」先画好，数值要等这台机器的观测回来。等到色带里出现
+// 实心格（非 idle）再断言：否则这些断言只看结构，值那一层整段是空转的——曾经一个渲染期的
+// ReferenceError 被 refresh().catch(toast) 吞掉，测试照样全绿（真浏览器里整页报错）。
+await until(
+  () =>
+    [...publicDOM.window.document.querySelectorAll(".node-card")]
+      .find((c) => c.textContent.includes(name))
+      ?.querySelector(".latency-grid .quality-bar:not(.idle)"),
+  "public card values after the observations arrive",
+);
+assert.equal(
+  publicDOM.window.document.querySelector("#toast").textContent,
+  "",
+  "公开页渲染不能抛错（抛了会被 refresh().catch(toast) 吞掉）",
+);
+assert(
+  /\d+ ms/.test(card.querySelector(".latency-grid .route-label strong").textContent),
+  `延迟格要给出数值，实际「${card.querySelector(".latency-grid .route-label strong").textContent}」`,
+);
+assert.notEqual(
+  card.querySelector(".route-grid:not(.latency-grid) .route-label strong").textContent,
+  "未知",
+  "回程标签要按真实结果渲染",
+);
 const cardText = card.textContent;
-for (const carrier of ["电信", "联通", "移动", "其他"])
+// 格子只画这台机器真有任务的组：它挂的是「上海 电信 / 联通 / 移动」，自定义的「其他」
+// 目标在新加坡，而卡片配的延迟地区是上海——不在卡片地区里的组不给格子。以前固定画满四格，
+// 那格永远「未检测」，看着像没加载完。
+for (const carrier of ["电信", "联通", "移动"])
   assert(cardText.includes(carrier), `latency grid must list ${carrier}`);
-assert.equal(card.querySelector(".latency-grid").children.length, 4, "latency grid has four carrier cells");
+assert(
+  !cardText.includes("其他"),
+  "卡片地区之外的探测组（自定义的新加坡目标）不占一格",
+);
+assert.equal(card.querySelector(".latency-grid").children.length, 3, "延迟格只画真有任务的三网");
+// 服务端给的 probe_targets 里确实带着那些探测项（含自定义的「其他」目标），是卡片按地区筛掉的。
+const plannedNode = (await (await fetch(base + "/api/v1/nodes")).json()).find(
+  (x) => x.id === card.dataset.node,
+);
+assert(plannedNode, "节点要在公开列表里");
+assert(
+  plannedNode.probe_targets?.some(
+    (t) => t.kind === "tcp" && t.carrier === "其他" && t.region === "新加坡",
+  ),
+  `服务端要列出这台机器的探测项（含自定义目标），实际 ${JSON.stringify(plannedNode.probe_targets)}`,
+);
+assert(
+  plannedNode.probe_targets.some(
+    (t) => t.kind === "route" && t.carrier === "电信" && t.family === "ipv4" && t.region === "上海",
+  ),
+  "回程项也要在探测计划里",
+);
 // 窄卡片里四个运营商改成一家一行（容器查询），行内用 latency-row / loss-row 定位。
 assert.equal(
   card.querySelectorAll(".latency-grid .latency-row").length,
-  4,
+  3,
   "each latency cell must mark its latency row for the stacked layout",
 );
-assert.equal(card.querySelectorAll(".latency-grid .loss-row").length, 4, "each latency cell must mark its loss row");
+assert.equal(card.querySelectorAll(".latency-grid .loss-row").length, 3, "each latency cell must mark its loss row");
 assert(
   /@container node-card \(max-width: 430px\)/.test(styles),
   "narrow cards must stack the carrier cells one per line",
@@ -768,7 +838,7 @@ assert.equal(
   "节点名要给全，不做省略",
 );
 // 延迟与回程在列表视图里是行内文本（卡片那格是方形格子），每家运营商一行。
-assert.equal(listRow.querySelectorAll(".net-cell .net-line").length, 4, "延迟四行（含其他）");
+assert.equal(listRow.querySelectorAll(".net-cell .net-line").length, 3, "延迟三行（这台机器只挂了三网）");
 assert.equal(listRow.querySelectorAll(".route-cell .route-line").length, 3, "回程三行");
 for (const line of listRow.querySelectorAll(".net-line")) {
   assert(line.dataset.focusKind === "latency" || line.dataset.focusKind === "route", "行内文本要带聚焦信息");
@@ -1091,6 +1161,47 @@ await until(
     "免费",
     "0 价且周期写着免费就是「免费」",
   );
+  // 这台机器没有绑定任何探测任务（按设计不挂任务，例如国际线路的机器）：探测段整段不画——
+  // 不摆空格子、不摆灰色空条，只留一行说明。以前固定画满四组延迟 + 三组回程，
+  // 整块是「未检测 / 未知 + 160 个灰格」的骨架，看着像没加载完。
+  assert.equal(long.querySelectorAll(".route-grid").length, 0, "没任务的卡片不画延迟 / 回程格子");
+  assert.equal(long.querySelectorAll(".route-heading").length, 0, "没有分组就不该留着分组标题");
+  assert.equal(long.querySelectorAll(".quality-bar").length, 0, "没任务的卡片不画灰色空条");
+  assert.equal(long.querySelectorAll(".route-label, .net-line").length, 0, "没任务就不给格子与行内文本");
+  assert.equal(long.querySelector(".probe-none")?.textContent, "仅主机指标", "没任务的卡片给一行说明");
+  assert(!long.textContent.includes("未检测"), "没任务就不该出现「未检测」");
+  // 卡片高度靠「栅格拉伸 + 计费行贴底」保持齐平（说明行吃掉剩余空白居中），不靠占位元素。
+  assert(
+    /\.probe-none \{[^}]*flex: 1 1 auto/.test(styles) &&
+      /\.node-grid\.node-list \.probe-none \{[^}]*justify-content: flex-start/.test(styles),
+    "说明行在卡片里居中吃掉空白、在列表里左对齐",
+  );
+  // 行与行也要齐平：卡片视图 grid-auto-rows: 1fr，单列与列表视图改回 auto。
+  assert(
+    /\.node-grid \{[^}]*grid-auto-rows: 1fr/.test(styles),
+    "卡片视图要把行高拉齐（卡片尺寸一致）",
+  );
+  assert(
+    /\.node-grid\.node-list \{[^}]*grid-auto-rows: auto/.test(styles) &&
+      /grid-template-columns: 1fr;\s*\/\* 单列时不再拉齐行高/.test(styles),
+    "列表与单列视图不该拉平行高",
+  );
+  // 详情页同一处也不该给空图表或「请在后台创建并绑定任务」。
+  const longNode = await madeLong.clone().json();
+  publicDOM.window.document.querySelector(`[data-detail="${longNode.id}"]`).click();
+  await until(
+    () => publicDOM.window.document.querySelector("#dialog .probe-none"),
+    "节点详情：没有任务时给一行说明",
+  );
+  assert(
+    !publicDOM.window.document.querySelector("#dialog #network-overview"),
+    "没任务的详情页不给空图表",
+  );
+  assert(
+    !publicDOM.window.document.querySelector("#dialog #route-details"),
+    "没任务的详情页不给「请在后台创建并绑定任务」占位",
+  );
+  publicDOM.window.document.querySelector("#dialog").close();
 }
 publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));

@@ -470,6 +470,11 @@ h1 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 22px;
+  /* 行与行也拉齐：没有探测任务的卡片内容少一截（「仅主机指标」那行），若各排各的高度，
+     整页会高低不齐。1fr 让每行都取最高那行的尺寸，卡片尺寸因此完全一致；矮卡片多的
+     空白由 .probe-none 的居中吃掉。窄到单列时（下面 760px 的媒体查询）改回 auto，
+     否则手机上每张卡都会被拉成最高那张的高度。 */
+  grid-auto-rows: 1fr;
 }
 
 .node-card {
@@ -734,6 +739,21 @@ button.node-name:hover {
 .latency-grid {
   grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
   margin-bottom: 14px;
+}
+
+/* 没有探测任务的机器（按设计不挂探测任务，例如国际线路）：不画空格子、不画灰色空条，
+   只留这一行说明。卡片是纵向 flex，这一行吃掉剩余空间把文字摆在中间；计费行有
+   margin-top: auto 仍贴在卡底，同行卡片的高度由栅格拉伸拉齐，所以不需要占位元素。 */
+.probe-none {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  margin-bottom: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
 }
 
 .route-label {
@@ -2338,6 +2358,8 @@ pre,
   }
   .node-grid {
     grid-template-columns: 1fr;
+    /* 单列时不再拉齐行高：一行就是一张卡，拉齐等于把每张卡都撑成最高那台的高度。 */
+    grid-auto-rows: auto;
   }
   .admin-layout {
     display: block;
@@ -2477,6 +2499,8 @@ pre,
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+  /* 列表是一行一台，行高各按自己内容（也就没有「尺寸一致」的问题）。 */
+  grid-auto-rows: auto;
   /* 六格宽度：主机 / 指标 / 网速 / 延迟 / 回程 / 计费。
      --row-min 是这六个 min 的和；窄到放不下时整块横向滚动（见文件末尾的媒体查询），
      所以改下面的 min 时要把 --row-min 一起改（ui-smoke 会断言两者相等）。 */
@@ -2583,6 +2607,16 @@ pre,
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+/* 列表里那一行说明跟同列的文字一样左对齐、不撑高（卡片视图里才是居中吃掉空白）。 */
+.node-grid.node-list .probe-none {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  min-height: 0;
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0;
 }
 
 .node-grid.node-list .billing-cell {

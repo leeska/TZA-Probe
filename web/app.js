@@ -361,29 +361,55 @@ function nodeFacts(n) {
           ? "ipv6"
           : "ipv4";
 
+  // 观测（结果）只用来填数值：这一族、已启用的任务才有最新结果。
   const obs = allObs.filter(
     (o) => o.task.family === effectiveFamily && o.task.enabled,
   );
   // 延迟按运营商分格显示，地区取节点的延迟地区，其次代表地区，都未设则不限地区。
   // 目录外的自定义目标（以及没有运营商的旧任务）归入“其他”。
   const carriers = ["电信", "联通", "移动"];
+  const carrierOf = (o) =>
+    carriers.includes(o.task.carrier) ? o.task.carrier : "其他";
+  const bucketOf = (carrier) =>
+    carriers.includes(carrier) ? carrier : "其他";
   const latencyRegion = n.latency_region || n.representative || "";
+  const inRegion = (region, want) => !want || region === want;
+  // 一格的资格来自服务端给的 probe_targets（这台机器真有那些探测项，取自任务定义），
+  // 不是从 jobs 推的：新绑的任务要等 Agent 认领才有行，从 jobs 推会让卡片先画空再长出来。
+  // 哪组没有任务就不给那格——以前固定画满电信 / 联通 / 移动 / 其他，没挂任务的机器
+  // 整天是一块「未检测 + 灰色空条」的骨架，看着像没加载完。后台的「公开卡片显示延迟」
+  // 只在这个集合里再筛一道。
+  const plan = n.probe_targets || [];
+  const scoped = plan.filter((t) => t.family === effectiveFamily);
+  const latencyBuckets = [...carriers, "其他"].filter(
+    (c) =>
+      scoped.some(
+        (t) =>
+          t.kind === "tcp" &&
+          inRegion(t.region, latencyRegion) &&
+          bucketOf(t.carrier) === c,
+      ) && (!n.latency_carriers?.length || n.latency_carriers.includes(c)),
+  );
+  // 回程只有三网三格（自定义目标不参与回程），同一套资格判断。
+  const routeBuckets = carriers.filter((c) =>
+    scoped.some(
+      (t) =>
+        t.kind === "route" &&
+        inRegion(t.region, n.representative) &&
+        t.carrier === c,
+    ),
+  );
   const tcp = obs.filter(
     (o) =>
       n.online &&
       o.task.kind === "tcp" &&
       !o.stale &&
       o.result.status !== "pending" &&
-      (!latencyRegion || o.task.region === latencyRegion),
+      inRegion(o.task.region, latencyRegion),
   );
-  const visibleCarriers = n.latency_carriers?.length ? n.latency_carriers : [...carriers, "其他"];
-  const latencies = visibleCarriers
+  const latencies = latencyBuckets
     .map((carrier) => {
-      const matches = tcp.filter(
-        (o) =>
-          (carriers.includes(o.task.carrier) ? o.task.carrier : "其他") ===
-          carrier,
-      );
+      const matches = tcp.filter((o) => carrierOf(o) === carrier);
       const ok = matches.filter((o) => o.result.latency != null);
       const value = ok.length
         ? ok.reduce((v, o) => v + o.result.latency, 0) / ok.length
@@ -422,13 +448,12 @@ function nodeFacts(n) {
       };
     });
 
-  const routes = carriers.map((carrier) => {
+  const routes = routeBuckets.map((carrier) => {
     const match = obs
       .filter(
         (o) =>
           o.task.kind === "route" &&
-          o.task.family === effectiveFamily &&
-          (!n.representative || o.task.region === n.representative) &&
+          inRegion(o.task.region, n.representative) &&
           o.task.carrier === carrier,
       )
       .sort((a, b) => b.at - a.at)[0];
@@ -440,6 +465,17 @@ function nodeFacts(n) {
     return { carrier, known, label, title };
   });
 
+  // 探测段的三种空不是一回事：这台机器一个探测项都没有（none）、有但不在卡片当前这一族
+  // （family）、有、这一族也有但都不在卡片显示的地区里（region）。都写成「未检测」只会
+  // 让人以为在加载。有格子可画时 probeState 为 shown。
+  const hasProbe = latencies.length > 0 || routes.length > 0;
+  const probeState = hasProbe
+    ? "shown"
+    : !plan.some((t) => t.kind === "tcp" || t.kind === "route")
+      ? "none"
+      : scoped.some((t) => t.kind === "tcp" || t.kind === "route")
+        ? "region"
+        : "family";
   return {
     hasIPv4,
     hasIPv6,
@@ -448,6 +484,8 @@ function nodeFacts(n) {
     latencyRegion,
     latencies,
     routes,
+    hasProbe,
+    probeState,
     expiry: days(n.expires_at),
   };
 }
@@ -486,10 +524,24 @@ function billingInner(n, expiry) {
   return `${pill}<span class="price-label">${price}</span>`;
 }
 
+// 没有探测任务（按设计不挂三网任务，例如国际线路的机器）：两段都不画，只留一行说明。
+// 不摆空格子也不摆灰色空条——那正是「看着像没加载完」的来源；卡片的高度由同行最高的
+// 那张拉齐（栅格默认拉伸）+ 计费行 margin-top:auto 贴底保证，所以不需要占位元素。
+const PROBE_NOTES = {
+  none: "仅主机指标",
+  family: "该协议暂无探测任务",
+  region: "该地区暂无探测任务",
+};
+const probeNote = (state) =>
+  `<div class="probe-none">${PROBE_NOTES[state] || PROBE_NOTES.none}</div>`;
+
 function networkSections(n, f) {
-  return f.hasIPv4 || f.hasIPv6
-    ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="route-grid latency-grid">${latencyCells(n, f)}</div><div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>`
-    : `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
+  // 一个探测项都没有的机器（按设计不挂任务）：不管它报没报地址族，都只写这一行。
+  if (f.probeState === "none") return probeNote("none");
+  if (!f.hasIPv4 && !f.hasIPv6)
+    return `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
+  if (!f.hasProbe) return probeNote(f.probeState);
+  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="route-grid latency-grid">${latencyCells(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
 }
 
 // 卡片视图的延迟格：一格一个运营商，延迟 / 丢包各一行数值加色带。
@@ -546,7 +598,22 @@ function listInner(n) {
   // 这两句是占位值不是信息，用户点名去掉。
   const head = (label, region) =>
     `<div class="route-heading"><span>${label} <b>${f.familyLabel}</b></span>${region ? `<span class="rep-label">${esc(region)}</span>` : ""}</div>`;
-  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}</div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${detected ? head("TCP 延迟", f.latencyRegion) + latencyLines(n, f) : `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`}</div><div class="route-cell">${detected ? head("三网回程", n.representative) + routeLines(n, f) : ""}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
+  // 没有任务的机器在这两格里不画空格子 / 空行（与卡片视图同一套判断），只在延迟格给一行说明。
+  const netCell =
+    f.probeState === "none"
+      ? probeNote("none")
+      : !detected
+        ? `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`
+        : f.latencies.length
+          ? head("TCP 延迟", f.latencyRegion) + latencyLines(n, f)
+          : f.hasProbe
+            ? ""
+            : probeNote(f.probeState);
+  const routeCell =
+    detected && f.routes.length
+      ? head("三网回程", n.representative) + routeLines(n, f)
+      : "";
+  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}</div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 展示方式只在这里分叉：两个视图取数完全相同，liveTick 那一层找的也是同一批类名。

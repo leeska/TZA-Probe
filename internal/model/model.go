@@ -176,6 +176,22 @@ type NodeView struct {
 	CycleStart  int64    `json:"cycle_start"`
 	CycleEnd    int64    `json:"cycle_end"`
 	TrafficUsed int64    `json:"traffic_used"`
+	// ProbeTargets lists what this host is actually told to probe: one entry per distinct
+	// kind / carrier / family / region among the enabled tasks bound to it. The public card
+	// draws a latency or backhaul cell only for an entry it finds here, so a host left out of
+	// every task shows no empty cells at all. It comes from the task definitions rather than
+	// from stored jobs because a job only exists once the agent leases: derived from jobs, the
+	// card would paint short and grow a poll later.
+	ProbeTargets []ProbeTarget `json:"probe_targets,omitempty"`
+}
+
+// ProbeTarget is one probe entry a node is bound to, without the address: the card only needs
+// to know which carrier / family / region cell exists (see NodeView.ProbeTargets).
+type ProbeTarget struct {
+	Kind    string `json:"kind"`
+	Carrier string `json:"carrier"`
+	Family  string `json:"family"`
+	Region  string `json:"region"`
 }
 type Target struct {
 	Host    string `json:"host"`

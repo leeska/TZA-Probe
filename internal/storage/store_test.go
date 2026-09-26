@@ -3,8 +3,10 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -282,6 +284,84 @@ func TestCombinedTaskIndependentProbes(t *testing.T) {
 	jobs, err = s.Lease(ctx, node, now.Add(time.Hour))
 	if err != nil || len(jobs) != 0 {
 		t.Fatal("empty bindings executed")
+	}
+}
+
+func TestProbeTargetsListWhatANodeReallyProbes(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	bound, _ := makeNode(t, s)
+	spare, _ := makeNode(t, s)
+	// 一台机器挂三网（电信只有 IPv4）；另一台故意不挂任何任务。
+	three := model.Task{Name: "三网", Checks: []string{"tcp", "route"}, Targets: []model.Target{
+		{Host: "127.0.0.1", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信"},
+		{Host: "::1", Port: 80, Family: "ipv6", Region: "上海", Carrier: "电信"},
+		{Host: "127.0.0.2", Port: 80, Family: "ipv4", Region: "上海", Carrier: "其他"},
+	}, Interval: 30, RouteInterval: 900, Enabled: true, NodeIDs: []string{bound, spare}}
+	if _, err := s.SaveTask(ctx, three, true); err != nil {
+		t.Fatal(err)
+	}
+	// 第二台任务：国际目标（没有运营商、没有地区的老写法），只有 TCP —— 计划要把两个任务并起来。
+	international := model.Task{Name: "国际", Checks: []string{"tcp"}, Targets: []model.Target{
+		{Host: "127.0.0.3", Port: 443, Family: "ipv4", Carrier: ""},
+	}, Interval: 30, Enabled: true, NodeIDs: []string{bound}}
+	if _, err := s.SaveTask(ctx, international, true); err != nil {
+		t.Fatal(err)
+	}
+	// 「故意不挂任务」的机器要摘下来，否则计划里会留着它的项。
+	tasks, _ := s.Tasks(ctx)
+	for _, task := range tasks {
+		if task.Name != "三网" {
+			continue
+		}
+		task.NodeIDs = []string{bound}
+		if _, err := s.SaveTask(ctx, task, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	views, err := s.Nodes(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := map[string][]string{}
+	for _, v := range views {
+		for _, p := range v.ProbeTargets {
+			plan[v.ID] = append(plan[v.ID], fmt.Sprintf("%s/%s/%s/%s", p.Kind, p.Carrier, p.Family, p.Region))
+		}
+		sort.Strings(plan[v.ID])
+	}
+	want := []string{
+		"route/电信/ipv4/上海",
+		"route/电信/ipv6/上海",
+		"route/其他/ipv4/上海",
+		"tcp//ipv4/",
+		"tcp/电信/ipv4/上海",
+		"tcp/电信/ipv6/上海",
+		"tcp/其他/ipv4/上海",
+	}
+	sort.Strings(want)
+	if !reflect.DeepEqual(plan[bound], want) {
+		t.Fatalf("bound node plan:\n got %+v\nwant %+v", plan[bound], want)
+	}
+	if len(plan[spare]) != 0 {
+		t.Fatalf("unbound node must carry no plan, got %+v", plan[spare])
+	}
+	// 停用的任务不算：面板上那台机器就该回到「仅主机指标」，而不是留一排空格子。
+	tasks, _ = s.Tasks(ctx)
+	for _, task := range tasks {
+		task.Enabled = false
+		if _, err := s.SaveTask(ctx, task, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	views, err = s.Nodes(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range views {
+		if len(v.ProbeTargets) != 0 {
+			t.Fatalf("a paused task must not be planned, got %+v", v.ProbeTargets)
+		}
 	}
 }
 

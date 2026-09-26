@@ -253,6 +253,10 @@ func encode(v any) string {
 	return string(b)
 }
 func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, error) {
+	plan, err := s.ProbeTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.query(ctx, "SELECT config,last_seen,metrics FROM nodes")
 	if err != nil {
 		return nil, err
@@ -280,6 +284,7 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 			}
 		}
 		v.Online = v.LastSeen > 0 && now.Unix()-v.LastSeen < int64(model.OfflineAfter.Seconds())
+		v.ProbeTargets = plan[v.ID]
 		start, end := model.Cycle(now, model.BillingAnchor(v.BillingAt, now))
 		v.CycleStart = start.Unix()
 		v.CycleEnd = end.Unix()
@@ -460,6 +465,41 @@ func (s *Store) History(ctx context.Context, id string, hours int, now time.Time
 	}
 	return out, rows.Err()
 }
+
+// ProbeTargets maps node id → the distinct probe entries bound to it (kind / carrier / family /
+// region, from every enabled task's leaves). See model.NodeView.ProbeTargets for why the panel
+// needs this instead of inferring the cells from stored jobs.
+func (s *Store) ProbeTargets(ctx context.Context) (map[string][]model.ProbeTarget, error) {
+	tasks, err := s.Tasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	type key struct{ kind, carrier, family, region string }
+	plan := map[string][]model.ProbeTarget{}
+	seen := map[string]map[key]bool{}
+	for _, t := range tasks {
+		if !t.Enabled {
+			continue
+		}
+		for _, leaf := range t.Leaves() {
+			k := key{leaf.Kind, leaf.Carrier, leaf.Family, leaf.Region}
+			for _, node := range leaf.NodeIDs {
+				if seen[node] == nil {
+					seen[node] = map[key]bool{}
+				}
+				if seen[node][k] {
+					continue
+				}
+				seen[node][k] = true
+				plan[node] = append(plan[node], model.ProbeTarget{
+					Kind: k.kind, Carrier: k.carrier, Family: k.family, Region: k.region,
+				})
+			}
+		}
+	}
+	return plan, nil
+}
+
 func (s *Store) Tasks(ctx context.Context) ([]model.Task, error) {
 	rows, err := s.query(ctx, "SELECT config FROM tasks ORDER BY id")
 	if err != nil {
