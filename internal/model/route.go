@@ -107,6 +107,15 @@ func RouteLabel(hops []Hop) string {
 			// China Telecom's own AS4134 ranges on both sides of it, so neither
 			// may be reported as a second backbone.
 			name = ct
+			// 电信 的兜底名 163 也只在它是轨迹里第一条（或唯一）线路名时才记：
+			// 前面已经记过别的线路（10099 / 9929 / 4837 …）时，后面的 AS4134
+			// 跳只是那条线路落进目标所在电信省份的接入段——和「9929 之后不再
+			// 另记 4837」是同一条规则，只是跨了运营商（实测 us-vmiss-tri 到
+			// 广东电信：10099 → 9929 → 202.97 → 113.96 → 目标，落地那条 163
+			// 不再单列，标签读 10099 → 9929）。
+			if name == ctLineName && len(out) > 0 {
+				continue
+			}
 		case "4837":
 			// 4837 is 中国联通's own 169 backbone (AS4837, 219.158.*/2408:*),
 			// and the network the 9929 international line feeds on the China
@@ -154,10 +163,15 @@ func ctLabel(hops []Hop, firstCN2 int) string {
 	case firstCN2 >= 0:
 		return cn2Label(hops, firstCN2)
 	case line163:
-		return "163"
+		return ctLineName
 	}
 	return ""
 }
+
+// ctLineName is 电信's fallback name: a trace that shows AS4134 ranges but no
+// product evidence is on the 163 line. RouteLabel refuses to repeat it behind a
+// line the trace has already named — see there.
+const ctLineName = "163"
 
 // cmLabel names the single 移动 product a trace carries. CMI (AS58453) and
 // CMIN2 (AS58807) are both 中移国际 networks that feed the same domestic

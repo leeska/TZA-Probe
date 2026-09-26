@@ -16,7 +16,10 @@ func TestRawTraceMasksAndUsesASN(t *testing.T) {
 	if reached != 1 || latency == nil || *latency != 201.2 || len(hops) != 3 {
 		t.Fatal(hops, reached, latency)
 	}
-	if hops[1].Address != "219.158.*.*" || model.RouteLabel(hops) != "4837 → 163" {
+	// AS4134 on the target hop names 电信's access, not a second backbone: the
+	// 4837 hops in front of it are the line this trace rode. See
+	// model.RouteLabel — 163 is only named when it comes first.
+	if hops[1].Address != "219.158.*.*" || model.RouteLabel(hops) != "4837" {
 		t.Fatal(hops)
 	}
 	_, reached, _ = parse(data, "198.51.100.3")

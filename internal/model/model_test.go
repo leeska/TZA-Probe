@@ -163,6 +163,51 @@ func TestRouteRequiresEvidence(t *testing.T) {
 	if got := RouteLabel(ctThenCU); got != "163 → 4837" {
 		t.Fatalf("163 then 4837: %s", got)
 	}
+	// 163 is 电信's fallback name, so it must not be repeated behind a line the
+	// trace already named: those AS4134 hops are where that line lands inside the
+	// target's own 电信 province, not a second backbone. Recorded runs from
+	// us-vmiss-tri (广东电信: 10099 → 9929 → 202.97 core → 113.96 access → target)
+	// and hk-isvoro-nat (广东: 10099 → 4837 → 113.96; 湖南: 10099 → 61.187) all
+	// read as the line that carried them.
+	landing163 := []Hop{
+		{TTL: 1, Address: "207.57.*.*", ASN: "AS1054"},
+		{TTL: 2, Address: "107.155.*.*", ASN: "AS21859"},
+		{TTL: 3, Address: "162.219.*.*", ASN: "AS10099"},
+		{TTL: 4, Address: "162.219.*.*", ASN: "AS10099"},
+		{TTL: 5, Address: "*"},
+		{TTL: 6, Address: "218.105.*.*", ASN: "AS9929"},
+		{TTL: 7, Address: "210.14.*.*", ASN: "AS9929"},
+		{TTL: 8, Address: "*"},
+		{TTL: 9, Address: "202.97.*.*", ASN: "AS4134"},
+		{TTL: 10, Address: "*"},
+		{TTL: 11, Address: "*"},
+		{TTL: 12, Address: "113.96.*.*", ASN: "AS4134"},
+		{TTL: 13, Address: "*"},
+		{TTL: 14, Address: "*"},
+		{TTL: 15, Address: "*"},
+		{TTL: 16, Address: "14.22.*.*", ASN: "AS58466"},
+	}
+	if got := RouteLabel(landing163); got != "10099 → 9929" {
+		t.Fatalf("9929 之后落地的 163 不该另记: %s", got)
+	}
+	landing163On169 := []Hop{
+		{TTL: 5, Address: "103.214.*.*", ASN: "AS10099"},
+		{TTL: 9, Address: "219.158.*.*", ASN: "AS4837"},
+		{TTL: 16, Address: "113.96.*.*", ASN: "AS4134"},
+		{TTL: 20, Address: "14.22.*.*", ASN: "AS58466"},
+	}
+	if got := RouteLabel(landing163On169); got != "10099 → 4837" {
+		t.Fatalf("169 之后落地的 163 不该另记: %s", got)
+	}
+	// 163 first is still named: there it is the line the traffic rode, and the
+	// 4837 hops behind it are the target's own carrier's access.
+	if got := RouteLabel([]Hop{
+		{TTL: 7, Address: "202.97.*.*", ASN: "AS4134"},
+		{TTL: 12, Address: "124.161.*.*", ASN: "AS4837"},
+		{TTL: 16, Address: "119.6.*.*", ASN: "AS4837"},
+	}); got != "163 → 4837" {
+		t.Fatalf("163 在前仍是线路名: %s", got)
+	}
 	// The ASN stays authoritative when it disagrees with the address prefix.
 	if got := RouteLabel([]Hop{{ASN: "AS9929", Address: "219.158.*.*"}}); got != "9929" {
 		t.Fatal(got)
