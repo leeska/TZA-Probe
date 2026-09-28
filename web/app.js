@@ -1,5 +1,5 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
-import { bytes, date, days, mbps, percent, statusName } from "./format.js";
+import { bytes, date, days, mbps, osLabel, percent, statusName } from "./format.js";
 import { detail } from "./detail.js";
 import { mountAdmin } from "./admin.js";
 import { applyTheme, themeButton } from "./theme.js";
@@ -205,14 +205,14 @@ function speedsInner(n) {
   return `<div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateIn}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOut}</strong></div></div>`;
 }
 
-// 系统标签：操作系统 + 架构（Agent 报的 runtime.GOOS / GOARCH，老 Agent 没有 arch 就不给这个标签）。
-// 架构单独一个标签，因为它要在列表里换到 linux 下面那一行；写进 os-tag 里会被每秒刷新的
-// setText(.os-tag) 整段覆盖掉。
+// 系统标签：优先显示 Agent 报的发行版（见 format.js 的 osLabel），老 Agent 没有这个字段
+// 就退回 runtime.GOOS（linux）。架构单独一个标签，因为它要在列表里换到发行版下面那一行；
+// 写进 os-tag 里会被每秒刷新的 setText(.os-tag) 整段覆盖掉。
 function osTagsInner(n) {
   const m = n.metrics;
-  const os = esc(m?.os || (n.online ? "在线" : "等待接入"));
+  const os = esc(osLabel(n));
   const arch = m?.arch ? esc(m.arch) : "";
-  // 两个标签套一层 .os-box：卡片里是一行两个，列表里那层改成竖排，架构就落在 linux 下面
+  // 两个标签套一层 .os-box：卡片里是一行两个，列表里那层改成竖排，架构就落在发行版下面
   // （直接给 arch-tag 撑满一行的话，那颗胶囊的底色会横贯整格）。
   return `<span class="os-box"><span class="os-tag">${os}</span>${arch ? `<span class="arch-tag">${arch}</span>` : ""}</span>`;
 }
@@ -247,7 +247,7 @@ async function liveTick() {
       el.classList.toggle("is-online", !!n.online);
       el.classList.toggle("is-offline", !n.online);
       el.querySelector(".node-dot")?.classList.toggle("offline", !n.online);
-      setText(el.querySelector(".os-tag"), n.metrics?.os || (n.online ? "在线" : "等待接入"));
+      setText(el.querySelector(".os-tag"), osLabel(n));
       setHTML(el.querySelector(".metrics-grid"), metricsInner(n));
       setHTML(el.querySelector(".speeds"), speedsInner(n));
     }

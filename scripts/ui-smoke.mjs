@@ -194,7 +194,7 @@ const report = await fetch(base + "/api/v1/agent/report", {
   headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
   body: JSON.stringify({
     protocol: 1,
-    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4", "ipv6"] },
+    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", distro: "Debian 13", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4", "ipv6"] },
   }),
 });
 assert.equal(report.status, 204, "agent report carrying both address families must be accepted");
@@ -737,7 +737,7 @@ const singleReport = await fetch(base + "/api/v1/agent/report", {
   headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
   body: JSON.stringify({
     protocol: 1,
-    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4"] },
+    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", distro: "Debian 13", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4"] },
   }),
 });
 assert.equal(singleReport.status, 204, "agent report carrying a single address family must be accepted");
@@ -766,6 +766,13 @@ await until(() => {
     2,
     "系统与架构标签照旧在开关后面",
   );
+  // 系统标签显示 Agent 报的发行版（读 /etc/os-release），不再只有笼统的 linux。
+  assert.equal(
+    single.querySelector(".os-tag").textContent,
+    "Debian 13",
+    "系统标签要显示发行版与版本",
+  );
+  assert.equal(single.querySelector(".arch-tag").textContent, "amd64", "架构标签照旧在发行版下面");
   // 槽位定宽，单栈与双栈行后面的标签才对得齐（真机实测两行标签同在同一个 x）。
   assert(
     /\.node-grid\.node-list \.family-slot \{[^}]*min-width: 94px/.test(styles),
@@ -908,6 +915,10 @@ assert(
 assert(
   /class="arch-tag"/.test(appSource) && /m\?\.arch/.test(appSource),
   "要用 Agent 上报的架构渲染 arch-tag",
+);
+assert(
+  /class="os-tag">\$\{os\}/.test(appSource) && /osLabel\(n\)/.test(appSource),
+  "系统标签要走 osLabel（优先发行版，退回 GOOS）",
 );
 assert(
   /\.node-grid\.node-list \.os-box \{[^}]*flex-direction: column/.test(styles),
@@ -1237,7 +1248,7 @@ const throttleReport = (metrics) =>
   });
 const throttleMetrics = {
   counter_id: "ui-smoke-throttle", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2,
-  net_in: 1000, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64",
+  net_in: 1000, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", distro: "Debian 13", arch: "amd64",
   cpu_cores: 2, version: "smoke", ip_families: ["ipv4"],
 };
 assert.equal((await throttleReport(throttleMetrics)).status, 204, "第一次上报建立流量基线");
@@ -1285,6 +1296,10 @@ await until(
   assert(tile.textContent.includes("线路带宽 1000 Mbit/s"), `详情格要写线路带宽，实际「${tile.textContent}」`);
   assert(/近 1 小时平均带宽\s*[\d.]+ Mbit\/s/.test(tile.textContent), `详情格要写窗口平均带宽，实际「${tile.textContent}」`);
   assert(tile.textContent.includes("已达阈值"), "超过阈值时详情格要写明");
+  assert(
+    publicDOM.window.document.querySelector("#dialog .detail-stats")?.textContent.includes("Debian 13"),
+    "详情页要写出 Agent 报的发行版",
+  );
   assert(/\.detail-stats > \.detail-wide \{[^}]*grid-column: 1 \/ -1/.test(styles), "详情格要占满整行");
   publicDOM.window.document.querySelector("#dialog").close();
 }

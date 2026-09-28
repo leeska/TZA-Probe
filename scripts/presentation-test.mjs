@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { chart } from "../web/charts.js";
 import { fold, searchKeys, searchMatch } from "../web/search.js";
+import { osLabel } from "../web/format.js";
+// 系统标签的取数：有发行版就写发行版（Agent 读 /etc/os-release），老 Agent 只有 GOOS。
+assert.equal(osLabel({ metrics: { distro: "Debian 13", os: "linux" } }), "Debian 13");
+assert.equal(osLabel({ metrics: { distro: "Alpine 3.21", os: "linux" } }), "Alpine 3.21");
+assert.equal(osLabel({ metrics: { os: "linux" } }), "linux", "老 Agent 退回 runtime.GOOS");
+assert.equal(osLabel({ metrics: { distro: "Debian 13" } }, "—"), "Debian 13", "详情页的兜底不影响发行版");
+assert.equal(osLabel({ metrics: { os: "linux" }, online: true }, "—"), "linux");
+assert.equal(osLabel({ metrics: null, online: false }), "等待接入");
+assert.equal(osLabel({ metrics: {}, online: true }), "在线");
+assert.equal(osLabel({ metrics: {} }, "—"), "—", "详情页自己给兜底文案");
 const samples = [0, 60, 3600, 3660].map((at) => ({
   at,
   metrics: { cpu: 25, memory_used: 50, memory_total: 100 },

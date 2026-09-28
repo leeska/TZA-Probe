@@ -50,6 +50,12 @@ export function stampISO(text) {
 export function percent(used, total) {
   return total > 0 ? Math.min(100, (used / total) * 100) : 0;
 }
+// 系统标签的取数：Agent 读 /etc/os-release 报的发行版（distro，如「Debian 13」），
+// 老 Agent 只有 runtime.GOOS（linux）——发行版本身已经说明它是 Linux，所以有 distro
+// 就不再写 linux。卡片 / 列表 / 详情页共用这一处，三个渲染点不会各退各的。
+export function osLabel(n, fallback = n.online ? "在线" : "等待接入") {
+  return n.metrics?.distro || n.metrics?.os || fallback;
+}
 // 带宽：接口给的窗口平均速率是 bit/s，按商家规格的口径写成 Mbit/s（十进制），
 // 不足 1 Mbit/s 退到 kbit/s，别写成 0.0 Mbit/s。
 export function mbps(bits) {

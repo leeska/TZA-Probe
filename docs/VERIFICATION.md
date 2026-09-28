@@ -920,3 +920,40 @@ node scripts/ui-smoke.mjs
 - `bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` / `UI_SMOKE_OK`（jsdom 断言不涉及悬停几何）。
 - 无头浏览器复现不了这类合成器时序残影：`Page.captureScreenshot` 会强制一次重绘，读到的永远是干净帧，
   所以这里只能给出「几何零变化 + 原理」的证据，线上是否真的不再出现由用户侧确认。
+
+## 2026-09-28 服务器标签：显示 Linux 发行版与版本（Agent 读 /etc/os-release）
+
+需求：卡片上的系统标签一直只写 `runtime.GOOS`，19 台机器全是 `linux`，看不出跑的是 Debian 13
+还是 Alpine。要显示发行版与版本。
+
+做法（新增上报字段，按「先升 Server、再升 Agent」的顺序）：
+
+- `model.Metrics` 增 `Distro string \`json:"distro"\``（上限 60 字节，`Validate` 里卡住）；
+  `OS`（GOOS）与 `Arch` 原样保留，老 Agent 不报 `distro` 时它为空——上报接口是
+  `DisallowUnknownFields`，所以**Server 必须先上线**，否则新 Agent 会被判 400 掉线。
+- Agent 侧 `internal/agent/distro.go`：读 `/etc/os-release` 的 `NAME` / `ID` / `VERSION_ID`，
+  去掉通用词（`GNU/Linux`、`Linux`、`OS`、`Server`）后拼成「名称 + 版本」，如
+  `Debian 13`、`Ubuntu 24.04`、`Alpine 3.21.0`；`VERSION_ID` 缺失时取 `VERSION` 里括号前那段。
+  读不到文件或认不出发行版就退回 `runtime.GOOS`（`linux`），标签不会空。整个进程只读一次
+  （`sync.OnceValue`）。标签只保留可打印 ASCII 并截到 60 字节，一个奇怪的 release 文件不会让这台机器的上报全部失败。
+- 面板取数收敛到 `web/format.js` 的 `osLabel(n)`（`distro || os || 在线/等待接入`），
+  卡片、列表、详情页共用：`.os-tag` 显示发行版，`.os-tag`/`.arch-tag` 仍是两颗独立胶囊
+  （每秒 `liveTick` 的 `setText(.os-tag)` 不会把架构那颗吃掉），列表里那层 `.os-box` 竖排不变。
+
+验证：
+
+- `internal/agent/distro_test.go` 表驱动 12 例（Debian/Ubuntu/Alpine/Rocky/Slackware/Arch/
+  只有 ID/无版本/无 NAME/非 release 文件/注释与单引号/名称里夹制表符），另加两条：
+  超长 release 文件产出的标签必须仍能过 `Metrics.Validate`；探针读不到文件时 `detectDistro()`
+  必须等于 `runtime.GOOS`。`TestMetricsDistro` 钉住线上的 JSON 键名是 `distro`。
+- `scripts/presentation-test.mjs` 直接表驱动 `osLabel`（有 distro 用 distro、只有 os 退回 linux、
+  空 metrics 给「在线 / 等待接入」、详情页可以自带兜底文案）。
+- `scripts/ui-smoke.mjs` 的 Agent 上报里加上 `distro: "Debian 13"`（`os` 仍是 `smoke`），
+  断言公开卡片 `.os-tag` 文本为 `Debian 13`、详情页那行也写出发行版。反向验证：把
+  `osLabel` 改成只认 `os`（`git` 外的临时改动）后回归在「系统标签要显示发行版与版本」处
+  报 `actual: 'smoke'` 失败，改回即绿——断言确实咬住发行版优先这一条。
+- `gofmt -l .` 干净，`go vet ./...` / `go test ./...` 全绿；
+  `bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` / `UI_SMOKE_OK`。
+
+待确认：老 Agent 的机器在机队升级前一直显示 `linux`（这是预期的回退），升级后自然变成发行版，
+不需要重启 Server。

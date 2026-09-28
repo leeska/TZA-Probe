@@ -211,6 +211,11 @@ type Metrics struct {
 	Uptime      uint64  `json:"uptime"`
 	OS          string  `json:"os"`
 	Arch        string  `json:"arch"`
+	// Distro is the Linux distribution and release the Agent identified from
+	// /etc/os-release, e.g. "Debian 13" or "Alpine 3.21" — OS alone is
+	// "linux" on every one of them. Empty means an older Agent that has not
+	// reported it yet (or a system whose release file is unreadable).
+	Distro string `json:"distro"`
 	// Cores is the host's logical CPU count (runtime.NumCPU), shown as the CPU
 	// metric's subtitle. 0 means an older Agent that has not reported it yet.
 	Cores   int    `json:"cpu_cores"`
@@ -223,7 +228,7 @@ type Metrics struct {
 }
 
 func (m Metrics) Validate() error {
-	if len(m.CounterID) > 64 || !percent(m.CPU) || m.MemoryTotal == 0 || m.MemoryUsed > m.MemoryTotal || m.DiskUsed > m.DiskTotal || !finite(m.RateIn) || !finite(m.RateOut) || m.RateIn < 0 || m.RateOut < 0 || m.Cores < 0 || m.Cores > 4096 || len(m.OS) > 100 || len(m.Arch) > 30 || len(m.Version) > 40 || m.NetIn > math.MaxInt64 || m.NetOut > math.MaxInt64 {
+	if len(m.CounterID) > 64 || !percent(m.CPU) || m.MemoryTotal == 0 || m.MemoryUsed > m.MemoryTotal || m.DiskUsed > m.DiskTotal || !finite(m.RateIn) || !finite(m.RateOut) || m.RateIn < 0 || m.RateOut < 0 || m.Cores < 0 || m.Cores > 4096 || len(m.OS) > 100 || len(m.Arch) > 30 || len(m.Distro) > 60 || len(m.Version) > 40 || m.NetIn > math.MaxInt64 || m.NetOut > math.MaxInt64 {
 		return errors.New("invalid metrics")
 	}
 	if len(m.IPFamilies) > 2 {

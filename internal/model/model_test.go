@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -505,6 +506,30 @@ func TestObservationRedact(t *testing.T) {
 	failed := Observation{Result: Result{Status: "timeout", Route: "CN2GIA"}}
 	if failed.Redact().Result.Route != "未知" {
 		t.Fatalf("a failed probe must not show a label: %v", failed.Redact().Result.Route)
+	}
+}
+
+func TestMetricsDistro(t *testing.T) {
+	// The panel reads this key off /api/v1/nodes: pin the wire name.
+	payload, err := json.Marshal(Metrics{MemoryTotal: 1, Distro: "Debian 13"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), `"distro":"Debian 13"`) {
+		t.Fatalf("distro must travel as its own field: %s", payload)
+	}
+	valid := Metrics{MemoryTotal: 1, Distro: "Debian 13"}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	// Old Agents leave it empty and must keep reporting.
+	valid.Distro = ""
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	valid.Distro = strings.Repeat("D", 61)
+	if err := valid.Validate(); err == nil {
+		t.Fatal("accepted a distro longer than the metrics limit")
 	}
 }
 
