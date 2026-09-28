@@ -264,11 +264,11 @@ h1 {
    ========================================================================== */
 .overview-tile {
   border-radius: 20px;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
+/* 同 .node-card：玻璃面不做位移（见上面的注释），只用阴影表达抬起。 */
 .overview-tile:hover {
-  transform: translateY(-2px);
   box-shadow: var(--glass-shadow-lg), var(--glass-inner-rim);
 }
 
@@ -495,8 +495,11 @@ h1 {
     border-color 0.28s ease;
 }
 
+/* 悬停反馈只改阴影、描边与底色，**不做位移/缩放**：卡片是 backdrop-filter 玻璃面，
+   元素一旦带 transform 就会被提升成独立合成层，那一层要自己采样身后的模糊背景——快速
+   滚动时合成器跟不上，就会用旧快照画出一张空卡片（模糊的卡片形状里什么都没有）。
+   想去掉这条注释前先想清楚：要么不要位移，要么把卡片的 backdrop-filter 一起去掉。 */
 .node-card:hover {
-  transform: translateY(-4px) scale(1.006);
   box-shadow: var(--glass-shadow-lg), var(--glass-inner-rim);
   border-color: rgba(255, 255, 255, 0.95);
 }
@@ -585,9 +588,10 @@ h1 {
   box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.7);
 }
 
+/* 延迟格/回程标签在卡片内部，卡片本身是玻璃面：这里也不位移，避免连带让父级
+   重新采样模糊背景（快速滚动时同样会画出空卡片）。底色与描边照旧，反馈不变弱。 */
 .route-label:hover {
   background: rgba(255, 255, 255, 0.88);
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.16);
   border-color: rgba(var(--accent-rgb), 0.4);
 }
@@ -652,6 +656,8 @@ details > button {
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* 同样不位移（见 .node-card 的注释）：玻璃面上悬停位移会让这一块在快速滚动时用旧快照
+   重绘。1px 的抬起换成更深的投影，观感几乎不变。 */
 .button:hover,
 button.primary:not(:disabled):hover,
 button.danger:not(:disabled):hover,
@@ -662,7 +668,6 @@ button.danger:not(:disabled):hover,
 .catalog-toolbar button:not(:disabled):hover,
 details > button:not(:disabled):hover {
   background: #ffffff;
-  transform: translateY(-1px);
   box-shadow: 0 5px 14px rgba(0, 0, 0, 0.08), inset 0 1px 1px #ffffff;
 }
 

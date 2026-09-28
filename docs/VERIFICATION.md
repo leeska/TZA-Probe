@@ -894,3 +894,29 @@ node scripts/ui-smoke.mjs
 - `scripts/ui-smoke.mjs` 追加额度口径验收（卡片行、详情格、`.over`、`avg_bps` 低也必须 throttled）；
   反向验证：`git stash push -- web/app.js web/detail.js` 后回归在「额度降速的卡片要出现…」处超时失败，
   说明新断言确实咬住这两处改动。`gofmt -l .` 干净、`go vet ./...` 通过。
+
+## 2026-09-28 悬停位移去掉：玻璃面上的 transform 会让卡片在快速滚动时变成空壳
+
+现象（用户复现）：鼠标停在卡片或延迟格上不动，快速上下滚动，偶尔会看到一张**只有玻璃模糊、
+没有内容**的卡片形状，或者一个飘在原地的芯片。原因是悬停规则里带位移：
+
+- `.node-card { backdrop-filter: blur(32px) … }` + `.node-card:hover { transform: translateY(-4px) scale(1.006) }`。
+  元素一旦带 transform 就被提升成独立合成层，而这一层要**自己采样身后的模糊背景**；快速滚动时合成器
+  来不及重采样，就用旧快照把那一层画出来——看到的是一张空卡片（模糊的圆角矩形里什么都没有）。
+- 同样的写法还有 `.route-label:hover`（卡片内部的延迟格/回程标签，位移会连带让父级重新采样）、
+  `.overview-tile:hover` 与按钮的统一悬停规则（`translateY(-1px)`）。
+
+改法：玻璃面上的悬停反馈只保留**阴影 + 描边 + 底色**，一律不再位移/缩放，并在 CSS 里写明原因。
+`.overview-tile` 的 `transition` 也去掉了已经不用的 transform。
+
+验证（本地道具 `http://127.0.0.1:25774`，暗色主题，CDP `CSS.forcePseudoState` 强制 `:hover`）：
+
+- 悬停前后 `getBoundingClientRect()` 的 x/y/宽/高**完全相等**（`transform` 都是 `none`），
+  而 `box-shadow` 与 `border-color` 都变了（暗色下描边 `rgba(255,255,255,0.16) → 0.32`）——反馈还在，位移为零。
+- 对照组：把旧规则的属性按原样写给元素，等 0.28s 过渡跑完再量，卡片会被抬起 **5.80px**、宽度 **+2.32px**
+  （`translateY(-4px)` 加 `scale(1.006)` 以中心缩放）。这正是悬停时被提升成合成层的那一下。
+- 注意量 transform 的坑：卡片上有 `transition: transform 0.28s`，设值**立刻**读 `getBoundingClientRect()`
+  或 `getComputedStyle().transform` 拿到的是过渡起点（看似「没生效」），必须等过渡结束（本文等了 0.6s）。
+- `bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` / `UI_SMOKE_OK`（jsdom 断言不涉及悬停几何）。
+- 无头浏览器复现不了这类合成器时序残影：`Page.captureScreenshot` 会强制一次重绘，读到的永远是干净帧，
+  所以这里只能给出「几何零变化 + 原理」的证据，线上是否真的不再出现由用户侧确认。
