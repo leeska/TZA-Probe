@@ -174,16 +174,20 @@ function metricsInner(n) {
   const memSub = hasMetrics ? `${bytes(m.memory_used)} / ${bytes(m.memory_total)}` : "未报告";
   const diskSub = hasMetrics ? `${bytes(m.disk_used)} / ${bytes(m.disk_total)}` : "未报告";
   const trafficSub = n.traffic_limit ? `${bytes(n.traffic_limit)} 额度 · ${esc({ sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.traffic_mode])}` : "无限制额度";
-  // 达量降速（近 N 小时平均带宽达到线路的降速阈值）：只有真配了阈值的线路才写这一行，
-  // 没配的机器不显示占位文案。窗口按本机实际上报的小时数写，覆盖不满就标「统计中」，
-  // 不假装有一整个窗口的数据。
+  // 达量降速：线路自带的两条规则都可能——按窗口平均带宽（德国商家）或按周期额度用满后
+  // 限速（DMIT T1 这类不计量但限速）。只有真配了规则的线路才写这一行，没配的机器不显示
+  // 占位文案；窗口口径按本机实际上报的小时数写，覆盖不满就说还在统计，不假装有一整个窗口。
   const throttleNote =
     n.throttle_mbps > 0
       ? `<small class="throttle-note${n.throttled ? " over" : ""}">${
-          n.covered_hours > 0
-            ? `近 ${Math.min(n.covered_hours, n.window_hours || 24)} 小时均值 ${mbps(n.avg_bps)}`
-            : "近 " + (n.window_hours || 24) + " 小时均值统计中"
-        } · 阈值 ${n.throttle_mbps} Mbit/s</small>`
+          n.throttle_on === "quota"
+            ? `${n.throttled ? "已用满额度" : `用满 ${bytes(n.traffic_limit)} 额度`} · 限速 ${n.throttle_mbps} Mbit/s`
+            : `${
+                n.covered_hours > 0
+                  ? `近 ${Math.min(n.covered_hours, n.window_hours || 24)} 小时均值 ${mbps(n.avg_bps)}`
+                  : "近 " + (n.window_hours || 24) + " 小时均值统计中"
+              } · 阈值 ${n.throttle_mbps} Mbit/s`
+        }</small>`
       : "";
   return `${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
 }

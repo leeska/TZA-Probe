@@ -20,6 +20,10 @@ func TestThrottleFieldsValidate(t *testing.T) {
 		{"只填阈值（窗口留 0 走默认 24）", func(n *Node) { n.ThrottleMbps = 100 }},
 		{"窗口上限 168 小时", func(n *Node) { n.ThrottleHours = 168 }},
 		{"启用降速告警且填了阈值", func(n *Node) { n.ThrottleMbps = 100; n.Alerts.Throttle = true }},
+		{"DMIT 那种：1000 GB 额度用满后不计量、限速 50 Mbit/s", func(n *Node) {
+			n.TrafficLimit, n.LineMbps, n.ThrottleMbps, n.ThrottleOn = 1_000_000_000_000, 4000, 50, "quota"
+		}},
+		{"显式写 bandwidth 触发条件", func(n *Node) { n.ThrottleMbps, n.ThrottleOn = 100, "bandwidth" }},
 	}
 	for _, c := range cases {
 		n := base()
@@ -38,6 +42,9 @@ func TestThrottleFieldsValidate(t *testing.T) {
 		{"阈值超过 1 Tbit/s", func(n *Node) { n.ThrottleMbps = 1_000_001 }},
 		{"阈值高于线路带宽", func(n *Node) { n.LineMbps, n.ThrottleMbps = 1000, 2000 }},
 		{"开了降速告警却没填阈值", func(n *Node) { n.Alerts.Throttle = true }},
+		{"未知的降速触发条件", func(n *Node) { n.ThrottleMbps, n.ThrottleOn = 100, "volume" }},
+		{"按额度降速但没填额度", func(n *Node) { n.ThrottleMbps, n.ThrottleOn = 50, "quota" }},
+		{"按额度降速但没填速率", func(n *Node) { n.TrafficLimit, n.ThrottleOn = 1_000_000_000_000, "quota" }},
 	}
 	for _, c := range bad {
 		n := base()
@@ -54,5 +61,54 @@ func TestThrottleWindowDefaults(t *testing.T) {
 	}
 	if got := (Node{ThrottleHours: 6}).ThrottleWindow(); got != 6*time.Hour {
 		t.Fatalf("窗口 = %v, want 6h", got)
+	}
+}
+
+// ThrottleActive 是两条规则的唯一判据（面板与告警都用它），按规则读不同的事实：
+// 带宽口径读窗口均值，额度口径读本周期用量。
+func TestThrottleActiveReadsTheRightFact(t *testing.T) {
+	quota := NodeView{Node: Node{TrafficLimit: 1_000, ThrottleMbps: 50, ThrottleOn: "quota"}}
+	quota.TrafficUsed = 999
+	if quota.ThrottleActive() {
+		t.Fatal("数额度没到额度不该算降速")
+	}
+	quota.TrafficUsed = 1_000
+	if !quota.ThrottleActive() {
+		t.Fatal("用满额度该算降速")
+	}
+	// 额度口径下窗口均值再高也不触发，带宽口径下额度再满也不触发。
+	quota.AvgBits = 1e12
+	quota.TrafficUsed = 0
+	if quota.ThrottleActive() {
+		t.Fatal("额度口径下不该看窗口均值")
+	}
+	bw := NodeView{Node: Node{TrafficLimit: 1, ThrottleMbps: 100}}
+	bw.TrafficUsed = 1
+	if bw.ThrottleActive() {
+		t.Fatal("带宽口径下不该看本周期用量")
+	}
+	bw.AvgBits = 100e6
+	if !bw.ThrottleActive() {
+		t.Fatal("均值达到阈值该算降速")
+	}
+	if (NodeView{Node: Node{ThrottleOn: "quota"}}).ThrottleActive() {
+		t.Fatal("没填速率就没有降速这回事")
+	}
+}
+
+func TestHumanBytes(t *testing.T) {
+	cases := map[int64]string{
+		0:                 "0 B",
+		999:               "999 B",
+		1_000:             "1.0 KB",
+		1_000_000:         "1.0 MB",
+		812_000_000:       "812 MB",
+		1_000_000_000:     "1.0 GB",
+		1_000_000_000_000: "1.0 TB",
+	}
+	for in, want := range cases {
+		if got := HumanBytes(in); got != want {
+			t.Fatalf("HumanBytes(%d) = %q, want %q", in, got, want)
+		}
 	}
 }

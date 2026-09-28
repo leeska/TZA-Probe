@@ -105,11 +105,14 @@ export async function detail(id, focus = null) {
           ? `<div id="route-details"></div>`
           : `<div id="network-overview"></div>`
         : `<div id="network-overview"></div><div id="route-details"></div>`;
-  // 达量降速：线路真配了阈值才给这一格（与公开卡片同一判断）。窗口覆盖不满时如实
-  // 写出本机已上报多少小时，不让「近 24 小时」变成一句假话。
+  // 达量降速：线路真配了规则才给这一格（与公开卡片同一判断）。按窗口平均带宽的写窗口
+  // 均值并如实报出本机已上报多少小时；按周期额度用满后限速的写那条额度与用满后的速率。
+  const trafficWord = { sum: "双向", max: "较大方向", in: "下载", out: "上传" }[n.traffic_mode] || "双向";
   const throttleTile =
     n.throttle_mbps > 0
-      ? `<div class="detail-wide"><span>近 ${Math.min(n.covered_hours || n.window_hours || 24, n.window_hours || 24)} 小时平均带宽</span><strong>${n.covered_hours > 0 ? mbps(n.avg_bps) : "统计中"}</strong><small>降速阈值 ${n.throttle_mbps} Mbit/s${n.line_mbps ? ` · 线路带宽 ${n.line_mbps} Mbit/s` : ""}${n.throttled ? " · 已达阈值" : ""}${n.covered_hours > 0 && n.covered_hours < (n.window_hours || 24) ? ` · 本机已上报 ${n.covered_hours} 小时` : ""} · 按${{ sum: "双向", max: "较大方向", in: "下载", out: "上传" }[n.traffic_mode] || "双向"}统计</small></div>`
+      ? n.throttle_on === "quota"
+        ? `<div class="detail-wide"><span>用满额度后的限速</span><strong>${n.throttle_mbps} Mbit/s</strong><small>额度 ${bytes(n.traffic_limit)}${n.line_mbps ? `（${trafficWord}）· 峰值 ${n.line_mbps} Mbit/s` : ""} · 本周期已用 ${bytes(n.traffic_used)}${n.throttled ? " · 已达额度" : ""}</small></div>`
+        : `<div class="detail-wide"><span>近 ${Math.min(n.covered_hours || n.window_hours || 24, n.window_hours || 24)} 小时平均带宽</span><strong>${n.covered_hours > 0 ? mbps(n.avg_bps) : "统计中"}</strong><small>降速阈值 ${n.throttle_mbps} Mbit/s${n.line_mbps ? ` · 线路带宽 ${n.line_mbps} Mbit/s` : ""}${n.throttled ? " · 已达阈值" : ""}${n.covered_hours > 0 && n.covered_hours < (n.window_hours || 24) ? ` · 本机已上报 ${n.covered_hours} 小时` : ""} · 按${trafficWord}统计</small></div>`
       : "";
   const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(n.metrics?.os || "—")} ${esc(n.metrics?.arch || "")}</small></div>${throttleTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24)}</div>`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际观测到的骨干命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG）；ASN 优先、跳地址前缀兜底，CN2 跳之后仍走 59.43.* 到目标省份记为 GIA、连续两跳及以上 202.97.*（163 骨干）才记为 GT（单个 202.97 跳是途中偶发回包的骨干路由器，不算落地），一条电信线路只给一个标签、联通轨迹里出现过 9929 就不再另记 4837、163 只在它是轨迹里第一条线路名时才记（后面再出现的 163 是落地接入，如 10099 → 9929），仍不代表商业线路承诺。地址已脱敏；超时与过期结果显示未知。TCP 连接失败率不等同于 ICMP 丢包率。</p>`;
   const head = d.querySelector(".modal-head");

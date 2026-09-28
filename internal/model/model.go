@@ -56,14 +56,18 @@ type Node struct {
 	LatencyCarriers []string `json:"latency_carriers,omitempty"`
 	TrafficLimit    int64    `json:"traffic_limit"`
 	TrafficMode     string   `json:"traffic_mode"`
-	// LineMbps / ThrottleMbps / ThrottleHours describe a line whose provider
-	// throttles it on sustained bandwidth rather than on a monthly volume — the
-	// common German wording is「近 24 小时平均流量超过 100 Mbit/s 即临时降速到
-	// 100 Mbit/s」. 0 means "not declared": the panel then shows no bandwidth row
-	// and keeps no alert for it.
-	LineMbps      int `json:"line_mbps"`
-	ThrottleMbps  int `json:"throttle_mbps"`
-	ThrottleHours int `json:"throttle_hours"`
+	// LineMbps / ThrottleMbps / ThrottleHours / ThrottleOn describe a line's own
+	// throttling rule — two shapes are common:
+	//   · 按窗口平均带宽（德国商家）：1 Gbit/s 端口、近 24 小时平均超过 100 Mbit/s
+	//     即临时降到 100 Mbit/s → ThrottleOn=bandwidth（默认）+ ThrottleHours；
+	//   · 按周期额度（DMIT T1 这类）：1000 GB（出/入取高值）@ 4 Gbps 突发，用满后
+	//     不计量但降到 50/100 Mbit/s → ThrottleOn=quota + LineMbps 记突发峰值。
+	// ThrottleMbps=0 means "not declared": the panel then shows no bandwidth row and
+	// keeps no alert for it.
+	LineMbps      int    `json:"line_mbps"`
+	ThrottleMbps  int    `json:"throttle_mbps"`
+	ThrottleHours int    `json:"throttle_hours"`
+	ThrottleOn    string `json:"throttle_on"`
 	// BillingAt is the cycle anchor: its day and time of day repeat every month
 	// (RFC3339, second precision). See Cycle.
 	BillingAt   string  `json:"billing_at"`
@@ -103,6 +107,15 @@ func (n Node) Validate() error {
 	}
 	if n.ThrottleMbps > 0 && n.LineMbps > 0 && n.ThrottleMbps > n.LineMbps {
 		return errors.New("降速阈值不能高于线路带宽")
+	}
+	if n.ThrottleOn != "" && n.ThrottleOn != "bandwidth" && n.ThrottleOn != "quota" {
+		return errors.New("降速触发条件须为 bandwidth 或 quota")
+	}
+	if n.ThrottleOn == "quota" && n.TrafficLimit <= 0 {
+		return errors.New("按周期额度降速需先填写流量额度")
+	}
+	if n.ThrottleOn == "quota" && n.ThrottleMbps <= 0 {
+		return errors.New("按周期额度降速需填写用满后的速率")
 	}
 	if n.ExpiresAt != "" {
 		if _, err := parseUTC(n.ExpiresAt); err != nil {
@@ -144,6 +157,44 @@ func (n Node) WindowHours() int {
 // ThrottleWindow is WindowHours as a duration.
 func (n Node) ThrottleWindow() time.Duration {
 	return time.Duration(n.WindowHours()) * time.Hour
+}
+
+// ThrottlesOnQuota reports whether this line's rule is the cycle volume running
+// out (unmetered afterwards but rate-capped) instead of the window average
+// reaching a bandwidth threshold.
+func (n Node) ThrottlesOnQuota() bool { return n.ThrottleOn == "quota" }
+
+// ThrottleActive reports whether the line's own rule is in effect right now.
+// The two shapes read different facts: the bandwidth rule compares the window
+// average, the quota rule the cycle total — both are already on the view, so a
+// node with no hourly buckets can still be throttled by volume.
+func (v NodeView) ThrottleActive() bool {
+	if v.ThrottleMbps <= 0 {
+		return false
+	}
+	if v.ThrottlesOnQuota() {
+		return v.TrafficLimit > 0 && v.TrafficUsed >= v.TrafficLimit
+	}
+	return v.AvgBits >= float64(v.ThrottleMbps)*1e6
+}
+
+// HumanBytes renders a byte figure the way the notes do (decimal, 3 significant
+// digits at most) for alert messages such as「本周期用量已达 1.00 TB 额度」.
+func HumanBytes(n int64) string {
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	value := float64(n)
+	i := 0
+	for value >= 1000 && i < len(units)-1 {
+		value /= 1000
+		i++
+	}
+	if i == 0 {
+		return fmt.Sprintf("%d B", n)
+	}
+	if value < 100 {
+		return fmt.Sprintf("%.1f %s", value, units[i])
+	}
+	return fmt.Sprintf("%.0f %s", value, units[i])
 }
 
 type Metrics struct {

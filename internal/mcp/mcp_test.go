@@ -680,7 +680,7 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	// create_node is the panel's node form, and the one place a node key leaves
 	// the Server: the caller must see it exactly once.
 	created := structured(t, invoke(t, env, "create_node",
-		`{"name":"东京","billing_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","region":"日本","public":true,"line_mbps":1000,"throttle_mbps":100,"throttle_hours":24,"alerts":{"throttle":true}}`))
+		`{"name":"东京","billing_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","region":"日本","public":true,"traffic_limit":1000000000000,"line_mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"quota","alerts":{"throttle":true}}`))
 	if created["id"] != "new-node" || created["token"] != "new-token" {
 		t.Fatalf("create_node: %v", created)
 	}
@@ -694,15 +694,16 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	if len(env.source.savedNodes) != 1 || env.source.savedNodes[0].Name != "东京" || !env.source.savedNodes[0].Public {
 		t.Fatalf("stored node: %+v", env.source.savedNodes)
 	}
-	// 达量降速的三项线路规格与它的告警开关都要落库（面板表单与 MCP 同一形状）。
-	if n := env.source.savedNodes[0]; n.LineMbps != 1000 || n.ThrottleMbps != 100 || n.ThrottleHours != 24 || !n.Alerts.Throttle {
+	// 达量降速的三项线路规格、触发条件与它的告警开关都要落库（面板表单与 MCP 同一形状）。
+	if n := env.source.savedNodes[0]; n.LineMbps != 1000 || n.ThrottleMbps != 100 || n.ThrottleHours != 24 ||
+		n.ThrottleOn != "quota" || n.TrafficLimit != 1_000_000_000_000 || !n.Alerts.Throttle {
 		t.Fatalf("throttle fields did not persist: %+v", n)
 	}
 
 	// update_node merges into the stored node: a field the caller did not mention
 	// keeps its value, and an object such as alerts is merged field by field.
 	env.source.savedNodes = nil
-	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"line_mbps":1000,"throttle_mbps":100,"alerts":{"offline":true}}`))["id"] != "n1" {
+	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"line_mbps":1000,"throttle_mbps":100,"throttle_on":"quota","alerts":{"offline":true}}`))["id"] != "n1" {
 		t.Fatalf("update_node did not report the node")
 	}
 	if len(env.source.savedNodes) != 1 {
@@ -715,8 +716,8 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	if node.Public || !node.Alerts.Offline || node.Alerts.OfflineSeconds != 60 {
 		t.Fatalf("update did not apply the patch: %+v", node.Alerts)
 	}
-	// 逐字段合并：这次提到的线路规格写进去，没提到的（降速窗口）保持原值、不被清零。
-	if node.LineMbps != 1000 || node.ThrottleMbps != 100 || node.ThrottleHours != 0 {
+	// 逐字段合并：这次提到的线路规格与触发条件写进去，没提到的（降速窗口）不被动过。
+	if node.LineMbps != 1000 || node.ThrottleMbps != 100 || node.ThrottleHours != 0 || node.ThrottleOn != "quota" {
 		t.Fatalf("throttle patch did not merge: %+v", node)
 	}
 	if _, out := env.modern(t, "1", "tools/call", "update_node", `{"node_id":"n1","pbulic":true}`); codeOf(t, out) != codeInvalidParams {

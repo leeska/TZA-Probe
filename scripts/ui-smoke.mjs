@@ -1298,8 +1298,100 @@ publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
   assert(plain, "搜索复位后要能找回没配阈值的节点卡片");
   assert(!plain.querySelector(".throttle-note"), "没配阈值的机器不显示降速行");
 }
+// 按周期额度降速（DMIT T1 这类「1000 GB 取高值 @ 4 Gbps，用满后不计量但限速到 50/100
+// Mbit/s」）：这一行不写窗口均值，而是写「用满多少额度 · 限速多少」，用满后标红。
+const quotaName = "额度降速验收 " + Date.now();
+const madeQuota = await fetch(base + "/api/v1/admin/nodes", {
+  method: "POST",
+  headers: { ...adminHeaders, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: quotaName,
+    region: "香港",
+    group: "HK",
+    public: true,
+    billing_at: "2026-09-01T00:00:00Z",
+    traffic_limit: 1000000,
+    traffic_mode: "max",
+    line_mbps: 4000,
+    throttle_mbps: 50,
+    throttle_on: "quota",
+    alerts: { throttle: true },
+  }),
+});
+assert.equal(
+  madeQuota.status,
+  200,
+  "带额度降速规则的节点要能创建: " + (await madeQuota.clone().text()),
+);
+const quotaNode = await madeQuota.clone().json();
+// 创建接口只回 id/token/安装命令，要确认触发条件真的落库得读一次节点列表。
+{
+  const stored = (await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json()).find(
+    (x) => x.id === quotaNode.id,
+  );
+  assert.equal(stored?.throttle_on, "quota", `创建接口要落库 throttle_on，实际 ${JSON.stringify(stored?.throttle_on)}`);
+}
+{
+  const quotaReport = (metrics) =>
+    fetch(base + "/api/v1/agent/report", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + quotaNode.token, "Content-Type": "application/json" },
+      body: JSON.stringify({ protocol: 1, metrics }),
+    });
+  const base1 = { ...throttleMetrics, counter_id: "ui-smoke-quota", net_in: 1000 };
+  assert.equal((await quotaReport(base1)).status, 204, "第一次上报建立流量基线");
+  await new Promise((resolve) => setTimeout(resolve, 3500));
+  assert.equal(
+    (await quotaReport({ ...base1, net_in: base1.net_in + 2000000, uptime: 3660 })).status,
+    204,
+    "第二次上报把本周期用量顶过额度",
+  );
+}
+const quotaView = async () =>
+  (await (await fetch(base + "/api/v1/nodes")).json()).find((x) => x.id === quotaNode.id);
+await until(async () => (await quotaView())?.throttled === true, "用满额度的节点要标 throttled");
+{
+  const view = await quotaView();
+  assert.equal(view.throttle_on, "quota", "公开接口要给出降速触发条件");
+  assert(view.avg_bps < 1e6, `按额度降速的线路不该因为均值而降速，实际均值 ${view.avg_bps} bit/s`);
+}
+publicSearch.value = quotaName;
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+const quotaCard = () =>
+  [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) =>
+    c.textContent.includes(quotaName),
+  );
+await until(
+  () => /已用满额度 · 限速 50 Mbit\/s/.test(quotaCard()?.querySelector(".throttle-note")?.textContent || ""),
+  "额度降速的卡片要出现「已用满额度 · 限速 50 Mbit/s」那一行",
+);
+{
+  const note = quotaCard().querySelector(".throttle-note");
+  assert(
+    /^已用满额度 · 限速 50 Mbit\/s$/.test(note.textContent),
+    `额度降速行要写「已用满额度 · 限速 N Mbit/s」，实际「${note.textContent}」`,
+  );
+  assert(!/小时均值/.test(note.textContent), "额度降速的线路不该写窗口均值");
+  assert(note.classList.contains("over"), "用满额度时这一行要标红（.over）");
+}
+quotaCard().querySelector("[data-detail]").click();
+await until(
+  () => /用满额度后的限速/.test(publicDOM.window.document.querySelector("#dialog .detail-wide")?.textContent || ""),
+  "额度降速的详情格",
+);
+{
+  const tile = publicDOM.window.document.querySelector("#dialog .detail-wide");
+  assert(tile.textContent.includes("用满额度后的限速"), `详情格要写清是额度口径，实际「${tile.textContent}」`);
+  assert(tile.textContent.includes("50 Mbit/s"), "详情格要写用满后的速率");
+  assert(tile.textContent.includes("峰值 4000 Mbit/s"), "详情格要写突发峰值");
+  assert(tile.textContent.includes("已达额度"), "用满时详情格要写明");
+  publicDOM.window.document.querySelector("#dialog").close();
+}
+publicSearch.value = "";
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+await fetch(base + "/api/v1/admin/nodes/" + quotaNode.id, { method: "DELETE", headers: adminHeaders });
 await fetch(base + "/api/v1/admin/nodes/" + throttleNode.id, { method: "DELETE", headers: adminHeaders });
 publicDOM.window.close();
 console.log(
-  "PASS: login, node creation/edit, billing and alerts, search/filter/batch catalog, combined checks and dual stack, overseas custom targets, edit round-trip and explicit binding, notifications page, logout, public cards/search/IPv6, bandwidth throttle row. DOM simulation; visual layout not covered.",
+  "PASS: login, node creation/edit, billing and alerts, search/filter/batch catalog, combined checks and dual stack, overseas custom targets, edit round-trip and explicit binding, notifications page, logout, public cards/search/IPv6, bandwidth throttle row, quota throttle row. DOM simulation; visual layout not covered.",
 );

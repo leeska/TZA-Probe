@@ -27,6 +27,16 @@ type Repository interface {
 type Sender interface {
 	Send(context.Context, string, model.Event) error
 }
+
+// throttleMessage 是降速告警文案。两种规则读的不是同一个事实：窗口平均带宽的线路
+// 报的是「近 N 小时均值」，按额度降速的线路报的是「本周期用量顶到额度、之后限速多少」。
+func throttleMessage(n model.NodeView) string {
+	if n.ThrottlesOnQuota() {
+		return fmt.Sprintf("本周期用量已达 %s 额度，线路按商家规则降速到 %d Mbit/s", model.HumanBytes(n.TrafficLimit), n.ThrottleMbps)
+	}
+	return fmt.Sprintf("近 %d 小时平均带宽 %.1f Mbit/s 达到降速阈值 %d Mbit/s，可能已被商家降速", n.CoveredHours, n.AvgBits/1e6, n.ThrottleMbps)
+}
+
 type Engine struct {
 	Repository Repository
 	Sender     Sender
@@ -56,7 +66,7 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 			{"offline", "节点已离线", a.Offline && !n.Online && now.Unix()-n.CreatedAt > int64(model.OfflineAfter.Seconds()), a.OfflineSeconds},
 			{"renewal", "节点即将到期或已经到期，请检查续费", a.Renewal && renewal, 0},
 			{"traffic", fmt.Sprintf("本计费周期用量达到 %.0f%% 阈值", a.TrafficPercent), a.Traffic && n.TrafficLimit > 0 && float64(n.TrafficUsed)/float64(n.TrafficLimit)*100 >= a.TrafficPercent, 0},
-			{"throttle", fmt.Sprintf("近 %d 小时平均带宽 %.1f Mbit/s 达到降速阈值 %d Mbit/s，可能已被商家降速", n.CoveredHours, n.AvgBits/1e6, n.ThrottleMbps), a.Throttle && n.Throttled, 0},
+			{"throttle", throttleMessage(n), a.Throttle && n.Throttled, 0},
 			{"load", "CPU 或内存持续超过设定阈值", a.Load && load, a.HoldSeconds},
 		}
 		for _, r := range rules {

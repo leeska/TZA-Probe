@@ -864,3 +864,33 @@ node scripts/ui-smoke.mjs
   - `ui-smoke` 新增一整段：服务端先算出 `avg_bps`（`until` 等它 > 0，DOM 会滞后一拍）、`window_hours`/`covered_hours`/`throttled`，公开卡片那一行必须带窗口均值与阈值、达标时带 `.over`，详情页必须有占满整行的降速格与线路带宽，没配阈值的机器不许出现这一行；控制组：把 `web/app.js` + `web/detail.js` 的两处改动 stash 掉，`ui-smoke` 会在「等降速那一行」超时失败。
   - 顺手修了 `ui-smoke` 的一个可读性问题：`until` 超时时读的是管理端文档的 `#toast`，而那段跑在公开页上、管理端 JSDOM 已 `close()`，超时只会抛 `Cannot read properties of undefined`，看不到到底在等什么（这次就撞上了）。改成可选链 + 兜底文案。
 - 落地：这份规格就是 **de-netcup-1o**（TZA-Probe 主控，1C/963M/29G）的商家文案。2026-09-28 当天把主控自己也接成了面板节点（装 Agent、**只报指标不挂探测任务**），并按 1000 / 100 / 24 填上线路规格与降速告警：线上实测该卡片「仅主机指标」+ 一行「近 1 小时均值 38 kbit/s · 阈值 100 Mbit/s」（覆盖 1 小时，窗口满 24 小时后才是真正的 24 小时均值），20 张卡片高度一律 662px。netcup 的 Traffic-Flat 没有月量额度，所以 `traffic_limit` 留 0；SCP REST API（63 条路由）没有账单路由，价格与到期日取不到，面板上留空。另外「平均」的口径按节点的 `traffic_mode`（双向/较大方向/仅下载/仅上传），与本周期用量同一口径；商家若按单方向计费需要把该节点切到 `in` 或 `out`。
+
+## 2026-09-28 达量降速的第二种口径：周期额度用满后限速（`throttle_on`）
+
+德国商家那类「近 24 小时平均超过 100 Mbit/s 降速」是按**带宽**降速。DMIT T1 这类是按**额度**：
+`1000 GB（出/入取高值）@ 4 Gbps 突发`，用满后流量不计量但线路被限到 `50/100 Mbit/s`。
+同一个面板要能如实表达两种，所以线路规格里多了一个触发条件：
+
+- `throttle_on`：`bandwidth`（默认，窗口平均带宽达到 `throttle_mbps`）或 `quota`（本周期用量用满
+  `traffic_limit` 后按商家规则限到 `throttle_mbps`）。空字符串按 `bandwidth` 解释，老配置不变。
+- 判据收敛到 `model.NodeView.ThrottleActive()`：额度口径读 `traffic_used >= traffic_limit`，
+  带宽口径读 `avg_bits >= throttle_mbps*1e6`。`Throttled` 因此从 `attachWindow` 移到 `Nodes()`
+  统一判定——额度口径不需要任何小时桶，用量一顶到额度就得算已降速。
+- 校验：`quota` 必须先有 `traffic_limit > 0` 和 `throttle_mbps > 0`；未知取值直接拒绝。
+- 界面与告警按口径分岔：卡片写「用满 1.0 TB 额度 · 限速 50 Mbit/s」（用满转「已用满额度」并标红），
+  详情格写「用满额度后的限速 50 Mbit/s / 额度 1.0 TB（较大方向）· 峰值 4000 Mbit/s · 本周期已用 …」，
+  告警文案写「本周期用量已达 1.0 TB 额度，线路按商家规则降速到 50 Mbit/s」（不再出现「小时平均带宽」）。
+  后台表单多了触发条件下拉框，阈值字段改叫「降速阈值 / 用满后限速」。
+- MCP 的 `create_node` / `update_node` 同步 `throttle_on`（枚举 `bandwidth` / `quota`）。
+
+验证（本机，`/tmp/tza-panel` 造数：一台 `quota`、一台 `bandwidth`）：
+
+- `go test ./...` 全绿；新增 model 的 `ThrottleActive`（两条口径读的不是同一个事实）、`HumanBytes`，
+  storage 的 `TestThrottleOnQuotaFollowsCycleVolume`（同一份用量在两条口径下结论必须相反），
+  notify 的 `TestThrottleRuleOnQuota`（额度文案且不出现「小时平均带宽」），mcp 的落库与合并断言。
+- 本地面板实测：额度行「用满 1.0 TB 额度 · 限速 50 Mbit/s」渲染宽 162px、`scrollWidth == clientWidth`
+  （没有省略号），两张卡片同高 600px、同 top 496px；详情格 747px = 整行宽、高 101px、无溢出。
+  同一台的 `avg_bps` 是 25.721 Mbit/s 但 `throttled=false`——额度口径不看均值，这条断言把两种口径分开了。
+- `scripts/ui-smoke.mjs` 追加额度口径验收（卡片行、详情格、`.over`、`avg_bps` 低也必须 throttled）；
+  反向验证：`git stash push -- web/app.js web/detail.js` 后回归在「额度降速的卡片要出现…」处超时失败，
+  说明新断言确实咬住这两处改动。`gofmt -l .` 干净、`go vet ./...` 通过。

@@ -75,6 +75,71 @@ func TestThrottleWindowAverage(t *testing.T) {
 	}
 }
 
+// 按周期额度降速：判据是「本周期用量顶到额度」，与窗口平均带宽无关——同一份数据在两条
+// 规则下结论必须不同（额度模式的线路降速、带宽模式的线路不降速），断言才咬得住。
+func TestThrottleOnQuotaFollowsCycleVolume(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	now := time.Date(2026, 9, 18, 12, 30, 0, 0, time.UTC)
+	base := func(mode string) string {
+		t.Helper()
+		id, _ := makeNode(t, s)
+		n := model.Node{ID: id, Name: "dmit", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum",
+			TrafficLimit: 1_000_000, LineMbps: 4000, ThrottleMbps: 50, ThrottleOn: mode}
+		if _, _, err := s.SaveNode(ctx, n, false); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	// 额度 1 MB：先建基线，再让双向合计超一点（600 KB + 500 KB = 1.1 MB）。
+	quotaID, bwID := base("quota"), base("bandwidth")
+	for _, id := range []string{quotaID, bwID} {
+		m := metrics()
+		if err := s.Report(ctx, id, m, now.Add(-2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		m.NetIn += 600_000
+		m.NetOut += 500_000
+		if err := s.Report(ctx, id, m, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	views, err := s.Nodes(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]model.NodeView{}
+	for _, v := range views {
+		byName[v.ID] = v
+	}
+	q, bw := byName[quotaID], byName[bwID]
+	if q.TrafficUsed < q.TrafficLimit {
+		t.Fatalf("用量 %d 没到额度 %d，用例前提不成立", q.TrafficUsed, q.TrafficLimit)
+	}
+	if !q.Throttled {
+		t.Fatalf("用满额度不算降速：%+v", q)
+	}
+	if bw.Throttled {
+		t.Fatalf("带宽模式的线路不该因为用满额度而降速（均值只有 %v bit/s）：%+v", bw.AvgBits, bw)
+	}
+
+	// 额度抬到 100 MB：同一份用量不再算降速。
+	n := q.Node
+	n.TrafficLimit = 100_000_000
+	if _, _, err = s.SaveNode(ctx, n, false); err != nil {
+		t.Fatal(err)
+	}
+	views, err = s.Nodes(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range views {
+		if v.ID == quotaID && v.Throttled {
+			t.Fatalf("额度 100 MB 时 %d 字节不该算用满", v.TrafficUsed)
+		}
+	}
+}
+
 // 覆盖不满窗口：24 小时窗口里只有当前这个小时有桶，CoveredHours 必须小于配置值，
 // 平均按真实覆盖秒数算（1800 秒），而不是按 24 小时摊薄。
 func TestThrottleWindowReportsPartialCoverage(t *testing.T) {

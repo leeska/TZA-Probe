@@ -411,7 +411,15 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 			v.TrafficUsed = max(0, v.TrafficUsed+v.TrafficAdjustment)
 		}
 	}
-	return views, s.attachWindow(ctx, views, now)
+	if err := s.attachWindow(ctx, views, now); err != nil {
+		return nil, err
+	}
+	// 降速状态在这里统一判定（不放在 attachWindow 里）：按周期额度降速的线路即使一个
+	// 小时桶都还没有，只要本周期用量已经顶到额度就是已降速。
+	for i := range views {
+		views[i].Throttled = views[i].ThrottleActive()
+	}
+	return views, nil
 }
 
 // attachWindow 给每台节点算「降速窗口内的平均带宽」。
@@ -475,7 +483,6 @@ func (s *Store) attachWindow(ctx context.Context, views []model.NodeView, now ti
 			if covered >= span {
 				v.CoveredHours = hours
 			}
-			v.Throttled = v.ThrottleMbps > 0 && v.AvgBits >= float64(v.ThrottleMbps)*1e6
 		}
 	}
 	return nil
