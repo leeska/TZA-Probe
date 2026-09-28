@@ -834,3 +834,17 @@ node scripts/ui-smoke.mjs
   - 测试：`go test ./...`、`go vet`、`gofmt` 全过；新增 `TestProbeTargetsListWhatANodeReallyProbes`（绑定 / 未绑定 / 停用三态 + 两个任务并成一份计划）；`ui-smoke` 新增「没任务的卡片不画格子 / 不画灰条 / 给说明行」「服务端 probe_targets 含自定义目标、卡片按地区筛掉它」「行高拉齐的 CSS」等断言，并修掉一处**空转**：改任务时 `storage.SaveTask` 会 `DELETE FROM jobs`，所以公开页的值断言此前一直跑在「没有结果」的卡片上——现在编辑后重新租约 + 发结果，并断言 `#toast` 为空（渲染期的 ReferenceError 会被 `refresh().catch(toast)` 吞掉，真浏览器里整页报错而测试全绿，这次就是这么发现的）。
   - 控制组：把渲染期那处未定义函数放回去，`ui-smoke` 会在「等真实数值」那一步超时失败。
 - 待确认：卡片延迟地区与任务地区不一致时（例如卡片配上海、任务只有新加坡）现在整段不画并写「该地区暂无探测任务」；若更希望这种配置在后台报错提示，需要另加校验。
+
+## 2026-09-28 面板观测：从「读时扫窗口」改成物化表 + 触发器
+
+- 需求：主控搬到香港 1 核机（`hk-hytron-bgp`）后首页要 4.25-5.10s（坦帕 4 核 0.57-0.68s），问「这个计算有优化空间吗」——要把首页观测的取数成本压下来。
+- 结论（同一份线上库快照，真实引擎 modernc sqlite，本机实测）：**瓶颈不是缺索引**——给 6 个 `json_extract` 建表达式索引后仍是 64ms/节点（SQLite 不为这种窗口函数用表达式索引），把分组键去规范化成一列 + 索引只有 1.6x（37.7ms），缩短窗口 6h/3h/1h 分别是 27/21/17ms（而且改变了语义）。真正的空间在**把「每个分组最新一条」物化**：读路径从「窗口内重新 `json_extract` 约 9,070 行」变成「每节点几十行」，实测 **0.03ms/节点**。
+- 改法：
+  - `jobs` 加一列 `probe_key`（`model.Task.ProbeKey()` 的字符串，写入时由 Go 算好，`Lease` 里带进 INSERT）：分组键只算一次，触发器不必在 SQL 里重算，避免两边格式漂移（SQL 里留着同样的表达式，只在 `probe_key` 为空时兜底）。
+  - 新表 `latest(node_id, probe_key, job_id, task, issued, finished, result, PRIMARY KEY(node_id, probe_key))` + 三个触发器（`jobs_latest_insert` / `jobs_latest_update` / `jobs_latest_delete`）：插入时按 `(issued, id)` 覆盖、更新时只刷新「该行正是本组最新」的那条（乱序完成的老任务不覆盖）、删除时按 `job_id` 撤下（`Clean` 的保留期删除与 `SaveTask` 的「改任务即清历史」都靠它）。`WHEN json_valid(NEW.task)` 守卫保留：坏 JSON 的行不进物化表，这一组继续显示更早那条，与旧查询用 `json_valid` 过滤掉坏行一致。
+  - 迁移 v4（`migrateLatest`）在一个事务里完成：加列（常量默认值，schema-only 不重写表）→ 建表 + 触发器 → 按旧分组规则把**窗口以内**的最新一条灌进去 → `PRAGMA user_version=4`；日志留一行 `materialized latest observations rows=… took=…`。回填只覆盖 `ProbeWindow` 内的行（窗口外的行面板本来也不显示），全表 47 万行里只扫窗口内的几万行，1 核机的启动迁移才不会变成几十秒停机；历史行**不回填** `jobs.probe_key`（整表 UPDATE 是最贵的一步，且没必要——触发器在 `probe_key` 为空时用 SQL 侧同构表达式兜底，两路算出的键一致）。`Observations` 改成读 `latest`（仍是 `issued>=ProbeWindow`，窗口语义不变），排序由 `task_id` 改为 `probe_key`（同一任务的分组顺序确定化，面板按分组渲染，行序无影响）。
+- 验证：
+  - 新增 `TestObservationsSelectionMatchesWindowFunction`（把改动前的 SQL 留在测试里当基准，逐条比对选择：新的覆盖旧的、乱序完成不覆盖、窗口外不显示、坏 JSON 不顶替、同任务不同目标/协议族各自成组）、`TestLatestFollowsWritesAndDeletes`（真实写入路径租约+完成；改任务后该组消失；保留期清理后最新那条仍在）、`TestLatestMigrationBackfillsExistingJobs`（造一个 v3 形状的库，重开后版本升 4、回填完整、与旧查询选行一致）；`TestUpgradeVersionOne` 的降级模拟补上 v4 物件的回退，`TestBillingDayMigratesToAnchor` 的版本断言 3 → 4。
+  - `gofmt -l .`、`go vet ./...`、`go test ./...`、`go test -race ./internal/storage ./internal/httpapi ./internal/mcp`、`git diff --check` 全过。
+  - A/B（`/root/work/tza-perf/ab-observations.sh`：旧二进制 `deec974` vs 新二进制，同一份线上库快照、同一个扇出脚本）：串行 19 台 `observations?slim=1` 总耗时 **0.472s → 0.012s**（最慢 0.068s → 0.002s）；并行首页扇出 3 轮 **0.29/0.24/0.26s → 0.02/0.02/0.01s**（observations 中位 133ms → 2ms）；前后响应内容 **19 台 / 288 组 / 0 处不一致**；库文件 187M → 190M（多一列 + 一张几百行的表）。
+- 待确认：直接删掉「某分组最新的那一行」而该组还有更早的在窗口内时，物化表不会回落到更早那条（旧查询会）。生产路径没有这种删除（`Clean` 从最旧开始删、`SaveTask` 整任务删），真出现时该组会缺席到下一次探测写入为止。另外窗口仍决定「多久以前的最后一条还显示」，这是刻意保留的语义。

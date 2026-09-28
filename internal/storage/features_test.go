@@ -149,7 +149,7 @@ func TestUpgradeVersionOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec("ALTER TABLE events DROP COLUMN last_error; DROP INDEX events_rule_time; PRAGMA user_version=1;"); err != nil {
+	if _, err = s.db.Exec("ALTER TABLE events DROP COLUMN last_error; DROP INDEX events_rule_time; DROP TABLE latest; DROP TRIGGER jobs_latest_insert; DROP TRIGGER jobs_latest_update; DROP TRIGGER jobs_latest_delete; ALTER TABLE jobs DROP COLUMN probe_key; PRAGMA user_version=1;"); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -65,12 +66,56 @@ func (s *Store) queryRow(ctx context.Context, query string, args ...any) *sql.Ro
 // older than a few minutes already renders as stale, so a day holds far more
 // history than the panel can show.
 //
-// 这个界不是装饰：jobs 保留七天，而「每个目标最新一次」与「每个分组最近 20 次」
-// 两条查询原先都要走完这台节点（或全部可见节点）七天的任务表，每次轮询都要把
-// 上万行的 task JSON 重新 json_extract 一遍——节点一多，首页的延迟与回程就要等
-// 好几秒才出来（线上实测 latency-samples 3.5s、单台节点 observations 0.5s）。
-// jobs_node(node_id,issued) 索引能把 issued 的范围先切出来，代价随窗口线性下降。
+// 这个界不是装饰：jobs 保留七天，窗口之外的旧值本来也不该显示。这里只影响
+// 物化表（latest）里哪些行算数，不再决定读路径要扫多少行：分组键在写入时就
+// 落在 jobs.probe_key 上，latest 由触发器维护（每节点几十行），所以窗口大小
+// 与首页耗时无关了。
 const ProbeWindow = 24 * time.Hour
+
+// probeKeyExpr 是 model.Task.ProbeKey 的 SQL 版本，只在 jobs.probe_key 为空时兜底
+// （正常写入路径由 Go 侧算好；测试与历史行可能没带）。prefix 传 "NEW." 或 ""：
+// 触发器里必须写 NEW.task_id，迁移的 UPDATE 里是裸列。两边格式必须一致：
+// <任务 id>|<kind>|<family>|<host>|<port>|<region>|<carrier>。
+// 每个字段都 COALESCE 到空串：老数据里缺 key 的行 json_extract 返回 NULL，直接
+// 拼接会让整键变 NULL（写入 NOT NULL 列会失败）；用空串则所有缺字段的行仍归一组，
+// 与旧查询「NULL 与 NULL 同组」的行为一致。
+func probeKeyExpr(prefix string) string {
+	field := func(key string) string {
+		return "COALESCE(json_extract(" + prefix + "task,'$." + key + "'),'')"
+	}
+	return "COALESCE(" + prefix + `task_id,'')||'|'||` + field("kind") + "||'|'||" + field("family") + "||'|'||" +
+		field("host") + "||'|'||" + field("port") + "||'|'||" + field("region") + "||'|'||" + field("carrier")
+}
+
+// latestKeySQL 取一行的分组键：优先用写入时算好的 jobs.probe_key。
+func latestKeySQL() string {
+	return `CASE WHEN NEW.probe_key<>'' THEN NEW.probe_key ELSE ` + probeKeyExpr("NEW.") + ` END`
+}
+
+// latestSchema 是「每个分组最新一次结果」的物化表与它的触发器。jobs 只追加，
+// 读路径原先每次都要在窗口内重新 json_extract 上万行（线上 65ms/节点、首页
+// 扇出 465ms），这张表把同一份结果留在几十行里（实测 0.03ms/节点）。
+//   - INSERT：比 (issued,id) 更新才覆盖，与旧 SQL 的 ORDER BY issued DESC,id DESC 一致；
+//   - UPDATE：只在被更新的行正是该组的最新那条时刷新（乱序完成的老任务不覆盖新的）；
+//   - DELETE：Clean 的保留期删除与 SaveTask 的「改任务即清历史」都靠它收尾。
+//
+// json_valid 守卫保留：任务 JSON 坏掉的行不进物化表，这一组继续显示更早那条，
+// 与旧查询用 json_valid 过滤掉坏行的行为一致。
+var latestSchema = `
+CREATE TABLE latest(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, probe_key TEXT NOT NULL, job_id TEXT NOT NULL, task TEXT NOT NULL, issued INTEGER NOT NULL, finished INTEGER, result TEXT, PRIMARY KEY(node_id,probe_key));
+CREATE TRIGGER jobs_latest_insert AFTER INSERT ON jobs WHEN json_valid(NEW.task) BEGIN
+  INSERT INTO latest(node_id,probe_key,job_id,task,issued,finished,result)
+  VALUES(NEW.node_id,` + latestKeySQL() + `,NEW.id,NEW.task,NEW.issued,NEW.finished,NEW.result)
+  ON CONFLICT(node_id,probe_key) DO UPDATE SET job_id=excluded.job_id,task=excluded.task,issued=excluded.issued,finished=excluded.finished,result=excluded.result
+  WHERE excluded.issued>latest.issued OR (excluded.issued=latest.issued AND excluded.job_id>latest.job_id);
+END;
+CREATE TRIGGER jobs_latest_update AFTER UPDATE OF task,issued,finished,result ON jobs WHEN json_valid(NEW.task) BEGIN
+  UPDATE latest SET task=NEW.task,issued=NEW.issued,finished=NEW.finished,result=NEW.result
+  WHERE job_id=NEW.id AND node_id=NEW.node_id;
+END;
+CREATE TRIGGER jobs_latest_delete AFTER DELETE ON jobs BEGIN
+  DELETE FROM latest WHERE job_id=OLD.id;
+END;`
 
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -100,7 +145,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 3 {
+	if version > 4 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -130,6 +175,13 @@ func Open(path string) (*Store, error) {
 	if version < 3 {
 		// 重置日从「每月第几天」改成带秒的锚点时刻，旧的 config 就地转换。
 		if err = migrateBillingAnchor(db, nowFunc()); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 4 {
+		// 「每个目标最新一次」从「读时扫窗口」改成物化表 + 触发器。
+		if err = migrateLatest(db, nowFunc()); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -201,6 +253,49 @@ func migrateBillingAnchor(db *sql.DB, now time.Time) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// migrateLatest 建物化表 latest 并回填窗口内已有的结果。
+//
+// 顺序与代价：加列是 schema-only（常量默认值，不重写表）；回填只覆盖 ProbeWindow
+// 以内的行——窗口外的行面板本来也不显示，换算量后线上扫描从 47 万行降到窗口内的
+// 几万行，1 核机的启动迁移才不会变成几十秒的停机。历史行不回填 jobs.probe_key
+// （整表 UPDATE 是最贵的一步，且没必要）：触发器在 probe_key 为空时用 SQL 侧的
+// 同构表达式兜底，两条路径算出的键一致，同一分组不会被拆开。
+func migrateLatest(db *sql.DB, now time.Time) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	start := time.Now()
+	window := now.Add(-ProbeWindow).Unix()
+	steps := []string{
+		"ALTER TABLE jobs ADD COLUMN probe_key TEXT NOT NULL DEFAULT ''",
+		latestSchema,
+		`INSERT INTO latest(node_id,probe_key,job_id,task,issued,finished,result)
+		 SELECT node_id,CASE WHEN probe_key<>'' THEN probe_key ELSE ` + probeKeyExpr("") + ` END,id,task,issued,finished,result
+		   FROM jobs WHERE json_valid(task) AND issued>=` + strconv.FormatInt(window, 10) + ` AND id IN (
+		   SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY node_id,CASE WHEN probe_key<>'' THEN probe_key ELSE ` + probeKeyExpr("") + ` END ORDER BY issued DESC,id DESC) n
+		     FROM jobs WHERE json_valid(task) AND issued>=` + strconv.FormatInt(window, 10) + `) WHERE n=1)`,
+		"PRAGMA user_version=4",
+	}
+	for _, step := range steps {
+		if _, err = tx.Exec(step); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	// 迁移只在版本升级时跑一次，把行数与耗时留在日志里：1 核机换二进制重启时，
+	// 「面板还要多久回来」就看这一行。
+	var rows int
+	if err = db.QueryRow("SELECT count(*) FROM latest").Scan(&rows); err != nil {
+		return err
+	}
+	slog.Info("materialized latest observations", "rows", rows, "took", time.Since(start).Round(time.Millisecond))
+	return nil
 }
 
 // anchorFromDay picks the anchor for a legacy day of month: the newest date not
@@ -678,7 +773,7 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 		}
 		kinds[t.Kind] = true
 		j := model.Job{ID: model.Secret()[:24], Task: t}
-		if _, err = tx.ExecContext(ctx, "INSERT INTO jobs(id,task_id,node_id,task,issued) VALUES(?,?,?,?,?)", j.ID, t.ID, node, encode(t), now.Unix()); err != nil {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO jobs(id,task_id,node_id,task,issued,probe_key) VALUES(?,?,?,?,?,?)", j.ID, t.ID, node, encode(t), now.Unix(), t.ProbeKey()); err != nil {
 			return nil, err
 		}
 		out = append(out, j)
@@ -702,11 +797,14 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 	return nil
 }
 func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([]model.Observation, error) {
-	// json_valid 挡住坏掉的任务 JSON：json1 遇到非法 JSON 会让整条语句报 "malformed JSON"，
-	// 一条旧数据不该让整台节点的观测列表打不开。
-	// issued>=ProbeWindow 之外的行不参与分组：最新一次观测在探测间隔（30-60s / 1h）之后
-	// 早已被判为过期，读它们只会让每台节点的请求都去扫一遍七天的任务表。
-	rows, err := s.query(ctx, `SELECT task,issued,finished,result FROM jobs WHERE node_id=? AND id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY task_id,json_extract(task,'$.kind'),json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier') ORDER BY issued DESC,id DESC) n FROM jobs WHERE node_id=? AND json_valid(task) AND issued>=?) WHERE n=1) ORDER BY task_id`, node, node, now.Add(-ProbeWindow).Unix())
+	// 读的是物化表 latest：每台节点、每个分组（任务 × 种类 × 协议族 × 目标/端口 ×
+	// 地区 × 运营商）只留最新一行，由 jobs 上的触发器维护。旧实现在窗口内对
+	// 上万行逐行 json_extract 再排序（线上 65ms/节点、首页扇出 465ms），这里
+	// 只剩几十行（实测 0.03ms/节点）。
+	// 窗口仍然生效：窗口外的最后一条不显示，与从前一致。
+	// json_valid 兜底：任务 JSON 坏掉的行写不进 latest，这一组继续显示更早那条
+	// （旧查询同样用 json_valid 过滤），下面的 Unmarshal 再挡一层。
+	rows, err := s.query(ctx, `SELECT task,issued,finished,result FROM latest WHERE node_id=? AND issued>=? ORDER BY probe_key`, node, now.Add(-ProbeWindow).Unix())
 	if err != nil {
 		return nil, err
 	}
