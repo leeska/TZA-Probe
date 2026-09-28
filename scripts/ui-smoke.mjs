@@ -73,7 +73,7 @@ async function until(predicate, label) {
     "Timed out: " +
       label +
       "; toast=" +
-      w.document.querySelector("#toast").textContent,
+      (w.document?.querySelector("#toast")?.textContent ?? "(没有管理端文档)"),
   );
 }
 const $ = (s) => w.document.querySelector(s);
@@ -1203,9 +1203,103 @@ await until(
   );
   publicDOM.window.document.querySelector("#dialog").close();
 }
+// 达量降速（线路按「窗口内平均带宽」降速，德国商家常见：近 24 小时平均超过 100 Mbit/s 降速）：
+// 只有真填了降速阈值的线路才多出这一行，没填的机器一行都不加。平均值来自 Agent 上报的网卡
+// 计数增量（存储按整点桶累加），所以这里造一台机器并连发两次上报（间隔要过 3 秒去重窗口）。
+const throttleName = "降速验收 " + Date.now();
+const madeThrottle = await fetch(base + "/api/v1/admin/nodes", {
+  method: "POST",
+  headers: { ...adminHeaders, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: throttleName,
+    region: "德国",
+    group: "DE",
+    public: true,
+    billing_at: "2026-09-01T00:00:00Z",
+    traffic_mode: "sum",
+    line_mbps: 1000,
+    throttle_mbps: 1,
+    throttle_hours: 1,
+    alerts: { throttle: true },
+  }),
+});
+assert.equal(
+  madeThrottle.status,
+  200,
+  "带降速阈值的节点要能创建: " + (await madeThrottle.clone().text()),
+);
+const throttleNode = await madeThrottle.clone().json();
+const throttleReport = (metrics) =>
+  fetch(base + "/api/v1/agent/report", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + throttleNode.token, "Content-Type": "application/json" },
+    body: JSON.stringify({ protocol: 1, metrics }),
+  });
+const throttleMetrics = {
+  counter_id: "ui-smoke-throttle", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2,
+  net_in: 1000, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", arch: "amd64",
+  cpu_cores: 2, version: "smoke", ip_families: ["ipv4"],
+};
+assert.equal((await throttleReport(throttleMetrics)).status, 204, "第一次上报建立流量基线");
+await new Promise((resolve) => setTimeout(resolve, 3500));
+const throttleAfter = { ...throttleMetrics, net_in: throttleMetrics.net_in + 675000000, uptime: 3660 };
+assert.equal((await throttleReport(throttleAfter)).status, 204, "第二次上报带上网卡计数增量");
+// 服务端先把窗口平均带宽算出来（公开接口就能读），再用它断言界面：DOM 滞后一拍，
+// 直接断言界面会读到「0 bit/s」那一帧。
+const throttleView = async () =>
+  (await (await fetch(base + "/api/v1/nodes")).json()).find((x) => x.id === throttleNode.id);
+await until(async () => ((await throttleView())?.avg_bps || 0) > 0, "服务端算出窗口平均带宽");
+{
+  const view = await throttleView();
+  assert.equal(view.window_hours, 1, "窗口按节点配置的 1 小时");
+  assert.equal(view.covered_hours, 1, "覆盖小时数不能超过窗口");
+  assert(view.avg_bps > 1.4e6, `6.75 亿字节在 1 小时窗口里的均值至少 1.5 Mbit/s，实际 ${view.avg_bps} bit/s`);
+  assert.equal(view.throttled, true, "均值超过阈值要标 throttled");
+}
+publicSearch.value = throttleName;
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+const throttleCard = () =>
+  [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) =>
+    c.textContent.includes(throttleName),
+  );
+await until(
+  () => /近 1 小时均值 [\d.]+ Mbit\/s/.test(throttleCard()?.querySelector(".throttle-note")?.textContent || ""),
+  "带阈值的卡片要出现降速那一行（含窗口均值）",
+);
+{
+  const note = throttleCard().querySelector(".throttle-note");
+  assert(
+    /近 1 小时均值 [\d.]+ Mbit\/s · 阈值 1 Mbit\/s/.test(note.textContent),
+    `降速行要写窗口均值与阈值，实际「${note.textContent}」`,
+  );
+  assert(note.classList.contains("over"), "平均值远超阈值时这一行要标红（.over）");
+}
+// 详情页同样只在配了阈值时多给一格，并且把线路带宽写出来。
+throttleCard().querySelector("[data-detail]").click();
+await until(
+  () => publicDOM.window.document.querySelector("#dialog .detail-wide"),
+  "详情页的降速格",
+);
+{
+  const tile = publicDOM.window.document.querySelector("#dialog .detail-wide");
+  assert(tile.textContent.includes("线路带宽 1000 Mbit/s"), `详情格要写线路带宽，实际「${tile.textContent}」`);
+  assert(/近 1 小时平均带宽\s*[\d.]+ Mbit\/s/.test(tile.textContent), `详情格要写窗口平均带宽，实际「${tile.textContent}」`);
+  assert(tile.textContent.includes("已达阈值"), "超过阈值时详情格要写明");
+  assert(/\.detail-stats > \.detail-wide \{[^}]*grid-column: 1 \/ -1/.test(styles), "详情格要占满整行");
+  publicDOM.window.document.querySelector("#dialog").close();
+}
 publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+// 没配阈值的机器（长期免费那台，本轮创建且仍在）不许出现降速行，也不许留一个空行占位。
+{
+  const plain = [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) =>
+    c.textContent.includes(longName),
+  );
+  assert(plain, "搜索复位后要能找回没配阈值的节点卡片");
+  assert(!plain.querySelector(".throttle-note"), "没配阈值的机器不显示降速行");
+}
+await fetch(base + "/api/v1/admin/nodes/" + throttleNode.id, { method: "DELETE", headers: adminHeaders });
 publicDOM.window.close();
 console.log(
-  "PASS: login, node creation/edit, billing and alerts, search/filter/batch catalog, combined checks and dual stack, overseas custom targets, edit round-trip and explicit binding, notifications page, logout, public cards/search/IPv6. DOM simulation; visual layout not covered.",
+  "PASS: login, node creation/edit, billing and alerts, search/filter/batch catalog, combined checks and dual stack, overseas custom targets, edit round-trip and explicit binding, notifications page, logout, public cards/search/IPv6, bandwidth throttle row. DOM simulation; visual layout not covered.",
 );

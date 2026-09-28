@@ -50,6 +50,15 @@ export function stampISO(text) {
 export function percent(used, total) {
   return total > 0 ? Math.min(100, (used / total) * 100) : 0;
 }
+// 带宽：接口给的窗口平均速率是 bit/s，按商家规格的口径写成 Mbit/s（十进制），
+// 不足 1 Mbit/s 退到 kbit/s，别写成 0.0 Mbit/s。
+export function mbps(bits) {
+  if (!Number.isFinite(bits)) return "—";
+  if (bits <= 0) return "0 bit/s";
+  if (bits >= 1e6) return `${(bits / 1e6).toFixed(bits < 1e7 ? 2 : 1)} Mbit/s`;
+  if (bits >= 1e3) return `${(bits / 1e3).toFixed(0)} kbit/s`;
+  return `${bits.toFixed(0)} bit/s`;
+}
 export const statusName = {
   ok: "正常",
   pending: "检测中",
@@ -61,6 +70,7 @@ export const kindName = {
   offline: "离线提醒",
   renewal: "续费提醒",
   traffic: "流量警告",
+  throttle: "降速警告",
   load: "负载警告",
   test: "通知测试",
 };

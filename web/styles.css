@@ -653,6 +653,12 @@ button.node-name:hover {
   text-overflow: ellipsis;
 }
 
+/* 达量降速那一行（近 N 小时平均带宽 / 降速阈值）：与上一行的额度说明同款，
+   只有真的达到阈值时才转红——正常状态不额外染色，免得一格里的两行看着不统一。 */
+.metric small.throttle-note.over {
+  color: var(--red);
+}
+
 /* Speeds (Twin Telemetry Pods) */
 .speeds {
   display: grid;
@@ -1799,6 +1805,11 @@ pre,
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* 详情页只有线路配了降速阈值时才多这一格，占满整行，不跟上面两格抢 1fr/1fr。 */
+.detail-stats > .detail-wide {
+  grid-column: 1 / -1;
 }
 
 .detail-stats span {

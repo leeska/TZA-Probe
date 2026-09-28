@@ -145,7 +145,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 4 {
+	if version > 5 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -182,6 +182,14 @@ func Open(path string) (*Store, error) {
 	if version < 4 {
 		// 「每个目标最新一次」从「读时扫窗口」改成物化表 + 触发器。
 		if err = migrateLatest(db, nowFunc()); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 5 {
+		// 小时流量桶，供「窗口内平均带宽」（达量降速）使用。不回填：天桶切不出小时，
+		// 而窗口本来就从这台机器开始上报的那一刻算起（CoveredHours 会如实写出来）。
+		if _, err = db.Exec("BEGIN; CREATE TABLE IF NOT EXISTS traffic_hour(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, hour INTEGER NOT NULL, incoming INTEGER NOT NULL, outgoing INTEGER NOT NULL, PRIMARY KEY(node_id,hour)); CREATE INDEX IF NOT EXISTS traffic_hour_age ON traffic_hour(hour); PRAGMA user_version=5; COMMIT;"); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -319,6 +327,8 @@ CREATE TABLE nodes(id TEXT PRIMARY KEY, config TEXT NOT NULL, token_hash TEXT NO
 CREATE TABLE samples(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, at INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(node_id,at));
 CREATE INDEX samples_age ON samples(at);
 CREATE TABLE traffic(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, day INTEGER NOT NULL, incoming INTEGER NOT NULL, outgoing INTEGER NOT NULL, PRIMARY KEY(node_id,day));
+CREATE TABLE traffic_hour(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, hour INTEGER NOT NULL, incoming INTEGER NOT NULL, outgoing INTEGER NOT NULL, PRIMARY KEY(node_id,hour));
+CREATE INDEX traffic_hour_age ON traffic_hour(hour);
 CREATE TABLE tasks(id TEXT PRIMARY KEY, config TEXT NOT NULL);
 CREATE TABLE bindings(task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, due INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(task_id,node_id));
 CREATE TABLE jobs(id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, task TEXT NOT NULL, issued INTEGER NOT NULL, finished INTEGER, result TEXT);
@@ -401,7 +411,74 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 			v.TrafficUsed = max(0, v.TrafficUsed+v.TrafficAdjustment)
 		}
 	}
-	return views, nil
+	return views, s.attachWindow(ctx, views, now)
+}
+
+// attachWindow 给每台节点算「降速窗口内的平均带宽」。
+//
+// 数据来自 traffic_hour（Report 每次上报把网卡计数增量累加到整点桶），所以窗口任意、
+// 且代价与窗口无关：一次按节点分组的查询就把所有节点都算完（首页每秒一轮 /nodes，
+// 逐台查会把 1 核机的时间又叠回去）。窗口起点向下取整到整点：分子覆盖的桶区间与
+// 分母 (now-起点) 完全对应；而 now 与窗口起点的分钟相位相同，开头多算的那点不足
+// 一小时正好补上当前这个没走完的桶。
+//
+// 覆盖不足窗口（新接入、Agent 停过）时按真实覆盖秒数取平均，并把 CoveredHours 报给
+// 面板，由它写「统计中」——不假装有一整个窗口的数据。
+func (s *Store) attachWindow(ctx context.Context, views []model.NodeView, now time.Time) error {
+	if len(views) == 0 {
+		return nil
+	}
+	byWindow := map[int][]string{}
+	for i := range views {
+		hours := views[i].Node.WindowHours()
+		views[i].WindowHours = hours
+		byWindow[hours] = append(byWindow[hours], views[i].ID)
+	}
+	for hours, ids := range byWindow {
+		start := (now.Unix() - int64(hours)*3600) / 3600 * 3600
+		span := now.Unix() - start
+		rows, err := s.query(ctx, "SELECT node_id,coalesce(sum(incoming),0),coalesce(sum(outgoing),0),min(hour) FROM traffic_hour WHERE hour>=? GROUP BY node_id", start)
+		if err != nil {
+			return err
+		}
+		type window struct{ in, out, first int64 }
+		buckets := map[string]window{}
+		for rows.Next() {
+			var id string
+			var w window
+			if err = rows.Scan(&id, &w.in, &w.out, &w.first); err != nil {
+				rows.Close()
+				return err
+			}
+			buckets[id] = w
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return err
+		}
+		wanted := map[string]bool{}
+		for _, id := range ids {
+			wanted[id] = true
+		}
+		for i := range views {
+			v := &views[i]
+			b, ok := buckets[v.ID]
+			if !wanted[v.ID] || !ok || span <= 0 {
+				continue
+			}
+			covered := min(span, now.Unix()-b.first)
+			if covered <= 0 {
+				continue
+			}
+			v.AvgBits = float64(model.Traffic(b.in, b.out, v.TrafficMode)) * 8 / float64(covered)
+			v.CoveredHours = int((covered + 3599) / 3600)
+			if covered >= span {
+				v.CoveredHours = hours
+			}
+			v.Throttled = v.ThrottleMbps > 0 && v.AvgBits >= float64(v.ThrottleMbps)*1e6
+		}
+	}
+	return nil
 }
 
 // SaveNode creates or updates a node and returns the stored id plus, on
@@ -526,6 +603,13 @@ func (s *Store) Report(ctx context.Context, id string, m model.Metrics, now time
 	}
 	day := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC).Unix()
 	if _, err = tx.ExecContext(ctx, "INSERT INTO traffic VALUES(?,?,?,?) ON CONFLICT(node_id,day) DO UPDATE SET incoming=incoming+excluded.incoming,outgoing=outgoing+excluded.outgoing", id, day, in, out); err != nil {
+		return err
+	}
+	// 同一份增量再落一个整点桶：天桶服务「本周期用量」，小时桶服务「窗口内平均带宽」
+	// （达量降速）。天桶切不出 24 小时以外的窗口，也不该为了一个展示指标回头去扫
+	// samples（每节点每天 1440 行、还要 json_extract 出累计计数）。
+	hour := now.Unix() / 3600 * 3600
+	if _, err = tx.ExecContext(ctx, "INSERT INTO traffic_hour VALUES(?,?,?,?) ON CONFLICT(node_id,hour) DO UPDATE SET incoming=incoming+excluded.incoming,outgoing=outgoing+excluded.outgoing", id, hour, in, out); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -861,8 +945,10 @@ func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([
 const (
 	samplesRetention = 30 * 24 * time.Hour
 	trafficRetention = 400 * 24 * time.Hour
-	JobsRetention    = 7 * 24 * time.Hour
-	eventsRetention  = 90 * 24 * time.Hour
+	// 小时桶只服务窗口内平均带宽（窗口上限 168 小时），留 30 天与 samples 同档。
+	trafficHourRetention = 30 * 24 * time.Hour
+	JobsRetention        = 7 * 24 * time.Hour
+	eventsRetention      = 90 * 24 * time.Hour
 )
 
 func (s *Store) Clean(ctx context.Context, now time.Time) error {
@@ -876,7 +962,7 @@ func (s *Store) Clean(ctx context.Context, now time.Time) error {
 	for _, q := range []struct {
 		query string
 		age   time.Duration
-	}{{"DELETE FROM samples WHERE at<?", samplesRetention}, {"DELETE FROM traffic WHERE day<?", trafficRetention}, {"DELETE FROM jobs WHERE issued<?", JobsRetention}, {"DELETE FROM events WHERE at<?", eventsRetention}} {
+	}{{"DELETE FROM samples WHERE at<?", samplesRetention}, {"DELETE FROM traffic WHERE day<?", trafficRetention}, {"DELETE FROM traffic_hour WHERE hour<?", trafficHourRetention}, {"DELETE FROM jobs WHERE issued<?", JobsRetention}, {"DELETE FROM events WHERE at<?", eventsRetention}} {
 		if _, err = tx.ExecContext(ctx, q.query, now.Add(-q.age).Unix()); err != nil {
 			return err
 		}

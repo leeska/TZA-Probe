@@ -32,10 +32,13 @@ type Alerts struct {
 	RenewalDays    int     `json:"renewal_days"`
 	Traffic        bool    `json:"traffic"`
 	TrafficPercent float64 `json:"traffic_percent"`
-	Load           bool    `json:"load"`
-	CPUPercent     float64 `json:"cpu_percent"`
-	MemoryPercent  float64 `json:"memory_percent"`
-	HoldSeconds    int     `json:"hold_seconds"`
+	// Throttle warns when the average transfer rate over the throttle window
+	// reaches the line's throttle threshold (see Node.ThrottleMbps).
+	Throttle      bool    `json:"throttle"`
+	Load          bool    `json:"load"`
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemoryPercent float64 `json:"memory_percent"`
+	HoldSeconds   int     `json:"hold_seconds"`
 }
 type Node struct {
 	TrafficAdjustment int64  `json:"traffic_adjustment"`
@@ -53,6 +56,14 @@ type Node struct {
 	LatencyCarriers []string `json:"latency_carriers,omitempty"`
 	TrafficLimit    int64    `json:"traffic_limit"`
 	TrafficMode     string   `json:"traffic_mode"`
+	// LineMbps / ThrottleMbps / ThrottleHours describe a line whose provider
+	// throttles it on sustained bandwidth rather than on a monthly volume — the
+	// common German wording is「近 24 小时平均流量超过 100 Mbit/s 即临时降速到
+	// 100 Mbit/s」. 0 means "not declared": the panel then shows no bandwidth row
+	// and keeps no alert for it.
+	LineMbps      int `json:"line_mbps"`
+	ThrottleMbps  int `json:"throttle_mbps"`
+	ThrottleHours int `json:"throttle_hours"`
 	// BillingAt is the cycle anchor: its day and time of day repeat every month
 	// (RFC3339, second precision). See Cycle.
 	BillingAt   string  `json:"billing_at"`
@@ -84,6 +95,15 @@ func (n Node) Validate() error {
 	if n.TrafficMode != "sum" && n.TrafficMode != "max" && n.TrafficMode != "in" && n.TrafficMode != "out" {
 		return errors.New("流量方式须为 sum/max/in/out")
 	}
+	if n.LineMbps < 0 || n.LineMbps > MaxLineMbps || n.ThrottleMbps < 0 || n.ThrottleMbps > MaxLineMbps {
+		return errors.New("带宽须为 0–1000000 Mbit/s")
+	}
+	if n.ThrottleHours < 0 || n.ThrottleHours > MaxThrottleHours {
+		return errors.New("降速统计窗口须为 0–168 小时")
+	}
+	if n.ThrottleMbps > 0 && n.LineMbps > 0 && n.ThrottleMbps > n.LineMbps {
+		return errors.New("降速阈值不能高于线路带宽")
+	}
 	if n.ExpiresAt != "" {
 		if _, err := parseUTC(n.ExpiresAt); err != nil {
 			return errors.New("到期时间须为 RFC3339（精确到秒）")
@@ -99,7 +119,31 @@ func (n Node) Validate() error {
 	if (a.Traffic && a.TrafficPercent == 0) || (a.Load && (a.CPUPercent == 0 || a.MemoryPercent == 0 || a.HoldSeconds < 30)) {
 		return errors.New("启用告警需设置有效阈值；负载持续时间至少 30 秒")
 	}
+	if a.Throttle && n.ThrottleMbps == 0 {
+		return errors.New("启用降速告警需先填写降速阈值")
+	}
 	return nil
+}
+
+// 达量降速（bandwidth-based throttling）的边界：阈值与线路带宽都以 Mbit/s 记，
+// 窗口以小时记（默认 24，与德国商家常见口径一致）。
+const (
+	DefaultThrottleHours = 24
+	MaxThrottleHours     = 168
+	MaxLineMbps          = 1000000
+)
+
+// WindowHours is the throttle window actually used: 0 falls back to the default.
+func (n Node) WindowHours() int {
+	if n.ThrottleHours <= 0 {
+		return DefaultThrottleHours
+	}
+	return n.ThrottleHours
+}
+
+// ThrottleWindow is WindowHours as a duration.
+func (n Node) ThrottleWindow() time.Duration {
+	return time.Duration(n.WindowHours()) * time.Hour
 }
 
 type Metrics struct {
@@ -176,6 +220,14 @@ type NodeView struct {
 	CycleStart  int64    `json:"cycle_start"`
 	CycleEnd    int64    `json:"cycle_end"`
 	TrafficUsed int64    `json:"traffic_used"`
+	// AvgBits / CoveredHours / Throttled describe the throttle window: the average
+	// transfer rate over that window (bits per second, computed the same way as
+	// TrafficUsed, i.e. by the node's traffic_mode), how many hours of it the host
+	// actually reported, and whether the rate has reached ThrottleMbps.
+	AvgBits      float64 `json:"avg_bps"`
+	CoveredHours int     `json:"covered_hours"`
+	WindowHours  int     `json:"window_hours"`
+	Throttled    bool    `json:"throttled"`
 	// ProbeTargets lists what this host is actually told to probe: one entry per distinct
 	// kind / carrier / family / region among the enabled tasks bound to it. The public card
 	// draws a latency or backhaul cell only for an entry it finds here, so a host left out of

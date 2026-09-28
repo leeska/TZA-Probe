@@ -848,3 +848,19 @@ node scripts/ui-smoke.mjs
   - `gofmt -l .`、`go vet ./...`、`go test ./...`、`go test -race ./internal/storage ./internal/httpapi ./internal/mcp`、`git diff --check` 全过。
   - A/B（`/root/work/tza-perf/ab-observations.sh`：旧二进制 `deec974` vs 新二进制，同一份线上库快照、同一个扇出脚本）：串行 19 台 `observations?slim=1` 总耗时 **0.472s → 0.012s**（最慢 0.068s → 0.002s）；并行首页扇出 3 轮 **0.29/0.24/0.26s → 0.02/0.02/0.01s**（observations 中位 133ms → 2ms）；前后响应内容 **19 台 / 288 组 / 0 处不一致**；库文件 187M → 190M（多一列 + 一张几百行的表）。
 - 待确认：直接删掉「某分组最新的那一行」而该组还有更早的在窗口内时，物化表不会回落到更早那条（旧查询会）。生产路径没有这种删除（`Clean` 从最旧开始删、`SaveTask` 整任务删），真出现时该组会缺席到下一次探测写入为止。另外窗口仍决定「多久以前的最后一条还显示」，这是刻意保留的语义。
+
+## 2026-09-28 达量降速：按窗口平均带宽统计流量（`traffic_hour`）
+
+- 需求：用户拿来一张德国商家的 Leistungen 规格（1 vCore / 1 GB / 30 GB、1 Gbit/s 端口，「近 24 小时平均流量超过 100 Mbit/s 即临时降速到 100 Mbit/s」）问「TZA-Probe 里面好像没有这种达量降速的流量统计模式，是不是可以加一个」。当时面板只有「本计费周期累计用量 / 额度」（字节、按月锚点），**没有带宽这一维**，也没有滚动窗口的概念。
+- 做法：把它做成节点上的一条**线路规格**，口径沿用节点自带的流量统计方式（`traffic_mode`），数据来自 Agent 已在报的网卡累计计数——**Agent 不用动，机队不用升级**。
+  - 新表 `traffic_hour(node_id, hour, incoming, outgoing)`：`Report` 把同一份网卡计数增量同时累加到天桶（服务周期用量）与整点桶（服务窗口平均带宽）。天桶切不出 24 小时以外的窗口，也不该为了一个展示指标回头去扫 `samples`（每节点每天 1440 行、还要 `json_extract` 出累计计数）。保留期 30 天（窗口上限 168 小时），迁移 v5 只建表不回填（天桶切不出小时；覆盖不足由 `covered_hours` 如实报出）。
+  - 节点新增三项：`line_mbps`（线路带宽，0 为不标注）、`throttle_mbps`（降速阈值与降速后速率，0 为不设）、`throttle_hours`（统计窗口，默认 24、上限 168）；告警新增 `alerts.throttle`（开启要求先填阈值，规则在 `notify` 里，触发/恢复各一次）。
+  - `NodeView` 新增 `avg_bps`（窗口平均带宽，bit/s）、`window_hours`、`covered_hours`、`throttled`。计算放在 `storage.attachWindow`：一次按节点分组的查询算完所有节点（首页每秒一轮 `/nodes`，逐台查会把 1 核机的时间又叠回去），窗口起点向下取整到整点——分子覆盖的桶区间与分母 `now-起点` 完全对应，开头多算的那点不足一小时正好补上当前这个没走完的桶。覆盖不满窗口时按真实覆盖秒数取平均。
+  - 界面：只有真填了阈值的那台才多一行（`周期用量` 那一格下的 `.throttle-note`：「近 24 小时均值 39.8 Mbit/s · 阈值 100 Mbit/s」，达标时整行转红），详情页多一格占满整行的「近 N 小时平均带宽」（含降速阈值、线路带宽、统计口径、覆盖不足时写明本机已上报几小时）。没配阈值的机器一行都不加，不留占位。后台「计费与续费」三格 + 「提醒规则」的「达量降速警告」；MCP 的 `create_node` / `update_node` schema 同步三格与告警开关（逐字段合并语义有测试钉住）。
+- 验证：
+  - 独立算出的平均值与接口一致：本机造 25 个小时桶（昼 60 / 夜 12 Mbit/s，65/35 拆分双向），按桶独立算出 **39.80 Mbit/s**（87011 秒），`GET /api/v1/nodes` 返回 `avg_bps` = **39.80 Mbit/s**、`window_hours`=24、`covered_hours`=24、`throttled`=false。
+  - 真浏览器（本机 25774，种子面板 + 两个节点）：正常状态那一行 `rgb(134, 134, 139)`、宽度 204px 且 `scrollWidth` 也是 204（**没有省略号**）；把桶乘 5 后接口 198.93 Mbit/s、`throttled`=true，界面刷新后那一行 198.9 Mbit/s、class `throttle-note over`、颜色 `rgb(255, 59, 48)`；卡片高度 **{600, 600}**（一台配了阈值、一台没配），`.card-bottom` 两台的 y 都是 1049（加一行不破坏卡片齐平）；详情页那一格宽度 747px = `.detail-stats` 整行宽，文案「近 24 小时平均带宽 39.8 Mbit/s / 降速阈值 100 Mbit/s · 线路带宽 1000 Mbit/s · 按双向统计」，`#toast` 为空。
+  - 测试：`gofmt -l .`、`go vet ./...`、`go test ./...` 全过；新增 `internal/model/throttle_test.go`（字段边界表驱动：窗口 0/168 合法、169 与负数被拒、阈值>线路带宽被拒、开了告警却没阈值被拒；窗口默认值）、`internal/storage/throttle_test.go`（窗口平均与阈值判定；`traffic_mode=max` 取较大方向；覆盖不满窗口时 `covered_hours`<窗口且按真实覆盖秒数取平均）、`internal/notify/throttle_test.go`（1 Mbit/s 均值 × 1 Mbit/s 阈值触发一次、抬阈值后恢复一次、消息里带数字）；`mcp_test` 里 `create_node` 落库三格 + `update_node` 只改提到的字段（没提的保持原值）。
+  - `ui-smoke` 新增一整段：服务端先算出 `avg_bps`（`until` 等它 > 0，DOM 会滞后一拍）、`window_hours`/`covered_hours`/`throttled`，公开卡片那一行必须带窗口均值与阈值、达标时带 `.over`，详情页必须有占满整行的降速格与线路带宽，没配阈值的机器不许出现这一行；控制组：把 `web/app.js` + `web/detail.js` 的两处改动 stash 掉，`ui-smoke` 会在「等降速那一行」超时失败。
+  - 顺手修了 `ui-smoke` 的一个可读性问题：`until` 超时时读的是管理端文档的 `#toast`，而那段跑在公开页上、管理端 JSDOM 已 `close()`，超时只会抛 `Cannot read properties of undefined`，看不到到底在等什么（这次就撞上了）。改成可选链 + 兜底文案。
+- 待确认：这份规格（1 vCore / 1 GB / 30 GB / 1 Gbit/s、24 小时内平均超 100 Mbit/s 降速）就是 **de-netcup-1o**（TZA-Probe 主控，1C/963M/29G）的商家文案；但那台按设计不跑 Agent，所以面板量不到它自己的平均带宽——要量它就得分给它一个只报指标、不挂探测任务的节点。另外「平均」的口径按节点的 `traffic_mode`（双向/较大方向/仅下载/仅上传），与本周期用量同一口径；商家若按单方向计费需要把该节点切到 `in` 或 `out`。
