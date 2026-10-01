@@ -693,15 +693,20 @@ button.node-name:hover {
   min-width: 0;
 }
 
+/* 方向徽章：16px 的浅色圆 + 9px 箭头。原来是 20px 圆 + 11px 箭头，比 12px 的文字大一圈，
+   整列看着比别的字重；缩到 16px 后落在文字行高之内，数字与徽章才是同一档。圆圈中心与
+   数字的光学中心对齐；箭头字形（↓/↑）自己的墨迹比圆心高 0.5px，属于亚像素量级，不再补。
+   （试过 padding-top: 1px，那是把整枚字位移 1px，反而偏到另一侧 0.5px，所以不加。） */
 .speed-icon {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 11px;
+  font-size: 9px;
+  line-height: 1;
   flex-shrink: 0;
 }
 
@@ -746,13 +751,11 @@ button.node-name:hover {
   font-weight: 500;
 }
 
-/* 三个格子按内容定宽（原来三等分）：手机宽度的三分之一装不下「10099 → 9929」这种多骨干回程，
-   必然折成两行；按内容定宽 + space-between 就能一行读完，短值（CTG / CMIN2）也不会被撑开。
-   内容特别长时 auto 轨道会回落到 min-content，配合 strong 的 overflow-wrap 仍然不溢出。 */
+/* 三个格子等宽（与参考图一致）：格子宽度不跟内容走，长标签最多占两行（完整值在 title 里）。
+   上一条按内容定宽的版本会让三格宽度不等，用户要求「等比例」。 */
 .route-grid {
   display: grid;
-  grid-template-columns: auto auto auto;
-  justify-content: space-between;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 

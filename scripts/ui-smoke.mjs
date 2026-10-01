@@ -871,12 +871,22 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     [...band.querySelectorAll(".stat-item .unit")].length === 2,
     "累计流量的单位也要与速率的「/s」同样弱化（10px 灰字，不是跟着数字加粗）",
   );
-  // 回程：运营商在回程值之前、同一行（「电信 163」这种读法，与列表视图、参考图一致）。
+  // 回程：运营商在回程值之前、同一行（「电信 163」这种读法，与列表视图、参考图一致），
+  // 三格等宽（用户点名「要这种等比例的」——按内容定宽的版本三格宽度不等）。
   const chip = compact.querySelector(".route-label");
   assert.equal(chip.children[0].tagName, "SPAN", "回程块里运营商名要排在回程值前面");
   assert(
     /\.route-label \{[^}]*flex-direction: row/.test(styles) && /\.route-label \{[^}]*align-items: baseline/.test(styles),
     "回程块的运营商与回程值要同一行、基线对齐（以前是名字在上、回程在下）",
+  );
+  assert(
+    /\.route-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/.test(styles),
+    "回程三格要等宽（不按内容定宽）",
+  );
+  // 方向徽章 16px：原来是 20px，比 12px 的文字大一圈、比文字行高还高，看着和后面的数字不是一档。
+  assert(
+    /\.speed-icon \{[^}]*width: 16px[^}]*height: 16px/s.test(styles),
+    "方向徽章要 16px（落在 12px 文字的行高之内）",
   );
   assert(!/\.card-bottom|\.speed-box/.test(styles), "旧的两块（速率方块 / 卡底页脚）样式已清掉");
 }

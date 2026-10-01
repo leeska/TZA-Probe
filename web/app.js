@@ -581,10 +581,12 @@ function networkSections(n, f) {
 }
 
 function routeCells(n, f) {
+  // 三格等宽，所以「10099 → 9929」这种多骨干值在手机上要折两行。折点放在箭头之前（箭头与目标
+  // 用不断行空格连起来）：第二行是「→ 9929」而不是孤零零一个「9929」——读起来是续行，不是断裂。
   return f.routes
     .map(
       (r) =>
-        `<button class="route-label ${r.known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}"><span>${r.carrier}</span><strong class="${r.known ? "" : "muted"}">${esc(r.label)}</strong></button>`,
+        `<button class="route-label ${r.known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}"><span>${r.carrier}</span><strong class="${r.known ? "" : "muted"}">${esc(r.label).replace(/ → /g, " →&nbsp;")}</strong></button>`,
     )
     .join("");
 }
