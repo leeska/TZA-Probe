@@ -830,19 +830,26 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
   const band = compact.querySelector(".card-stats");
   assert(band, "卡片要有一条实时速率 + 到期 + 价格的信息带");
   assert.equal(band.querySelectorAll(".speeds .speed-line").length, 2, "信息带里两个方向各一行速率");
+  // 顺序：上行在上、下行在下（用户点名「上下行换下位置，上行在上面」）。两个视图共用这份 HTML。
+  const speedLines = [...band.querySelectorAll(".speeds .speed-line")];
+  assert(
+    speedLines[0].title === "实时上传" && speedLines[1].title === "实时下载",
+    `速率要上行在上、下行在下，实际「${speedLines.map((l) => l.title).join(" / ")}」`,
+  );
   const pill = band.querySelector(".expiry-pill");
   assert(
     pill && /剩余 \d+ 天|长期|未设到期|已过期/.test(pill.textContent),
     `信息带要有到期胶囊，实际「${pill?.textContent}」`,
   );
   assert(band.querySelector(".price-label"), "信息带要有价格");
-  // 中列是这张机器开机以来的网卡计数（↓ / ↑ 各一张），照参考图补上「单独的上下行流量」。
-  // 探测段的取值来自公开接口，所以这里按接口的值断言，顺带证明取的是 metrics.net_in/out。
+  // 中列是这张机器开机以来的网卡计数（↑ / ↓ 各一张，顺序跟速率一致：上行在上），
+  // 照参考图补上「单独的上下行流量」。取值来自公开接口，所以按接口的值断言，
+  // 顺带证明取的是 metrics.net_in/out。
   const totals = [...band.querySelectorAll(".stat-totals .stat-item")];
   assert.equal(totals.length, 2, "信息带中列要给上下行两张累计流量");
   assert(
-    totals[0].textContent.trim() === `累计 ${bytes(plannedNode.metrics.net_in)}` &&
-      totals[1].textContent.trim() === `累计 ${bytes(plannedNode.metrics.net_out)}`,
+    totals[0].textContent.trim() === `累计 ${bytes(plannedNode.metrics.net_out)}` &&
+      totals[1].textContent.trim() === `累计 ${bytes(plannedNode.metrics.net_in)}`,
     `累计要按网卡计数分别给上下行，实际「${totals.map((t) => t.textContent).join(" / ")}」`,
   );
   assert.equal(compact.querySelectorAll(".speed-box").length, 0, "卡片里不再有宽大的速率方块");
@@ -1411,8 +1418,8 @@ await until(
   );
   assert.deepEqual(
     totals,
-    [`累计 ${bytes(throttleAfter.net_in)}`, `累计 ${bytes(throttleAfter.net_out)}`],
-    `累计要给上下行两张、按网卡计数换算单位，实际「${totals.join(" / ")}」`,
+    [`累计 ${bytes(throttleAfter.net_out)}`, `累计 ${bytes(throttleAfter.net_in)}`],
+    `累计要给上下行两张（上行在上）、按网卡计数换算单位，实际「${totals.join(" / ")}」`,
   );
 }
 // 详情页同样只在配了阈值时多给一格，并且把线路带宽写出来。

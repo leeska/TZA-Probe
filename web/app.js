@@ -193,13 +193,14 @@ function metricsInner(n) {
 }
 
 // 实时速率：两个视图都是「一行一个方向」（小图标 + 数值靠右，标签收进 title）。
-// 卡片里原先两个大方块（图标 + 两行文字 + 内边距）单独占 59px，现在压进卡底那一带的一行里。
+// 顺序是**上行在上、下行在下**（用户 2026-10-01 点名「上下行换下位置，上行在上面」）；
+// 列表视图共用这份 HTML，所以两处一起换。卡片里原先两个大方块（图标 + 两行文字 + 内边距）单独占 59px。
 function speedsInner(n) {
   const m = n.metrics,
     isLive = n.online && m;
   const rateIn = isLive ? `${bytes(m.rate_in)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
   const rateOut = isLive ? `${bytes(m.rate_out)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
-  return `<div class="speed-line" title="实时下载"><span class="speed-icon teal-icon">↓</span><strong>${rateIn}</strong></div><div class="speed-line" title="实时上传"><span class="speed-icon orange-icon">↑</span><strong>${rateOut}</strong></div>`;
+  return `<div class="speed-line" title="实时上传"><span class="speed-icon orange-icon">↑</span><strong>${rateOut}</strong></div><div class="speed-line" title="实时下载"><span class="speed-icon teal-icon">↓</span><strong>${rateIn}</strong></div>`;
 }
 
 // 系统标签：优先显示 Agent 报的发行版（见 format.js 的 osLabel），老 Agent 没有这个字段
@@ -553,7 +554,7 @@ function withUnit(value) {
 function statsBand(n, f) {
   const m = n.metrics;
   const totals = m
-    ? `<div class="stat-totals" title="本次开机网卡累计（↓ 下载 / ↑ 上传）；换网卡或重装会重置"><span class="stat-item">累计 <b>${withUnit(bytes(m.net_in))}</b></span><span class="stat-item">累计 <b>${withUnit(bytes(m.net_out))}</b></span></div>`
+    ? `<div class="stat-totals" title="本次开机网卡累计（↑ 上传 / ↓ 下载）；换网卡或重装会重置"><span class="stat-item">累计 <b>${withUnit(bytes(m.net_out))}</b></span><span class="stat-item">累计 <b>${withUnit(bytes(m.net_in))}</b></span></div>`
     : "";
   return `<div class="card-stats"><div class="speeds">${speedsInner(n)}</div>${totals}<div class="stat-facts">${expiryPill(n, f.expiry)}${priceLabel(n)}</div></div>`;
 }
