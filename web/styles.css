@@ -706,7 +706,9 @@ button.node-name:hover {
 }
 
 .speed-line strong {
-  font-size: 13px;
+  /* 与信息带里的累计、列表里其他数值同一档 12px：速率曾经是 13px，卡片里被覆盖成 12px、
+     列表里却还是 13px，同一行里就它一个偏大。 */
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -963,8 +965,8 @@ button.node-name:hover {
 }
 
 /* 信息带里的字号只有两档：数值 12px（速率与累计），其余说明文字 10px（单位、累计二字、价格）。
-   原来是四种混在一行——速率 13px、累计 11px、单位 10px、价格 11px，相邻两列的基线看着就对不上。 */
-.card-stats .speed-line strong,
+   原来是四种混在一行——速率 13px、累计 11px、单位 10px、价格 11px，相邻两列的基线看着就对不上。
+   速率的 12px 已经写在全局的 .speed-line strong 上（列表视图也用它），这里只管累计那一个。 */
 .card-stats .stat-item b {
   font-size: 12px;
   font-weight: 650;

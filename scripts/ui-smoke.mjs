@@ -859,8 +859,9 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
   // 信息带的字号只有两档：数值 12px（速率与累计）、说明文字 10px（单位、累计二字、价格）。
   // 以前是 13 / 11 / 10 / 11 四种混在一行，相邻两列的基线看着就对不上。
   assert(
-    /\.card-stats \.speed-line strong,\s*\n\.card-stats \.stat-item b \{[^}]*font-size: 12px/.test(styles),
-    "信息带里的数值（速率与累计）要同一档字号",
+    /\.speed-line strong \{[^}]*font-size: 12px/.test(styles) &&
+      /\.card-stats \.stat-item b \{[^}]*font-size: 12px/.test(styles),
+    "信息带里的数值（速率与累计）要同一档字号——速率的 12px 写在全局 .speed-line strong 上，列表也一并跟上",
   );
   assert(
     /\.card-stats \.unit,\s*\n\.card-stats \.speed-line \.unit-none,\s*\n\.card-stats \.stat-item,\s*\n\.card-stats \.price-label \{[^}]*font-size: 10px[^}]*color: var\(--muted\)/.test(styles),
