@@ -856,6 +856,27 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     "信息带里速率靠左竖排、计费靠右竖排",
   );
   assert(/\.net-band \{[^}]*flex-direction: column/.test(styles), "卡片里的延迟块要竖排文字 + 色带");
+  // 信息带的字号只有两档：数值 12px（速率与累计）、说明文字 10px（单位、累计二字、价格）。
+  // 以前是 13 / 11 / 10 / 11 四种混在一行，相邻两列的基线看着就对不上。
+  assert(
+    /\.card-stats \.speed-line strong,\s*\n\.card-stats \.stat-item b \{[^}]*font-size: 12px/.test(styles),
+    "信息带里的数值（速率与累计）要同一档字号",
+  );
+  assert(
+    /\.card-stats \.unit,\s*\n\.card-stats \.speed-line \.unit-none,\s*\n\.card-stats \.stat-item,\s*\n\.card-stats \.price-label \{[^}]*font-size: 10px[^}]*color: var\(--muted\)/.test(styles),
+    "信息带里的说明文字（单位、累计、价格）要同一档字号与颜色",
+  );
+  assert(
+    [...band.querySelectorAll(".stat-item .unit")].length === 2,
+    "累计流量的单位也要与速率的「/s」同样弱化（10px 灰字，不是跟着数字加粗）",
+  );
+  // 回程：运营商在回程值之前、同一行（「电信 163」这种读法，与列表视图、参考图一致）。
+  const chip = compact.querySelector(".route-label");
+  assert.equal(chip.children[0].tagName, "SPAN", "回程块里运营商名要排在回程值前面");
+  assert(
+    /\.route-label \{[^}]*flex-direction: row/.test(styles) && /\.route-label \{[^}]*align-items: baseline/.test(styles),
+    "回程块的运营商与回程值要同一行、基线对齐（以前是名字在上、回程在下）",
+  );
   assert(!/\.card-bottom|\.speed-box/.test(styles), "旧的两块（速率方块 / 卡底页脚）样式已清掉");
 }
 const switchedId = clickedBtnNode;

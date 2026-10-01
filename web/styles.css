@@ -744,9 +744,13 @@ button.node-name:hover {
   font-weight: 500;
 }
 
+/* 三个格子按内容定宽（原来三等分）：手机宽度的三分之一装不下「10099 → 9929」这种多骨干回程，
+   必然折成两行；按内容定宽 + space-between 就能一行读完，短值（CTG / CMIN2）也不会被撑开。
+   内容特别长时 auto 轨道会回落到 min-content，配合 strong 的 overflow-wrap 仍然不溢出。 */
 .route-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: auto auto auto;
+  justify-content: space-between;
   gap: 8px;
 }
 
@@ -846,12 +850,15 @@ button.node-name:hover {
   letter-spacing: 0.08em;
 }
 
+/* 回程：运营商在回程前（「电信 163」这种一行读法，与列表视图、参考图一致）。
+   以前是竖排——名字在上、回程在下居中；现在横排、基线对齐，长的多骨干回程照旧最多两行。 */
 .route-label {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 4px;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 6px;
   border-radius: 12px;
   border: 1px solid var(--line);
   cursor: pointer;
@@ -862,13 +869,16 @@ button.node-name:hover {
 .route-label span {
   font-size: 10px;
   color: var(--muted);
+  flex: 0 0 auto;
 }
 
 .route-label strong {
   font-size: 12px;
   font-weight: 650;
   color: var(--accent);
+  min-width: 0;
   overflow-wrap: anywhere;
+  text-align: center;
 }
 
 /* 多骨干组合（如 4837 → 9929 → 163）在窄格子里最多两行，完整标签在 title 里。 */
@@ -950,6 +960,28 @@ button.node-name:hover {
   color: var(--ink);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+}
+
+/* 信息带里的字号只有两档：数值 12px（速率与累计），其余说明文字 10px（单位、累计二字、价格）。
+   原来是四种混在一行——速率 13px、累计 11px、单位 10px、价格 11px，相邻两列的基线看着就对不上。 */
+.card-stats .speed-line strong,
+.card-stats .stat-item b {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-stats .unit,
+.card-stats .speed-line .unit-none,
+.card-stats .stat-item,
+.card-stats .price-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.card-stats .stat-item b {
+  white-space: nowrap;
 }
 
 .stat-facts {

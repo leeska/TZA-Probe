@@ -543,10 +543,17 @@ function billingInner(n, expiry) {
 // 卡片底部的信息带：三列两行——左列实时速率（↓/↑）、中列本次开机网卡累计（↓/↑），
 // 右列到期与价格。取代原来两个大方块 + 一条独立页脚（合计 105px），也比「速率一列、
 // 计费一列」的两列版更紧凑：三列各自两行，一眼能对上方向。
+// 累计流量和速率用同一套写法：数值 12px 深色，单位（GB / KB）10px 灰色——与速率的「/s」一致，
+// 不然同一行里「7.3 KB/s」的单位被弱化、「7.3 GB」的却是深色加粗，看着就不是一套。
+function withUnit(value) {
+  const [num, unit] = String(value).split(" ");
+  return unit ? `${num} <span class="unit">${unit}</span>` : num;
+}
+
 function statsBand(n, f) {
   const m = n.metrics;
   const totals = m
-    ? `<div class="stat-totals" title="本次开机网卡累计（↓ 下载 / ↑ 上传）；换网卡或重装会重置"><span class="stat-item">累计 <b>${bytes(m.net_in)}</b></span><span class="stat-item">累计 <b>${bytes(m.net_out)}</b></span></div>`
+    ? `<div class="stat-totals" title="本次开机网卡累计（↓ 下载 / ↑ 上传）；换网卡或重装会重置"><span class="stat-item">累计 <b>${withUnit(bytes(m.net_in))}</b></span><span class="stat-item">累计 <b>${withUnit(bytes(m.net_out))}</b></span></div>`
     : "";
   return `<div class="card-stats"><div class="speeds">${speedsInner(n)}</div>${totals}<div class="stat-facts">${expiryPill(n, f.expiry)}${priceLabel(n)}</div></div>`;
 }
