@@ -855,7 +855,11 @@ button.node-name:hover {
   letter-spacing: 0.08em;
 }
 
-/* 回程：三格等宽，每格是「彩色圆点 + 回程值」一行读完（用户从三版对比里挑的方案③）。
+/* 回程：三格等宽，每格是「彩色圆点 + 回程值」**左对齐**一行读完（用户从三版对比里挑的方案③）。
+   左对齐不是随手选的：内容居中时，圆点在格内的横向位置跟着值的长短跑（实测同一行三格分别是
+   距格左 33.1 / 6.6 / 26.3px），三个圆点不在一条竖线上，用户直接指出「没对齐」。左对齐后
+   圆点统一在距格左 5px（padding 4 + 边框 1）、值统一从距格左 16px 起——实测 21 个回程格全部落在
+   这两个位置上，三点成列、值也成列。
    圆点颜色 = 运营商身份（电信蓝 / 联通红 / 移动绿，与参考图一致）；格子里不再写运营商名，
    但名字仍在 aria-label / title / data-focus-carrier 里。
    量过：一格内容 88.7px，而「10099 → 9929」11px/650 是 74.4px，加圆点 7 + 间距 4 = 85.4px，
@@ -866,7 +870,7 @@ button.node-name:hover {
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 2px 4px;
   padding: 8px 4px;
   border-radius: 12px;

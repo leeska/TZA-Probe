@@ -888,8 +888,10 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     /\.route-label \{[^}]*flex-wrap: wrap/.test(styles) &&
       /\.route-label \{[^}]*align-items: center/.test(styles) &&
       // 圆点不是文字，没有基线可言；值与圆点在同一行居中
-      !/\.route-label \{[^}]*align-items: baseline/.test(styles),
-    "回程格是圆点 + 值一行居中；更长的值整段落到第二行（不断在箭头上）",
+      !/\.route-label \{[^}]*align-items: baseline/.test(styles) &&
+      // 左对齐：居中时圆点会跟着值的长短在格子里左右跑，三个圆点不在一条竖线上
+      /\.route-label \{[^}]*justify-content: flex-start/.test(styles),
+    "回程格是圆点 + 值一行左对齐（三格圆点成列）；更长的值整段落到第二行（不断在箭头上）",
   );
   assert(
     /\.route-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/.test(styles),
