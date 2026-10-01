@@ -876,8 +876,11 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
   const chip = compact.querySelector(".route-label");
   assert.equal(chip.children[0].tagName, "SPAN", "回程块里运营商名要排在回程值前面");
   assert(
-    /\.route-label \{[^}]*flex-direction: row/.test(styles) && /\.route-label \{[^}]*align-items: baseline/.test(styles),
-    "回程块的运营商与回程值要同一行、基线对齐（以前是名字在上、回程在下）",
+    /\.route-label \{[^}]*flex-direction: row/.test(styles) &&
+      /\.route-label \{[^}]*align-items: baseline/.test(styles) &&
+      // flex-wrap: 多骨干值整体落到第二行，而不是在「→」处断成两半（jsdom 不做布局，只能钉样式）
+      /\.route-label \{[^}]*flex-wrap: wrap/.test(styles),
+    "回程块的运营商与回程值要同一行、基线对齐；放不下时整段回程值换行（以前断在箭头上）",
   );
   assert(
     /\.route-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/.test(styles),

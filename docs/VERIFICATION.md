@@ -1118,3 +1118,16 @@ node scripts/ui-smoke.mjs
 验证：`bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` / `UI_SMOKE_OK`；新增断言钉住
 `grid-template-columns: repeat(3, minmax(0, 1fr))` 与 `.speed-icon` 的 16px（jsdom 不做布局，几何只能靠样式
 文本断言；回程三格的等宽是在真浏览器里量 98.7 / 98.7 / 98.7 确认的）。浅色 / 深色 / 1440 宽各截一遍。
+
+## 2026-10-01 回程值不再断在箭头上（整段落第二行）
+
+用户圈了三网回程里联通那一格：`.route-label` 三格等宽后，多骨干值在「→」处折行，第二行只剩「→ 9929」，
+看着像断了。改成 `flex-wrap: wrap`（`.route-label`，`gap: 2px 5px`）——放不下时**整个回程值落到第二行**，
+第一行只剩运营商名，值本身不再被拆开。
+
+先量了为什么必须两行：312px 的卡片里三格各 98.7px、内容宽 84.7px（padding 8px 6px + 1px 边框），
+而「10099 → 9929」12px/650 的自然宽度是 **81.2px**（`scrollWidth` 会被 line-clamp 骗到 60，得克隆一份
+`white-space: nowrap` 的量），加运营商名 20px 与间距 5px 共 106.2px。要一行读完，值必须缩到 9.8px
+（太小）或去掉运营商名——所以选了「值整体换行」。实测线上：三格仍 98.7px 等宽、高 50px，三个运营商名都在
+`y=9`（对齐），联通那格运营商在 `y=9`、值在 `y=26` 且 `strongLines=1`（完整一行）。
+

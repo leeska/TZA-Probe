@@ -855,14 +855,18 @@ button.node-name:hover {
   letter-spacing: 0.08em;
 }
 
-/* 回程：运营商在回程前（「电信 163」这种一行读法，与列表视图、参考图一致）。
-   以前是竖排——名字在上、回程在下居中；现在横排、基线对齐，长的多骨干回程照旧最多两行。 */
+/* 回程：运营商在回程前（「电信 163」这种一行读法，与列表视图、参考图一致；三格等宽）。
+   格子里放不下时**整段回程值落到第二行**，而不是在「→」处断成两半：
+   `flex-wrap: wrap` 让 strong 作为一个整体换行（第一行只剩运营商名，第二行是完整的「10099 → 9929」）。
+   量过：312px 的卡片、三格各 98.7px、内容宽 84.7px，而「10099 → 9929」在 12px 下 81.2px，加上
+   运营商名 20px 与间距 5px 共 106.2px——所以多骨干值必然两行；以前断在箭头上，第二行只剩「→ 9929」。 */
 .route-label {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: center;
-  gap: 5px;
+  gap: 2px 5px;
   padding: 8px 6px;
   border-radius: 12px;
   border: 1px solid var(--line);
