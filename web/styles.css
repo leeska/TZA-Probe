@@ -855,19 +855,20 @@ button.node-name:hover {
   letter-spacing: 0.08em;
 }
 
-/* 回程：运营商在回程前（「电信 163」这种一行读法，与列表视图、参考图一致；三格等宽）。
-   格子里放不下时**整段回程值落到第二行**，而不是在「→」处断成两半：
-   `flex-wrap: wrap` 让 strong 作为一个整体换行（第一行只剩运营商名，第二行是完整的「10099 → 9929」）。
-   量过：312px 的卡片、三格各 98.7px、内容宽 84.7px，而「10099 → 9929」在 12px 下 81.2px，加上
-   运营商名 20px 与间距 5px 共 106.2px——所以多骨干值必然两行；以前断在箭头上，第二行只剩「→ 9929」。 */
+/* 回程：三格等宽，每格是「彩色圆点 + 回程值」一行读完（用户从三版对比里挑的方案③）。
+   圆点颜色 = 运营商身份（电信蓝 / 联通红 / 移动绿，与参考图一致）；格子里不再写运营商名，
+   但名字仍在 aria-label / title / data-focus-carrier 里。
+   量过：一格内容 88.7px，而「10099 → 9929」11px/650 是 74.4px，加圆点 7 + 间距 4 = 85.4px，
+   余 3.3px；值若是 12px 要 92.2px —— 装不下，这就是这一版把值收到 11px 的原因。
+   flex-wrap 留着兜底：更长的三段骨干值整段落到第二行，不会断在箭头上。 */
 .route-label {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: center;
-  gap: 2px 5px;
-  padding: 8px 6px;
+  gap: 2px 4px;
+  padding: 8px 4px;
   border-radius: 12px;
   border: 1px solid var(--line);
   cursor: pointer;
@@ -875,14 +876,20 @@ button.node-name:hover {
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.route-label span {
-  font-size: 10px;
-  color: var(--muted);
+.carrier-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
   flex: 0 0 auto;
 }
 
+.carrier-dot.ct { background: var(--accent); }
+.carrier-dot.cu { background: var(--red); }
+.carrier-dot.cm { background: var(--green); }
+.carrier-dot.cx { background: var(--subtle); }
+
 .route-label strong {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 650;
   color: var(--accent);
   min-width: 0;

@@ -1131,3 +1131,24 @@ node scripts/ui-smoke.mjs
 （太小）或去掉运营商名——所以选了「值整体换行」。实测线上：三格仍 98.7px 等宽、高 50px，三个运营商名都在
 `y=9`（对齐），联通那格运营商在 `y=9`、值在 `y=26` 且 `strongLines=1`（完整一行）。
 
+## 2026-10-01 回程改「彩色圆点 + 值」一行读完（用户在三个方案里挑的第③个）
+
+等宽三格 + 运营商名 + 12px 值在 390px 下必然折行（一格内容 88.7px，值本身 81.2px + 名字 20px + 间距），
+把三版方案摆成一张对比图让用户挑，用户选了「彩色圆点替掉运营商名」的第③版。
+
+- `routeCells`：格子里的 `<span>运营商名</span>` 换成 `<span class="carrier-dot ct|cu|cm">`（电信蓝
+  `--accent` / 联通红 `--red` / 移动绿 `--green`，与用户参考图的点一致），值收到 **11px/650**。
+  名字没有从数据里丢：`aria-label`（「联通 10099 → 9929」）、`title`、`data-focus-carrier`
+  都照旧 —— 点选、筛选、详情都按 carrier 走，ui-smoke 有断言钉住「不写名字就必须留在 aria-label」。
+- `.route-label`：`padding: 8px 4px`、`column-gap: 4px`、`align-items: center`（圆点没有基线）。
+  `flex-wrap: wrap` 留着兜底：以后真出现三段骨干，整段落到第二行，不会断在箭头上。
+- 量过（线上 390px，17 台 21 个回程格）：**折行 0 格**；每格 98.7px 等宽、高 **31.8px**（上一版 50px，
+  回程区矮 18px）；圆点中心与值中心都是 `15.9px`（同一行居中）；圆点实际颜色
+  `rgb(0,113,227)` / `rgb(255,59,48)` / `rgb(52,199,89)`。
+- 余量：一格内容 88.7px，圆点 7 + 间距 4 + 值 74.4（11px）= 85.4px，剩 3.3px。值若放回 12px 需要
+  92.2px —— 装不下，这就是这一版值收 11px 的原因（已跟用户说明并发过三版对比图）。
+
+验证：`bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` / `UI_SMOKE_OK`（新增断言：第一项是
+`carrier-dot` 且带配色类、aria-label 里含运营商名、`align-items: center` 且不再是 baseline、
+圆点 7px 与三色变量、值 11px）。深/浅主题与 1440 宽各截一遍。
+

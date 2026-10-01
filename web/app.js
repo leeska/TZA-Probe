@@ -580,14 +580,21 @@ function networkSections(n, f) {
   return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="latency-bands">${latencyBands(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
 }
 
+// 回程格子里的运营商身份用彩色圆点表示（电信蓝 / 联通红 / 移动绿，与用户的参考图一致）。
+// 三格等宽后，那 20px 的运营商名正好是「多骨干值一行读完」差的那几 px —— 用户从三版对比里
+// 挑了这一版（方案③）。名字没丢：aria-label、title、data-focus-carrier 里都还在，
+// 圆点的颜色就是它的身份，点选/筛选照旧按 carrier 走。
+const CARRIER_DOTS = { 电信: "ct", 联通: "cu", 移动: "cm" };
+
 function routeCells(n, f) {
-  // 三格等宽，所以「10099 → 9929」这种多骨干值在手机上要折两行。折点放在箭头之前（箭头与目标
-  // 用不断行空格连起来）：第二行是「→ 9929」而不是孤零零一个「9929」——读起来是续行，不是断裂。
+  // 三格等宽、一格内容 88.7px：圆点 7 + 间距 4 + 回程值（11px）74.4 = 85.4px，余 3.3px 一行读完。
+  // flex-wrap 留着兜底——万一以后出现更长的三段骨干值，整段落到第二行，不会断在箭头上。
   return f.routes
-    .map(
-      (r) =>
-        `<button class="route-label ${r.known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}"><span>${r.carrier}</span><strong class="${r.known ? "" : "muted"}">${esc(r.label).replace(/ → /g, " →&nbsp;")}</strong></button>`,
-    )
+    .map((r) => {
+      const dot = CARRIER_DOTS[r.carrier] || "cx";
+      const label = esc(r.label).replace(/ → /g, " →&nbsp;");
+      return `<button class="route-label ${r.known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}" aria-label="${esc(`${r.carrier} ${r.label}`)}"><span class="carrier-dot ${dot}" aria-hidden="true"></span><strong class="${r.known ? "" : "muted"}">${label}</strong></button>`;
+    })
     .join("");
 }
 

@@ -871,20 +871,37 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     [...band.querySelectorAll(".stat-item .unit")].length === 2,
     "累计流量的单位也要与速率的「/s」同样弱化（10px 灰字，不是跟着数字加粗）",
   );
-  // 回程：运营商在回程值之前、同一行（「电信 163」这种读法，与列表视图、参考图一致），
-  // 三格等宽（用户点名「要这种等比例的」——按内容定宽的版本三格宽度不等）。
+  // 回程三格等宽（用户点名「要这种等比例的」），每格「彩色圆点 + 回程值」一行读完——
+  // 用户从三版对比里挑的方案③：圆点颜色代表运营商（电信蓝 / 联通红 / 移动绿），
+  // 格子里不写运营商名。名字不能真丢：aria-label / title / data-focus-carrier 里必须有。
   const chip = compact.querySelector(".route-label");
-  assert.equal(chip.children[0].tagName, "SPAN", "回程块里运营商名要排在回程值前面");
+  assert.equal(chip.children[0].tagName, "SPAN", "回程格第一项要是代表运营商的圆点");
   assert(
-    /\.route-label \{[^}]*flex-direction: row/.test(styles) &&
-      /\.route-label \{[^}]*align-items: baseline/.test(styles) &&
-      // flex-wrap: 多骨干值整体落到第二行，而不是在「→」处断成两半（jsdom 不做布局，只能钉样式）
-      /\.route-label \{[^}]*flex-wrap: wrap/.test(styles),
-    "回程块的运营商与回程值要同一行、基线对齐；放不下时整段回程值换行（以前断在箭头上）",
+    /carrier-dot ct|carrier-dot cu|carrier-dot cm/.test(chip.children[0].className),
+    `回程圆点要带运营商配色类，实际「${chip.children[0].className}」`,
+  );
+  assert(
+    chip.dataset.focusCarrier && chip.getAttribute("aria-label")?.includes(chip.dataset.focusCarrier),
+    "格子里不写运营商名，就得在 aria-label / data-focus-carrier 里留着（筛选与详情按它走）",
+  );
+  assert(
+    /\.route-label \{[^}]*flex-wrap: wrap/.test(styles) &&
+      /\.route-label \{[^}]*align-items: center/.test(styles) &&
+      // 圆点不是文字，没有基线可言；值与圆点在同一行居中
+      !/\.route-label \{[^}]*align-items: baseline/.test(styles),
+    "回程格是圆点 + 值一行居中；更长的值整段落到第二行（不断在箭头上）",
   );
   assert(
     /\.route-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/.test(styles),
     "回程三格要等宽（不按内容定宽）",
+  );
+  assert(
+    /\.carrier-dot \{[^}]*width: 7px[^}]*height: 7px/s.test(styles) &&
+      /\.carrier-dot\.ct \{[^}]*var\(--accent\)/.test(styles) &&
+      /\.carrier-dot\.cu \{[^}]*var\(--red\)/.test(styles) &&
+      /\.carrier-dot\.cm \{[^}]*var\(--green\)/.test(styles) &&
+      /\.route-label strong \{[^}]*font-size: 11px/.test(styles),
+    "回程圆点 7px、按运营商配色（电信蓝/联通红/移动绿）；值 11px —— 12px 时多骨干值装不下一行",
   );
   // 方向徽章 16px：原来是 20px，比 12px 的文字大一圈、比文字行高还高，看着和后面的数字不是一档。
   assert(
