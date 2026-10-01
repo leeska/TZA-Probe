@@ -448,7 +448,9 @@ function nodeFacts(n) {
         missText: matches.length ? "超时" : "未检测",
         loss,
         lossText: loss == null ? "—" : loss.toFixed(1) + "%",
-        latencyBars: sampleBars(history, (s) => s.latency, 200),
+        // 原始样本交给渲染函数：列表视图画最近 20 次的延迟色带，卡片视图画「延迟 + 丢包」两
+        // 条各 10 格的小色带，两边取的都是这一份。
+        history,
         title: matches.length
           ? `${date(recent)} · 成功 ${received}/${sent} 次`
           : "尚未检测",
@@ -538,10 +540,15 @@ function billingInner(n, expiry) {
   return `${expiryPill(n, expiry)}${priceLabel(n)}`;
 }
 
-// 卡片底部的信息带：实时速率 + 到期 + 价格压成紧凑的一两行（取代原来两个大方块 + 一条独立页脚，
-// 那两块加起来 105px）。速率那一块仍由 liveTick 每秒补丁（.speeds 还在），其余每次重绘时更新。
+// 卡片底部的信息带：三列两行——左列实时速率（↓/↑）、中列本次开机网卡累计（↓/↑），
+// 右列到期与价格。取代原来两个大方块 + 一条独立页脚（合计 105px），也比「速率一列、
+// 计费一列」的两列版更紧凑：三列各自两行，一眼能对上方向。
 function statsBand(n, f) {
-  return `<div class="card-stats"><div class="speeds">${speedsInner(n)}</div><div class="stat-facts">${expiryPill(n, f.expiry)}${priceLabel(n)}</div></div>`;
+  const m = n.metrics;
+  const totals = m
+    ? `<div class="stat-totals" title="本次开机网卡累计（↓ 下载 / ↑ 上传）；换网卡或重装会重置"><span class="stat-item">累计 <b>${bytes(m.net_in)}</b></span><span class="stat-item">累计 <b>${bytes(m.net_out)}</b></span></div>`
+    : "";
+  return `<div class="card-stats"><div class="speeds">${speedsInner(n)}</div>${totals}<div class="stat-facts">${expiryPill(n, f.expiry)}${priceLabel(n)}</div></div>`;
 }
 
 // 没有探测任务（按设计不挂三网任务，例如国际线路的机器）：两段都不画，只留一行说明。
@@ -561,9 +568,9 @@ function networkSections(n, f) {
   if (!f.hasIPv4 && !f.hasIPv6)
     return `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
   if (!f.hasProbe) return probeNote(f.probeState);
-  // 延迟与回程在这里各占一段：延迟是一家运营商一行（名字 / 延迟 / 丢包 / 最近 20 次色带），
-  // 与列表视图同一份行内文本（latencyLines）；回程仍是三个并排的胶囊。
-  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="latency-lines">${latencyLines(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
+  // 延迟与回程在这里各占一段：延迟是一家运营商一块（文字在上、延迟与丢包两条色带并排在下），
+  // 回程仍是三个并排的胶囊。
+  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="latency-bands">${latencyBands(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
 }
 
 function routeCells(n, f) {
@@ -582,7 +589,22 @@ function latencyLines(n, f) {
   return f.latencies
     .map(
       (l) =>
-        `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}"><span class="carrier-name">${l.carrier}</span><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars">${l.latencyBars}</span></button>`,
+        `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}"><span class="carrier-name">${l.carrier}</span><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars">${sampleBars(l.history, (s) => s.latency, 200)}</span></button>`,
+    )
+    .join("");
+}
+
+// 卡片视图的延迟块：一家运营商一块——上面一行「延迟 / 丢包」的文字，下面两条并排的小色带，
+// 每条画最近 CARD_BARS 次（参考图的形状就是这个：文字在上、色块在下，延迟与丢包并排）。
+// 列宽用同一套三列栅格（运营商 30px + 两条等宽），所以「延迟」的数值正对着上面那条色带。
+const CARD_BARS = 10;
+const lossPercent = (s) => (s.sent ? Math.max(0, (s.sent - s.received) / s.sent * 100) : null);
+
+function latencyBands(n, f) {
+  return f.latencies
+    .map(
+      (l) =>
+        `<button class="net-band ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}"><span class="band-head"><span class="carrier-name">${l.carrier}</span><span class="band-metric"><i>延迟</i><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="band-metric"><i>丢包</i><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span></span><span class="band-bars"><span class="quality-bars" title="最近 ${CARD_BARS} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, CARD_BARS)}</span><span class="quality-bars loss-bars" title="最近 ${CARD_BARS} 次丢包">${sampleBars(l.history, lossPercent, 20, CARD_BARS)}</span></span></button>`,
     )
     .join("");
 }
@@ -636,14 +658,14 @@ function cardInner(n) {
   return view === "list" ? listInner(n) : gridInner(n);
 }
 
-// 一行 20 格，每格代表一次探测结果，按那次的数值落到 20 档色带上
+// 一行 N 格，每格代表一次探测结果，按那次的数值落到 20 档色带上
 // （绿 → 青 → 黄 → 橙 → 红）。没有足够的探测时左边的格子留空，最新的一次在最右。
 // 颜色来自 styles.css 的 .quality-bar.qN：页面 CSP 是 style-src 'self'，行内
 // style 会被浏览器直接忽略，所以只能用 class。
-function sampleBars(samples, pick, ceiling) {
-  const recent = samples.slice(-20);
-  const cells = new Array(20).fill(null);
-  recent.forEach((s, i) => { cells[20 - recent.length + i] = s; });
+function sampleBars(samples, pick, ceiling, count = 20) {
+  const recent = samples.slice(-count);
+  const cells = new Array(count).fill(null);
+  recent.forEach((s, i) => { cells[count - recent.length + i] = s; });
   return cells
     .map((s) => {
       if (!s) return '<i class="quality-bar idle"></i>';

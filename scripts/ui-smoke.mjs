@@ -15,6 +15,8 @@ const require = createRequire(
 const { JSDOM, VirtualConsole } = require("jsdom");
 const { build } = require("esbuild");
 const root = fileURLToPath(new URL("../", import.meta.url));
+// 断言卡片上的数字用页面自己的格式化函数：写死字符串的话，格式化改了断言还在绿。
+const { bytes } = await import(new URL("../web/format.js", import.meta.url).href);
 const token = (await readFile(process.env.TZA_TEST_ADMIN_FILE, "utf8")).trim();
 const bundle = await build({
   entryPoints: [path.join(root, "web/app.js")],
@@ -639,7 +641,7 @@ await until(
   () =>
     [...publicDOM.window.document.querySelectorAll(".node-card")]
       .find((c) => c.textContent.includes(name))
-      ?.querySelector(".latency-lines .quality-bar:not(.idle)"),
+      ?.querySelector(".latency-bands .quality-bar:not(.idle)"),
   "public card values after the observations arrive",
 );
 assert.equal(
@@ -648,8 +650,8 @@ assert.equal(
   "公开页渲染不能抛错（抛了会被 refresh().catch(toast) 吞掉）",
 );
 assert(
-  /\d+ ms/.test(card.querySelector(".latency-lines .net-line strong").textContent),
-  `延迟行要给出数值，实际「${card.querySelector(".latency-lines .net-line strong").textContent}」`,
+  /\d+ ms/.test(card.querySelector(".latency-bands .net-band .band-metric strong").textContent),
+  `延迟要给出数值，实际「${card.querySelector(".latency-bands .net-band .band-metric strong").textContent}」`,
 );
 assert.notEqual(
   card.querySelector(".route-grid .route-label strong").textContent,
@@ -666,7 +668,7 @@ assert(
   !cardText.includes("其他"),
   "卡片地区之外的探测组（自定义的新加坡目标）不占一格",
 );
-assert.equal(card.querySelectorAll(".latency-lines .net-line").length, 3, "延迟只画真有任务的三网（一家一行）");
+assert.equal(card.querySelectorAll(".latency-bands .net-band").length, 3, "延迟只画真有任务的三网（一家一块）");
 // 服务端给的 probe_targets 里确实带着那些探测项（含自定义的「其他」目标），是卡片按地区筛掉的。
 const plannedNode = (await (await fetch(base + "/api/v1/nodes")).json()).find(
   (x) => x.id === card.dataset.node,
@@ -684,23 +686,45 @@ assert(
   ),
   "回程项也要在探测计划里",
 );
-// 延迟在卡片与列表里是同一份行内文本：一家运营商一行（名字 / 延迟 / 丢包 / 最近 20 次色带）。
-// 以前卡片是一格一家、延迟与丢包各占一行数值加一条色带（三格 174px），窄卡片还要靠容器查询
-// 换布局；现在两个视图共用 .net-line，卡片不再按自身宽度改排。
+// 卡片里的延迟块照参考图的形状来：一家运营商一块，上面一行「延迟 / 丢包」的文字、下面两条
+// 并排的小色带各 10 格（列表视图仍是行内一家一行、20 格）。以前卡片是一格一家、延迟与丢包
+// 各占一行数值加一条色带（三格 174px），窄卡片还要靠容器查询换布局。
 {
-  const lines = card.querySelectorAll(".latency-lines .net-line");
-  assert.equal(lines.length, 3, "延迟一家运营商一行");
-  for (const line of lines) {
-    assert(line.querySelector(".carrier-name"), "每行要给运营商");
-    assert(/\d+ ms|未检测|超时/.test(line.querySelector("strong").textContent), "每行要给延迟数值或说明");
-    assert(/丢包/.test(line.querySelector(".net-loss")?.textContent || ""), "每行要给丢包率");
-    assert.equal(line.querySelectorAll(".quality-bar").length, 20, "每行给最近 20 次探测的色带");
-    assert.equal(line.dataset.focusKind, "latency", "行内文本要带聚焦信息");
-    assert(line.dataset.focusCarrier, "行内文本要带运营商");
-    assert(line.getAttribute("title"), "行内文本要有各自的探测时间提示");
+  const bands = card.querySelectorAll(".latency-bands .net-band");
+  assert.equal(bands.length, 3, "延迟一家运营商一块");
+  for (const band of bands) {
+    assert(band.querySelector(".band-head .carrier-name"), "每块要给运营商");
+    const metrics = [...band.querySelectorAll(".band-head .band-metric")];
+    assert.equal(metrics.length, 2, "每块上面要给「延迟 / 丢包」两项");
+    assert(/^延迟/.test(metrics[0].textContent), "第一项是延迟");
+    assert(/^\d+ ms|未检测|超时/.test(metrics[0].querySelector("strong").textContent), "延迟要给数值或说明");
+    assert(/^丢包/.test(metrics[1].textContent), "第二项是丢包");
+    assert(/%|—/.test(metrics[1].querySelector("strong").textContent), "丢包要给百分比");
+    const strips = [...band.querySelectorAll(".band-bars .quality-bars")];
+    assert.equal(strips.length, 2, "下面要并排两条色带（延迟 / 丢包）");
+    for (const strip of strips)
+      assert.equal(strip.querySelectorAll(".quality-bar").length, 10, "每条色带 10 格");
+    assert.equal(band.dataset.focusKind, "latency", "延迟块要带聚焦信息");
+    assert(band.dataset.focusCarrier, "延迟块要带运营商");
+    assert(band.getAttribute("title"), "延迟块要有各自的探测时间提示");
   }
   assert(!/\.latency-label|\.latency-grid/.test(styles), "方形延迟格那套样式已经撤掉");
   assert(!/@container node-card/.test(styles), "卡片不再按自身宽度换布局");
+  // 两条色带必须落在上面那一列的正下方：头部与色带共用同一套三列栅格，色带各自认领第 2 / 3 列。
+  // 少了 grid-column，第一条色带会掉进 30px 的运营商槽里（真浏览器里两条一长一短、和文字错开）。
+  const head = styles.match(/\.net-band \.band-head,\s*\n\.net-band \.band-bars \{([^}]*)\}/);
+  assert(
+    head && /grid-template-columns: 30px minmax\(0, 1fr\) minmax\(0, 1fr\)/.test(head[1]),
+    "延迟块的文字与色带要共用同一套三列栅格",
+  );
+  assert(
+    /\.net-band \.band-bars \.quality-bars \{[^}]*grid-column: 2/.test(styles),
+    "延迟色带要落在第 2 列（延迟数值正下方）",
+  );
+  assert(
+    /\.net-band \.band-bars \.loss-bars \{[^}]*grid-column: 3/.test(styles),
+    "丢包色带要落在第 3 列（丢包数值正下方）",
+  );
 }
 // 滚动锚定必须留给浏览器：每 10 秒整块替换卡片列表，内容在视口上方变高变矮时靠它稳住视图，
 // 关掉反而会让页面自己移动。贴底的情况由 app.js 的 renderCards 单独兜住。
@@ -791,10 +815,10 @@ assert(
   !publicDOM.window.document.querySelector("#dialog[data-node-id]"),
   "switching the address family must not open the detail dialog",
 );
-// 格子自己带聚焦信息：延迟行 → 该运营商延迟，回程胶囊 → 该运营商回程
-const latencyCell = findCard().querySelector(".latency-lines .net-line");
-assert.equal(latencyCell.dataset.focusKind, "latency", "延迟行要带上聚焦类型");
-assert(latencyCell.dataset.focusCarrier, "延迟行要带上运营商");
+// 格子自己带聚焦信息：延迟块 → 该运营商延迟，回程胶囊 → 该运营商回程
+const latencyCell = findCard().querySelector(".latency-bands .net-band");
+assert.equal(latencyCell.dataset.focusKind, "latency", "延迟块要带上聚焦类型");
+assert(latencyCell.dataset.focusCarrier, "延迟块要带上运营商");
 const routeCell = findCard().querySelector(".route-grid .route-label");
 assert.equal(routeCell.dataset.focusKind, "route", "回程胶囊要带上聚焦类型");
 assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
@@ -812,6 +836,15 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     `信息带要有到期胶囊，实际「${pill?.textContent}」`,
   );
   assert(band.querySelector(".price-label"), "信息带要有价格");
+  // 中列是这张机器开机以来的网卡计数（↓ / ↑ 各一张），照参考图补上「单独的上下行流量」。
+  // 探测段的取值来自公开接口，所以这里按接口的值断言，顺带证明取的是 metrics.net_in/out。
+  const totals = [...band.querySelectorAll(".stat-totals .stat-item")];
+  assert.equal(totals.length, 2, "信息带中列要给上下行两张累计流量");
+  assert(
+    totals[0].textContent.trim() === `累计 ${bytes(plannedNode.metrics.net_in)}` &&
+      totals[1].textContent.trim() === `累计 ${bytes(plannedNode.metrics.net_out)}`,
+    `累计要按网卡计数分别给上下行，实际「${totals.map((t) => t.textContent).join(" / ")}」`,
+  );
   assert.equal(compact.querySelectorAll(".speed-box").length, 0, "卡片里不再有宽大的速率方块");
   assert.equal(compact.querySelectorAll(".card-bottom").length, 0, "卡片底部不再有独立页脚");
   const sub = compact.querySelector(".node-sub");
@@ -822,7 +855,7 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
       /\.stat-facts \{[^}]*align-items: flex-end/.test(styles),
     "信息带里速率靠左竖排、计费靠右竖排",
   );
-  assert(/\.node-card \.net-line \{[^}]*display: flex/.test(styles), "卡片里的延迟行要横排");
+  assert(/\.net-band \{[^}]*flex-direction: column/.test(styles), "卡片里的延迟块要竖排文字 + 色带");
   assert(!/\.card-bottom|\.speed-box/.test(styles), "旧的两块（速率方块 / 卡底页脚）样式已清掉");
 }
 const switchedId = clickedBtnNode;
@@ -1212,7 +1245,7 @@ await until(
   assert.equal(long.querySelectorAll(".route-grid").length, 0, "没任务的卡片不画延迟 / 回程格子");
   assert.equal(long.querySelectorAll(".route-heading").length, 0, "没有分组就不该留着分组标题");
   assert.equal(long.querySelectorAll(".quality-bar").length, 0, "没任务的卡片不画灰色空条");
-  assert.equal(long.querySelectorAll(".route-label, .net-line").length, 0, "没任务就不给格子与行内文本");
+  assert.equal(long.querySelectorAll(".route-label, .net-band, .net-line").length, 0, "没任务就不给格子与延迟块");
   assert.equal(long.querySelector(".probe-none")?.textContent, "仅主机指标", "没任务的卡片给一行说明");
   assert(!long.textContent.includes("未检测"), "没任务就不该出现「未检测」");
   // 卡片高度靠「栅格拉伸 + 计费行贴底」保持齐平（说明行吃掉剩余空白居中），不靠占位元素。
@@ -1318,6 +1351,15 @@ await until(
     `降速行要写窗口均值与阈值，实际「${note.textContent}」`,
   );
   assert(note.classList.contains("over"), "平均值远超阈值时这一行要标红（.over）");
+  // 同一张卡片上的累计流量：6.75 亿字节要按方向写成 675 MB / 0 B（非零值把单位换算也一并盯住）。
+  const totals = [...throttleCard().querySelectorAll(".card-stats .stat-totals .stat-item")].map((t) =>
+    t.textContent.trim(),
+  );
+  assert.deepEqual(
+    totals,
+    [`累计 ${bytes(throttleAfter.net_in)}`, `累计 ${bytes(throttleAfter.net_out)}`],
+    `累计要给上下行两张、按网卡计数换算单位，实际「${totals.join(" / ")}」`,
+  );
 }
 // 详情页同样只在配了阈值时多给一格，并且把线路带宽写出来。
 throttleCard().querySelector("[data-detail]").click();
