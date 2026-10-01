@@ -192,17 +192,14 @@ function metricsInner(n) {
   return `${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
 }
 
-// 实时速率：卡片里是两个带标签的方框（图标 + 「实时下载」+ 数值）；
-// 列表里那格只有一百来像素宽，改成一行一条（图标 + 数值靠右，标签放进 title），
-// 两个视图的 HTML 都由这里出，liveTick 那一层跟着 view 走就不会串。
+// 实时速率：两个视图都是「一行一个方向」（小图标 + 数值靠右，标签收进 title）。
+// 卡片里原先两个大方块（图标 + 两行文字 + 内边距）单独占 59px，现在压进卡底那一带的一行里。
 function speedsInner(n) {
   const m = n.metrics,
     isLive = n.online && m;
   const rateIn = isLive ? `${bytes(m.rate_in)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
   const rateOut = isLive ? `${bytes(m.rate_out)}<span class="unit">/s</span>` : '<span class="unit-none">—</span>';
-  if (view === "list")
-    return `<div class="speed-line" title="实时下载"><span class="speed-icon teal-icon">↓</span><strong>${rateIn}</strong></div><div class="speed-line" title="实时上传"><span class="speed-icon orange-icon">↑</span><strong>${rateOut}</strong></div>`;
-  return `<div class="speed-box"><span class="speed-icon teal-icon">↓</span><div><small>实时下载</small><strong>${rateIn}</strong></div></div><div class="speed-box"><span class="speed-icon orange-icon">↑</span><div><small>实时上传</small><strong>${rateOut}</strong></div></div>`;
+  return `<div class="speed-line" title="实时下载"><span class="speed-icon teal-icon">↓</span><strong>${rateIn}</strong></div><div class="speed-line" title="实时上传"><span class="speed-icon orange-icon">↑</span><strong>${rateOut}</strong></div>`;
 }
 
 // 系统标签：优先显示 Agent 报的发行版（见 format.js 的 osLabel），老 Agent 没有这个字段
@@ -452,11 +449,6 @@ function nodeFacts(n) {
         loss,
         lossText: loss == null ? "—" : loss.toFixed(1) + "%",
         latencyBars: sampleBars(history, (s) => s.latency, 200),
-        lossBars: sampleBars(
-          history,
-          (s) => (s.sent ? Math.max(0, (s.sent - s.received) / s.sent * 100) : null),
-          20,
-        ),
         title: matches.length
           ? `${date(recent)} · 成功 ${received}/${sent} 次`
           : "尚未检测",
@@ -520,23 +512,36 @@ function familySwitch(n, f) {
 // 后面（例如 2226 年），照实写会变成「剩余 72965 天」，没有意义。真实日期留在 title 里。
 const LONG_TERM_DAYS = 3650;
 
-// 计费两块：到期与价格。卡片里横排在卡底，列表里竖排在计费格，文本完全一样。
+// 计费两块：到期与价格。列表视图竖排在计费格；卡片视图把这两样跟实时速率一起压进卡底那一带
+// 的一行（见 statsBand），所以这里拆成两个片段函数供两边复用，文本完全一样。
 // 价格：0 价且周期写着「免费」就写「免费」，不再说成「未设置价格」。
-function billingInner(n, expiry) {
-  const pill =
-    expiry == null
-      ? `<span class="expiry-pill">未设到期</span>`
-      : expiry < 0
-        ? `<span class="expiry-pill warning">已过期 ${Math.abs(expiry)} 天</span>`
-        : expiry > LONG_TERM_DAYS
-          ? `<span class="expiry-pill" title="到期 ${esc(String(n.expires_at || "").slice(0, 10))}">长期</span>`
-          : `<span class="expiry-pill${expiry <= 7 ? " warning" : ""}">剩余 ${expiry} 天</span>`;
+function expiryPill(n, expiry) {
+  return expiry == null
+    ? `<span class="expiry-pill">未设到期</span>`
+    : expiry < 0
+      ? `<span class="expiry-pill warning">已过期 ${Math.abs(expiry)} 天</span>`
+      : expiry > LONG_TERM_DAYS
+        ? `<span class="expiry-pill" title="到期 ${esc(String(n.expires_at || "").slice(0, 10))}">长期</span>`
+        : `<span class="expiry-pill${expiry <= 7 ? " warning" : ""}">剩余 ${expiry} 天</span>`;
+}
+
+function priceLabel(n) {
   const price = n.price
     ? `${esc(n.currency || "CNY")} ${n.price.toFixed(2)} / ${esc(n.price_period || "月")}`
     : /免费/.test(n.price_period || "")
       ? "免费"
       : "未设置价格";
-  return `${pill}<span class="price-label">${price}</span>`;
+  return `<span class="price-label">${price}</span>`;
+}
+
+function billingInner(n, expiry) {
+  return `${expiryPill(n, expiry)}${priceLabel(n)}`;
+}
+
+// 卡片底部的信息带：实时速率 + 到期 + 价格压成紧凑的一两行（取代原来两个大方块 + 一条独立页脚，
+// 那两块加起来 105px）。速率那一块仍由 liveTick 每秒补丁（.speeds 还在），其余每次重绘时更新。
+function statsBand(n, f) {
+  return `<div class="card-stats"><div class="speeds">${speedsInner(n)}</div><div class="stat-facts">${expiryPill(n, f.expiry)}${priceLabel(n)}</div></div>`;
 }
 
 // 没有探测任务（按设计不挂三网任务，例如国际线路的机器）：两段都不画，只留一行说明。
@@ -556,17 +561,9 @@ function networkSections(n, f) {
   if (!f.hasIPv4 && !f.hasIPv6)
     return `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
   if (!f.hasProbe) return probeNote(f.probeState);
-  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="route-grid latency-grid">${latencyCells(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
-}
-
-// 卡片视图的延迟格：一格一个运营商，延迟 / 丢包各一行数值加色带。
-function latencyCells(n, f) {
-  return f.latencies
-    .map(
-      (l) =>
-        `<button class="route-label latency-label ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}"><span class="carrier-name">${l.carrier}</span><span class="quality-row latency-row"><span>延迟</span><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="quality-bars">${l.latencyBars}</span><span class="quality-row loss-row"><span>丢包</span><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span><span class="quality-bars loss-bars">${l.lossBars}</span></button>`,
-    )
-    .join("");
+  // 延迟与回程在这里各占一段：延迟是一家运营商一行（名字 / 延迟 / 丢包 / 最近 20 次色带），
+  // 与列表视图同一份行内文本（latencyLines）；回程仍是三个并排的胶囊。
+  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="latency-lines">${latencyLines(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
 }
 
 function routeCells(n, f) {
@@ -601,7 +598,10 @@ function routeLines(n, f) {
 
 function gridInner(n) {
   const f = nodeFacts(n);
-  return `<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}</div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds">${speedsInner(n)}</div>${networkSections(n, f)}<div class="card-bottom">${billingInner(n, f.expiry)}</div>`;
+  // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
+  // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
+  // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
+  return `<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

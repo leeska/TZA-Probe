@@ -957,3 +957,45 @@ node scripts/ui-smoke.mjs
 
 待确认：老 Agent 的机器在机队升级前一直显示 `linux`（这是预期的回退），升级后自然变成发行版，
 不需要重启 Server。
+
+## 2026-10-01 公开卡片改成紧凑排版（实时速率 / 到期 / 价格收成一条带，延迟一家一行）
+
+需求：用户给了张参考图（另一家的探针卡片），原话「是否可以参考这种紧凑排版，现在的卡片太长了」。
+参考图的要点正好是它圈出的两处——① 实时速率、累计流量、到期 / 续费压成几条「左中右三列」的密排
+小行；② 延迟与丢包并排一行、各自带一小条历史色块。卡片视图此前在 390 宽的手机上单卡 701.5px，
+一屏放不下一张。
+
+做法（只动卡片视图，列表视图的六格与用户调过的密度一律不碰）：
+
+- 头部拆两行：第一行只有状态点 + 名字，右侧是发行版 / 架构胶囊（`osTagsInner`）；地区·分组与地址族
+  开关落到新的 `.node-sub` 行（`familySwitch`）。三样都挤在第一行时，358px 宽的卡片留给名字的只有
+  ~100px，`de-nosla-fra` 被 hyphen 折成三行，光头部就 104px。
+- 实时速率的两个 `.speed-box` 大块与 `.card-bottom` 计费页脚一起撤掉，换成一条 `.card-stats`：
+  左列竖排两个方向（`.speeds` → 两个 `.speed-line`，与列表视图共用同一份行内文本），右列竖排
+  到期胶囊与价格（`.stat-facts`）。`speedsInner` 不再按 `view` 分叉。合计 105px → 55px。
+- 延迟段从「一格一家、延迟 / 丢包各一行数值加一条色带」（三格 174px）改成「一家运营商一行」：
+  卡片与列表共用 `latencyLines` 产出的 `.net-line`（名字 / 延迟 / 丢包 / 最近 20 次色带），
+  174px → 84px。丢包的历史色带随之从卡片撤掉（数值保留，历史仍可在详情页看），
+  `nodeFacts` 里因此不再计算 `lossBars`。延迟格那套 CSS（`.latency-grid` / `.latency-label` /
+  `.quality-row` / `.route-label:not(.latency-label)`）与 `@container node-card` 容器查询一并删除。
+- 回程仍是三个并排胶囊，只把 `.route-grid` 的下边距交给新的信息带；卡片补回 20px 下内边距
+  （原来由页脚顶住），`.probe-none` 的 `min-height` 56 → 44。
+
+验证（线上库副本 + 真浏览器 chromium，`WIDTH=390`）：
+
+- 单卡 `358x701.5` → `358x493`（-30%）：`card-top 104→24`、`node-sub 30`、`metrics-grid 116→114`、
+  `card-stats 55`（原 `speeds 59` + `card-bottom 46`）、`latency-lines 84`（原 `route-grid 174`）、
+  回程 `52` 不变。无探测任务的机器 `431` → `322.5`。整页（18 台）`11062` → `8389`。
+- 卡片内没有任何元素 `scrollWidth > clientWidth`（逐元素量过），`CNY 619.00 / 半年`、
+  `621 GB 额度 · 双向`、`10099 → 9929` 都整行显示不省略；浅色 / 深色主题各截一遍，无突兀浅色块。
+- 列表视图只换了两条：`.speeds` 由栅格改竖排 flex、`.speed-line` 去重（两视图现在同一份速率文本），
+  宽屏六格与 390 宽的横向滚动都不变（行高 146 / 173 与改前一致）。
+- `scripts/ui-smoke.mjs` 的公开卡片断言同步换到新结构（`.latency-lines .net-line` 三行、每行
+  20 格色带 + 聚焦信息 + title；`.card-stats` 里两个方向 + 到期 + 价格；卡片里不再有
+  `.speed-box` / `.card-bottom`；样式表里 `.latency-label` / `@container node-card` 已清掉）。
+  反向验证：`git stash push -- web/` 后回归在「public card values after the observations arrive」
+  超时失败，pop 回来即绿——新断言咬得住新结构。
+- `gofmt -l .` 干净；`bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` / `UI_SMOKE_OK`。
+
+待确认：延迟只保留「最近 20 次的延迟色带」，丢包的历史色带从卡片撤掉（数值保留）；三网聚合的
+「平均延迟」行没有做——参考图那种一行聚合会丢掉分运营商数值。用户看截图后可能要求更狠或更松。

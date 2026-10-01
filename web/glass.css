@@ -562,13 +562,8 @@ h1 {
   background: linear-gradient(90deg, var(--green), #30d158);
 }
 
-/* ==========================================================================
-   Speeds (Twin Telemetry Pods)
-   ========================================================================== */
-.speed-box {
-  background: var(--glass-bg-subtle);
-  border: 1px solid var(--glass-border-subtle);
-}
+/* Speeds 的图标底色（.teal-icon / .orange-icon）沿用；原先两个大方块（.speed-box）随卡片的
+   紧凑排版撤掉了——实时速率现在是一行一个方向，跟到期 / 价格同在一带（.card-stats）。 */
 
 .teal-icon {
   background: rgba(var(--cyan-rgb), 0.15);
@@ -608,13 +603,8 @@ h1 {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* Card Bottom */
-.card-bottom {
-  background: var(--glass-bg-subtle);
-  border-top: 1px solid var(--glass-border-subtle);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-}
+/* Card Stats：卡片里的实时速率 / 到期 / 价格那一带。卡片本身已经是玻璃面，这一带只留一条
+   同色系的细分割线（颜色见 styles.css），不再叠一层底色。 */
 
 .expiry-pill {
   background: rgba(var(--green-rgb), 0.12);

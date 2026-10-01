@@ -639,7 +639,7 @@ await until(
   () =>
     [...publicDOM.window.document.querySelectorAll(".node-card")]
       .find((c) => c.textContent.includes(name))
-      ?.querySelector(".latency-grid .quality-bar:not(.idle)"),
+      ?.querySelector(".latency-lines .quality-bar:not(.idle)"),
   "public card values after the observations arrive",
 );
 assert.equal(
@@ -648,11 +648,11 @@ assert.equal(
   "公开页渲染不能抛错（抛了会被 refresh().catch(toast) 吞掉）",
 );
 assert(
-  /\d+ ms/.test(card.querySelector(".latency-grid .route-label strong").textContent),
-  `延迟格要给出数值，实际「${card.querySelector(".latency-grid .route-label strong").textContent}」`,
+  /\d+ ms/.test(card.querySelector(".latency-lines .net-line strong").textContent),
+  `延迟行要给出数值，实际「${card.querySelector(".latency-lines .net-line strong").textContent}」`,
 );
 assert.notEqual(
-  card.querySelector(".route-grid:not(.latency-grid) .route-label strong").textContent,
+  card.querySelector(".route-grid .route-label strong").textContent,
   "未知",
   "回程标签要按真实结果渲染",
 );
@@ -666,7 +666,7 @@ assert(
   !cardText.includes("其他"),
   "卡片地区之外的探测组（自定义的新加坡目标）不占一格",
 );
-assert.equal(card.querySelector(".latency-grid").children.length, 3, "延迟格只画真有任务的三网");
+assert.equal(card.querySelectorAll(".latency-lines .net-line").length, 3, "延迟只画真有任务的三网（一家一行）");
 // 服务端给的 probe_targets 里确实带着那些探测项（含自定义的「其他」目标），是卡片按地区筛掉的。
 const plannedNode = (await (await fetch(base + "/api/v1/nodes")).json()).find(
   (x) => x.id === card.dataset.node,
@@ -684,17 +684,24 @@ assert(
   ),
   "回程项也要在探测计划里",
 );
-// 窄卡片里四个运营商改成一家一行（容器查询），行内用 latency-row / loss-row 定位。
-assert.equal(
-  card.querySelectorAll(".latency-grid .latency-row").length,
-  3,
-  "each latency cell must mark its latency row for the stacked layout",
-);
-assert.equal(card.querySelectorAll(".latency-grid .loss-row").length, 3, "each latency cell must mark its loss row");
-assert(
-  /@container node-card \(max-width: 430px\)/.test(styles),
-  "narrow cards must stack the carrier cells one per line",
-);
+// 延迟在卡片与列表里是同一份行内文本：一家运营商一行（名字 / 延迟 / 丢包 / 最近 20 次色带）。
+// 以前卡片是一格一家、延迟与丢包各占一行数值加一条色带（三格 174px），窄卡片还要靠容器查询
+// 换布局；现在两个视图共用 .net-line，卡片不再按自身宽度改排。
+{
+  const lines = card.querySelectorAll(".latency-lines .net-line");
+  assert.equal(lines.length, 3, "延迟一家运营商一行");
+  for (const line of lines) {
+    assert(line.querySelector(".carrier-name"), "每行要给运营商");
+    assert(/\d+ ms|未检测|超时/.test(line.querySelector("strong").textContent), "每行要给延迟数值或说明");
+    assert(/丢包/.test(line.querySelector(".net-loss")?.textContent || ""), "每行要给丢包率");
+    assert.equal(line.querySelectorAll(".quality-bar").length, 20, "每行给最近 20 次探测的色带");
+    assert.equal(line.dataset.focusKind, "latency", "行内文本要带聚焦信息");
+    assert(line.dataset.focusCarrier, "行内文本要带运营商");
+    assert(line.getAttribute("title"), "行内文本要有各自的探测时间提示");
+  }
+  assert(!/\.latency-label|\.latency-grid/.test(styles), "方形延迟格那套样式已经撤掉");
+  assert(!/@container node-card/.test(styles), "卡片不再按自身宽度换布局");
+}
 // 滚动锚定必须留给浏览器：每 10 秒整块替换卡片列表，内容在视口上方变高变矮时靠它稳住视图，
 // 关掉反而会让页面自己移动。贴底的情况由 app.js 的 renderCards 单独兜住。
 assert(
@@ -784,13 +791,40 @@ assert(
   !publicDOM.window.document.querySelector("#dialog[data-node-id]"),
   "switching the address family must not open the detail dialog",
 );
-// 格子自己带聚焦信息：延迟格 → 该运营商延迟，回程格 → 该运营商回程
-const latencyCell = findCard().querySelector(".latency-grid .route-label");
-assert.equal(latencyCell.dataset.focusKind, "latency", "latency cell must carry its focus kind");
-assert(latencyCell.dataset.focusCarrier, "latency cell must carry its carrier");
-const routeCell = findCard().querySelector(".route-grid:not(.latency-grid) .route-label");
-assert.equal(routeCell.dataset.focusKind, "route", "route cell must carry its focus kind");
-assert(routeCell.dataset.focusCarrier, "route cell must carry its carrier");
+// 格子自己带聚焦信息：延迟行 → 该运营商延迟，回程胶囊 → 该运营商回程
+const latencyCell = findCard().querySelector(".latency-lines .net-line");
+assert.equal(latencyCell.dataset.focusKind, "latency", "延迟行要带上聚焦类型");
+assert(latencyCell.dataset.focusCarrier, "延迟行要带上运营商");
+const routeCell = findCard().querySelector(".route-grid .route-label");
+assert.equal(routeCell.dataset.focusKind, "route", "回程胶囊要带上聚焦类型");
+assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
+// 紧凑排版（用户点名「卡片太长了」，照参考图压）：实时速率 + 到期 + 价格收进一条信息带，
+// 不再有独立的两块速率方块与卡底计费页脚；头部也只留名字 + 系统标签，地区 / 分组与地址族
+// 开关落到第二行（否则窄卡片里的名字会被挤成三行）。
+{
+  const compact = findCard();
+  const band = compact.querySelector(".card-stats");
+  assert(band, "卡片要有一条实时速率 + 到期 + 价格的信息带");
+  assert.equal(band.querySelectorAll(".speeds .speed-line").length, 2, "信息带里两个方向各一行速率");
+  const pill = band.querySelector(".expiry-pill");
+  assert(
+    pill && /剩余 \d+ 天|长期|未设到期|已过期/.test(pill.textContent),
+    `信息带要有到期胶囊，实际「${pill?.textContent}」`,
+  );
+  assert(band.querySelector(".price-label"), "信息带要有价格");
+  assert.equal(compact.querySelectorAll(".speed-box").length, 0, "卡片里不再有宽大的速率方块");
+  assert.equal(compact.querySelectorAll(".card-bottom").length, 0, "卡片底部不再有独立页脚");
+  const sub = compact.querySelector(".node-sub");
+  assert(sub?.querySelector("p"), "地区与分组在头部第二行");
+  assert(sub.querySelector("[data-card-family]"), "地址族开关也在第二行");
+  assert(
+    /\.card-stats \.speeds \{[^}]*flex-direction: column/.test(styles) &&
+      /\.stat-facts \{[^}]*align-items: flex-end/.test(styles),
+    "信息带里速率靠左竖排、计费靠右竖排",
+  );
+  assert(/\.node-card \.net-line \{[^}]*display: flex/.test(styles), "卡片里的延迟行要横排");
+  assert(!/\.card-bottom|\.speed-box/.test(styles), "旧的两块（速率方块 / 卡底页脚）样式已清掉");
+}
 const switchedId = clickedBtnNode;
 // 展示方式开关：工具栏右侧切「卡片 / 列表」。列表视图一行一台、六格横向对齐，
 // 在线绿点贴在名字前面（不单独占一列），并且所有文字给全——不省略、不截断。
@@ -887,7 +921,7 @@ assert(
   "列表里的延迟色带格子要 9px 高",
 );
 assert(
-  /\.node-grid\.node-list \.speeds \{[^}]*grid-template-columns: minmax\(0, 1fr\)/.test(styles),
+  /\.node-grid\.node-list \.speeds \{[^}]*flex-direction: column/.test(styles),
   "列表里的实时网速要竖排两行",
 );
 // 观感（用户点名）：网速格不用那么宽，做成一行一个方向的窄条：图标 + 数值靠右，标签收进 title。

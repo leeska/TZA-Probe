@@ -479,7 +479,7 @@ h1 {
 
 .node-card {
   border-radius: 24px;
-  padding: 22px 22px 0;
+  padding: 22px 22px 20px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -488,18 +488,35 @@ h1 {
 /* 整张卡片可点：打开综合信息；卡片内的格子有自己的聚焦详情。 */
 .node-card { cursor: pointer; }
 
+/* 卡片头部两行：第一行只有状态点 + 名字（右侧是发行版 / 架构胶囊），第二行才是地区·分组与
+   地址族开关。三样都挤在第一行时，窄卡片里的名字会被压成三行（手机上一张卡光头部就 104px）。 */
 .card-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 18px;
-  gap: 12px;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.node-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.node-sub p {
+  margin: 0;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .node-identity {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -517,6 +534,7 @@ button.node-name {
   font-weight: 650;
   font-size: 16px;
   text-align: left;
+  min-width: 0;
   word-break: break-word;
   color: var(--ink);
   cursor: pointer;
@@ -588,15 +606,15 @@ button.node-name:hover {
 }
 
 .network-unavailable {
-  margin: 4px 0 18px;
+  margin: 4px 0 0;
 }
 
 /* Metrics Grid (2x2 equal height) */
 .metrics-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px 18px;
-  margin-bottom: 16px;
+  gap: 12px 18px;
+  margin-bottom: 0;
 }
 
 .metric {
@@ -659,52 +677,44 @@ button.node-name:hover {
   color: var(--red);
 }
 
-/* Speeds (Twin Telemetry Pods) */
+/* Speeds：一行一个方向（小图标 + 数值），两个视图共用同一份行内文本。
+   卡片里原先两个大方块（图标 + 「实时下载」两行文字 + 内边距）单独占 59px。 */
 .speeds {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.speed-box {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  gap: 14px;
+  min-width: 0;
+}
+
+.speed-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .speed-icon {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 11px;
   flex-shrink: 0;
 }
 
-.speed-box > div {
-  display: flex;
-  flex-direction: column;
-}
-
-.speed-box small {
-  font-size: 10px;
-  color: var(--muted);
-}
-
-.speed-box strong {
-  font-size: 15px;
+.speed-line strong {
+  font-size: 13px;
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.speed-box .unit {
+.speed-line .unit,
+.speed-line .unit-none {
   font-size: 10px;
   font-weight: 400;
   color: var(--muted);
@@ -719,7 +729,7 @@ button.node-name:hover {
   align-items: center;
   font-size: 11px;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .route-heading b {
@@ -738,25 +748,79 @@ button.node-name:hover {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-bottom: 18px;
 }
 
-/* 延迟多一个“其他”格 */
-.latency-grid {
-  grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
+/* 卡片里的延迟段：一家运营商一行（与列表视图同一份 .net-line 文本——名字 / 延迟 / 丢包 /
+   最近 20 次色带）。以前一格一家、延迟与丢包各占一行数值加一条色带，三格就是 174px。 */
+.latency-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin-bottom: 14px;
 }
 
+.node-card .net-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 9px;
+  text-align: left;
+  transition: background 0.16s ease;
+}
+
+.node-card .net-line:hover {
+  background: var(--glass-bg-subtle);
+}
+
+.node-card .net-line .carrier-name {
+  flex: 0 0 30px;
+}
+
+.node-card .net-line strong {
+  flex: 0 0 52px;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.node-card .net-line .net-loss {
+  flex: 0 0 62px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* 色带吃掉剩下的宽度（窄卡片仍有 60px 保底，20 格不会挤成一片）。 */
+.node-card .net-line .quality-bars {
+  flex: 1 1 60px;
+  min-width: 60px;
+  margin-left: auto;
+  height: 8px;
+  min-height: 8px;
+  gap: 2px;
+}
+
+.node-card .net-line .quality-bar {
+  height: 8px !important;
+  min-height: 8px;
+  border-radius: 2px;
+}
+
 /* 没有探测任务的机器（按设计不挂探测任务，例如国际线路）：不画空格子、不画灰色空条，
-   只留这一行说明。卡片是纵向 flex，这一行吃掉剩余空间把文字摆在中间；计费行有
-   margin-top: auto 仍贴在卡底，同行卡片的高度由栅格拉伸拉齐，所以不需要占位元素。 */
+   只留这一行说明。卡片是纵向 flex，这一行吃掉剩余空间把文字摆在中间；同行卡片的高度由
+   栅格拉伸拉齐，所以不需要占位元素。 */
 .probe-none {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 56px;
-  margin-bottom: 18px;
+  min-height: 44px;
   color: var(--muted);
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -788,7 +852,7 @@ button.node-name:hover {
 }
 
 /* 多骨干组合（如 4837 → 9929 → 163）在窄格子里最多两行，完整标签在 title 里。 */
-.route-label:not(.latency-label) strong {
+.route-label strong {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -801,11 +865,7 @@ button.node-name:hover {
   font-weight: 400;
 }
 
-.latency-label { align-items: stretch; gap: 4px; padding: 10px 9px; min-height: 0; height: auto; }
 .carrier-name { text-align: left; font-size: 11px !important; color: var(--ink) !important; font-weight: 650; }
-.quality-row { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); font-size: 9px; }
-.quality-row strong { font-size: 12px; color: var(--ink); }
-.quality-row strong.muted { color: var(--muted); font-weight: 400; }
 .quality-bars { display: flex !important; align-items: flex-start; gap: 2px; width: 100%; height: 6px; min-height: 6px; overflow: hidden; }
 .quality-bar { display: block; flex: 1 1 0; width: auto; height: 6px !important; min-height: 6px; border-radius: 1px; background: var(--line); }
 /* 延迟 / 丢包条的色带：绿 → 青 → 黄 → 橙 → 红，q1（最低）到 q20（最高）无级过渡。
@@ -835,72 +895,35 @@ button.node-name:hover {
 /* 一次失败探测（拿不到延迟）：空心红格，与"无数据"的灰格区分。 */
 .quality-bar.fail { background: transparent; box-shadow: inset 0 0 0 1px #e5484d; }
 
-/* 卡片自己就是宽度容器：窄卡片（手机、多列列表）里四个运营商挤成四列，会把“延迟”两个字折成两行、
-   数值也跟着换行。窄下来时改成一家一行——名字占左列并跨两行，右边两行分别是延迟 / 丢包的数值加色带，
-   色带因此能从名字右边一直拉到卡片边。宽卡片保持原来的四列。
-   这段必须排在 .route-label / .quality-* 之后，否则同权重的基础规则会把它盖掉。 */
-.node-card {
-  container-type: inline-size;
-  container-name: node-card;
-}
+/* 卡片的容器查询随延迟格一起去掉了：延迟现在是一家运营商一行（.net-line），窄卡片与宽卡片
+   共用同一套布局，不再需要按卡片宽度改排。 */
 
-@container node-card (max-width: 430px) {
-  .latency-grid {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  .latency-label {
-    display: grid;
-    grid-template-columns: auto auto minmax(56px, 1fr);
-    align-items: center;
-    justify-items: start;
-    gap: 3px 8px;
-    padding: 7px 10px;
-  }
-
-  .latency-label .carrier-name {
-    grid-area: 1 / 1 / 3 / 2;
-    font-size: 12px !important;
-  }
-
-  .latency-label .quality-row {
-    gap: 6px;
-  }
-
-  .latency-label .latency-row {
-    grid-area: 1 / 2;
-  }
-
-  .latency-label .loss-row {
-    grid-area: 2 / 2;
-  }
-
-  .latency-label .quality-bars {
-    grid-area: 1 / 3;
-    height: 7px;
-    min-height: 7px;
-  }
-
-  .latency-label .loss-bars {
-    grid-area: 2 / 3;
-  }
-
-  .latency-label .quality-bar {
-    height: 7px !important;
-    min-height: 7px;
-  }
-}
-
-/* Card Bottom */
-.card-bottom {
-  margin: auto -22px 0 -22px;
-  padding: 12px 22px;
-  border-top: 1px solid var(--line);
+/* Card Stats：实时速率 + 到期 + 价格压成紧凑的一两行（取代原来的两个速率方块与独立页脚，
+   那两块加起来 105px）。放不下就换行，不省略文字。 */
+.card-stats {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+  gap: 6px 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  margin-bottom: 14px;
   font-size: 11px;
+}
+
+.card-stats .speeds {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.stat-facts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin-left: auto;
 }
 
 .expiry-pill {
@@ -2605,12 +2628,7 @@ pre,
 }
 
 .node-grid.node-list .speeds {
-  gap: 8px;
   margin-bottom: 0;
-}
-
-.node-grid.node-list .speed-box {
-  padding: 8px 10px;
 }
 
 .node-grid.node-list .net-cell,
@@ -2725,32 +2743,17 @@ pre,
 }
 
 .node-grid.node-list .speeds {
-  grid-template-columns: minmax(0, 1fr);
+  flex-direction: column;
+  align-items: stretch;
   gap: 2px;
   margin-bottom: 0;
 }
 
 .node-grid.node-list .speed-line {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  width: 100%;
   padding: 4px 8px;
   border-radius: 9px;
-}
-
-.node-grid.node-list .speed-line .speed-icon {
-  width: 20px;
-  height: 20px;
-  font-size: 11px;
-}
-
-.node-grid.node-list .speed-line strong {
-  font-size: 13px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* 放不下六格时（窗口窄、手机）整块横向滚动：一行照样是主机 / 指标 / 网速 / 延迟 / 回程 / 计费，
