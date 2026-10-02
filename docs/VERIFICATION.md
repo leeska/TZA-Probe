@@ -1276,14 +1276,24 @@ node scripts/ui-smoke.mjs
   建任务、领租约、报 24 条结论，再断言任务编辑器的类型单选 / 卡片徽标 / 浮层 / 详情块）；
   `node scripts/presentation-test.mjs` 新增
   `PASS: unlock panel score, catalogue-based category stats, status words and region_only text`。
-  顺手修掉两个**测试脚本**自身的问题（都不是产品缺陷）：`madeLong` 被 `clone()` 读了两次正文导致
-  整条套件在 `Response.clone: Body has already been consumed` 处中断（HEAD 上同样会中断，属既有问题）；
+  顺手收紧两处**测试脚本**自身的问题（都不是产品缺陷）：`madeLong` 先 `clone()` 再读原响应，在
+  node 20 的 undici 下必然抛 `Response.clone: Body has already been consumed`（HEAD 上同样中断；
+  本机跑测试用的是 `/root/.hermes/node/bin/node` v24，v24 不复现），改成正文只读一次，不再依赖运行时差异；
   累计流量那条断言读的是打补丁后的一帧，可能还停在上一份数据上——改成等它收敛（真浏览器里实测
   同一张卡片一次刷新后就是 `累计 0 B / 累计 675 MB`，与断言口径一致）。
 - `bash scripts/unlock-acceptance.sh` 可重跑：`unlocks: 19/24 · 流媒体 7/9 · AI 3/3 · 交易所 3/3 · 其他 6/9`。
 
 待确认：
 
+- 上线结果（2026-10-02）：Server 已切到 `2.0.0-dev+effd670`（预检 healthz=200 / anon=401 / GET=405 /
+  tools=21，线上启动到就绪 2s，公网 healthz=200，15 台节点在线 14 台，回程格真浏览器检查
+  「折行 0、非居中 0」通过）；建了一个 6 小时一轮、绑定全部 15 台的解锁任务；机队升级脚本把能连上的
+  机器都升到同一构建。**首次实测：14/15 台已出结论**，`de-netcup-1o 23/24`、`tw-isvoro-hinet 23/24`、
+  `us-vmiss-tri 22/24`、`us-moew-free 22/24`、`hk-isvoro-nat 21/24`、`de-nosla-fra / hk-hytron-bgp /
+  jp-nosla-gen2 / kr-isvoro-oracle / sg-isvoro-oracle / sh-tencent-lite / us-bwh-dc9 20/24`、
+  `us-hostodo-tampa 18/24`、`sz-aliyun-ecs 6/24`（大陆出口：netflix `HTTP 403`、netflix_cdn
+  `IP Banned By Netflix`、dazn banned、claude `app-unavailable-in-region` 都判对了，Google/AI/交易所
+  那 11 项是 `timeout` → `failed`，不伪造成「未解锁」）。`us-isvoro-9950x` 离线且仍是旧 Agent。
 - 机队升级顺序：**先部署 Server，再逐台升级 Agent**（老 Agent 不报能力，领不到解锁任务；
   反向顺序会让新 Agent 的上报被旧 Server 判 400 而掉线）。
 - 首轮上线只建一个解锁任务（间隔 6 小时、绑定全部节点）还是一台一个任务，按实际想看的粒度定。
