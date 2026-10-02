@@ -214,6 +214,7 @@ func alertsSchema() map[string]any {
 func taskSchema(withID bool) map[string]any {
 	properties := map[string]any{
 		"name":           map[string]any{"type": "string", "description": "任务名称，必填"},
+		"kind":           map[string]any{"type": "string", "enum": []string{"tcp", "route", "unlock"}, "description": "任务类型；unlock 为解锁检测：不要 checks / targets，间隔最短 3600，由节点自己的出口逐项检测流媒体 / AI / 交易所（目录见 GET /api/v1/unlock-catalog）"},
 		"checks":         map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"tcp", "route"}}, "description": "检测项：tcp 延迟 / route 回程；两者可同时选"},
 		"targets":        map[string]any{"type": "array", "items": targetSchema(), "description": "目标列表，最多 200 个；目录见 list_catalog"},
 		"interval":       map[string]any{"type": "integer", "minimum": 30, "maximum": 86400, "description": "TCP 探测间隔秒数"},
@@ -227,7 +228,9 @@ func taskSchema(withID bool) map[string]any {
 	if withID {
 		return schema(properties, "task_id")
 	}
-	return schema(properties, "name", "checks", "targets", "interval", "node_ids")
+	// 解锁检测没有 checks / targets，所以只把真正通用的几项列成必填；具体约束由
+	// model.Task.Validate 把关，报错信息比 JSON Schema 更具体。
+	return schema(properties, "name", "interval", "node_ids")
 }
 
 func targetSchema() map[string]any {

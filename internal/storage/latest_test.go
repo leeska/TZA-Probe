@@ -259,7 +259,7 @@ func TestLatestMigrationBackfillsExistingJobs(t *testing.T) {
 	}
 	defer s.Close()
 	var version int
-	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 5 {
+	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 6 {
 		t.Fatalf("user_version = %d (%v)", version, err)
 	}
 	assertSameSelection(t, s, node, now)

@@ -4,6 +4,7 @@ import { detail } from "./detail.js";
 import { mountAdmin } from "./admin.js";
 import { applyTheme, themeButton } from "./theme.js";
 import { searchMatch } from "./search.js";
+import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
 import "./ui-select.js";
 
 const app = document.querySelector("#app");
@@ -14,6 +15,7 @@ let nodes = [],
   group = "",
   observations = new Map(),
   latencySamples = [],
+  catalog = null,
   generation = 0;
 
 // 展示方式：card = 每台主机一张卡（默认），list = 一行一台、字段横向对齐。
@@ -126,6 +128,10 @@ async function refresh() {
     new Date().toLocaleTimeString("zh-CN", { hour12: false }));
 
   setHTML(document.querySelector("#overview"), overviewInner());
+
+  // 解锁目录是全站固定的一份（名称 / 分类 / 是否只报地区），先取到再画卡片：徽标上的分数
+  // 来自节点自己的 unlock 字段，分类浮层还要目录才认得出每一项的名字与分类。
+  catalog = await unlockCatalog();
 
   renderCards();
 
@@ -289,6 +295,70 @@ function patchInto(el, next) {
   return true;
 }
 
+// 解锁分类浮层是一个挂在 body 上的单例：卡片自己 overflow:hidden，塞在卡片里的浮层会被
+// 裁掉，所以按徽标的盒子把它定位到卡片外面。桌面靠 mouseenter/leave 展开，手机点一下切换。
+let unlockPopEl = null;
+let unlockPopBadge = null;
+let unlockPopTimer = 0;
+function unlockPop() {
+  if (!unlockPopEl) {
+    unlockPopEl = document.createElement("div");
+    unlockPopEl.id = "unlock-pop";
+    unlockPopEl.className = "unlock-pop";
+    unlockPopEl.hidden = true;
+    // 鼠标从徽标移到浮层里时不能收起，否则光标一离开徽标面板就没了。
+    unlockPopEl.addEventListener("mouseenter", () => clearTimeout(unlockPopTimer));
+    unlockPopEl.addEventListener("mouseleave", hideUnlockPop);
+    document.body.append(unlockPopEl);
+    // 点到别处就收起：移动端没有 hover，靠这条和徽标自己的一次点击。
+    document.addEventListener("click", (e) => {
+      if (
+        unlockPopBadge &&
+        !unlockPopEl.contains(e.target) &&
+        !unlockPopBadge.contains(e.target)
+      )
+        hideUnlockPop();
+    });
+  }
+  return unlockPopEl;
+}
+function showUnlockPop(badge) {
+  const n = nodes.find((x) => x.id === badge.dataset.unlock);
+  if (!n?.unlock || !catalog) return;
+  clearTimeout(unlockPopTimer);
+  const el = unlockPop();
+  setHTML(el, unlockPanel(n.unlock, catalog));
+  el.hidden = false;
+  // 右对齐徽标（卡片右侧），再夹进视口——窄屏上也不会跑出屏幕。
+  const rect = badge.getBoundingClientRect();
+  const width = el.offsetWidth || 280;
+  const viewport = document.documentElement.clientWidth || 1024;
+  el.style.left =
+    Math.min(Math.max(8, rect.right - width), Math.max(8, viewport - width - 8)) + "px";
+  el.style.top = rect.bottom + 8 + "px";
+  if (unlockPopBadge && unlockPopBadge !== badge) {
+    unlockPopBadge.classList.remove("open");
+    unlockPopBadge.setAttribute("aria-expanded", "false");
+  }
+  unlockPopBadge = badge;
+  badge.classList.add("open");
+  badge.setAttribute("aria-expanded", "true");
+}
+function hideUnlockPop() {
+  clearTimeout(unlockPopTimer);
+  if (unlockPopEl) unlockPopEl.hidden = true;
+  if (unlockPopBadge) {
+    unlockPopBadge.classList.remove("open");
+    unlockPopBadge.setAttribute("aria-expanded", "false");
+    unlockPopBadge = null;
+  }
+}
+// 离开徽标后稍等一下再收：给光标一点时间移进浮层（进不去才真的收起）。
+function scheduleHideUnlockPop() {
+  clearTimeout(unlockPopTimer);
+  unlockPopTimer = setTimeout(hideUnlockPop, 180);
+}
+
 function renderCards() {
   const filtered = nodes.filter(
     (n) =>
@@ -340,6 +410,16 @@ function renderCards() {
     });
   for (const b of document.querySelectorAll("[data-card-family]"))
     b.onclick = () => { cardFamilies.set(b.dataset.cardNode, b.dataset.cardFamily); renderCards(); };
+  // 解锁徽标：桌面悬停展开，手机上点一下展开 / 收起（都是同一个单例浮层）。
+  for (const b of document.querySelectorAll("[data-unlock]")) {
+    b.onmouseenter = () => showUnlockPop(b);
+    b.onmouseleave = scheduleHideUnlockPop;
+    b.onclick = (e) => {
+      e.stopPropagation();
+      if (b.classList.contains("open")) hideUnlockPop();
+      else showUnlockPop(b);
+    };
+  }
 }
 
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
@@ -640,7 +720,7 @@ function gridInner(n) {
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
-  return `<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
+  return `<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

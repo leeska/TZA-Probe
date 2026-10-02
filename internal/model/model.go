@@ -225,6 +225,11 @@ type Metrics struct {
 	// kernel has a route for it. nil means the Agent has not reported them yet;
 	// an empty non-nil slice means the host can probe nothing.
 	IPFamilies []string `json:"ip_families"`
+	// Capabilities is what the running Agent can execute beyond latency and
+	// route probes, e.g. "unlock". nil means an Agent built before the field
+	// existed: it is never handed a job it cannot run (see AllowsUnlock), which
+	// is why the field is additive and why the Server ships first.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 func (m Metrics) Validate() error {
@@ -241,7 +246,43 @@ func (m Metrics) Validate() error {
 		}
 		seen[family] = true
 	}
+	if len(m.Capabilities) > len(AllCapabilities) {
+		return errors.New("invalid metrics")
+	}
+	for _, capability := range m.Capabilities {
+		if !KnownCapability(capability) {
+			return errors.New("invalid metrics")
+		}
+	}
 	return nil
+}
+
+// CapabilityUnlock is reported by an Agent that can run the unlock checks.
+const CapabilityUnlock = "unlock"
+
+var AllCapabilities = []string{CapabilityUnlock}
+
+func KnownCapability(capability string) bool {
+	for _, known := range AllCapabilities {
+		if capability == known {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsUnlock reports whether this host may be handed an unlock job. Unlike
+// AllowsFamily an unreported capability means "no": an Agent that never heard
+// of the check would answer every service with failed, and the panel would show
+// a machine full of red for no reason. The Server is deployed before the fleet,
+// so a mixed fleet simply keeps its unlock cells empty until it upgrades.
+func (m Metrics) AllowsUnlock() bool {
+	for _, capability := range m.Capabilities {
+		if capability == CapabilityUnlock {
+			return true
+		}
+	}
+	return false
 }
 
 // AllowsFamily reports whether the host can run probes for family. A host
@@ -291,6 +332,10 @@ type NodeView struct {
 	// from stored jobs because a job only exists once the agent leases: derived from jobs, the
 	// card would paint short and grow a poll later.
 	ProbeTargets []ProbeTarget `json:"probe_targets,omitempty"`
+	// Unlock is the latest per-service verdict of this machine's own egress, nil
+	// when it has never run the check. The panel draws the score from it and the
+	// detail panel the per-service list.
+	Unlock *UnlockSummary `json:"unlock,omitempty"`
 }
 
 // ProbeTarget is one probe entry a node is bound to, without the address: the card only needs
@@ -378,8 +423,19 @@ func (t Task) Validate() error {
 		}
 		return nil
 	}
-	if t.Kind != "tcp" && t.Kind != "route" {
-		return errors.New("任务类型须为 tcp 或 route")
+	if t.Kind != "tcp" && t.Kind != "route" && t.Kind != UnlockKind {
+		return errors.New("任务类型须为 tcp、route 或 unlock")
+	}
+	if t.Kind == UnlockKind {
+		// 解锁检测是按「这台机器的出口」逐项发起的 HTTP 检测，没有目标地址，
+		// 也不需要端口；协议族留空表示由 Agent 自己选（纯 v6 机器因此不会失败）。
+		if t.Interval < UnlockMinInterval || t.Interval > 86400 || len(t.Name) == 0 || len(t.Name) > 100 {
+			return errors.New("解锁检测的名称或间隔无效：最短 1 小时")
+		}
+		if t.Family != "" && t.Family != "ipv4" && t.Family != "ipv6" {
+			return errors.New("IP 协议须为 ipv4 或 ipv6（留空即自动）")
+		}
+		return validateBindings(t)
 	}
 	min := 30
 	if t.Kind == "route" {
@@ -413,6 +469,10 @@ func (t Task) Validate() error {
 			}
 		}
 	}
+	return validateBindings(t)
+}
+
+func validateBindings(t Task) error {
 	if len(t.NodeIDs) > 1000 {
 		return errors.New("绑定节点过多")
 	}
@@ -445,6 +505,9 @@ type Result struct {
 	Received int      `json:"received"`
 	Route    string   `json:"route"`
 	Hops     []Hop    `json:"hops"`
+	// Unlocks is the per-service verdict of an unlock job: what this node's own
+	// egress can reach, which region each service answered for, and why not.
+	Unlocks []UnlockResult `json:"unlocks,omitempty"`
 }
 
 func (r Result) Validate() error {
@@ -457,8 +520,18 @@ func (r Result) Validate() error {
 	if r.Status != "ok" && r.Status != "timeout" && r.Status != "unavailable" && r.Status != "failed" {
 		return errors.New("invalid result status")
 	}
-	if r.Status == "ok" && (r.Received == 0 || r.Latency == nil) {
+	// A latency probe proves itself with a response and a round trip; an unlock
+	// job has neither, it proves itself with the verdicts it carries.
+	if r.Status == "ok" && len(r.Unlocks) == 0 && (r.Received == 0 || r.Latency == nil) {
 		return errors.New("successful result requires a response and latency")
+	}
+	if len(r.Unlocks) > len(UnlockCatalog) {
+		return errors.New("invalid unlock result")
+	}
+	for _, u := range r.Unlocks {
+		if !KnownUnlockService(u.Service) || !ValidUnlockStatus(u.Status) || len(u.Region) > 40 || len(u.Detail) > 80 {
+			return errors.New("invalid unlock result")
+		}
 	}
 	if r.Sent < 0 || r.Sent > 5 || r.Received < 0 || r.Received > r.Sent || len(r.Hops) > 30 || len(r.Route) > 160 {
 		return errors.New("invalid result")
@@ -602,6 +675,76 @@ type LatencySample struct {
 	Latency  *float64 `json:"latency"`
 	Sent     int      `json:"sent"`
 	Received int      `json:"received"`
+}
+
+// UnlockKind is the task kind that runs the streaming / AI / exchange unlock
+// checks from a node's own egress. It has no target: the service list is the
+// built-in catalogue.
+const UnlockKind = "unlock"
+
+// UnlockMinInterval is the shortest unlock interval. One round is a couple of
+// dozen HTTPS requests from the node's own IP, so this is deliberately an order
+// of magnitude coarser than a latency probe.
+const UnlockMinInterval = 3600
+
+// Unlock verdicts. yes/no are the plain answers, originals_only is Netflix's
+// region-limited catalogue (the IP is recognised, the full library is not),
+// banned is an outright block of the address, failed is "the check itself could
+// not complete" and must never be read as a verdict about the IP.
+const (
+	UnlockYes           = "yes"
+	UnlockNo            = "no"
+	UnlockOriginalsOnly = "originals_only"
+	UnlockBanned        = "banned"
+	UnlockFailed        = "failed"
+)
+
+// UnlockResult is one service's verdict from one node.
+type UnlockResult struct {
+	Service string `json:"service"`
+	Status  string `json:"status"`
+	Region  string `json:"region,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+// Unlocked reports whether the verdict counts as unlocked. originals_only
+// counts: 妙妙屋 scores Netflix's limited catalogue as a hit too, so the two
+// panels agree on the same machine.
+func (u UnlockResult) Unlocked() bool {
+	return u.Status == UnlockYes || u.Status == UnlockOriginalsOnly
+}
+
+// UnlockSummary is what the panel needs: the score, the catalogue size and the
+// per-service verdicts behind it.
+type UnlockSummary struct {
+	Services []UnlockResult `json:"services"`
+	Score    int            `json:"score"`
+	Total    int            `json:"total"`
+	TestedAt int64          `json:"tested_at"`
+}
+
+// SummarizeUnlocks fills in the score. Total is the catalogue size (24), not
+// the number of services the node reported: a node that answered 20 of 24 is
+// scored out of 24, exactly like the panel it was ported from.
+func SummarizeUnlocks(services []UnlockResult, testedAt int64) *UnlockSummary {
+	if len(services) == 0 {
+		return nil
+	}
+	sum := &UnlockSummary{Services: services, Total: len(UnlockCatalog), TestedAt: testedAt}
+	for _, u := range services {
+		if u.Unlocked() {
+			sum.Score++
+		}
+	}
+	return sum
+}
+
+func ValidUnlockStatus(status string) bool {
+	switch status {
+	case UnlockYes, UnlockNo, UnlockOriginalsOnly, UnlockBanned, UnlockFailed:
+		return true
+	}
+	return false
 }
 
 type TaskAction struct {

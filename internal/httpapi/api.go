@@ -43,6 +43,7 @@ type Repository interface {
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
 	Observations(context.Context, string, time.Time) ([]model.Observation, error)
+	Unlocks(context.Context, string) (*model.UnlockSummary, error)
 	RecentLatencySamples(context.Context, []string, int, time.Time) ([]model.LatencySample, error)
 	Setting(context.Context, string) (string, error)
 	SetSetting(context.Context, string, string) error
@@ -82,6 +83,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/nodes/{id}/network-history", a.networkHistory)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/observations", a.observations)
 	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
+	mux.HandleFunc("GET /api/v1/unlock-catalog", a.unlockCatalog)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/unlocks", a.unlocks)
 	mux.HandleFunc("GET /api/v1/admin/nodes", a.admin(a.nodes))
 	mux.HandleFunc("POST /api/v1/admin/nodes", a.admin(a.saveNode))
 	mux.HandleFunc("PUT /api/v1/admin/nodes/{id}", a.admin(a.saveNode))
@@ -475,6 +478,32 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	write(w, 200, out)
+}
+
+// unlockCatalog is the fixed service list the unlock panel groups by: id, name
+// and category. Public on purpose — the anonymous panel draws the same panel as
+// the admin one, and the list is the same for every node.
+func (a *API) unlockCatalog(w http.ResponseWriter, r *http.Request) {
+	write(w, 200, map[string]any{"categories": model.UnlockCategories, "services": model.UnlockCatalog})
+}
+
+// unlocks returns one node's stored verdicts. A node that simply never ran the
+// check answers with an empty summary instead of 404: the panel has to tell
+// 未检测 apart from 无权查看, and an empty summary says exactly that.
+func (a *API) unlocks(w http.ResponseWriter, r *http.Request) {
+	if !a.visible(r) {
+		write(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	summary, err := a.Store.Unlocks(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	if summary == nil {
+		summary = &model.UnlockSummary{Services: []model.UnlockResult{}, Total: len(model.UnlockCatalog)}
+	}
+	write(w, 200, summary)
 }
 
 // latencyWindow is the configured look-back for the public latency bands

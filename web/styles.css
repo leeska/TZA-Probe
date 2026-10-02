@@ -2869,3 +2869,184 @@ pre,
   width: 132px;
   text-align: center;
 }
+
+/* ==========================================================================
+   解锁检测：公开卡片上的徽标 + 分类浮层，以及节点详情的「解锁检测」块。
+   徽标只在节点真有 unlock 数据时渲染（没有数据的节点一个元素都不给，不留占位）。
+   ========================================================================== */
+.unlock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 8px;
+  background: rgba(var(--green-rgb), 0.12);
+  border: 0;
+  border-radius: 8px;
+  color: #1a7f37;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+[data-theme="dark"] .unlock-badge {
+  color: var(--green);
+}
+
+.unlock-badge:hover,
+.unlock-badge.open {
+  background: rgba(var(--green-rgb), 0.22);
+}
+
+.unlock-badge .unlock-lock {
+  display: block;
+}
+
+/* 分类浮层挂在 body 上（卡片 overflow:hidden 会裁掉卡内的浮层），坐标由 app.js 按徽标算。 */
+.unlock-pop {
+  position: fixed;
+  z-index: 60;
+  width: 288px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--glass-bg-elevated);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-lg);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  text-align: left;
+}
+
+.unlock-pop[hidden] {
+  display: none;
+}
+
+.unlock-panel {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.unlock-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.unlock-title {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.unlock-score {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+}
+
+.unlock-cats {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.unlock-group {
+  margin-top: 8px;
+}
+
+.unlock-group:first-of-type {
+  margin-top: 0;
+}
+
+.unlock-group h4 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.unlock-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.unlock-group li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.unlock-service {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unlock-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* 已解锁画绿锁，其余状态只有文字（region_only 给地区 / 币种文字，不画锁）。 */
+.unlock-state .unlock-lock {
+  color: var(--green);
+}
+
+.unlock-state.yes {
+  color: #1a7f37;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .unlock-state.yes {
+  color: var(--green);
+}
+
+.unlock-state.originals_only {
+  color: var(--orange);
+}
+
+.unlock-state.banned {
+  color: var(--red);
+}
+
+.unlock-state.region {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.unlock-tested {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--subtle);
+}
+
+/* 详情弹窗里的解锁块：与主机历史、网络那几段并列的一块，自己带边框。 */
+.unlock-block {
+  margin: 6px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.unlock-block .unlock-panel {
+  font-size: 13px;
+}

@@ -23,6 +23,20 @@ const regionSuggestions = (catalog, existing) =>
   );
 
 export function taskSummary(t) {
+  // 解锁检测没有目标与端口：它的对象是内置目录里的 24 项服务，列表里要一眼看出它是这一类任务，
+  // 所以「检测内容」写「解锁检测」、目标写「内置目录」，不去算不存在的地址数。
+  if (t.kind === "unlock") {
+    return {
+      unlock: true,
+      checks: "解锁检测",
+      targets: "流媒体 / AI / 交易所 / 其他",
+      targetsFull: "内置目录（流媒体 / AI / 交易所 / 其他）",
+      regions: 0,
+      families: "",
+      count: 0,
+      intervals: `${t.interval} 秒`,
+    };
+  }
   const targets = t.targets || [t];
   // 地区 / 运营商按地区归并：同一地区的运营商合成一行，不再为每个运营商重复一遍地区名。
   const rank = (carrier) => {
@@ -69,6 +83,9 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     node_ids: [],
   };
   const checks = t.checks || [t.kind];
+  // 任务分两类：网络探测（延迟 / 回程，带目标）与解锁检测（无目标，按内置目录逐项检测）。
+  // 编辑已有解锁任务时直接进解锁表单；新建默认是网络探测。
+  let kind = existing?.kind === "unlock" ? "unlock" : "probe";
   const families = new Set(
     existing ? (t.targets || [t]).map((x) => x.family) : ["ipv4", "ipv6"],
   );
@@ -103,9 +120,23 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     return new Set(wanted.length ? wanted : available);
   };
   const d = modal(
-    existing?.id ? "编辑网络任务" : "创建网络任务",
+    existing?.id
+      ? kind === "unlock"
+        ? "编辑解锁检测"
+        : "编辑网络任务"
+      : kind === "unlock"
+        ? "创建解锁检测"
+        : "创建网络任务",
     `
     <form id="task-form">
+      <section class="form-section"><h3>任务类型</h3>
+        <div class="option-tiles" id="task-kind">
+          <label class="checkbox"><input type="radio" name="kind" value="probe" ${kind === "probe" ? "checked" : ""}>网络探测（延迟 / 回程）</label>
+          <label class="checkbox"><input type="radio" name="kind" value="unlock" ${kind === "unlock" ? "checked" : ""}>解锁检测</label>
+        </div>
+        <p class="hint">解锁检测由节点自己的出口逐项检测流媒体 / AI / 交易所，没有目标地址与端口，间隔最短 1 小时。</p>
+      </section>
+      <div id="probe-sections"${kind === "unlock" ? " hidden" : ""}>
       <section class="form-section"><h3>1. 选择目标</h3>
         <div class="catalog-filters">
           <label>搜索目录<input id="catalog-search" placeholder="地区、运营商、地址（支持 hb、ct、hk 这类拼音与缩写）" type="search"></label>
@@ -136,6 +167,14 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
           <label>延迟间隔（秒）<input name="interval" type="number" min="30" max="86400" value="${t.kind === "route" ? 60 : t.interval}"></label>
           <label>回程间隔（秒）<input name="route_interval" type="number" min="900" max="86400" value="${t.route_interval || (t.kind === "route" ? t.interval : 3600)}"></label>
         </div></details>
+      </section>
+      </div>
+      <section class="form-section" id="unlock-section"${kind === "unlock" ? "" : " hidden"}><h3>2. 解锁检测</h3>
+        <div class="form-grid">
+          <label>检测间隔（秒）<input name="unlock_interval" type="number" min="3600" max="86400" value="${t.kind === "unlock" ? t.interval : 3600}"></label>
+          <label>IP 协议<select name="unlock_family"><option value="">自动（由节点选择）</option><option value="ipv4"${t.kind === "unlock" && t.family === "ipv4" ? " selected" : ""}>IPv4</option><option value="ipv6"${t.kind === "unlock" && t.family === "ipv6" ? " selected" : ""}>IPv6</option></select></label>
+        </div>
+        <p class="hint">留空即自动：纯 IPv6 的节点也能跑，不会因为默认 IPv4 而整轮失败。间隔最短 1 小时（每轮是从这台机器自己的出口发几十次 HTTPS 检测）。</p>
       </section>
       <section class="form-section"><h3>3. 执行节点</h3>
         <div class="catalog-toolbar"><button type="button" id="all-nodes">全选节点</button><button type="button" id="no-nodes">清空节点</button></div>
@@ -194,8 +233,14 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     const count = activeTargets().length;
     const kinds = Number(el("tcp").checked) + Number(el("route").checked);
     const bound = nodes.filter((n) => el("node:" + n.id).checked).length;
-    d.querySelector("#task-summary").textContent =
-      `已选 ${selected.size} 组目标 · ${count} 个地址 · 每台节点 ${count * kinds} 个检测项 · ${bound} 台执行节点`;
+    if (kind === "unlock") {
+      // 解锁检测没有目标与检测项，汇总只写间隔与执行节点数——不写没有意义的「0 个地址」。
+      const every = Number(el("unlock_interval").value) || 3600;
+      d.querySelector("#task-summary").textContent = `解锁检测 · 每 ${every} 秒 · ${bound} 台执行节点`;
+    } else {
+      d.querySelector("#task-summary").textContent =
+        `已选 ${selected.size} 组目标 · ${count} 个地址 · 每台节点 ${count * kinds} 个检测项 · ${bound} 台执行节点`;
+    }
     el("interval").disabled = !el("tcp").checked;
     el("route_interval").disabled = !el("route").checked;
   }
@@ -288,9 +333,44 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       for (const e of selected.values()) e.families = defaultFamilies(e.all);
       update();
     });
+  // 任务类型：网络探测与解锁检测各有一套区块，切换时只显示对应那套（区块自身 hidden）。
+  d.querySelectorAll('input[name="kind"]').forEach((r) =>
+    r.addEventListener("change", () => {
+      kind = el("kind").value === "unlock" ? "unlock" : "probe";
+      d.querySelector("#probe-sections").hidden = kind === "unlock";
+      d.querySelector("#unlock-section").hidden = kind !== "unlock";
+      update();
+    }),
+  );
   form.addEventListener("change", update);
   form.onsubmit = guard(async (e) => {
     e.preventDefault();
+    const nodeIds = nodes
+      .filter((n) => el("node:" + n.id).checked)
+      .map((n) => n.id);
+    // 解锁检测：没有目标与检测项，只发 kind / 间隔 / 协议 / 节点——多带 checks、targets 会被
+    // 服务端按「带目标的探测任务」校验，反而报目标数不足。
+    if (kind === "unlock") {
+      const interval = Number(el("unlock_interval").value);
+      if (!Number.isInteger(interval) || interval < 3600 || interval > 86400)
+        throw new Error("解锁检测的间隔最短 3600 秒、最长 86400 秒");
+      await send(
+        "/admin/tasks" + (existing?.id ? "/" + existing.id : ""),
+        existing?.id ? "PUT" : "POST",
+        {
+          name: el("name").value.trim() || "解锁检测",
+          kind: "unlock",
+          interval,
+          family: el("unlock_family").value,
+          enabled: el("enabled").checked,
+          node_ids: nodeIds,
+        },
+      );
+      d.close();
+      await onSaved();
+      toast("任务已保存");
+      return;
+    }
     const checks = ["tcp", "route"].filter((k) => el(k).checked);
     const targets = activeTargets().filter(
       (x, i, all) =>
@@ -315,9 +395,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         interval: Number(el("interval").value),
         route_interval: Number(el("route_interval").value),
         enabled: el("enabled").checked,
-        node_ids: nodes
-          .filter((n) => el("node:" + n.id).checked)
-          .map((n) => n.id),
+        node_ids: nodeIds,
       },
     );
     d.close();

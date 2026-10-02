@@ -535,6 +535,91 @@ for (const job of leaseAgain) {
   });
   assert.equal(posted.status, 204, "an agent result must be accepted after the task edit");
 }
+// ===== 解锁检测：后台任务编辑器 + 真数据 =====
+// 节点先建出来并上报一次带 unlock 能力的指标（不报这个能力，服务端不会把解锁任务派给它）。
+const unlockNodeName = "解锁验收 " + Date.now();
+const madeUnlock = await fetch(base + "/api/v1/admin/nodes", {
+  method: "POST",
+  headers: { ...adminHeaders, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: unlockNodeName, region: "日本", group: "JP", public: true,
+    billing_at: "2026-09-01T00:00:00Z", traffic_mode: "sum",
+  }),
+});
+assert.equal(madeUnlock.status, 200, "解锁验收节点要能创建: " + (await madeUnlock.clone().text()));
+const unlockNode = await madeUnlock.clone().json();
+const unlockReport = await fetch(base + "/api/v1/agent/report", {
+  method: "POST",
+  headers: { Authorization: "Bearer " + unlockNode.token, "Content-Type": "application/json" },
+  body: JSON.stringify({ protocol: 1, metrics: {
+    counter_id: "ui-smoke-unlock", cpu: 3, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2,
+    net_in: 10, net_out: 5, rate_in: 0, rate_out: 0, uptime: 3600, os: "linux", distro: "Debian 13",
+    arch: "amd64", cpu_cores: 1, version: "smoke", ip_families: ["ipv4"], capabilities: ["unlock"],
+  } }),
+});
+assert.equal(unlockReport.status, 204, "带 unlock 能力的指标上报要被接受: " + (await unlockReport.clone().text()));
+// 用后台的任务编辑器建一个解锁任务：类型切到「解锁检测」后不该再有目标 / 端口，间隔最短 3600。
+// 先切到节点页等新节点出现——render() 是异步的，直接点「创建任务」会拿刷新前的 nodes。
+$('[data-tab="nodes"]').click();
+await until(
+  () => [...w.document.querySelectorAll("tr")].some((tr) => tr.textContent.includes(unlockNodeName)),
+  "unlock node in the admin node list",
+);
+$('[data-tab="tasks"]').click();
+await until(() => $("#add-task"), "tasks page for unlock");
+$("#add-task").click();
+await until(() => $("#task-form"), "task editor for unlock");
+{
+  const form = $("#task-form");
+  assert.deepEqual(
+    [...form.querySelectorAll('input[name="kind"]')].map((r) => r.value),
+    ["probe", "unlock"],
+    "任务类型要给出网络探测与解锁检测两项",
+  );
+  assert.equal(form.elements.kind.value, "probe", "新建默认是网络探测");
+  assert(!form.querySelector("#probe-sections").hidden && form.querySelector("#unlock-section").hidden, "网络探测默认显示目标区块、隐藏解锁设置");
+  const unlockRadio = form.querySelector('input[name="kind"][value="unlock"]');
+  unlockRadio.checked = true;
+  unlockRadio.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(form.querySelector("#probe-sections").hidden, "选了解锁检测就不该再给目标与检测内容");
+  assert(!form.querySelector("#unlock-section").hidden, "解锁检测要有自己的间隔 / 协议设置");
+  assert.equal(form.elements.unlock_interval.min, "3600", "解锁检测间隔最短 3600 秒");
+  assert.equal(form.elements.unlock_interval.value, "3600", "新建默认 3600 秒");
+  assert.equal(form.elements.unlock_family.value, "", "协议默认自动（纯 v6 节点也能跑）");
+  assert.equal(form.querySelector("#unlock-section").querySelectorAll("[data-target], input[name='custom-port']").length, 0, "解锁区块里没有目标 / 端口控件");
+  form.elements.name.value = "解锁检测验收";
+  form.elements.namedItem("node:" + unlockNode.id).checked = true;
+  submit(form);
+  await until(() => !$("#dialog").open, "unlock task saved");
+}
+await until(
+  () => [...w.document.querySelectorAll("tr")].some((tr) => tr.textContent.includes("解锁检测验收")),
+  "unlock task row in the list",
+);
+const unlockTasks = await (await fetch(base + "/api/v1/admin/tasks", { headers: adminHeaders })).json();
+const unlockTask = unlockTasks.find((t) => t.name === "解锁检测验收");
+assert(unlockTask, "解锁任务要落库");
+assert.equal(unlockTask.kind, "unlock", "任务要以 kind=unlock 落库");
+assert.equal(unlockTask.interval, 3600, "解锁间隔要落库");
+assert.deepEqual(unlockTask.targets ?? [], [], "解锁任务不带目标");
+assert(unlockTask.node_ids.includes(unlockNode.id), "解锁任务要绑上节点");
+{
+  const row = [...w.document.querySelectorAll("tr")].find((tr) => tr.textContent.includes("解锁检测验收"));
+  assert(row, "解锁任务要出现在任务列表里");
+  assert(row.textContent.includes("解锁检测"), "列表里要认得出它是解锁任务: " + row.textContent);
+  assert(row.querySelector('td[data-label="目标"]').textContent.includes("内置目录"), "目标格写「内置目录」，不写地址数: " + row.querySelector('td[data-label="目标"]').textContent);
+}
+// 编辑已有解锁任务：直接进解锁表单，回填间隔。
+$('[data-edit-task="' + unlockTask.id + '"]').click();
+await until(() => $("#task-form"), "edit unlock task");
+{
+  const form = $("#task-form");
+  assert(form.querySelector('input[name="kind"][value="unlock"]').checked, "编辑解锁任务要直接进解锁表单");
+  assert(form.querySelector("#probe-sections").hidden, "编辑解锁任务不显示目标区块");
+  assert.equal(form.elements.unlock_interval.value, "3600", "编辑要回填间隔");
+  assert.equal(form.elements.name.value, "解锁检测验收", "编辑要回填名称");
+  $(".close").click();
+}
 // 节点搜索同样支持拼音与代号（web/search.js）：香港节点用 hk / hongkong / xg / xianggang / 中文 都能搜到。
 $('[data-bind-task="' + createdTask.id + '"]').click();
 await until(() => $("#node-search"), "bind dialog");
@@ -1277,10 +1362,12 @@ const madeLong = await fetch(base + "/api/v1/admin/nodes", {
     expires_at: "2226-07-04T00:00:00Z",
   }),
 });
+// 正文只读一次：这个响应下面还要用它的 id，先 clone 再读副本会让原响应在这里被消耗掉。
+const longNode = await madeLong.json();
 assert.equal(
   madeLong.status,
   200,
-  "creating a long-term free node must succeed: " + (await madeLong.clone().text()),
+  "creating a long-term free node must succeed: " + JSON.stringify(longNode),
 );
 await new Promise((resolve) => setTimeout(resolve, 11500));
 publicSearch.value = longName;
@@ -1325,7 +1412,6 @@ await until(
     "列表与单列视图不该拉平行高",
   );
   // 详情页同一处也不该给空图表或「请在后台创建并绑定任务」。
-  const longNode = await madeLong.clone().json();
   publicDOM.window.document.querySelector(`[data-detail="${longNode.id}"]`).click();
   await until(
     () => publicDOM.window.document.querySelector("#dialog .probe-none"),
@@ -1412,13 +1498,16 @@ await until(
   );
   assert(note.classList.contains("over"), "平均值远超阈值时这一行要标红（.over）");
   // 同一张卡片上的累计流量：6.75 亿字节要按方向写成 675 MB / 0 B（非零值把单位换算也一并盯住）。
-  const totals = [...throttleCard().querySelectorAll(".card-stats .stat-totals .stat-item")].map((t) =>
-    t.textContent.trim(),
-  );
-  assert.deepEqual(
-    totals,
-    [`累计 ${bytes(throttleAfter.net_out)}`, `累计 ${bytes(throttleAfter.net_in)}`],
-    `累计要给上下行两张（上行在上）、按网卡计数换算单位，实际「${totals.join(" / ")}」`,
+  // 卡片是打补丁更新的，这一帧可能还停在上一份数据上（作者在同一段落里也是这样处理
+  // avg_bps 的），所以等它收敛再断言，别把「还没刷新」读成「没更新」。
+  const totals = () =>
+    [...throttleCard().querySelectorAll(".card-stats .stat-totals .stat-item")].map((t) =>
+      t.textContent.trim(),
+    );
+  const wantTotals = [`累计 ${bytes(throttleAfter.net_out)}`, `累计 ${bytes(throttleAfter.net_in)}`];
+  await until(
+    () => JSON.stringify(totals()) === JSON.stringify(wantTotals),
+    `累计要给上下行两张（上行在上）、按网卡计数换算单位，实际「${totals().join(" / ")}」`,
   );
 }
 // 详情页同样只在配了阈值时多给一格，并且把线路带宽写出来。
@@ -1542,7 +1631,131 @@ publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
 await fetch(base + "/api/v1/admin/nodes/" + quotaNode.id, { method: "DELETE", headers: adminHeaders });
 await fetch(base + "/api/v1/admin/nodes/" + throttleNode.id, { method: "DELETE", headers: adminHeaders });
+// ===== 解锁检测：公开卡片徽标 + 分类浮层 + 详情块（真数据） =====
+// 租约 → 上报 24 项结论 → 服务端算分 → 公开页渲染。分数固定按 24 项算：流媒体 7/9、
+// AI 3/3、交易所 3/3、其他 6/9，合计 19/24（region_only 的 5 项只显示地区 / 币种文字）。
+const unlockVerdicts = [
+  { service: "netflix", status: "originals_only", region: "JP" },
+  { service: "disneyplus", status: "yes", region: "JP" },
+  { service: "youtube_premium", status: "yes" },
+  { service: "prime_video", status: "no" },
+  { service: "tvb_anywhere", status: "no" },
+  { service: "iqiyi", status: "yes" },
+  { service: "dazn", status: "yes" },
+  { service: "netflix_cdn", status: "yes" },
+  { service: "youtube_cdn", status: "yes" },
+  { service: "openai", status: "yes" },
+  { service: "gemini", status: "yes" },
+  { service: "claude", status: "yes" },
+  { service: "bybit", status: "yes" },
+  { service: "binance", status: "yes" },
+  { service: "okx", status: "yes" },
+  { service: "bing", status: "yes", region: "Japan" },
+  { service: "apple", status: "yes", region: "JP" },
+  { service: "google_play", status: "yes", region: "Japan" },
+  { service: "google_search", status: "yes" },
+  { service: "wikipedia", status: "yes" },
+  { service: "reddit", status: "banned" },
+  { service: "steam", status: "yes", region: "JPY" },
+  { service: "onetrust", status: "banned", region: "US" },
+  { service: "sdggge", status: "failed" },
+];
+const unlockLease = await (
+  await fetch(base + "/api/v1/agent/jobs", { headers: { Authorization: "Bearer " + unlockNode.token } })
+).json();
+const unlockJob = unlockLease.find((j) => j.task.kind === "unlock");
+assert(unlockJob, "带 unlock 能力的节点要能领到解锁作业: " + JSON.stringify(unlockLease.map((j) => j.task.kind)));
+const unlockPosted = await fetch(base + "/api/v1/agent/results", {
+  method: "POST",
+  headers: { Authorization: "Bearer " + unlockNode.token, "Content-Type": "application/json" },
+  body: JSON.stringify({ job_id: unlockJob.id, status: "ok", sent: 0, received: 0, route: "未知", hops: [], unlocks: unlockVerdicts }),
+});
+assert.equal(unlockPosted.status, 204, "24 项解锁结论要被接受: " + (await unlockPosted.clone().text()));
+// 服务端先算出来（公开接口就能读），DOM 会滞后一拍，先等接口再断界面。
+const unlockView = async () =>
+  (await (await fetch(base + "/api/v1/nodes")).json()).find((x) => x.id === unlockNode.id);
+await until(async () => (await unlockView())?.unlock?.score === 19, "服务端解锁分数");
+{
+  const view = await unlockView();
+  assert.equal(view.unlock.total, 24, "分母固定 24，不按上报条数缩水");
+  assert.equal(view.unlock.services.length, 24, "24 项结论都要落库");
+  assert(view.unlock.tested_at > 0, "结论要带检测时间");
+  assert(view.probe_targets?.some((t) => t.kind === "unlock"), "挂了解锁任务的机器要在 probe_targets 里带上解锁项");
+  assert.equal(view.unlock.score, 19, "已解锁 7+3+3+6=19");
+}
+// 公开页每 10 秒才全量刷一次，等过一轮再让它重画（数值类断言不能跑在刷新前那一帧上）。
+await new Promise((resolve) => setTimeout(resolve, 11500));
+publicSearch.value = unlockNodeName;
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+const unlockCard = () =>
+  [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) => c.textContent.includes(unlockNodeName));
+await until(() => unlockCard()?.querySelector(".unlock-badge"), "公开卡片的解锁徽标");
+{
+  const badge = unlockCard().querySelector(".unlock-badge");
+  assert.equal(badge.querySelector(".unlock-badge-score").textContent, "19/24", "徽标要给分数");
+  assert(badge.querySelector(".unlock-lock"), "徽标要有锁图标");
+  // 徽标挂在 .card-top 的 .card-actions 里、排在系统标签（.os-box）前面。
+  const actions = badge.closest(".card-actions");
+  assert(actions && actions.closest(".card-top"), "徽标要挂在 .card-top 的 .card-actions 里");
+  assert(actions.querySelector(".os-box"), "系统标签与徽标同一行");
+  assert.equal(actions.firstElementChild, badge, "徽标在系统标签前面");
+  // 点击展开分类浮层（手机上就是这条路）。
+  badge.click();
+  const pop = publicDOM.window.document.querySelector("#unlock-pop");
+  assert(pop && !pop.hidden, "点徽标要展开解锁分类浮层");
+  assert.equal(badge.getAttribute("aria-expanded"), "true", "展开时 aria-expanded 为 true");
+  // 浮层挂在 body 上：卡片 overflow:hidden，塞在卡内的浮层会被裁掉。
+  assert.equal(pop.closest(".node-card"), null, "浮层不能塞在卡片里（会被 overflow 裁掉）");
+  assert.equal(pop.parentElement, publicDOM.window.document.body, "浮层是挂在 body 上的单例");
+  const popText = pop.textContent;
+  assert(popText.includes("解锁检测"), "浮层要有标题行");
+  assert(popText.includes("19/24"), "浮层要有分数");
+  assert(
+    popText.includes("流媒体 7/9") && popText.includes("AI 3/3") && popText.includes("交易所 3/3") && popText.includes("其他 6/9"),
+    "浮层要有分类统计: " + popText,
+  );
+  assert(popText.includes("Netflix") && popText.includes("仅自制剧"), "服务列表要给名称与状态: " + popText);
+  assert(popText.includes("IP 被封禁") && popText.includes("检测失败") && popText.includes("未解锁"), "状态词表要齐全: " + popText);
+  // region_only 的 5 项只给地区 / 币种文字，不画锁、也不写「未解锁」。
+  assert.equal(pop.querySelectorAll(".unlock-state.region").length, 5, "region_only 的 5 项走地区文字");
+  assert.equal(pop.querySelector(".unlock-state.region .unlock-lock"), null, "地区项不画锁");
+  assert(popText.includes("Japan") && popText.includes("JPY"), "地区项要显示地区 / 币种文字: " + popText);
+  // 再点一下收起。
+  badge.click();
+  assert(pop.hidden, "再点徽标要收起浮层");
+  assert.equal(badge.getAttribute("aria-expanded"), "false", "收起时 aria-expanded 为 false");
+}
+// 详情弹窗里的「解锁检测」块：标题 + 分数 + 分类 + 服务列表 + 检测时间。
+unlockCard().querySelector(".node-name").click();
+await until(() => publicDOM.window.document.querySelector("#dialog .unlock-block"), "详情里的解锁块");
+{
+  const text = publicDOM.window.document.querySelector("#dialog .unlock-block").textContent;
+  assert(text.includes("解锁检测") && text.includes("19/24"), "详情块要有标题与分数: " + text);
+  assert(text.includes("流媒体 7/9") && text.includes("其他 6/9"), "详情块要有分类统计: " + text);
+  assert(text.includes("Netflix") && text.includes("仅自制剧"), "详情块要有服务列表: " + text);
+  assert(/检测于 \d{4}\/\d{1,2}\/\d{1,2}/.test(text), "详情块要有检测时间: " + text);
+  publicDOM.window.document.querySelector("#dialog").close();
+}
+// 没有解锁数据的节点一个占位都不给（用户明确反感占位元素）。
+publicSearch.value = longName;
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+await until(
+  () => [...publicDOM.window.document.querySelectorAll(".node-card")].some((c) => c.textContent.includes(longName)),
+  "long-term card for the no-unlock check",
+);
+{
+  const plain = [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) => c.textContent.includes(longName));
+  assert.equal(plain.querySelector(".unlock-badge"), null, "没有解锁数据的节点不渲染徽标");
+  assert.equal(plain.querySelector(".unlock-pop"), null, "也不渲染空浮层");
+}
+publicSearch.value = "";
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+// 样式文本断言：jsdom 不套用 styles.css，栅格 / 定位只能按样式表文本盯住。
+assert(/\.unlock-badge \{/.test(styles), "徽标样式要落在 styles.css");
+assert(/\.unlock-pop \{[\s\S]*?position: fixed/.test(styles), "浮层用 fixed 定位（卡片 overflow:hidden 会裁掉卡内浮层）");
+assert(/\.unlock-state \.unlock-lock \{[^}]*color: var\(--green\)/.test(styles), "已解锁的锁是绿色");
+assert(/\.unlock-block \.unlock-panel \{[^}]*font-size: 13px/.test(styles), "详情块的解锁面板字号独立");
 publicDOM.window.close();
 console.log(
-  "PASS: login, node creation/edit, billing and alerts, search/filter/batch catalog, combined checks and dual stack, overseas custom targets, edit round-trip and explicit binding, notifications page, logout, public cards/search/IPv6, bandwidth throttle row, quota throttle row. DOM simulation; visual layout not covered.",
+  "PASS: login, node creation/edit, billing and alerts, search/filter/batch catalog, combined checks and dual stack, overseas custom targets, edit round-trip and explicit binding, notifications page, logout, public cards/search/IPv6, bandwidth throttle row, quota throttle row, unlock task type + card badge/popover/detail. DOM simulation; visual layout not covered.",
 );

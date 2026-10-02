@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-Probe/internal/unlock"
 )
 
 // Runner executes one job. Route tasks run through Embedded unless the operator
@@ -27,6 +28,9 @@ func (r Runner) Run(ctx context.Context, j model.Job) model.Result {
 	result := model.Result{JobID: j.ID, Status: "failed", Route: "未知", Hops: []model.Hop{}}
 	if err := j.Task.Validate(); err != nil {
 		return result
+	}
+	if j.Task.Kind == model.UnlockKind {
+		return r.runUnlock(ctx, j)
 	}
 	if j.Task.Kind == "route" && r.Nexttrace == "" && r.Embedded == nil {
 		result.Status = "unavailable"
@@ -195,4 +199,27 @@ func parse(data []byte, target string) ([]model.Hop, int, *float64) {
 func syntheticAddress(ip net.IP) bool {
 	v := ip.To4()
 	return v != nil && v[0] == 198 && (v[1] == 18 || v[1] == 19)
+}
+
+// unlockBudget caps one round of unlock checks. A round is a couple of dozen
+// HTTPS requests, each with its own deadline inside the package; this is the
+// outer bound so one hung service cannot hold the job forever.
+const unlockBudget = 4 * time.Minute
+
+// runUnlock executes the built-in unlock catalogue from this host's own egress
+// and maps it onto the job result. The verdicts ride on the result; the Server
+// stores them per node (see storage.Finish).
+func (r Runner) runUnlock(ctx context.Context, j model.Job) model.Result {
+	result := model.Result{JobID: j.ID, Status: "failed", Route: "未知", Hops: []model.Hop{}}
+	ctx, cancel := context.WithTimeout(ctx, unlockBudget)
+	defer cancel()
+	results := unlock.Run(ctx, unlock.Options{Family: j.Task.Family})
+	if len(results) == 0 {
+		// 一项都没跑出来（被取消、目录为空）不是「未解锁」，是一轮没完成。
+		result.Reason = "tool_failed"
+		return result
+	}
+	result.Status = "ok"
+	result.Unlocks = results
+	return result
 }

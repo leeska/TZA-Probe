@@ -145,7 +145,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 5 {
+	if version > 6 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -190,6 +190,14 @@ func Open(path string) (*Store, error) {
 		// 小时流量桶，供「窗口内平均带宽」（达量降速）使用。不回填：天桶切不出小时，
 		// 而窗口本来就从这台机器开始上报的那一刻算起（CoveredHours 会如实写出来）。
 		if _, err = db.Exec("BEGIN; CREATE TABLE IF NOT EXISTS traffic_hour(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, hour INTEGER NOT NULL, incoming INTEGER NOT NULL, outgoing INTEGER NOT NULL, PRIMARY KEY(node_id,hour)); CREATE INDEX IF NOT EXISTS traffic_hour_age ON traffic_hour(hour); PRAGMA user_version=5; COMMIT;"); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 6 {
+		// 解锁检测结论（每台节点 × 每个服务一行）。不回填：结论是 Agent 报上来的，
+		// 没有历史数据可推。
+		if _, err = db.Exec("BEGIN; CREATE TABLE IF NOT EXISTS unlocks(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, service TEXT NOT NULL, status TEXT NOT NULL, region TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', tested_at INTEGER NOT NULL, PRIMARY KEY(node_id,service)); CREATE INDEX IF NOT EXISTS unlocks_age ON unlocks(tested_at); PRAGMA user_version=6; COMMIT;"); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -336,8 +344,10 @@ CREATE INDEX jobs_node ON jobs(node_id,issued);
 CREATE INDEX jobs_age ON jobs(issued);
 CREATE TABLE alert_state(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, kind TEXT NOT NULL, since INTEGER NOT NULL, active INTEGER NOT NULL, PRIMARY KEY(node_id,kind));
 CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, node_name TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, active INTEGER NOT NULL, at INTEGER NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE unlocks(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, service TEXT NOT NULL, status TEXT NOT NULL, region TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', tested_at INTEGER NOT NULL, PRIMARY KEY(node_id,service));
+CREATE INDEX unlocks_age ON unlocks(tested_at);
 CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-PRAGMA user_version=1;
+PRAGMA user_version=6;
 COMMIT;`
 
 func (s *Store) Close() error {
@@ -413,6 +423,15 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 	}
 	if err := s.attachWindow(ctx, views, now); err != nil {
 		return nil, err
+	}
+	// 解锁结论与延迟/降速一样，是「这台机器现在是什么样」的一部分：一次按节点分组的
+	// 查询把整页都算完（首页每秒一轮，逐台查会把 1 核机的时间叠回去）。
+	unlocks, err := s.unlockSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range views {
+		views[i].Unlock = unlocks[views[i].ID]
 	}
 	// 降速状态在这里统一判定（不放在 attachWindow 里）：按周期额度降速的线路即使一个
 	// 小时桶都还没有，只要本周期用量已经顶到额度就是已降速。
@@ -526,7 +545,64 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 	return n.ID, "", err
 }
 func (s *Store) DeleteNode(ctx context.Context, id string) error { return s.delete(ctx, "nodes", id) }
-func (s *Store) DeleteTask(ctx context.Context, id string) error { return s.delete(ctx, "tasks", id) }
+
+// DeleteTask removes a task and, for an unlock task, the verdicts it produced:
+// they are derived state, and leaving them behind would show a machine's unlock
+// panel for a check nothing runs any more.
+func (s *Store) DeleteTask(ctx context.Context, id string) error {
+	t, err := s.taskConfig(ctx, id)
+	if err != nil {
+		return err
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if t.Kind == model.UnlockKind {
+		if err = clearUnlocks(ctx, tx, t.NodeIDs); err != nil {
+			return err
+		}
+	}
+	r, err := tx.ExecContext(ctx, "DELETE FROM tasks WHERE id=?", id)
+	if err != nil {
+		return err
+	}
+	if n, _ := r.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
+
+// taskConfig reads a stored task, used by the writers that must know what a
+// task was before they change it.
+func (s *Store) taskConfig(ctx context.Context, id string) (model.Task, error) {
+	var config string
+	err := s.queryRow(ctx, "SELECT config FROM tasks WHERE id=?", id).Scan(&config)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Task{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Task{}, err
+	}
+	var t model.Task
+	if err = json.Unmarshal([]byte(config), &t); err != nil {
+		return model.Task{}, err
+	}
+	return t, nil
+}
+
+// clearUnlocks drops the stored verdicts of the named nodes.
+func clearUnlocks(ctx context.Context, tx *sql.Tx, nodeIDs []string) error {
+	for _, id := range nodeIDs {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM unlocks WHERE node_id=?", id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func (s *Store) delete(ctx context.Context, table, id string) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -723,12 +799,23 @@ func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) (string
 		t.ID = model.Secret()[:16]
 		_, err = tx.ExecContext(ctx, "INSERT INTO tasks VALUES(?,?)", t.ID, encode(t))
 	} else {
+		// 改任务即清历史：解锁结论是从结果派生的，旧结论必须跟着走，否则面板上会
+		// 留着一份没有任务在跑的解锁面板。旧配置要先读出来，改 kind 也要清。
+		previous, perr := s.taskConfig(ctx, t.ID)
+		if perr != nil {
+			return "", perr
+		}
 		var r sql.Result
 		r, err = tx.ExecContext(ctx, "UPDATE tasks SET config=? WHERE id=?", encode(t), t.ID)
 		if err == nil {
 			n, _ := r.RowsAffected()
 			if n == 0 {
 				return "", ErrNotFound
+			}
+		}
+		if err == nil && (previous.Kind == model.UnlockKind || t.Kind == model.UnlockKind) {
+			if err = clearUnlocks(ctx, tx, append(append([]string{}, previous.NodeIDs...), t.NodeIDs...)); err != nil {
+				return "", err
 			}
 		}
 	}
@@ -800,6 +887,14 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 			continue
 		}
 		for _, leaf := range t.Leaves() {
+			if leaf.Kind == model.UnlockKind {
+				// 解锁检测只有报了这个能力的 Agent 才领得到：老 Agent 会把它整轮
+				// 报成 failed，面板上就成了一片没来由的红。未知能力在这里是「不能」。
+				if capabilities.AllowsUnlock() {
+					candidates = append(candidates, leaf)
+				}
+				continue
+			}
 			if capabilities.AllowsFamily(leaf.Family) {
 				candidates = append(candidates, leaf)
 			}
@@ -877,7 +972,37 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	result, err := s.db.ExecContext(ctx, "UPDATE jobs SET finished=?,result=? WHERE id=? AND node_id=? AND finished IS NULL AND issued>=?", now.Unix(), encode(r), r.JobID, node, now.Add(-90*time.Second).Unix())
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// 上报窗口按任务类型分岔：一个延迟 / 回程探测几秒就回来，超过 90 秒的结果多半是
+	// 这台机器上另一个进程在冒充；而解锁检测一轮本来就是几分钟（20 多项 HTTPS），
+	// 用同一个窗口会把每一轮都判成过期。
+	var task model.Task
+	var issued int64
+	var taskJSON sql.NullString
+	if err = tx.QueryRowContext(ctx, "SELECT issued,task FROM jobs WHERE id=? AND node_id=? AND finished IS NULL", r.JobID, node).Scan(&issued, &taskJSON); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrConflict
+		}
+		return err
+	}
+	if taskJSON.Valid {
+		if uerr := json.Unmarshal([]byte(taskJSON.String), &task); uerr != nil {
+			// 任务 JSON 坏掉的行按未知处理：结论丢掉，别让上报失败。
+			slog.Warn("unreadable job task", "job", r.JobID)
+		}
+	}
+	window := now.Add(-90 * time.Second).Unix()
+	if task.Kind == model.UnlockKind {
+		window = now.Add(-unlockFinishWindow).Unix()
+	}
+	if issued < window {
+		return ErrConflict
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE jobs SET finished=?,result=? WHERE id=? AND node_id=? AND finished IS NULL", now.Unix(), encode(r), r.JobID, node)
 	if err != nil {
 		return err
 	}
@@ -885,7 +1010,91 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 	if n == 0 {
 		return ErrConflict
 	}
-	return nil
+	// 解锁结论在同一事务里落到 unlocks：面板读到的永远是整轮结果，不会看到半轮。
+	if len(r.Unlocks) > 0 && task.Kind == model.UnlockKind {
+		for _, u := range r.Unlocks {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO unlocks(node_id,service,status,region,detail,tested_at) VALUES(?,?,?,?,?,?) ON CONFLICT(node_id,service) DO UPDATE SET status=excluded.status,region=excluded.region,detail=excluded.detail,tested_at=excluded.tested_at", node, u.Service, u.Status, u.Region, u.Detail, now.Unix()); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+// Unlocks reads one node's stored verdicts as the panel summary, nil when the
+// machine has never run the check.
+func (s *Store) Unlocks(ctx context.Context, node string) (*model.UnlockSummary, error) {
+	rows, err := s.query(ctx, "SELECT service,status,region,detail,tested_at FROM unlocks WHERE node_id=?", node)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	results := []model.UnlockResult{}
+	testedAt := int64(0)
+	for rows.Next() {
+		var u model.UnlockResult
+		var at int64
+		if err = rows.Scan(&u.Service, &u.Status, &u.Region, &u.Detail, &at); err != nil {
+			return nil, err
+		}
+		results = append(results, u)
+		testedAt = max(testedAt, at)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	// 未知服务（比本 Server 新的 Agent）只跳过自己：其余结论照旧显示。目录里删掉的
+	// 项同理，不再出现在面板上。
+	known := results[:0]
+	for _, u := range results {
+		if model.KnownUnlockService(u.Service) {
+			known = append(known, u)
+		}
+	}
+	return model.SummarizeUnlocks(orderUnlocks(known), testedAt), nil
+}
+
+// unlockSummaries reads every node's verdicts in one grouped query for /nodes.
+func (s *Store) unlockSummaries(ctx context.Context) (map[string]*model.UnlockSummary, error) {
+	rows, err := s.query(ctx, "SELECT node_id,service,status,region,detail,tested_at FROM unlocks")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	grouped := map[string][]model.UnlockResult{}
+	tested := map[string]int64{}
+	for rows.Next() {
+		var id string
+		var u model.UnlockResult
+		var at int64
+		if err = rows.Scan(&id, &u.Service, &u.Status, &u.Region, &u.Detail, &at); err != nil {
+			return nil, err
+		}
+		if !model.KnownUnlockService(u.Service) {
+			continue
+		}
+		grouped[id] = append(grouped[id], u)
+		tested[id] = max(tested[id], at)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make(map[string]*model.UnlockSummary, len(grouped))
+	for id, services := range grouped {
+		out[id] = model.SummarizeUnlocks(orderUnlocks(services), tested[id])
+	}
+	return out, nil
+}
+
+// orderUnlocks sorts verdicts into catalogue order so the panel lists services
+// the same way on every node.
+func orderUnlocks(services []model.UnlockResult) []model.UnlockResult {
+	rank := map[string]int{}
+	for i, id := range model.UnlockServiceIDs() {
+		rank[id] = i
+	}
+	sort.SliceStable(services, func(i, j int) bool { return rank[services[i].Service] < rank[services[j].Service] })
+	return services
 }
 func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([]model.Observation, error) {
 	// 读的是物化表 latest：每台节点、每个分组（任务 × 种类 × 协议族 × 目标/端口 ×
@@ -950,8 +1159,11 @@ func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([
 // 上限就是它——窗口再大也取不到更早的探测（model.MaxLatencyWindowMinutes 与它一致，
 // storage 的测试会把两者钉在一起）。
 const (
-	samplesRetention = 30 * 24 * time.Hour
-	trafficRetention = 400 * 24 * time.Hour
+	// unlockFinishWindow is how late an unlock round may report. One round is
+	// minutes, not seconds (see probe.unlockBudget).
+	unlockFinishWindow = 15 * time.Minute
+	samplesRetention   = 30 * 24 * time.Hour
+	trafficRetention   = 400 * 24 * time.Hour
 	// 小时桶只服务窗口内平均带宽（窗口上限 168 小时），留 30 天与 samples 同档。
 	trafficHourRetention = 30 * 24 * time.Hour
 	JobsRetention        = 7 * 24 * time.Hour

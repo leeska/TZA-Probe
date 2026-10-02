@@ -112,3 +112,60 @@ assert(searchKeys("河北 / 电信").includes("hebeidianxin"), "全拼");
 assert(searchKeys("河北 / 电信").includes("hbdx"), "首字母");
 assert(searchKeys("河北 / 电信").includes("ct"), "代号");
 console.log("PASS: catalog search matches Chinese, pinyin, initials, English and carrier codes.");
+
+// 解锁检测面板（web/unlock.js）：分数、分类统计、状态词表与 region_only 的处理都是纯输出，
+// 这里直接断言 HTML 字符串；真实数据那一层在 ui-smoke 里跑。
+const { unlockPanel, unlockBadge, unlockCategoryStats, unlockStateCell, unlockStateName, unlockCounts } =
+  await import("../web/unlock.js");
+const unlockCatalog = {
+  categories: ["流媒体", "AI", "交易所", "其他"],
+  services: [
+    { id: "netflix", name: "Netflix", category: "流媒体" },
+    { id: "disneyplus", name: "Disney+", category: "流媒体" },
+    { id: "openai", name: "ChatGPT", category: "AI" },
+    { id: "bybit", name: "Bybit", category: "交易所" },
+    { id: "bing", name: "Bing Region", category: "其他", region_only: true },
+    { id: "reddit", name: "Reddit", category: "其他" },
+  ],
+};
+const unlockSummary = {
+  services: [
+    { service: "netflix", status: "originals_only", region: "JP" },
+    { service: "disneyplus", status: "no" },
+    { service: "openai", status: "yes" },
+    { service: "bybit", status: "banned" },
+    { service: "bing", status: "yes", region: "Japan" },
+    { service: "reddit", status: "failed" },
+  ],
+  score: 3,
+  total: 6,
+  tested_at: 1759400000,
+};
+// 分类统计的分母固定取目录项数，分子是已解锁（yes + originals_only）。
+assert.deepEqual(unlockCategoryStats(unlockSummary, unlockCatalog), [
+  { category: "流媒体", unlocked: 1, total: 2 },
+  { category: "AI", unlocked: 1, total: 1 },
+  { category: "交易所", unlocked: 0, total: 1 },
+  { category: "其他", unlocked: 1, total: 2 },
+]);
+assert(unlockCounts("yes") && unlockCounts("originals_only"), "已解锁与仅自制剧都计分");
+assert(!unlockCounts("no") && !unlockCounts("banned") && !unlockCounts("failed"), "其余状态不计分");
+assert.equal(unlockStateName.banned, "IP 被封禁");
+assert.equal(unlockStateName.failed, "检测失败");
+const unlockHTML = unlockPanel(unlockSummary, unlockCatalog, { tested: true });
+assert(/unlock-title">解锁检测</.test(unlockHTML) && /unlock-score">3\/6</.test(unlockHTML), "标题行给「解锁检测」+ 分数");
+assert(unlockHTML.includes("流媒体 1/2 · AI 1/1 · 交易所 0/1 · 其他 1/2"), "分类统计按目录分母: " + unlockHTML);
+assert(unlockHTML.includes("Netflix") && unlockHTML.includes("仅自制剧"), "originals_only 写「仅自制剧」");
+assert(unlockHTML.includes("IP 被封禁") && unlockHTML.includes("检测失败") && unlockHTML.includes("未解锁"), "状态词表齐全");
+assert(unlockHTML.includes("检测于 "), "tested 为真时给检测时间");
+assert(!unlockPanel(unlockSummary, unlockCatalog).includes("检测于"), "卡片浮层不带检测时间");
+// region_only 只给地区 / 币种文字：不写「未解锁」，也不画锁。
+const bing = unlockStateCell({ service: "bing", status: "yes", region: "Japan" }, unlockCatalog.services.find((s) => s.id === "bing"));
+assert(bing.includes("Japan") && !bing.includes("已解锁") && !bing.includes("unlock-lock"), "region_only 只给地区文字、不画锁: " + bing);
+// 已解锁画绿锁（图标走 class，颜色由 styles.css 决定）。
+const openai = unlockStateCell({ service: "openai", status: "yes" }, unlockCatalog.services.find((s) => s.id === "openai"));
+assert(openai.includes("unlock-lock") && openai.includes("已解锁"), "已解锁要带锁图标");
+assert(unlockBadge({ id: "n1" }) === "", "没有解锁数据的节点不渲染徽标（不留占位）");
+const unlockBadgeHTML = unlockBadge({ id: "n1", name: "jp-x", unlock: { score: 19, total: 24 } });
+assert(unlockBadgeHTML.includes('data-unlock="n1"') && unlockBadgeHTML.includes("19/24"), "有数据才给徽标与分数");
+console.log("PASS: unlock panel score, catalogue-based category stats, status words and region_only text.");

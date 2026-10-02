@@ -1197,3 +1197,93 @@ node scripts/ui-smoke.mjs
 - 试过「把 styles.css 挂到空白页量」的合成模式，同一段文字在那种环境里宽 ~11px（字体回退差别），
   会误报折行，已放弃并在脚本注释里写明原因。
 
+## 2026-10-02 解锁检测（Agent 侧执行、按节点落库）
+
+需求：把妙妙屋X 的「解锁检测」搬进 TZA-Probe —— 由节点自己的出口逐项检测流媒体 / AI / 交易所
+共 24 个服务，按节点落库，面板按分类展示并给出 `19/24` 这样的分数。
+
+做法与改法：
+
+- **契约在 `internal/model`**：`UnlockCatalog`（24 项：id / 名称 / 分类 / `region_only`）、
+  `UnlockResult`（service + 五词状态 + region + detail）、`UnlockSummary`（services / score /
+  total / tested_at）、任务类型 `UnlockKind = "unlock"`（无目标、无端口、最短 3600 秒）。
+  `Metrics.Capabilities` 是新上报字段，`AllowsUnlock()` 在**未上报时返回 false**（与
+  `AllowsFamily` 相反）：老 Agent 领到解锁任务会把 24 项全报成 failed，面板上就是一片没来由的红。
+- **检测实现在 `internal/unlock`**（只有 Agent 链接它，Server 不链接）：标准库、无 shell、无外部
+  二进制；`follow` / `direct` 两个 client 共用一个 transport（读 Location 的检测项必须用不跟随跳转的
+  那个），`Family` 通过 `net.Dialer.Control` 在 connect 系统调用上真正挡住另一族。每项独立超时，
+  网络故障只能写 `failed`。
+- **Agent**：`probe.Runner.Run` 对 `kind=unlock` 分支到 `runUnlock`（4 分钟外层预算），结果挂在
+  `Result.Unlocks` 上；`SystemCollector` 上报 `capabilities:["unlock"]`。
+- **存储**：新表 `unlocks(node_id, service, status, region, detail, tested_at, PK(node_id,service))`
+  （迁移 v6，fresh schema 同步）。`Finish` 在**同一事务**里把结论写进 `unlocks`，并且上报窗口按
+  任务类型分岔——延迟 / 回程仍是 90 秒，解锁放宽到 15 分钟（一轮本来就是几分钟，用同一个窗口会把
+  每一轮都判成过期）。改任务、删任务、删节点都会连带清掉旧结论（结论是派生数据，不是历史）。
+- **接口**：`GET /api/v1/unlock-catalog`（公开）、`GET /api/v1/nodes/{id}/unlocks`（公开，节点未公开
+  时 404，没跑过时返回空摘要而不是 404）、`/api/v1/nodes` 每个节点带 `unlock` 摘要、`ProbeTargets`
+  自动多出一项 `kind=unlock`；MCP `create_task` 的 schema 加了 `kind`（tcp / route / unlock）。
+- **面板**：卡片名字旁锁图标 + 分数，悬停 / 点击展开分类面板（流媒体 / AI / 交易所 / 其他），
+  详情页一块「解锁检测」，后台任务编辑器支持 `unlock` 类型；`region_only` 的五项只显示地区文字、
+  不画锁图标；没有检测数据的节点不渲染任何占位元素。
+
+验证：
+
+- `gofmt -l .` 干净，`go vet ./...` 干净，`go test ./...` 全绿（含新增
+  `internal/unlock/unlock_test.go`、`internal/storage/unlocks_test.go`、`internal/httpapi/unlock_test.go`）。
+  单测钉住的口径：目录覆盖（24 项都有实现且没有孤儿）、`Run` 顺序与状态合法性、Netflix 三态、
+  ChatGPT 三态、交易所只认 API 的状态码（451 / 403）、`youtube_cdn` 从主机名中段读机场码、
+  Bing 的地区与 risky 不混在一起、连接失败 / 取消只能得到 `failed`、`Family=ipv6` 时不出 v4、
+  没有能力上报就领不到解锁任务、改任务 / 删任务 / 删节点清结论、延迟探测 5 分钟后上报仍是 409。
+- **本机端到端（真 Server + 真 Agent，坦帕出口）**：`/tmp` 起 Server（25775）→ 建公开节点 →
+  建 `kind=unlock` 任务 → 起真 Agent → 24 项全部落库，`score 19/24`，`/api/v1/nodes` 里该节点
+  带 `unlock (19,24)` 与 `probe_targets ["unlock"]`，`/unlock-catalog` 返回 24 项 4 分类，
+  库 `user_version=6`、`unlocks` 24 行。其中 Binance / Bybit 在美国出口正确地读成 `HTTP 451` /
+  `CDN 按国家阻断`。
+- **混编机队实测**（用线上正在跑的 `tza-server 2.0.0-dev+26dd2ac` / `tza-agent +4d2fc96` 二进制对着新构建
+  各跑一遍）：**旧 Server + 新 Agent** → Agent 每 5 秒一次 `WARN metrics report failed
+  error="server returned HTTP 400"`，节点始终拿不到指标（新上报字段被 `DisallowUnknownFields` 拒了），
+  所以顺序不能反；**新 Server + 旧 Agent** → Agent 全程 0 error 正常上报，只领到 tcp 作业
+  （`jobs: tcp|2`）、`unlocks` 0 行、节点视图 `capabilities=None / unlock=None`，延迟探测照常出结果。
+- **线上库迁移预检**（把线上 `tza-v2.db` 的备份拷贝到本地，用新 Server 真跑一遍）：`user_version`
+  5 → 6、`nodes 15 / jobs 145954` 一行没少、`unlocks` 表与 `unlocks_age` 索引建好、
+  `/api/v1/nodes` 15 台全在且都没有 `unlock` 字段（没有数据的节点不画占位）、
+  `/api/v1/nodes/{id}/unlocks` 返回 `{"services":[],"score":0,"total":24,"tested_at":0}`、
+  `/api/v1/unlock-catalog` 24 项 4 分类、`/mcp` 工具数仍是 21（没有为解锁检测新增 MCP 工具）、
+  `app.js` / `styles.css` / `glass.css` / `detail.js` 全部 200、Server 日志 0 error。
+- **四台真机与妙妙屋X 线上真值逐项比对**（同一台机器、同一天：nosla 法兰克福、VMiss 美国、
+  BandwagonHost DC9、nosla 东京 Gen.2，各自 24 项）：**85/96 一致**（20 / 22 / 21 / 22）。
+  11 处差异全部列出：`youtube_cdn` ×3（对面是 `failed (location unknown)`，我们读出
+  Frankfurt / Los Angeles / Tokyo —— 东京那台与对面 `Tokyo, Japan` 完全一致）、`dazn` 与
+  `prime_video` 各 1 处（对面 `failed (page error)`，我们给出 `banned (HTTP 403)` / `yes · US`）、
+  `wikipedia` 1 处（可编辑性随 IP 信誉变，两边都合理）、`disneyplus` ×2 与 `netflix` ×2
+  （对面 DE / JP 两台读成 `banned (forbidden-location)` / `originals_only`，我们按机器自己的出口
+  读出 `yes` + 区域：Netflix 给的是 `301 → /de-en/`、`/jp-en/` 这种区域跳转，Disney+ 页面里没有
+  forbidden 标记、`region: us`）、`gemini` 1 处（对面 DE 读 `no`，我们读到页面里的 `DEU`）。
+  两台美国机器上 Netflix / Disney+ / iqiyi 两边完全一致，差异集中在 DE / JP 两台——对面那两台的
+  结论很可能来自它自己的分流出口（同一份数据里 DE 机的 `netflix_cdn` 是 `Dortmund, Germany (LWLCOM)`，
+  而这台机器的地址在法兰克福），我们的读数则是这台机器默认路由看到的。
+
+- **面板（真浏览器 390px，chromium 无头）**：卡片名字行 = 状态点 → 名称 → 绿色锁 + `20/24` → `Debian 13`
+  → `amd64`；悬停展开的分类浮层标题「解锁检测 / 20/24」，分类行
+  `流媒体 8/9 · AI 3/3 · 交易所 3/3 · 其他 6/9`，24 项按四类列出（`DAZN / IP 被封禁` 红、
+  已解锁画绿锁、`Bing Region / Apple Region / Google Play / Steam Currency / OneTrust Region`
+  只给 `DE` / `Germany` / `EUR` / `DE [Hesse]` 这样的地区或币种文字、不画锁也不写「未解锁」）；
+  详情弹窗里的同一块带「检测于 2026/10/2 19:00:09」。截图见交付记录。
+- **匿名视图**：私有节点的 `unlock` 既不在 `/api/v1/nodes` 里，`/api/v1/nodes/{id}/unlocks` 也返回
+  404（管理员读同一路径 200 且带服务明细）；`/api/v1/unlock-catalog` 匿名可读（面板要它分组）。
+- **DOM 集成检查**：`node scripts/ui-smoke.mjs` 全绿，含新增的
+  `unlock task type + card badge/popover/detail`（它按 Agent 路径建带 `capabilities:["unlock"]` 的节点、
+  建任务、领租约、报 24 条结论，再断言任务编辑器的类型单选 / 卡片徽标 / 浮层 / 详情块）；
+  `node scripts/presentation-test.mjs` 新增
+  `PASS: unlock panel score, catalogue-based category stats, status words and region_only text`。
+  顺手修掉两个**测试脚本**自身的问题（都不是产品缺陷）：`madeLong` 被 `clone()` 读了两次正文导致
+  整条套件在 `Response.clone: Body has already been consumed` 处中断（HEAD 上同样会中断，属既有问题）；
+  累计流量那条断言读的是打补丁后的一帧，可能还停在上一份数据上——改成等它收敛（真浏览器里实测
+  同一张卡片一次刷新后就是 `累计 0 B / 累计 675 MB`，与断言口径一致）。
+- `bash scripts/unlock-acceptance.sh` 可重跑：`unlocks: 19/24 · 流媒体 7/9 · AI 3/3 · 交易所 3/3 · 其他 6/9`。
+
+待确认：
+
+- 机队升级顺序：**先部署 Server，再逐台升级 Agent**（老 Agent 不报能力，领不到解锁任务；
+  反向顺序会让新 Agent 的上报被旧 Server 判 400 而掉线）。
+- 首轮上线只建一个解锁任务（间隔 6 小时、绑定全部节点）还是一台一个任务，按实际想看的粒度定。

@@ -1,0 +1,853 @@
+package unlock
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"strings"
+
+	"github.com/leeska/TZA-Probe/internal/model"
+)
+
+// check is one service's verdict function. It must never return a raw transport
+// error as no/banned — use netErr for faults. Region and Detail are truncated
+// by runOne, so a check may return long text safely.
+type check func(ctx context.Context, c *Client) model.UnlockResult
+
+// checks maps every catalogue id to its implementation. The catalogue lives in
+// model; unlockTestCatalog pins the two together so a new service cannot ship
+// without a check.
+var checks = map[string]check{
+	"netflix":         netflix,
+	"netflix_cdn":     netflixCDN,
+	"disneyplus":      disneyPlus,
+	"youtube_premium": youtubePremium,
+	"youtube_cdn":     youtubeCDN,
+	"prime_video":     primeVideo,
+	"tvb_anywhere":    tvbAnywhere,
+	"iqiyi":           iqiyi,
+	"dazn":            dazn,
+	"openai":          openAI,
+	"gemini":          gemini,
+	"claude":          claude,
+	"binance":         binance,
+	"bybit":           bybit,
+	"okx":             okx,
+	"bing":            bing,
+	"apple":           apple,
+	"google_play":     googlePlay,
+	"google_search":   googleSearch,
+	"wikipedia":       wikipedia,
+	"reddit":          reddit,
+	"steam":           steam,
+	"onetrust":        oneTrust,
+	"sdggge":          sdggge,
+}
+
+// ---------------------------------------------------------------------------
+// Streaming
+
+func netflix(ctx context.Context, c *Client) model.UnlockResult {
+	r1, err := c.do(ctx, false, "GET", "https://www.netflix.com/title/81280792", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r1)
+	r2, err := c.do(ctx, false, "GET", "https://www.netflix.com/title/70143836", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r2)
+	switch {
+	case r1.StatusCode == http.StatusNotFound && r2.StatusCode == http.StatusNotFound:
+		return res(model.UnlockOriginalsOnly, "", "Originals Only")
+	case r1.StatusCode == http.StatusForbidden && r2.StatusCode == http.StatusForbidden:
+		return res(model.UnlockBanned, "", "HTTP 403")
+	}
+	if !okStatus(r1.StatusCode) && !okStatus(r2.StatusCode) {
+		return res(model.UnlockFailed, "", "unexpected status")
+	}
+	// A served region page carries the region in the Location header of the
+	// per-region title: /<cc>-<n>/...  No header means the default catalogue.
+	r3, err := c.do(ctx, false, "GET", "https://www.netflix.com/title/80018499", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r3)
+	loc := r3.Header.Get("Location")
+	if loc == "" {
+		return res(model.UnlockYes, "US", "")
+	}
+	parts := strings.SplitN(loc, "/", 5)
+	if len(parts) < 5 {
+		return res(model.UnlockFailed, "", "unexpected location")
+	}
+	region := strings.ToUpper(strings.SplitN(parts[3], "-", 2)[0])
+	if region == "" {
+		region = "US"
+	}
+	return res(model.UnlockYes, region, "")
+}
+
+func netflixCDN(ctx context.Context, c *Client) model.UnlockResult {
+	const target = "https://api.fast.com/netflix/speedtest/v2?https=true&token=YXNkZmFzZGxmbnNkYWZoYXNkZmhrYWxm&urlCount=5"
+	r, err := c.do(ctx, false, "GET", target, nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	if r.StatusCode == http.StatusForbidden {
+		drain(r)
+		return res(model.UnlockBanned, "", "IP Banned By Netflix")
+	}
+	var v struct {
+		Client struct {
+			Location struct {
+				City    string `json:"city"`
+				Country string `json:"country"`
+			} `json:"location"`
+		} `json:"client"`
+		Targets []struct {
+			Location struct {
+				City    string `json:"city"`
+				Country string `json:"country"`
+			} `json:"location"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(read(r)), &v); err != nil {
+		return res(model.UnlockFailed, "", "bad speedtest payload")
+	}
+	// Prefer the egress's own location (what the panel wants: where this IP is
+	// seen); fall back to the first chosen CDN node.
+	loc := v.Client.Location
+	if loc.City == "" && loc.Country == "" {
+		if len(v.Targets) == 0 {
+			return res(model.UnlockFailed, "", "no location")
+		}
+		loc = v.Targets[0].Location
+	}
+	region := loc.Country
+	switch {
+	case loc.City != "" && loc.Country != "":
+		region = loc.City + ", " + loc.Country
+	case loc.City != "":
+		region = loc.City
+	}
+	if region == "" {
+		return res(model.UnlockFailed, "", "no location")
+	}
+	return res(model.UnlockYes, region, "")
+}
+
+func disneyPlus(ctx context.Context, c *Client) model.UnlockResult {
+	hdrs := map[string]string{"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+	r, err := c.do(ctx, false, "GET", "https://www.disneyplus.com/", hdrs, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r)
+	if strings.Contains(page, "forbidden-location") {
+		return res(model.UnlockBanned, "", "forbidden-location")
+	}
+	loc := r.Header.Get("Location")
+	switch loc {
+	case "https://preview.disneyplus.com/unavailable/":
+		return res(model.UnlockBanned, "", "unavailable")
+	case "https://disneyplus.disney.co.jp/":
+		return res(model.UnlockYes, "JP", "")
+	case "":
+		// No redirect: the region cookie (else the region header) names the
+		// catalogue this egress is being served.
+		if cc := cookieValue(r, "x-dss-country"); cc != "" {
+			return res(model.UnlockYes, strings.ToUpper(cc), "")
+		}
+		if reg := r.Header.Get("region"); reg != "" {
+			return res(model.UnlockYes, strings.ToUpper(reg), "")
+		}
+		return res(model.UnlockYes, "", "")
+	default:
+		return res(model.UnlockNo, "", "")
+	}
+}
+
+func youtubePremium(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://www.youtube.com/premium", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r)
+	if cc := quotedAfter(page, `"countryCode":"`); len(cc) == 2 {
+		return res(model.UnlockYes, strings.ToUpper(cc), "")
+	}
+	if cc := quotedAfter(page, `"GL":"`); len(cc) == 2 {
+		return res(model.UnlockYes, strings.ToUpper(cc), "")
+	}
+	if strings.Contains(page, "premiumPurchaseButton") || strings.Contains(page, "manageSubscriptionButton") {
+		return res(model.UnlockYes, "", "")
+	}
+	return res(model.UnlockNo, "", "")
+}
+
+func youtubeCDN(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, false, "GET", "https://redirector.googlevideo.com/report_mapping", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r)
+	host := ""
+	for _, line := range strings.Split(page, "\n") {
+		line = strings.TrimSpace(line)
+		i := strings.Index(line, "=> ")
+		if i < 0 {
+			continue
+		}
+		rest := line[i+3:]
+		if j := strings.IndexAny(rest, " ("); j >= 0 {
+			rest = rest[:j]
+		}
+		host = rest
+		break
+	}
+	if host == "" {
+		return res(model.UnlockFailed, "", "no mapping line")
+	}
+	// 机场码在主机名中间：实测东京那台回 `lcnrtb-bg`（nrt = 成田，-bg 只是
+	// ISP 后缀），洛杉矶回 `lax31s13`。先按 "-" 切一刀会只看到后缀，把东京读成
+	// 保加利亚 —— 所以整串里找已知机场码；认不出来就报失败，不猜一个地名。
+	code := airCode(host)
+	region := airCity(code)
+	if region == "" {
+		return res(model.UnlockFailed, "", "unknown aircode")
+	}
+	return res(model.UnlockYes, region, "")
+}
+
+func primeVideo(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://www.primevideo.com", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r)
+	if cc := quotedAfter(page, `"currentTerritory":"`); len(cc) == 2 {
+		return res(model.UnlockYes, strings.ToUpper(cc), "")
+	}
+	if cc := quotedAfter(page, `"countryCode":"`); len(cc) == 2 {
+		return res(model.UnlockYes, strings.ToUpper(cc), "")
+	}
+	return res(model.UnlockNo, "", "")
+}
+
+func tvbAnywhere(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, false, "GET", "https://uapisfm.tvbanywhere.com.sg/geoip/check/platform/android", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	var v struct {
+		Allow   bool   `json:"allow_in_this_country"`
+		Country string `json:"country"`
+	}
+	if err := json.Unmarshal([]byte(read(r)), &v); err != nil {
+		return res(model.UnlockFailed, "", "bad geoip payload")
+	}
+	if v.Allow {
+		return res(model.UnlockYes, strings.ToUpper(v.Country), "")
+	}
+	return res(model.UnlockNo, "", "")
+}
+
+func iqiyi(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, false, "GET", "https://www.iq.com", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	h := r.Header.Get("x-custom-client-ip")
+	drain(r)
+	if h == "" {
+		return res(model.UnlockNo, "", "")
+	}
+	i := strings.Index(h, ":")
+	if i < 0 {
+		return res(model.UnlockNo, "", "")
+	}
+	region := h[i+1:]
+	if region == "ntw" {
+		region = "tw"
+	}
+	if region == "" {
+		return res(model.UnlockNo, "", "")
+	}
+	return res(model.UnlockYes, strings.ToUpper(region), "")
+}
+
+func dazn(ctx context.Context, c *Client) model.UnlockResult {
+	const payload = `{"LandingPageKey":"generic","Languages":"zh-CN,zh,en","Platform":"web","PlatformAttributes":{},"Manufacturer":"","PromoCode":"","Version":"2"}`
+	hdrs := map[string]string{
+		"Content-Type": "application/json",
+		"Accept":       "application/json, text/plain, */*",
+		"Origin":       "https://www.dazn.com",
+		"Referer":      "https://www.dazn.com/",
+	}
+	r, err := c.do(ctx, true, "POST", "https://startup.core.indazn.com/misl/v5/Startup", hdrs, strings.NewReader(payload))
+	if err != nil {
+		return netErr(err)
+	}
+	body := read(r)
+	var v struct {
+		Region struct {
+			IsAllowed         bool   `json:"IsAllowed"`
+			DisallowedReason  string `json:"DisallowedReason"`
+			GeolocatedCountry string `json:"GeolocatedCountry"`
+		} `json:"Region"`
+	}
+	if err := json.Unmarshal([]byte(body), &v); err != nil {
+		// A CDN block (CloudFront 403) is an outright refusal, not a fault.
+		if r.StatusCode == http.StatusForbidden || r.StatusCode == http.StatusUnavailableForLegalReasons {
+			return res(model.UnlockBanned, "", httpStatusDetail(r.StatusCode))
+		}
+		return res(model.UnlockFailed, "", httpStatusDetail(r.StatusCode))
+	}
+	if v.Region.IsAllowed {
+		return res(model.UnlockYes, v.Region.GeolocatedCountry, "")
+	}
+	return res(model.UnlockBanned, "", v.Region.DisallowedReason)
+}
+
+// ---------------------------------------------------------------------------
+// AI
+
+func openAI(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, false, "GET", "https://chat.openai.com/cdn-cgi/trace", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	trace := read(r)
+	loc := ""
+	if i := strings.Index(trace, "loc="); i >= 0 {
+		rest := trace[i+4:]
+		if j := strings.IndexAny(rest, "\r\n"); j >= 0 {
+			rest = rest[:j]
+		}
+		loc = strings.ToUpper(strings.TrimSpace(rest))
+	}
+	// No redirect following: a geo block answers 403 on the root itself.
+	r2, err := c.do(ctx, false, "GET", "https://chat.openai.com", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r2)
+	if strings.Contains(page, "VPN") || r2.StatusCode == http.StatusForbidden {
+		return res(model.UnlockBanned, "", "VPN Blocked")
+	}
+	if r2.StatusCode == http.StatusTooManyRequests {
+		return res(model.UnlockOriginalsOnly, loc, "429 Rate limit")
+	}
+	if supportGPT(loc) {
+		return res(model.UnlockYes, loc, "")
+	}
+	return res(model.UnlockNo, loc, "")
+}
+
+func gemini(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://gemini.google.com", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r)
+	// The app bundle carries the region as `,2,1,200,"XXX"`. The historical
+	// "45631641,null,true" availability marker flipped to false upstream, so the
+	// region triple is the stable signal; fall back to the old marker alone.
+	if cc := boundedAfter(page, `,2,1,200,"`, `"`); len(cc) == 3 && isUpper(cc) {
+		return res(model.UnlockYes, cc, "")
+	}
+	if strings.Contains(page, "45631641,null,true") {
+		return res(model.UnlockYes, "", "")
+	}
+	return res(model.UnlockNo, "", "")
+}
+
+func claude(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://claude.ai/", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r)
+	final := "https://claude.ai/"
+	if r.Request != nil && r.Request.URL != nil {
+		final = r.Request.URL.String()
+	}
+	switch final {
+	case "https://claude.ai/", "https://claude.ai":
+		return res(model.UnlockYes, "", "")
+	case "https://www.anthropic.com/app-unavailable-in-region":
+		return res(model.UnlockNo, "", "")
+	default:
+		return res(model.UnlockNo, "", final)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Exchanges
+
+func binance(ctx context.Context, c *Client) model.UnlockResult {
+	// 网页站对受限地区也会回 202 挑战页，把「连得上」当解锁就全绿了；按地区真正回
+	// 451 的是 API。实测（2026-10-02）：美国机器 api 451 / 网页 202，德国、日本两台
+	// api 200 —— 与面板原来的口径一致。
+	r, err := c.do(ctx, false, "GET", "https://api.binance.com/api/v3/ping", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r)
+	api := r.StatusCode
+	switch {
+	case api == http.StatusUnavailableForLegalReasons:
+		return res(model.UnlockNo, "", "HTTP 451")
+	case api >= 200 && api < 300:
+		return res(model.UnlockYes, "", "")
+	}
+	// API 因为别的原因不答时退回网页站：200/202 都说明这家站点没有按地区拦这台机器。
+	page, err := c.do(ctx, false, "GET", "https://www.binance.com/", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(page)
+	if page.StatusCode == http.StatusUnavailableForLegalReasons {
+		return res(model.UnlockNo, "", "HTTP 451")
+	}
+	if page.StatusCode >= 200 && page.StatusCode < 300 {
+		return res(model.UnlockYes, "", "")
+	}
+	return res(model.UnlockFailed, "", httpStatusDetail(api))
+}
+
+func bybit(ctx context.Context, c *Client) model.UnlockResult {
+	// 与币安同因：网页站哪都回 200，按国家拦的是 API 的 CDN（实测美国机器 403、
+	// 德国 / 日本 200）。Detail 保留面板原来的说法。
+	r, err := c.do(ctx, false, "GET", "https://api.bybit.com/v5/market/time", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r)
+	api := r.StatusCode
+	switch {
+	case api == http.StatusForbidden:
+		return res(model.UnlockNo, "", "CDN 按国家阻断")
+	case api >= 200 && api < 300:
+		return res(model.UnlockYes, "", "")
+	}
+	page, err := c.do(ctx, false, "GET", "https://www.bybit.com/", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(page)
+	if page.StatusCode == http.StatusForbidden {
+		return res(model.UnlockNo, "", "CDN 按国家阻断")
+	}
+	if page.StatusCode >= 200 && page.StatusCode < 300 {
+		return res(model.UnlockYes, "", "")
+	}
+	return res(model.UnlockFailed, "", httpStatusDetail(api))
+}
+
+func okx(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://www.okx.com/", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	final := ""
+	if r.Request != nil && r.Request.URL != nil {
+		final = r.Request.URL.String()
+	}
+	drain(r)
+	if r.StatusCode == http.StatusForbidden || r.StatusCode == http.StatusUnavailableForLegalReasons {
+		return res(model.UnlockNo, "", httpStatusDetail(r.StatusCode))
+	}
+	if r.StatusCode < 200 || r.StatusCode >= 300 {
+		return res(model.UnlockFailed, "", httpStatusDetail(r.StatusCode))
+	}
+	// Region comes from the locale segment of the final URL (/en-us) or, when
+	// that is absent, the Cloudflare trace.
+	region := ""
+	if i := strings.Index(final, "://"); i >= 0 {
+		if k := strings.Index(final[i+3:], "/"); k >= 0 {
+			seg := final[i+3+k+1:]
+			if j := strings.IndexAny(seg, "/?"); j >= 0 {
+				seg = seg[:j]
+			}
+			if parts := strings.Split(seg, "-"); len(parts) >= 2 {
+				region = strings.ToUpper(parts[len(parts)-1])
+			}
+		}
+	}
+	if region == "" {
+		if t, err := c.do(ctx, false, "GET", "https://www.okx.com/cdn-cgi/trace", nil, nil); err == nil {
+			trace := read(t)
+			if loc := traceValue(trace, "loc"); loc != "" {
+				region = strings.ToUpper(loc)
+			}
+		}
+	}
+	return res(model.UnlockYes, region, "")
+}
+
+// ---------------------------------------------------------------------------
+// Misc / region lookups
+
+func bing(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://www.bing.com/search?q=curl", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r)
+	if strings.Contains(page, "cn.bing.com") {
+		return res(model.UnlockYes, "CN", "")
+	}
+	// 地区归地区、风险归 Detail：region 是地区类服务要显示的那段文字，把
+	// "(Risky)" 拼进去会让面板上多出一个不存在的「地区」。
+	region := boundedAfter(page, `Region:"`, `"`)
+	if strings.Contains(page, `sj_cook.set("SRCHHPGUSR","HV"`) {
+		return res(model.UnlockYes, region, "risky")
+	}
+	return res(model.UnlockYes, region, "")
+}
+
+func apple(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://gspe1-ssl.ls.apple.com/pep/gcc", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	body := strings.TrimSpace(read(r))
+	if len(body) >= 2 {
+		body = body[:2]
+	}
+	if body == "" {
+		return res(model.UnlockFailed, "", "empty region")
+	}
+	return res(model.UnlockYes, strings.ToUpper(body), "")
+}
+
+func googlePlay(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://play.google.com/", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r)
+	const marker = `<div class="yVZQTb">`
+	i := strings.Index(page, marker)
+	if i < 0 {
+		return res(model.UnlockFailed, "", "page error")
+	}
+	seg := page[i+len(marker):]
+	if j := strings.IndexAny(seg, "<("); j >= 0 {
+		seg = seg[:j]
+	}
+	region := strings.TrimSpace(seg)
+	if region == "" {
+		return res(model.UnlockFailed, "", "page error")
+	}
+	return res(model.UnlockYes, region, "")
+}
+
+func googleSearch(ctx context.Context, c *Client) model.UnlockResult {
+	const target = "https://www.google.com/search?q=curl&oq=curl&sourceid=chrome&ie=UTF-8"
+	r, err := c.do(ctx, true, "GET", target, nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := strings.ToLower(read(r))
+	blocked := strings.Contains(page, "unusual traffic from") ||
+		strings.Contains(page, "is blocked") ||
+		strings.Contains(page, "unaddressed abuse")
+	hasResults := strings.Contains(page, "curl")
+	switch {
+	case blocked:
+		return res(model.UnlockNo, "", "")
+	case hasResults:
+		return res(model.UnlockYes, "", "")
+	default:
+		return res(model.UnlockFailed, "", "page error")
+	}
+}
+
+func wikipedia(ctx context.Context, c *Client) model.UnlockResult {
+	const target = "https://zh.wikipedia.org/w/index.php?title=Wikipedia%3A%E6%B2%99%E7%9B%92&action=edit"
+	r, err := c.do(ctx, true, "GET", target, nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := strings.ToLower(read(r))
+	if strings.Contains(page, "banned") {
+		return res(model.UnlockNo, "", "")
+	}
+	return res(model.UnlockYes, "", "")
+}
+
+func reddit(ctx context.Context, c *Client) model.UnlockResult {
+	if c.family == "ipv6" {
+		return res(model.UnlockFailed, "", "IPv6 unsupported")
+	}
+	r, err := c.do(ctx, true, "GET", "https://www.reddit.com/", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r)
+	switch r.StatusCode {
+	case http.StatusForbidden:
+		return res(model.UnlockNo, "", "")
+	case http.StatusOK:
+		return res(model.UnlockYes, "", "")
+	default:
+		return res(model.UnlockFailed, "", httpStatusDetail(r.StatusCode))
+	}
+}
+
+func steam(ctx context.Context, c *Client) model.UnlockResult {
+	r, err := c.do(ctx, true, "GET", "https://store.steampowered.com/app/761830", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	page := read(r)
+	i := strings.Index(page, "priceCurrency")
+	if i < 0 {
+		return res(model.UnlockFailed, "", "page error")
+	}
+	seg := page[i:]
+	j := strings.Index(seg, `content="`)
+	if j < 0 {
+		return res(model.UnlockFailed, "", "page error")
+	}
+	seg = seg[j+len(`content="`):]
+	k := strings.IndexByte(seg, '"')
+	if k < 0 {
+		return res(model.UnlockFailed, "", "page error")
+	}
+	region := seg[:k]
+	if region == "" {
+		return res(model.UnlockFailed, "", "page error")
+	}
+	return res(model.UnlockYes, region, "")
+}
+
+func oneTrust(ctx context.Context, c *Client) model.UnlockResult {
+	const target = "https://geolocation.onetrust.com/cookieconsentpub/v1/geo/location"
+	r, err := c.do(ctx, false, "GET", target, nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	body := read(r)
+	// The body is a JSONP call: jsonFeed({...});
+	if i := strings.IndexByte(body, '{'); i >= 0 {
+		if j := strings.LastIndexByte(body, '}'); j > i {
+			body = body[i : j+1]
+		}
+	}
+	var v struct {
+		Country   string `json:"country"`
+		StateName string `json:"stateName"`
+	}
+	if err := json.Unmarshal([]byte(body), &v); err != nil || v.Country == "" {
+		return res(model.UnlockFailed, "", "page error")
+	}
+	region := v.Country
+	if v.StateName != "" {
+		region = v.Country + " [" + v.StateName + "]"
+	}
+	return res(model.UnlockYes, region, "")
+}
+
+// sdGGGEPayload is the fixed protobuf consent probe: a base64 body replayed to
+// the game's consent endpoint. Only a literal 200 is a pass and 483 the game's
+// own "region refused"; anything else is a failure, never a guess.
+const sdGGGEPayload = "1CR6PntuLeI3yaCYAZdOPxn18bOFYJxUiYtcavqqAHDCjc3C/wozplHYwfhykUStp7Bb/LAhV8aWQkS9sLliHCIgXBvDsWe4pwXvV3cSXkoaBfL23/zytEHlAatOi/32UVYLJhyUsegCRMMGREr2fXqyx970imQ35hqWVj/MRTHS9Bi8iqo9nIqSDTcQqVn3BbuyhJcz52nhfSda2may3QVHkH9QDdFjW9S/2re2cxE3iaE/DUbjB9H8KUpihQB1Emf88I0241ea7CAI1jHel6aZ5Ul4XjTf8ug3Rl/T80A="
+
+func sdggge(ctx context.Context, c *Client) model.UnlockResult {
+	raw, err := base64.StdEncoding.DecodeString(sdGGGEPayload)
+	if err != nil {
+		return res(model.UnlockFailed, "", "bad payload")
+	}
+	hdrs := map[string]string{
+		"Content-Type":           "application/protobuf",
+		"Accept":                 "application/protobuf",
+		"X-Content-Is-Encrypted": "True",
+		"X-Language":             "hk",
+		"X-Unity-Version":        "2022.3.45f1",
+		"X-Master-Url":           "https://clientdata.gl.eternal.channel.or.jp/prd-gl/catalogs/hr0phpfWDVahMJGQIk2OSd6hy35YpQZVKYAo6lKeld-9scMGJw2KTnBDGbS04Gw-i25avFTH55K-yU9TCX2OkQ.json",
+		"X-Language-Master-Url":  "https://clientdata.gl.eternal.channel.or.jp/prd-gl/language_catalogs/hk/F-HORjFKHLai8nLXUdPyQRqzexZNPKIn2O36Hgd2Bxm2RysBNS0-PQHQwfHXEOONog0w5yULtewBaVk-Ndf6nQ.json",
+		"X-App-Version-Hash":     "20928",
+		"X-Token":                "e5df59f1-8588-4477-a887-5fe854895493Mj0jmtfbgIhQOUmHQE1W7sLq7G5eSBqcFWqldSPjy6s=",
+		"Accept-Language":        "zh-CN,zh-Hans;q=0.9",
+		"User-Agent":             "GETERNAL/25041500 CFNetwork/3826.400.120 Darwin/24.3.0",
+	}
+	const target = "https://api.gl.eternal.channel.or.jp/api/pvt/consent/view?user_id=649635267711712178"
+	r, err := c.do(ctx, false, "POST", target, hdrs, bytes.NewReader(raw))
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r)
+	switch r.StatusCode {
+	case http.StatusOK:
+		return res(model.UnlockYes, "", "")
+	case 483:
+		return res(model.UnlockNo, "", "")
+	default:
+		return res(model.UnlockFailed, "", httpStatusDetail(r.StatusCode))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Small helpers shared by the checks above.
+
+func httpStatusDetail(code int) string {
+	return "HTTP " + itoa(code)
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
+}
+
+// boundedAfter returns the text between start and end markers, or "".
+func boundedAfter(s, start, end string) string {
+	i := strings.Index(s, start)
+	if i < 0 {
+		return ""
+	}
+	rest := s[i+len(start):]
+	j := strings.Index(rest, end)
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+// traceValue reads a `key=value` line from a cdn-cgi/trace body.
+func traceValue(trace, key string) string {
+	for _, line := range strings.Split(trace, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, key+"=") {
+			return strings.TrimSpace(line[len(key)+1:])
+		}
+	}
+	return ""
+}
+
+func cookieValue(r *http.Response, name string) string {
+	for _, ck := range r.Cookies() {
+		if ck.Name == name {
+			return ck.Value
+		}
+	}
+	return ""
+}
+
+func isUpper(s string) bool {
+	for _, r := range s {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// supportGPT is the set of countries ChatGPT serves, used only after a 200 root
+// response (a 403 or 429 is decided before this is consulted).
+func supportGPT(loc string) bool {
+	for _, s := range gptSupported {
+		if loc == s {
+			return true
+		}
+	}
+	return false
+}
+
+var gptSupported = []string{
+	"AL", "DZ", "AD", "AO", "AG", "AR", "AM", "AU", "AT", "AZ", "BS", "BD", "BB", "BE", "BZ", "BJ", "BT", "BA", "BW", "BR", "BG", "BF", "CV", "CA", "CL", "CO", "KM", "CR", "HR", "CY", "DK", "DJ", "DM", "DO", "EC", "SV", "EE", "FJ", "FI", "FR", "GA", "GM", "GE", "DE", "GH", "GR", "GD", "GT", "GN", "GW", "GY", "HT", "HN", "HU", "IS", "IN", "ID", "IQ", "IE", "IL", "IT", "JM", "JP", "JO", "KZ", "KE", "KI", "KW", "KG", "LV", "LB", "LS", "LR", "LI", "LT", "LU", "MG", "MW", "MY", "MV", "ML", "MT", "MH", "MR", "MU", "MX", "MC", "MN", "ME", "MA", "MZ", "MM", "NA", "NR", "NP", "NL", "NZ", "NI", "NE", "NG", "MK", "NO", "OM", "PK", "PW", "PA", "PG", "PE", "PH", "PL", "PT", "QA", "RO", "RW", "KN", "LC", "VC", "WS", "SM", "ST", "SN", "RS", "SC", "SL", "SG", "SK", "SI", "SB", "ZA", "ES", "LK", "SR", "SE", "CH", "TH", "TG", "TO", "TT", "TN", "TR", "TV", "UG", "AE", "US", "UY", "VU", "ZM", "BO", "BN", "CG", "CZ", "VA", "FM", "MD", "PS", "KR", "TW", "TZ", "TL", "GB",
+}
+
+// airCode mimics RegionRestrictionCheck's findAirCode: take the alphabetic
+// prefix before the first digit, upper-case it, and keep the first known IATA
+// code it contains.
+func airCode(code string) string {
+	i := 0
+	for ; i < len(code); i++ {
+		if code[i] >= '0' && code[i] <= '9' {
+			break
+		}
+	}
+	upper := strings.ToUpper(code[:i])
+	for _, want := range airCodes {
+		if strings.Contains(upper, want) {
+			return want
+		}
+	}
+	return upper
+}
+
+// airCity maps the codes airCode can return to a human "City, Country". An
+// unknown code falls back to the raw code so the panel still shows something.
+func airCity(code string) string {
+	return airCities[code]
+}
+
+var airCodes = []string{
+	"AMS", "ATL", "AUS", "BCN", "BER", "BNA", "BOM", "BOS", "BRU", "BUE", "CDG", "CLT", "CPH",
+	"DEL", "DEN", "DFW", "DTM", "DTW", "DUB", "DUS", "EDI", "EWR", "FRA", "FUK", "GMP", "GRU",
+	"HAM", "HKG", "HND", "IAD", "IAH", "ICN", "JFK", "KIX", "LAS", "LAX", "LHR", "MAD", "MAN",
+	"MCO", "MEL", "MEX", "MIA", "MSP", "MUC", "NGO", "NRT", "ORD", "ORY", "PDX", "PHL", "PHX",
+	"RDU", "SAN", "SEA", "SFO", "SIN", "SJC", "SLC", "STL", "STR", "SYD", "TPA", "TPE", "YUL",
+	"YVR", "YYZ", "ZRH",
+}
+
+var airCities = map[string]string{
+	"AMS": "Amsterdam, Netherlands", "ATL": "Atlanta, United States",
+	"AUS": "Austin, United States", "BCN": "Barcelona, Spain",
+	"BER": "Berlin, Germany", "BNA": "Nashville, United States",
+	"BOM": "Mumbai, India", "BOS": "Boston, United States",
+	"BRU": "Brussels, Belgium", "BUE": "Buenos Aires, Argentina",
+	"CDG": "Paris, France", "CLT": "Charlotte, United States",
+	"CPH": "Copenhagen, Denmark", "DEL": "Delhi, India",
+	"DEN": "Denver, United States", "DFW": "Dallas, United States",
+	"DTM": "Dortmund, Germany", "DTW": "Detroit, United States",
+	"DUB": "Dublin, Ireland", "DUS": "Dusseldorf, Germany",
+	"EDI": "Edinburgh, United Kingdom", "EWR": "Newark, United States",
+	"FRA": "Frankfurt, Germany", "FUK": "Fukuoka, Japan",
+	"GMP": "Seoul, South Korea", "GRU": "Sao Paulo, Brazil",
+	"HAM": "Hamburg, Germany", "HKG": "Hong Kong, China",
+	"HND": "Tokyo, Japan", "IAD": "Washington, United States",
+	"IAH": "Houston, United States", "ICN": "Seoul, South Korea",
+	"JFK": "New York, United States", "KIX": "Osaka, Japan",
+	"LAS": "Las Vegas, United States", "LAX": "Los Angeles, United States",
+	"LHR": "London, United Kingdom", "MAD": "Madrid, Spain",
+	"MAN": "Manchester, United Kingdom", "MCO": "Orlando, United States",
+	"MEL": "Melbourne, Australia", "MEX": "Mexico City, Mexico",
+	"MIA": "Miami, United States", "MSP": "Minneapolis, United States",
+	"MUC": "Munich, Germany", "NGO": "Nagoya, Japan",
+	"NRT": "Tokyo, Japan", "ORD": "Chicago, United States",
+	"ORY": "Paris, France", "PDX": "Portland, United States",
+	"PHL": "Philadelphia, United States", "PHX": "Phoenix, United States",
+	"RDU": "Raleigh, United States", "SAN": "San Diego, United States",
+	"SEA": "Seattle, United States", "SFO": "San Francisco, United States",
+	"SIN": "Singapore, Singapore", "SJC": "San Jose, United States",
+	"SLC": "Salt Lake City, United States", "STL": "St. Louis, United States",
+	"STR": "Stuttgart, Germany", "SYD": "Sydney, Australia",
+	"TPA": "Tampa, United States", "TPE": "Taipei, Taiwan",
+	"YUL": "Montreal, Canada", "YVR": "Vancouver, Canada",
+	"YYZ": "Toronto, Canada", "ZRH": "Zurich, Switzerland",
+}
