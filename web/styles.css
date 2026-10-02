@@ -494,8 +494,26 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 5px;
+}
+
+/* 解锁徽标进了名字行以后，390px 上「名字 + 锁/分数 + 两个系统标签」放不下：不换行就会把
+   名字按 word-break 拆成三行（de-nosla-fra → de- / nosla- / fra）。所以名字行自己换行——
+   名字整段留在第一行，徽标与标签整组落到第二行并保持右对齐。 */
+.card-top .node-identity {
+  flex: 0 1 auto;
+}
+
+.card-top .node-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-top .card-actions {
+  margin-left: auto;
 }
 
 .node-sub {

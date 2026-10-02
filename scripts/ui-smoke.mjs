@@ -1411,6 +1411,18 @@ await until(
       /grid-template-columns: 1fr;\s*\/\* 单列时不再拉齐行高/.test(styles),
     "列表与单列视图不该拉平行高",
   );
+  // 解锁徽标进了卡片名字行以后，名字行必须自己换行：不加 flex-wrap 的话 390px 上
+  // 「名字 + 锁/分数 + 两个系统标签」会把名字按 word-break 拆成三行（实测量过：
+  // 带徽标 48px 高 / 3 行，去掉徽标 24px / 1 行）。样式文本断言盯住这条规则。
+  assert(
+    /\.card-top \{[^}]*flex-wrap: wrap/.test(styles),
+    "卡片名字行要能换行（徽标 + 系统标签放不下时整组落到第二行）",
+  );
+  assert(
+    /\.card-top \.node-name \{[^}]*white-space: nowrap/.test(styles) &&
+      /\.card-top \.card-actions \{[^}]*margin-left: auto/.test(styles),
+    "名字整段留在一行、徽标与标签换行后仍右对齐",
+  );
   // 详情页同一处也不该给空图表或「请在后台创建并绑定任务」。
   publicDOM.window.document.querySelector(`[data-detail="${longNode.id}"]`).click();
   await until(

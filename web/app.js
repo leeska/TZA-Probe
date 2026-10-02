@@ -331,11 +331,20 @@ function showUnlockPop(badge) {
   el.hidden = false;
   // 右对齐徽标（卡片右侧），再夹进视口——窄屏上也不会跑出屏幕。
   const rect = badge.getBoundingClientRect();
-  const width = el.offsetWidth || 280;
+  const width = el.offsetWidth || 288;
+  const height = el.offsetHeight || 240;
   const viewport = document.documentElement.clientWidth || 1024;
+  const viewportH = document.documentElement.clientHeight || 800;
   el.style.left =
     Math.min(Math.max(8, rect.right - width), Math.max(8, viewport - width - 8)) + "px";
-  el.style.top = rect.bottom + 8 + "px";
+  // 竖直方向同样要夹：max-height 只在真有空间时才有用，徽标靠下时按「下方 + 8」定位会把
+  // 浮层推出屏幕底部，面板里最后几个分类就点不到了。下方放不下就翻到徽标上方，都放不下
+  // 才夹进视口（这时由 max-height 的滚动接手）。
+  const below = rect.bottom + 8;
+  const above = rect.top - height - 8;
+  let top = below;
+  if (below + height > viewportH - 8) top = above >= 8 ? above : Math.max(8, viewportH - height - 8);
+  el.style.top = top + "px";
   if (unlockPopBadge && unlockPopBadge !== badge) {
     unlockPopBadge.classList.remove("open");
     unlockPopBadge.setAttribute("aria-expanded", "false");

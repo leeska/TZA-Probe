@@ -1294,6 +1294,16 @@ node scripts/ui-smoke.mjs
   `us-hostodo-tampa 18/24`、`sz-aliyun-ecs 6/24`（大陆出口：netflix `HTTP 403`、netflix_cdn
   `IP Banned By Netflix`、dazn banned、claude `app-unavailable-in-region` 都判对了，Google/AI/交易所
   那 11 项是 `timeout` → `failed`，不伪造成「未解锁」）。`us-isvoro-9950x` 离线且仍是旧 Agent。
+- 上线后真浏览器复查两处版式（390/430/360px，线上页）：
+  **① 徽标把名字挤成三行** —— 带徽标时名字高 48–72px（3–4 行，`word-break` 把
+  `de-nosla-fra` 拆成 `de- / nosla- / fra`），去掉徽标才是 24px / 1 行。改成 `.card-top`
+  自己换行：名字整段留第一行（`white-space: nowrap` + 省略号兜底），徽标与系统标签整组落到
+  第二行右对齐（`.card-actions { margin-left: auto }`）。改后 390/360px 下名字 **1 行、无省略**、
+  `.card-top` 高 58px；430px 放得下就仍是单行 24px。ui-smoke 增加两条样式文本断言钉住。
+  **② 浮层按「徽标下方 +8」定位会掉出屏幕**：`max-height: 70vh` 只在真有空间时才有用——
+  徽标贴在视口底部（实测 badgeTop=828）时面板底部 820 之外就点不到了。改成下方放不下就翻到
+  徽标上方，都放不下才夹进视口（滚动接手）：实测同一场景 `popTop 225 / popBottom 820`，
+  `overflows: false`，面板内部可滚动。
 - 机队升级顺序：**先部署 Server，再逐台升级 Agent**（老 Agent 不报能力，领不到解锁任务；
   反向顺序会让新 Agent 的上报被旧 Server 判 400 而掉线）。
 - 首轮上线只建一个解锁任务（间隔 6 小时、绑定全部节点）还是一台一个任务，按实际想看的粒度定。
