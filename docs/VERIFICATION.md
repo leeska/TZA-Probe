@@ -1314,3 +1314,29 @@ node scripts/ui-smoke.mjs
 - 验证（真机，不是容器）：把改后的脚本管道送进 `kr-isvoro-oracle`（Alpine 3.22 / arm64）走升级路径，输出 `下载 https://probe.tza.cc/dl/tza-agent-linux-arm64 ...` 与 `Agent 已升级并重启`；回读：`rc-service tza-agent status` = `started`、`/etc/init.d/tza-agent` 344 字节、`/usr/local/bin/tza-agent --version` = `2.0.0-dev-d8dd968`、`rc-update show default` 含 `tza-agent`、`/opt/tza-probe/tza-agent` 已改名为 `.previous-202609251637`、`/var/log/tza-agent.log` 末行 `version=2.0.0-dev-d8dd968`。`gofmt -l` 无输出、`go vet ./...`、`go test ./internal/agentdist/... ./internal/httpapi/...` 全绿；`TestScriptIsPOSIXAndSecretFree` 增加 OpenRC needle（`INIT=openrc`、`rc-service tza-agent start`、`rc-update add tza-agent default`、`<<'TZA_AGENT_INIT'`），删掉 OpenRC 分支该测试即失败。
 - 上线范围：Agent 安装脚本由 Server 内嵌分发（`/install.sh`），要让后台「接入」在 Alpine 上可用必须部署新 Server。本次机队升级没有依赖这一步：节点侧用 `/dl/tza-agent-linux-<arch>` + `.sha256` 校验后换二进制并重启，16/17 台已统一到 `d8dd968`（唯一未升级的 tw-isvoro-hinet 是 ISVORO NAT 转发整机不通，见运维记录）。
 - 待确认：OpenRC 分支依赖 `supervise-daemon`（Alpine 3.22 自带），更老的 OpenRC 发行版未实测；`us-moew-free` 只有 `wget` 没有 `curl`，升级脚本两条路已改成 curl/wget 自动选择。
+
+- 合入与上线（2026-10-03）：分支 `install-openrc`（`562d33f`，2026-09-25 写好后一直只存在于本地，
+  因为它是在 GitHub 凭据丢失期间做的）cherry-pick 到当时的 main 得到 `a7d1d6c`——唯一冲突是本文档，
+  按「保留 main 全部内容 + 本节」解决；`install.sh` 与 `dist_test.go` 干净套用，是落在
+  `--geo-provider` / `--trace-method` / sudo 提权（`d9d8fb7`）那些改动**之上**的。部署
+  `SHA=a7d1d6c bash /root/work/deploy/tza-probe-deploy-netcup.sh`：预检（25999，生产库副本）0s 就绪、
+  `healthz=200` / 匿名 `/mcp` 401 / `GET /mcp` 405 / `tools/list` 21；线上 1s 就绪，源站与经 CF
+  都是 200，节点 10/10 在线，回程格 390px「折行 0、非居中 0」。线上 `/install.sh` 与仓库副本
+  `sha256` 完全一致（`5518ffae…`，10666 字节），内含 `INIT=openrc` / `rc-service` / `rc-update` /
+  `supervise-daemon`；`/dl/tza-agent-linux-arm64`（9633952 字节）与 amd64（10338464 字节）都还在。
+- OpenRC 路径的沙箱端到端复验（2026-10-03）：ISVORO 那两台 Alpine 节点当天已退出探针，没有真机可测，
+  所以在 mount namespace 里搭了个假 OpenRC 环境跑真脚本——给 `/etc`、`/usr/local/bin`、`/var/log`、
+  `/opt/tza-probe` 挂 tmpfs，把 `systemctl` 从 PATH 上摘掉，`rc-service` / `rc-update` 用打桩（记录调用）。
+  实测：安装后 `/etc/init.d/tza-agent` 权限 755、含 `command="/usr/local/bin/tza-agent"`、
+  `supervisor="supervise-daemon"`、`respawn_delay=5`、`pidfile`、`depend()`；二进制落在
+  `/usr/local/bin/tza-agent` 且 `--version` 可跑；配置写入 `/etc/tza-probe/agent.json`（`allow_http`
+  跟随 http endpoint）；`/etc/systemd/system` 下 0 个单元；旧布局 `/opt/tza-probe/tza-agent` 改名成
+  `tza-agent.previous-<时间戳>`；调用序列 `rc-service stop` → `rc-update add … default` →
+  `rc-service restart` → `rc-service status`；`--uninstall` 走 `rc-service stop` + `rc-update del`，
+  init 脚本、二进制、配置目录全部清空。
+- 沙箱自身的两个坑（都是量出来的，不是猜的）：① 检测用的是 `command -v systemctl`，所以「把
+  `/run/systemd/system` 挂空目录」骗不过它——第一版沙箱因此真的走了 systemd 分支，把宿主
+  （`us-hostodo-tampa`，Hermes 主机，它自己也是一个探针节点）的 `tza-agent.service` 用当前模板重写并
+  重启了一次；二进制与配置都没被覆盖（那两个路径都 bind 到了沙箱），服务秒级恢复，但它说明**沙箱必须
+  连 `/etc/systemd/system` 一起盖住**。② bind 挂载的目录删不掉（`rm -rf /etc/tza-probe` → `Device or
+  resource busy`），要测 `--uninstall` 得用 tmpfs 挂在 `/etc` 这一层，让 `/etc/tza-probe` 是普通目录。
