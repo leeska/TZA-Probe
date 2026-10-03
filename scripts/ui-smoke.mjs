@@ -65,8 +65,8 @@ w.fetch = async (input, opts = {}) => {
   return response;
 };
 w.eval(bundle.outputFiles[0].text);
-async function until(predicate, label) {
-  const deadline = Date.now() + 8000;
+async function until(predicate, label, budget = 8000) {
+  const deadline = Date.now() + budget;
   while (Date.now() < deadline) {
     if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -226,9 +226,19 @@ await until(async () => {
   list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
   return list.find((n) => n.id === created.id)?.latency_region === "上海";
 }, "latency region saved and read back");
-$(`[data-edit="${created.id}"]`).click();
-form = $("#node-form");
-assert.equal(form.elements.latency_region.value, "上海", "saved latency region must reappear in the form");
+// 保存之后管理页会整块重渲染（save 里 `await render()` 重新拉 /admin/nodes），服务端读回不代表
+// 页面已经换好——抢在那次重渲染之前打开表单，会把上一份节点数据填进输入框（读到空串）。
+// 所以这里重试「打开 → 读 → 不对就关掉再来」，而不是打开一次就断言。
+await until(
+  () => {
+    $(`[data-edit="${created.id}"]`).click();
+    form = $("#node-form");
+    const ok = form?.elements.latency_region.value === "上海";
+    if (!ok) $(".close")?.click();
+    return ok;
+  },
+  "saved latency region must reappear in the form",
+);
 // 未启用的规则禁用其阈值：服务端允许这些字段为 0，输入框的 min 不应把这样的节点锁死。
 form.elements.load.checked = false;
 form.elements.load.dispatchEvent(new w.Event("change"));
@@ -1510,8 +1520,9 @@ await until(
   );
   assert(note.classList.contains("over"), "平均值远超阈值时这一行要标红（.over）");
   // 同一张卡片上的累计流量：6.75 亿字节要按方向写成 675 MB / 0 B（非零值把单位换算也一并盯住）。
-  // 卡片是打补丁更新的，这一帧可能还停在上一份数据上（作者在同一段落里也是这样处理
-  // avg_bps 的），所以等它收敛再断言，别把「还没刷新」读成「没更新」。
+  // 这一格只在 10 秒一轮的全量刷新里更新：每秒的轻刷只补速率与指标格（累计/额度那一带不动），
+  // 所以窗口必须比一个刷新周期长——写 8 秒时，验收恰好落在两轮之间就会读到上一份数据，
+  // 在 CI 上表现为随机红（同一提交重跑就绿）。给两个周期，别用「等它收敛」这类模糊话掩盖。
   const totals = () =>
     [...throttleCard().querySelectorAll(".card-stats .stat-totals .stat-item")].map((t) =>
       t.textContent.trim(),
@@ -1520,6 +1531,7 @@ await until(
   await until(
     () => JSON.stringify(totals()) === JSON.stringify(wantTotals),
     `累计要给上下行两张（上行在上）、按网卡计数换算单位，实际「${totals().join(" / ")}」`,
+    25000,
   );
 }
 // 详情页同样只在配了阈值时多给一格，并且把线路带宽写出来。
