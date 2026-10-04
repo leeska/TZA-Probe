@@ -3,6 +3,7 @@ import { bytes, date, days, mbps, osLabel, percent, statusName } from "./format.
 import { detail } from "./detail.js";
 import { mountAdmin } from "./admin.js";
 import { applyTheme, themeButton } from "./theme.js";
+import { applySkin, skinButton } from "./skins.js";
 import { searchMatch } from "./search.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
 import "./ui-select.js";
@@ -49,6 +50,7 @@ function noWheelStepping() {
 
 async function start() {
   applyTheme();
+  applySkin();
   noWheelStepping();
   if (adminPage) {
     await mountAdmin(app, brand);
@@ -74,7 +76,7 @@ function viewSwitch() {
 }
 
 function renderShell() {
-  app.innerHTML = `<header class="public-header">${brand}<nav><span class="live-label"><i></i><span class="live-text">LIVE STATUS</span></span>${themeButton()}<a href="/admin" class="button quiet">管理控制台 ↗</a></nav></header><main class="public-main"><section class="hero"><div><div class="eyebrow">YOUR INFRASTRUCTURE, AT A GLANCE</div><h1>每一台主机，<span>尽在眼前。</span></h1><p>实时状态、网络线路与用量，在一个清晰的视图里。</p></div><div class="hero-meta"><span>最近同步</span><strong id="updated">连接中</strong><small>每秒刷新</small></div></section><section id="overview" class="overview"></section><section class="toolbar"><div class="filter-controls"><div class="search"><span>⌕</span><input id="search" aria-label="搜索节点" placeholder="搜索名称、地区（支持拼音与缩写）"></div><select id="group-filter" aria-label="节点分组"><option value="">全部分组</option></select></div><div class="view-bar">${viewSwitch()}</div></section><div id="nodes" class="node-grid"></div><footer><span>独立 · 轻量 · 可控</span><span>TZA PROBE · V2</span></footer></main>`;
+  app.innerHTML = `<header class="public-header">${brand}<nav><span class="live-label"><i></i><span class="live-text">LIVE STATUS</span></span>${skinButton()}${themeButton()}<a href="/admin" class="button quiet">管理控制台 ↗</a></nav></header><main class="public-main"><section class="hero"><div><div class="eyebrow">YOUR INFRASTRUCTURE, AT A GLANCE</div><h1>每一台主机，<span>尽在眼前。</span></h1><p>实时状态、网络线路与用量，在一个清晰的视图里。</p></div><div class="hero-meta"><span>最近同步</span><strong id="updated">连接中</strong><small>每秒刷新</small></div></section><section id="overview" class="overview"></section><section class="toolbar"><div class="filter-controls"><div class="search"><span>⌕</span><input id="search" aria-label="搜索节点" placeholder="搜索名称、地区（支持拼音与缩写）"></div><select id="group-filter" aria-label="节点分组"><option value="">全部分组</option></select></div><div class="view-bar">${viewSwitch()}</div></section><div id="nodes" class="node-grid"></div><footer><span>独立 · 轻量 · 可控</span><span>TZA PROBE · V2</span></footer></main>`;
 
   document.querySelector("#search").oninput = (e) => {
     query = e.target.value;

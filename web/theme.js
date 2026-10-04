@@ -1,5 +1,8 @@
 // 亮暗主题：偏好存于 localStorage，"auto" 跟随系统。index.html 的内联脚本在样式
 // 生效前已按同样规则设置了 <html data-theme>，这里负责切换按钮和系统偏好变化。
+// 外观风格（data-skin）在 skins.js，两者正交：applyTheme 只管明暗，底色交给 skinChrome()。
+import { skinChrome } from "./skins.js";
+
 const KEY = "tza-theme";
 const ORDER = ["auto", "light", "dark"];
 const LABEL = { auto: "跟随系统", light: "浅色", dark: "深色" };
@@ -26,7 +29,8 @@ export function applyTheme(pref = preference()) {
   const theme = resolved(pref);
   const root = document.documentElement;
   root.dataset.theme = theme;
-  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = theme === "dark" ? "#0f141c" : "#edf2fb";
+  const chrome = skinChrome();
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = theme === "dark" ? chrome.dark : chrome.light;
   for (const b of document.querySelectorAll("[data-theme-toggle]")) {
     b.innerHTML = inner(pref);
     b.title = title(pref);

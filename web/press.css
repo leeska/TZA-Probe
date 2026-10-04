@@ -1,0 +1,545 @@
+/* ==========================================================================
+   TZA Probe · 复古印刷（Press）皮肤
+
+   第三张样式表，只在 <html data-skin="press"> 时生效（选择器一律带 data-skin 前缀，
+   默认的液态玻璃皮肤一个字节都不受影响）。视觉语言取自复古印刷 / 新粗野主义：
+   纸张方格底、墨色硬描边、右下硬阴影、衬线标题 + 等宽小字，圆角归零。
+   明暗仍走 data-theme，所以这是「同一套印刷语言」的浅色与深色两份令牌。
+
+   规则顺序：令牌 → 纸底 → 材质（关模糊 / 归零圆角）→ 面 → 控件 → 排版 → 图表 → 弹层。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 令牌：浅色为纸（agentank.ai 的 --paper-* 一套），深色是同一套语言的夜印版
+   -------------------------------------------------------------------------- */
+:root[data-skin="press"] {
+  --ink: #15120f;
+  --muted: #6c6256;
+  --subtle: #8b8175;
+  --line: rgba(21, 18, 15, 0.22);
+  --accent: #b72f24;
+  --accent-rgb: 183, 47, 36;
+  --green: #55745a;
+  --green-rgb: 85, 116, 90;
+  --orange: #c89a2f;
+  --orange-rgb: 200, 154, 47;
+  --red: #9b3a32;
+  --red-rgb: 155, 58, 50;
+  --purple: #6b4a8f;
+  --purple-rgb: 107, 74, 143;
+  --cyan: #2f6b74;
+  --cyan-rgb: 47, 107, 116;
+  --indigo: #4a4f8f;
+
+  --glass-bg: #fffaf0;
+  --glass-bg-subtle: #efe4cb;
+  --glass-bg-elevated: #fffdf6;
+  --glass-border: #15120f;
+  --glass-border-subtle: rgba(21, 18, 15, 0.45);
+  --glass-inner-rim: none;
+  --glass-shadow: 3px 3px 0 0 #15120f;
+  --glass-shadow-lg: 6px 6px 0 0 #15120f;
+  --blur: none;
+  --progress-track: rgba(21, 18, 15, 0.14);
+
+  --press-paper: #f8f1df;
+  --press-surface: #fffaf0;
+  --press-hover: #ead8ba;
+  --press-shadow: #15120f;
+  --press-heading: "Noto Serif SC", "Songti SC", "SimSun", Georgia, serif;
+  --press-body: Inter, "Noto Sans SC", system-ui, -apple-system, "PingFang SC", sans-serif;
+  --press-mono: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+:root[data-skin="press"][data-theme="dark"] {
+  --ink: #f8f1df;
+  --muted: #c4b7a2;
+  --subtle: #8b8175;
+  --line: rgba(248, 241, 223, 0.24);
+  --accent: #e2543f;
+  --accent-rgb: 226, 84, 63;
+  --green: #7fa886;
+  --green-rgb: 127, 168, 134;
+  --orange: #d8b25c;
+  --orange-rgb: 216, 178, 92;
+  --red: #d9544a;
+  --red-rgb: 217, 84, 74;
+  --purple: #a889c8;
+  --purple-rgb: 168, 137, 200;
+  --cyan: #6faeb6;
+  --cyan-rgb: 111, 174, 182;
+  --indigo: #8f94d6;
+
+  --glass-bg: #241f18;
+  --glass-bg-subtle: #33291f;
+  --glass-bg-elevated: #2b241b;
+  --glass-border: #f8f1df;
+  --glass-border-subtle: rgba(248, 241, 223, 0.5);
+  --glass-shadow: 3px 3px 0 0 #000000;
+  --glass-shadow-lg: 6px 6px 0 0 #000000;
+  --progress-track: rgba(248, 241, 223, 0.16);
+
+  --press-paper: #0b0a08;
+  --press-surface: #241f18;
+  --press-hover: #382e22;
+  --press-shadow: #000000;
+}
+
+/* --------------------------------------------------------------------------
+   2. 纸底：方格纸 + 极淡的红色版线（数值照 agentank.ai 的纸张层）
+   -------------------------------------------------------------------------- */
+html[data-skin="press"] body {
+  background-color: var(--press-paper);
+  background-image:
+    linear-gradient(rgba(183, 47, 36, 0.035) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(21, 18, 15, 0.045) 2px, transparent 2px),
+    radial-gradient(#d8c9ae 0.7px, transparent 0.7px);
+  background-size:
+    36px 36px,
+    36px 36px,
+    18px 18px;
+  font-family: var(--press-body);
+}
+
+/* 玻璃皮肤的彩色光斑在这里换成印刷版的页边红晕 + 纸纹。 */
+html[data-skin="press"] body::before {
+  inset: 0;
+  z-index: -1;
+  animation: none;
+  will-change: auto;
+  background:
+    linear-gradient(90deg, rgba(183, 47, 36, 0.055), transparent 14%, transparent 86%, rgba(183, 47, 36, 0.055)),
+    repeating-linear-gradient(0deg, transparent 0 9px, rgba(21, 18, 15, 0.022) 9px 10px);
+}
+
+html[data-skin="press"][data-theme="dark"] body {
+  background-color: var(--press-paper);
+  background-image:
+    linear-gradient(rgba(226, 84, 63, 0.085) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(248, 241, 223, 0.075) 2px, transparent 2px),
+    radial-gradient(#463c30 0.7px, transparent 0.7px);
+}
+
+html[data-skin="press"][data-theme="dark"] body::before {
+  background:
+    linear-gradient(90deg, rgba(226, 84, 63, 0.07), transparent 14%, transparent 86%, rgba(226, 84, 63, 0.07)),
+    repeating-linear-gradient(0deg, transparent 0 9px, rgba(248, 241, 223, 0.022) 9px 10px);
+}
+
+/* --------------------------------------------------------------------------
+   3. 材质：印刷面上没有毛玻璃，圆角一律归零
+   -------------------------------------------------------------------------- */
+
+/* 模糊整片关掉（玻璃皮肤有 15 处 backdrop-filter，逐个覆盖只会漏）。
+   字面量 !important 是有意的：这是皮肤的定义性声明，不是临时补丁。 */
+html[data-skin="press"] *,
+html[data-skin="press"] *::before,
+html[data-skin="press"] *::after,
+html[data-skin="press"] *::backdrop {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* 圆角归零（含 .node-grid.node-list .node-card 这类三权重的规则，所以用 !important），
+   随后单独把真正的圆形标记还原——状态点、运营商点、图表光标点。 */
+html[data-skin="press"] * {
+  border-radius: 0 !important;
+}
+
+html[data-skin="press"] .chart-dot {
+  border-radius: 50% !important;
+}
+
+/* 状态点／运营商点在印刷版里是套色方标：去掉玻璃皮肤的发光与脉冲环（::after）。 */
+html[data-skin="press"] :is(.node-dot, .overview .dot, .live-label i, .carrier-dot) {
+  border-radius: 0 !important;
+  box-shadow: none;
+}
+
+html[data-skin="press"] :is(.live-label i, .node-dot, .overview .dot)::after {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   4. 面：卡片 / 面板 / 头部 / 侧栏 —— 3px 墨线 + 右下硬阴影
+   -------------------------------------------------------------------------- */
+html[data-skin="press"] :is(.public-header, .sidebar, .admin-top, .panel, .node-card, .overview-tile, .hero-meta, .toolbar, .notice, .catalog-picker, .webhook-panel, .admin-stats > div, .detail-stats > div) {
+  border: 2px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+html[data-skin="press"] .node-card,
+html[data-skin="press"] .panel,
+html[data-skin="press"] dialog,
+html[data-skin="press"] .login-panel form {
+  border-width: 3px;
+  box-shadow: var(--glass-shadow-lg);
+}
+
+/* 头部：底边压一条粗线，logo 左边留一段红版线（纸面印刷的起手条）。 */
+html[data-skin="press"] .public-header {
+  background-image: linear-gradient(90deg, #b72f24 0 10px, transparent 10px);
+  background-repeat: no-repeat;
+  border-width: 0 0 3px;
+  box-shadow: 0 4px 0 rgba(21, 18, 15, 0.08);
+  padding-left: 30px;
+}
+
+html[data-skin="press"] .sidebar,
+html[data-skin="press"] .admin-top {
+  border-width: 3px;
+}
+
+/* 品牌方块：墨线方章，不用渐变。 */
+html[data-skin="press"] .brand-mark {
+  background: #b72f24;
+  border: 2px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  letter-spacing: -1px;
+}
+
+html[data-skin="press"] .brand-mark span {
+  color: #f2d1c8;
+}
+
+html[data-skin="press"] :is(.brand > span:last-child, .brand small) {
+  font-family: var(--press-mono);
+}
+
+/* 卡片 / 面板内部的细线：印刷版用实线而非半透明描边。 */
+html[data-skin="press"] :is(.panel-head, .admin-top, .node-sub, .card-stats) {
+  border-color: var(--line);
+}
+
+html[data-skin="press"] .hero h1 span,
+html[data-skin="press"] .login-story h1 span {
+  background: linear-gradient(135deg, #b72f24 0%, #762019 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* --------------------------------------------------------------------------
+   5. 控件：按钮 2px 墨线 + 3px 硬阴影，主按钮红底纸字
+   -------------------------------------------------------------------------- */
+html[data-skin="press"] :is(.button, button.primary, button.danger, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle) {
+  border: 2px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  box-shadow: var(--glass-shadow);
+  font-family: var(--press-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+html[data-skin="press"] button.primary {
+  background: #b72f24 !important;
+  border-color: var(--glass-border) !important;
+  color: #fffaf0 !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+/* 表单控件用满墨描边（与卡片同级），信息类小芯片才用半透明的细线——两者是有意的层级差：
+   能打字的框在印刷版里是「表格栏」，小标签是「贴纸」。 */
+html[data-skin="press"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border: 2px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  box-shadow: none;
+  font-family: var(--press-mono);
+}
+
+html[data-skin="press"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.25);
+}
+
+html[data-skin="press"] input[type="checkbox"] {
+  border-width: 2px;
+  background-color: var(--glass-bg-elevated);
+}
+
+html[data-skin="press"] :is(.search, .filter-controls select) {
+  border: 2px solid var(--glass-border-subtle);
+}
+
+html[data-skin="press"] :is(.search, .public-main .toolbar .search) input {
+  border: 2px solid var(--glass-border);
+  border-radius: 0;
+  background: var(--glass-bg-elevated);
+  box-shadow: none;
+  font-family: var(--press-mono);
+}
+
+html[data-skin="press"] :is(.search, .public-main .toolbar .search) input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.25);
+}
+
+/* 分段控件：印刷版是一排方章，选中那块红底纸字。 */
+html[data-skin="press"] .segmented {
+  border: 2px solid var(--glass-border);
+  background: var(--glass-bg-subtle);
+  box-shadow: none;
+  padding: 3px;
+  gap: 3px;
+}
+
+html[data-skin="press"] .segmented button {
+  font-family: var(--press-mono);
+  border: 2px solid transparent;
+}
+
+html[data-skin="press"] .segmented button.active {
+  background: #b72f24;
+  color: #fffaf0;
+  border-color: var(--glass-border);
+  box-shadow: none;
+}
+
+/* 胶囊与标签：方形芯片，2px 墨线。 */
+html[data-skin="press"] :is(.pill, .expiry-pill, .chip-family, .family-tag, .os-tag, .arch-tag, .target-chip, .tile-badge) {
+  border: 2px solid var(--glass-border-subtle);
+  background: var(--glass-bg-subtle);
+  font-family: var(--press-mono);
+  letter-spacing: 0.02em;
+}
+
+html[data-skin="press"] .pill.good,
+html[data-skin="press"] .expiry-pill {
+  border-color: rgba(var(--green-rgb), 0.75);
+  background: rgba(var(--green-rgb), 0.16);
+  color: #2f4a35;
+}
+
+html[data-skin="press"] .pill.warn,
+html[data-skin="press"] .expiry-pill.warning {
+  border-color: rgba(var(--orange-rgb), 0.8);
+  background: rgba(var(--orange-rgb), 0.18);
+  color: #6b4a10;
+}
+
+html[data-skin="press"][data-theme="dark"] .pill.good,
+html[data-skin="press"][data-theme="dark"] .expiry-pill {
+  color: #cfe3d2;
+}
+
+html[data-skin="press"][data-theme="dark"] .pill.warn,
+html[data-skin="press"][data-theme="dark"] .expiry-pill.warning {
+  color: #f0dcae;
+}
+
+html[data-skin="press"] .chip-family.on {
+  background: var(--accent);
+  color: #fffaf0;
+  border-color: var(--glass-border);
+}
+
+/* --------------------------------------------------------------------------
+   6. 排版：衬线标题、等宽小字、无衬线正文
+   -------------------------------------------------------------------------- */
+html[data-skin="press"] :is(h1, h2, h3, .hero h1, .login-story h1, .login-panel h2, .panel-head h3, .node-name, .overview-tile strong, .hero-meta strong, .page-heading h1) {
+  font-family: var(--press-heading);
+  letter-spacing: 0;
+}
+
+html[data-skin="press"] :is(.eyebrow, .sidebar-caption, .live-label, .hero-meta, .card-stats, .stat-facts, .node-sub, .metric small, .probe-none, .hint, footer, .select-trigger, .select-opt, .skin-toggle, .login-story-foot small) {
+  font-family: var(--press-mono);
+}
+
+html[data-skin="press"] .eyebrow,
+html[data-skin="press"] .sidebar-caption {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+/* --------------------------------------------------------------------------
+   7. 数据可视化：色带变方、图表不再有玻璃网格
+   -------------------------------------------------------------------------- */
+html[data-skin="press"] .quality-bar {
+  border: 1px solid rgba(21, 18, 15, 0.25);
+}
+
+html[data-skin="press"][data-theme="dark"] .quality-bar {
+  border-color: rgba(248, 241, 223, 0.25);
+}
+
+html[data-skin="press"] :is(.metric progress, .progress) {
+  border: 1px solid var(--glass-border-subtle);
+  background: var(--progress-track);
+  box-shadow: none;
+}
+
+/* 四格进度条在玻璃皮肤里是「青光渐变 + 外发光」的胶囊，印刷版改成一块平的套色油墨：
+   CPU 红版 / 内存 绿版 / 磁盘 赭版 / 流量 青版，颜色跟着皮肤的令牌走，深浅色自动各一份。 */
+/* 注意：::-webkit-progress-value 与 ::-moz-progress-bar **必须分成两条规则**。
+   Chrome 把 ::-moz-progress-bar 当成未知伪元素，若与 webkit 那条写在同一个选择器列表里，
+   整条规则会被判无效丢弃（玻璃皮肤原文件就是分开写的）。 */
+html[data-skin="press"] .metric progress::-webkit-progress-value {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-skin="press"] .metric progress::-moz-progress-bar {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-skin="press"] .metrics-grid .metric:nth-child(1) progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+html[data-skin="press"] .metrics-grid .metric:nth-child(1) progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+html[data-skin="press"] .metrics-grid .metric:nth-child(2) progress::-webkit-progress-value {
+  background: var(--green);
+}
+
+html[data-skin="press"] .metrics-grid .metric:nth-child(2) progress::-moz-progress-bar {
+  background: var(--green);
+}
+
+html[data-skin="press"] .metrics-grid .metric:nth-child(3) progress::-webkit-progress-value {
+  background: var(--orange);
+}
+
+html[data-skin="press"] .metrics-grid .metric:nth-child(3) progress::-moz-progress-bar {
+  background: var(--orange);
+}
+
+html[data-skin="press"] .metrics-grid .metric:nth-child(4) progress::-webkit-progress-value {
+  background: var(--cyan);
+}
+
+html[data-skin="press"] .metrics-grid .metric:nth-child(4) progress::-moz-progress-bar {
+  background: var(--cyan);
+}
+
+html[data-skin="press"] .chart {
+  border: 2px solid var(--glass-border);
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+}
+
+html[data-skin="press"] .chart-grid,
+html[data-skin="press"] .chart text,
+html[data-skin="press"] .chart-axis span {
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   8. 悬停与按下：玻璃面不能位移（会重采样身后的模糊层，撕出空卡片），
+      印刷面背后没有模糊，于是恢复成印刷品被手指按下的那点位移 + 阴影加深。
+   -------------------------------------------------------------------------- */
+html[data-skin="press"] :is(.node-card, .overview-tile, .button, .theme-toggle) {
+  transition:
+    transform 120ms steps(2, end),
+    box-shadow 120ms steps(2, end),
+    border-color 120ms ease;
+}
+
+html[data-skin="press"] .node-grid:not(.node-list) .node-card:hover {
+  transform: translate(-2px, -2px);
+  border-color: var(--glass-border);
+  box-shadow: 8px 8px 0 0 var(--press-shadow);
+}
+
+html[data-skin="press"] :is(.overview-tile, .button, .theme-toggle):hover,
+html[data-skin="press"] :is(button.primary, .form-footer button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button):not(:disabled):hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 0 var(--press-shadow);
+}
+
+html[data-skin="press"] :is(.overview-tile, .button, .theme-toggle, button):active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 0 var(--press-shadow);
+}
+
+html[data-skin="press"] .sidebar nav button:hover,
+html[data-skin="press"] .sidebar nav button.active {
+  transform: none;
+  box-shadow: none !important;
+}
+
+html[data-skin="press"] .sidebar nav button.active {
+  background: var(--accent) !important;
+  border: 2px solid var(--glass-border) !important;
+}
+
+html[data-skin="press"] .node-grid.node-list .node-card:hover {
+  transform: none;
+}
+
+/* 列表行里的整行背景用纸色高亮，不用半透明玻璃。 */
+html[data-skin="press"] .node-grid.node-list .net-line:hover,
+html[data-skin="press"] .node-grid.node-list .speed-line:hover {
+  background: var(--press-hover);
+}
+
+/* --------------------------------------------------------------------------
+   9. 弹层：下拉、皮肤菜单、通知与遮罩
+   -------------------------------------------------------------------------- */
+html[data-skin="press"] :is(.select-shell.open .select-trigger, .select-trigger) {
+  border: 2px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  box-shadow: none;
+  font-family: var(--press-mono);
+}
+
+/* 回程芯片：玻璃版有一圈 inset 高光，印刷版是墨线方框。 */
+html[data-skin="press"] .route-label {
+  border: 1px solid var(--glass-border-subtle);
+  box-shadow: none;
+}
+
+html[data-skin="press"] .select-pop,
+html[data-skin="press"] .skin-menu,
+html[data-skin="press"] details[open],
+html[data-skin="press"] .unlock-pop {
+  border: 2px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  box-shadow: var(--glass-shadow-lg);
+}
+
+html[data-skin="press"] .select-opt:hover,
+html[data-skin="press"] .skin-option:hover {
+  background: var(--press-hover);
+}
+
+html[data-skin="press"] .select-opt.selected {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+html[data-skin="press"] .skin-option.on {
+  background: rgba(var(--accent-rgb), 0.1);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+
+html[data-skin="press"] dialog::backdrop {
+  background: rgba(21, 18, 15, 0.45);
+}
+
+/* 通知条：纸面上的红章。 */
+html[data-skin="press"] #toast {
+  border: 2px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  color: var(--ink);
+  box-shadow: var(--glass-shadow-lg);
+  font-family: var(--press-mono);
+}
+
+html[data-skin="press"] .modal-head .close:hover,
+html[data-skin="press"] .chip-remove:hover {
+  background: var(--press-hover);
+  color: var(--accent);
+}
+
+html[data-skin="press"] ::-webkit-scrollbar-thumb {
+  background: rgba(21, 18, 15, 0.35);
+}
+
+html[data-skin="press"][data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(248, 241, 223, 0.32);
+}

@@ -1340,3 +1340,52 @@ node scripts/ui-smoke.mjs
   重启了一次；二进制与配置都没被覆盖（那两个路径都 bind 到了沙箱），服务秒级恢复，但它说明**沙箱必须
   连 `/etc/systemd/system` 一起盖住**。② bind 挂载的目录删不掉（`rm -rf /etc/tza-probe` → `Device or
   resource busy`），要测 `--uninstall` 得用 tmpfs 挂在 `/etc` 这一层，让 `/etc/tza-probe` 是普通目录。
+
+
+## 2026-10-04 外观风格（皮肤）：复古印刷
+
+- 需求：面板新增「主题」能力，并用 https://agentank.ai/ 的风格做一张新皮肤。
+- 做法：明暗（`data-theme`）与风格（`data-skin`）拆成两个正交维度。默认皮肤仍是液态玻璃，
+  新皮肤叫「复古印刷」（`press`）。偏好存 `localStorage` 的 `tza-skin`，`theme-boot.js` 在
+  **样式表加载之前**就把 `data-skin` 写到 `<html>`（与 `data-theme` 同一处），所以首屏不会
+  先闪一下默认皮肤。选择器是页头 / 后台侧栏 / 登录页各一颗胶囊（`skinButton()`），点开是
+  一张浮层：每项给三格配色样本 + 名称 + 一句话说明，样本颜色按 `data-swatch` 写在样式表里
+  （页面 CSP 是 `style-src 'self'`，行内样式会被忽略）。浮层挂在 `document.body` 上，位置按
+  触发按钮算并夹进视口（下方放不下就翻到按钮上方），点空白 / Escape / 选完都收起。
+- 改法：新增 `web/skins.js`（注册表 + 偏好 + 按钮 + 浮层）、`web/press.css`（皮肤本体，第三张
+  样式表，选择器一律带 `html[data-skin="press"]` 前缀）、`web/theme-boot.js` 加一行 skin；
+  `web/styles.css` 末尾加选择器浮层的公共样式；`index.html` 挂 `press.css`；`app.js` / `admin.js`
+  把 `skinButton()` 摆到 `themeButton()` 旁边；`theme.js` 的 `theme-color` 底色改成按皮肤取值。
+  印刷皮肤取自 agentank.ai 的 `--paper-*` 令牌（`#f8f1df` 纸 / `#fffaf0` 面 / `#15120f` 墨 /
+  `#b72f24` 红版 / 3·6·7px 硬阴影 / 2-3px 描边 / 圆角 0），深色版是同语言的「夜印」：纸 `#0b0a08`、
+  面 `#241f18`、奶油描边、纯黑硬阴影。
+- 验证：
+  - 真浏览器「皮肤残留」审计（`/root/work/tza-skin-audit.mjs`，1440px，逐元素读计算样式）：
+    圆角残留 **0 个元素**、带模糊的软阴影 **0 个**、`backdrop-filter` **0 个**（玻璃皮肤有 15 处，
+    统一用一条 `!important` 关掉）；唯一保留的渐变是页头标题那一道红版油墨。
+  - 像素 A/B（`/root/work/tza-skin-pixels.mjs`，同一份线上库副本、同一台机器，每根进度条在填充的
+    15% 与 90% 处取两点）：玻璃是渐变（CPU `rgb(0,188,195)`→`rgb(0,129,220)`、内存
+    `rgb(162,83,221)`→`rgb(96,86,215)`、磁盘 `rgb(255,174,54)`→`rgb(255,152,6)`），印刷是平色
+    （CPU `rgb(183,47,36)`、内存 `rgb(85,116,90)`、磁盘 `rgb(200,154,47)`、流量 `rgb(47,107,116)`，
+    两点完全一致）；卡片主体玻璃是半透明的 `rgb(218,240,254)`、印刷是纸面 `rgb(255,250,240)`
+    加深色右边线 `rgb(21,18,15)`；分段控件选中项玻璃白底、印刷 `rgb(183,47,36)` 红底。
+  - 选择器（`/root/work/tza-skin-menu-shot.mjs`，真浏览器点击）：点开浮层 `rect 883,80 264x117`、
+    `insideViewport: true`、两项文本与色板齐全、当前皮肤有勾选态；点「复古印刷」后
+    `data-skin="press"`、`localStorage["tza-skin"]="press"`、浮层收起、按钮文字跟着换；切回默认
+    皮肤会把偏好键删掉（`null`），不留一份与默认值重复的设置；深色 390px 下浮层同样是方角 + 奶油
+    描边 + 硬阴影，两项文字无裁切。
+  - `scripts/ui-smoke.mjs` 增加一组断言：默认皮肤、点开 / 选中 / 写库 / 切回默认清键、色板不得用
+    行内样式、`index.html` 必须挂 `press.css`、`press.css` 里每条选择器都要带 `data-skin="press"`
+    前缀（否则会改到默认皮肤）、`::-webkit-progress-value` 与 `::-moz-progress-bar` 不得写进同一条
+    规则、`theme-boot.js` 首屏定皮肤且无法识别的值退回默认。**对照组**：`git stash push -- web` 后
+    同一套断言在「默认外观风格是液态玻璃」处失败。
+  - `bash /root/work/tza-ui-regression.sh`：`gofmt -l` 无输出、`go vet`、`go test`、presentation 与
+    ui-smoke 全绿。
+- 待确认：印刷皮肤的字体栈依赖 `Noto Serif SC / Songti SC`（标题）与 `SFMono-Regular / Consolas`
+  （标签），未装这些字体的设备会退回 Georgia / 系统等宽；移动端的逐卡观感由用户在真机确认。
+- 顺带修掉的坑：
+  - `/root/work/tza-snap-shift.sh` 直接 `update samples set at=at+N` 会撞主键（行序随机，两个相距 N 的
+    行会 `UNIQUE constraint failed: samples.node_id, samples.at`）→ 改成先整体抬到空区间再落到目标值，
+    `samples` / `traffic_hour` / `traffic` 三张表都这么走。
+  - `ui-smoke` 的「按额度降速的线路不该因为均值而降速」会**跨 UTC 整点时**偶发失败（那两笔用量落在
+    两个小时桶里，窗口起点一挪 `avg_bps` 就冲到 3.2 Mbit/s）；与本次改动无关，重跑即绿。

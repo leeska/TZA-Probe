@@ -828,6 +828,103 @@ assert(
   "the stylesheet must not disable the browser's scroll anchoring",
 );
 assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
+// 外观风格（皮肤）：默认「液态玻璃」，另有「复古印刷」。偏好走 localStorage 的 tza-skin，
+// 由 theme-boot.js 在样式表之前写到 <html data-skin>（否则先闪一下默认皮肤）。
+{
+  const pubDoc = publicDOM.window.document;
+  assert.equal(pubDoc.documentElement.dataset.skin, "glass", "默认外观风格是液态玻璃");
+  const skinBtn = pubDoc.querySelector("[data-skin-toggle]");
+  assert(skinBtn, "公开页头部要有外观风格入口");
+  assert(/液态玻璃/.test(skinBtn.textContent), "按钮上写当前皮肤名");
+  skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  const menu = pubDoc.getElementById("skin-menu");
+  assert(menu && !menu.hidden, "点一下要展开皮肤菜单");
+  assert.equal(skinBtn.getAttribute("aria-expanded"), "true");
+  const opts = [...menu.querySelectorAll(".skin-option")];
+  assert.deepEqual(
+    opts.map((o) => o.dataset.skinOption),
+    ["glass", "press"],
+    "两张皮肤都要列出来",
+  );
+  assert.equal(opts.find((o) => o.classList.contains("on"))?.dataset.skinOption, "glass", "当前皮肤要有选中态");
+  for (const o of opts) {
+    assert(o.querySelector(".skin-copy b")?.textContent, "每个皮肤要有名字");
+    assert(o.querySelector(".skin-copy small")?.textContent, "每个皮肤要有一句说明");
+  }
+  // 色板颜色必须来自样式表：页面 CSP 是 style-src 'self'，行内 style 会被浏览器直接忽略。
+  for (const sw of menu.querySelectorAll(".skin-swatch, .skin-swatch i"))
+    assert(!sw.hasAttribute("style"), "色板不能用行内样式（CSP 会忽略）");
+  pubDoc.querySelector('[data-skin-option="press"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  assert.equal(pubDoc.documentElement.dataset.skin, "press", "选「复古印刷」要落到 <html data-skin>");
+  assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "press", "偏好要存进 localStorage");
+  assert(menu.hidden, "选完菜单要收起");
+  assert(/复古印刷/.test(skinBtn.textContent), "按钮文字跟着换");
+  // 选回默认皮肤要把偏好键清掉，不在浏览器里留一份与默认值重复的设置。
+  skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  pubDoc.querySelector('[data-skin-option="glass"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  assert.equal(pubDoc.documentElement.dataset.skin, "glass", "能切回默认皮肤");
+  assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), null, "默认皮肤不留偏好键");
+
+  // 皮肤表本身：只在 data-skin="press" 下生效，且要带纸底与「圆角归零」这两块底座。
+  assert(
+    (await (await fetch(base + "/")).text()).includes("/press.css"),
+    "index.html 必须挂上 press.css，否则皮肤永远不会生效",
+  );
+  const pressCSS = await (await fetch(base + "/press.css")).text();
+  assert(/\[data-skin="press"\]/.test(pressCSS), "皮肤规则要限定在 data-skin=press 下");
+  assert(/--press-paper:/.test(pressCSS) && /border-radius: 0 !important/.test(pressCSS), "纸底与圆角归零是皮肤底座");
+  assert(/:root\[data-skin="press"\]\[data-theme="dark"\]/.test(pressCSS), "深色下要有自己的一份令牌");
+  // 先把注释剥掉再解析规则：注释里也会出现 ::-webkit-progress-value 之类的字样。
+  const pressRules = pressCSS.replace(/\/\*[\s\S]*?\*\//g, "");
+  // Chromium 把 ::-moz-progress-bar 当未知伪元素，与 webkit 那条写进同一个选择器列表会让
+  // 整条规则被判无效丢弃（进度条就会退回玻璃皮肤的渐变填充，Chrome 里看不出来、只能靠像素测）。
+  for (const rule of pressRules.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sel = rule[1];
+    assert(
+      !(sel.includes("::-webkit-progress-value") && sel.includes("::-moz-progress-bar")),
+      "webkit / moz 进度条伪元素必须分成两条规则：" + sel.trim().slice(0, 60),
+    );
+  }
+  // 每一条皮肤规则都要带 data-skin 前缀：不加前缀会改到默认玻璃皮肤。
+  // 选择器列表按「顶层逗号」拆——:is(a, b) 里的逗号不是分隔符。
+  const splitTop = (list) => {
+    const out = [];
+    let depth = 0, cur = "";
+    for (const ch of list) {
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      if (ch === "," && depth === 0) { out.push(cur); cur = ""; continue; }
+      cur += ch;
+    }
+    out.push(cur);
+    return out;
+  };
+  for (const rule of pressRules.matchAll(/([^{}]+)\{/g)) {
+    const sel = rule[1].trim();
+    if (!sel || sel.startsWith("@") || sel.startsWith("/*")) continue;
+    for (const one of splitTop(sel)) {
+      const s = one.trim();
+      if (!s) continue;
+      assert(/data-skin="press"/.test(s), `press.css 里的选择器必须限定皮肤：${s.slice(0, 60)}`);
+    }
+  }
+  // theme-boot.js 决定首屏那一刻的皮肤（在样式表之前执行），单独验一遍。
+  const bootDOM = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
+    url: base + "/",
+    runScripts: "outside-only",
+  });
+  bootDOM.window.localStorage.setItem("tza-skin", "press");
+  bootDOM.window.localStorage.setItem("tza-theme", "light");
+  bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
+  assert.equal(bootDOM.window.document.documentElement.dataset.skin, "press", "首屏就要定好皮肤，不能等 app.js");
+  assert.equal(bootDOM.window.document.documentElement.dataset.theme, "light", "明暗同样照旧");
+  // 认不出来的值退回默认皮肤，别把 <html data-skin> 写成任意字符串。
+  bootDOM.window.localStorage.setItem("tza-skin", "no-such-skin");
+  bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
+  assert.equal(bootDOM.window.document.documentElement.dataset.skin, "glass", "无法识别的皮肤要退回默认");
+}
+
+
 assert(cardText.includes("上海"), "the card shows the latency region it was configured with");
 // 延迟 / 丢包条按 styles.css 的 q1..q20 上色：颜色必须来自 class，不能是行内 style，
 // 因为页面 CSP 是 style-src 'self'，行内样式会被浏览器直接忽略（曾因此整条色带失效）。
