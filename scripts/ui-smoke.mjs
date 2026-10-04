@@ -1070,14 +1070,29 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     [...band.querySelectorAll(".stat-item .unit")].length === 2,
     "累计流量的单位也要与速率的「/s」同样弱化（10px 灰字，不是跟着数字加粗）",
   );
-  // 回程三格等宽（用户点名「要这种等比例的」），每格「彩色圆点 + 回程值」一行读完——
-  // 用户从三版对比里挑的方案③：圆点颜色代表运营商（电信蓝 / 联通红 / 移动绿），
-  // 格子里不写运营商名。名字不能真丢：aria-label / title / data-focus-carrier 里必须有。
+  // 回程三格等宽（用户点名「要这种等比例的」），每格「运营商标志 + 回程值」一行读完——
+  // 标志是各家的官方图形（内联 SVG，web/carrier-logos.js），格子里不写运营商名；
+  // 名字不能真丢：aria-label / title / data-focus-carrier 里必须有。
   const chip = compact.querySelector(".route-label");
-  assert.equal(chip.children[0].tagName, "SPAN", "回程格第一项要是代表运营商的圆点");
+  assert.equal(chip.children[0].tagName, "SPAN", "回程格第一项要是代表运营商的标志");
   assert(
-    /carrier-dot ct|carrier-dot cu|carrier-dot cm/.test(chip.children[0].className),
-    `回程圆点要带运营商配色类，实际「${chip.children[0].className}」`,
+    /carrier-mark ct|carrier-mark cu|carrier-mark cm/.test(chip.children[0].className),
+    `回程标志要带运营商配色类，实际「${chip.children[0].className}」`,
+  );
+  const mark = chip.children[0];
+  assert(
+    mark.querySelector("svg path[fill]") && mark.querySelectorAll("svg").length === 1,
+    "回程标志是一枚内联 SVG，颜色写在 path 的 fill 上",
+  );
+  // 同一份标志在一屏上重复几十次：带 id 就是重复 id；带 style 会被面板的 CSP（style-src 'self'）
+  // 整条丢掉，尺寸只能走样式表。
+  assert(
+    !mark.querySelector("[id]") && !mark.querySelector("[style]"),
+    "回程标志不能带 id / style（重复 id 与 CSP 会丢样式）",
+  );
+  assert(
+    mark.getAttribute("aria-hidden") === "true",
+    "标志是装饰，要 aria-hidden（运营商名在 aria-label 里）",
   );
   assert(
     chip.dataset.focusCarrier && chip.getAttribute("aria-label")?.includes(chip.dataset.focusCarrier),
@@ -1086,22 +1101,29 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
   assert(
     /\.route-label \{[^}]*flex-wrap: wrap/.test(styles) &&
       /\.route-label \{[^}]*align-items: center/.test(styles) &&
-      // 圆点不是文字，没有基线可言；值与圆点在同一行居中（用户：能居中还是居中）
+      // 标志不是文字，没有基线可言；值与标志在同一行居中（用户：能居中还是居中）
       !/\.route-label \{[^}]*align-items: baseline/.test(styles) &&
       /\.route-label \{[^}]*justify-content: center/.test(styles),
-    "回程格是圆点 + 值一行居中；更长的值整段落到第二行（不断在箭头上）",
+    "回程格是标志 + 值一行居中；更长的值整段落到第二行（不断在箭头上）",
   );
   assert(
     /\.route-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/.test(styles),
     "回程三格要等宽（不按内容定宽）",
   );
   assert(
-    /\.carrier-dot \{[^}]*width: 7px[^}]*height: 7px/s.test(styles) &&
-      /\.carrier-dot\.ct \{[^}]*var\(--accent\)/.test(styles) &&
-      /\.carrier-dot\.cu \{[^}]*var\(--red\)/.test(styles) &&
-      /\.carrier-dot\.cm \{[^}]*var\(--green\)/.test(styles) &&
+    /\.carrier-mark \{[^}]*width: 11px[^}]*height: 11px/s.test(styles) &&
+      /\.carrier-mark svg \{[^}]*width: 100%[^}]*height: 100%/s.test(styles),
+    "标志定一个 11px 方框、svg 撑满方框（图形按默认的 preserveAspectRatio 居中留白）",
+  );
+  assert(
+    /\.route-label \{[^}]*padding: 8px 2px/.test(styles) &&
       /\.route-label strong \{[^}]*font-size: 11px/.test(styles),
-    "回程圆点 7px、按运营商配色（电信蓝/联通红/移动绿）；值 11px —— 12px 时多骨干值装不下一行",
+    "回程格内边距 2px、值 11px —— 标志比圆点多占 4px，内边距从 4px 收到 2px 才把「10099 → 9929」留在同一行",
+  );
+  assert(
+    /\.carrier-dot \{[^}]*width: 7px[^}]*height: 7px/s.test(styles) &&
+      /\.carrier-dot\.cx \{[^}]*var\(--subtle\)/.test(styles),
+    "认不出运营商的回程值（cx）退回那颗 7px 灰点",
   );
   // 方向徽章 16px：原来是 20px，比 12px 的文字大一圈、比文字行高还高，看着和后面的数字不是一档。
   assert(

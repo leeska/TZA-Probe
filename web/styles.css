@@ -873,14 +873,16 @@ button.node-name:hover {
   letter-spacing: 0.08em;
 }
 
-/* 回程：三格等宽，每格是「彩色圆点 + 回程值」**居中**、一行读完（用户两个要求叠在一起：
-   居中，同时值要完整显示不折行）。左对齐版本（2c94bfb）被退回——圆点跟着值的长短成列是
+/* 回程：三格等宽，每格是「运营商标志 + 回程值」**居中**、一行读完（用户两个要求叠在一起：
+   居中，同时值要完整显示不折行）。左对齐版本（2c94bfb）被退回——标志跟着值的长短成列是
    为了「对齐」，但用户要的是回程块整体居中。
-   量过「一行读完」的余量：一格内容 89px（390px 视口），最长的「10099 → 9929」11px/650 是
-   74.4px，加圆点 7 + 间距 4 = 85.4px，余 3.6px。更窄的视口：375px 可用 84px、
-   360px 可用 79px 都仍然 0 折行（实测扫过 430/414/390/375/360），320px 才开始折 5 格。
-   flex-wrap 留着兜底：真装不下时整段落到第二行，不会断在箭头上。
-   圆点颜色 = 运营商身份（电信蓝 / 联通红 / 移动绿，与参考图一致）；格子里不再写运营商名，
+   一格内容 93px（390px 视口，左右内边距各 2px）：最长的「10099 → 9929」11px/650 是
+   74.4px，加标志 11 + 间距 4 = 89.4px，余 3.3px 一行读完 —— 与圆点时代（圆点 7，内边距
+   4px）的余量 3.6px 持平，折行门槛同样落在 375px。更窄的视口：375px 可用 88px、
+   360px 可用 83px。flex-wrap 留着兜底：真装不下时整段落到第二行，不会断在箭头上。
+   内边距从 4px 收到 2px 就是为了把标志多占的 4px 换回来（实测扫过 430/414/390/375/360：
+   不收回的话 390px 只剩 1.6px，375px 就折行）。
+   标志 = 运营商身份（各家的官方图形，见 web/carrier-logos.js）；格子里不再写运营商名，
    但名字仍在 aria-label / title / data-focus-carrier 里。 */
 .route-label {
   display: flex;
@@ -889,7 +891,7 @@ button.node-name:hover {
   align-items: center;
   justify-content: center;
   gap: 2px 4px;
-  padding: 8px 4px;
+  padding: 8px 2px;
   border-radius: 12px;
   border: 1px solid var(--line);
   cursor: pointer;
@@ -897,6 +899,22 @@ button.node-name:hover {
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* 运营商标志：定死一个方框，图形按默认的 preserveAspectRatio 居中留白（联通的中国结比
+   电信 / 移动的标记宽，所以它在方框里是左右顶格、上下留白）。改尺寸只改这两条。 */
+.carrier-mark {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  display: block;
+}
+
+.carrier-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 认不出运营商的回程值（电信 / 联通 / 移动之外）仍用一颗灰点占位——没有品牌配色可用。 */
 .carrier-dot {
   width: 7px;
   height: 7px;
@@ -904,9 +922,6 @@ button.node-name:hover {
   flex: 0 0 auto;
 }
 
-.carrier-dot.ct { background: var(--accent); }
-.carrier-dot.cu { background: var(--red); }
-.carrier-dot.cm { background: var(--green); }
 .carrier-dot.cx { background: var(--subtle); }
 
 .route-label strong {

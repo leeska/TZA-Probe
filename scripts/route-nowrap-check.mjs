@@ -1,9 +1,9 @@
 // 回程格「居中且一行读完」的布局守卫：jsdom 不做布局，折行只有真浏览器看得见。
 //
-// 用户的硬要求：回程格居中，回程值必须完整显示、不折行（11px 的值 + 7px 圆点 + 4px 间距，
-// 一格内容只有 89px，最长的「10099 → 9929」是 85.4px，余 3.6px —— 字号、内边距或间距
-// 动大一点就会折行）。这个脚本量真实页面：每个 .route-label 折了几行、需要多少宽度、
-// 格子给了多少、是不是居中。任何一格折行或不是居中，退出码 1。
+// 用户的硬要求：回程格居中，回程值必须完整显示、不折行（11px 的值 + 11px 的运营商标志 +
+// 4px 间距，一格内容 93px，最长的「10099 → 9929」是 89.4px，余 3.6px —— 字号、内边距、
+// 间距或标志尺寸动大一点就会折行）。这个脚本量真实页面：每个 .route-label 折了几行、
+// 需要多少宽度、格子给了多少、是不是居中。任何一格折行或不是居中，退出码 1。
 //
 // 用法：
 //   node scripts/route-nowrap-check.mjs                              # 默认量线上 probe.tza.cc
@@ -16,7 +16,7 @@
 // 为什么不做「把 styles.css 挂到空白页量」那种合成模式：同一段文字在那种环境里量出来比真实
 // 页面宽约 11px（字体回退差别），会误报折行——只有量真实页面才可信。
 //
-// 线上实测（2026-10-01，390px、17 台 21 格）：折行 0，最紧一格「10099 → 9929」需要 85.4px、可用 89px。
+// 线上实测（2026-10-01，390px、17 台 21 格，圆点时代）：折行 0，最紧一格「10099 → 9929」需要 85.4px、可用 89px。
 import { existsSync } from "node:fs";
 
 const CORE = process.env.PUPPETEER_CORE ||
@@ -46,7 +46,7 @@ const rows = await page.evaluate(() =>
   [...document.querySelectorAll(".node-card .route-label")].map((chip) => {
     const cs = getComputedStyle(chip);
     const strong = chip.querySelector("strong");
-    const dot = chip.querySelector(".carrier-dot");
+    const mark = chip.querySelector(".carrier-mark, .carrier-dot");
     const gap = parseFloat(cs.columnGap) || 0;
     // 克隆一份不换行的 strong 量自然宽度（-webkit-line-clamp 下 scrollWidth 会骗人）
     const clone = strong.cloneNode(true);
@@ -54,14 +54,14 @@ const rows = await page.evaluate(() =>
     chip.appendChild(clone);
     const valueWidth = clone.getBoundingClientRect().width;
     clone.remove();
-    const dotWidth = dot ? dot.getBoundingClientRect().width : 0;
+    const markWidth = mark ? mark.getBoundingClientRect().width : 0;
     const avail = chip.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const lh = parseFloat(getComputedStyle(strong).lineHeight) || 15;
     return {
       carrier: chip.dataset.focusCarrier || "?",
       value: strong.textContent.trim(),
       avail: +avail.toFixed(1),
-      need: +(valueWidth + dotWidth + gap).toFixed(1),
+      need: +(valueWidth + markWidth + gap).toFixed(1),
       lines: Math.round(strong.getBoundingClientRect().height / lh),
       centered: cs.justifyContent === "center",
     };
