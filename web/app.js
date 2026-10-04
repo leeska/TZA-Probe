@@ -714,11 +714,14 @@ function latencyBands(n, f) {
     .join("");
 }
 
+// 回程标签在这里也不写运营商名：与卡片那格一致，标志占列表行里那 30px 的运营商槽
+//（`.carrier-name` 两行共用，同一列仍然对齐），名字仍在 aria-label / title /
+// data-focus-carrier 里，点选与筛选照旧按 carrier 走。
 function routeLines(n, f) {
   return f.routes
     .map(
       (r) =>
-        `<button class="net-line route-line ${r.known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}"><span class="carrier-name">${r.carrier}</span><strong class="${r.known ? "" : "muted"}">${esc(r.label)}</strong></button>`,
+        `<button class="net-line route-line ${r.known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}" aria-label="${esc(`${r.carrier} ${r.label}`)}"><span class="carrier-name">${carrierMark(r.carrier)}</span><strong class="${r.known ? "" : "muted"}">${esc(r.label)}</strong></button>`,
     )
     .join("");
 }

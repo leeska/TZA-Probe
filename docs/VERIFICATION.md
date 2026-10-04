@@ -1425,3 +1425,21 @@ node scripts/ui-smoke.mjs
   配色类，实际「carrier-dot ct」`）。
 - 待确认：11px 是这一版挑的尺寸——用户若觉得小 / 大，改 `.carrier-mark` 一处即可，但每加大 1px 就要从内边距
   或值字号里再挤 1px，否则「10099 → 9929」在 390px 折行。
+
+## 2026-10-04 列表视图的回程行也换成运营商标志（与卡片一致）
+
+用户：「有些在卡片模式改了，列表模式还没相应改动」——卡片那三格已经换成官方标志，列表视图的「三网回程」
+一格里还是「电信 / 联通 / 移动」三行文字。
+
+- `web/app.js` 的 `routeLines`（列表视图的回程行）第一项从 `<span class="carrier-name">运营商名</span>`
+  换成 `${carrierMark(r.carrier)}`，**仍装在同一个 `.carrier-name` 里**——列表里那一槽是定宽的
+  `flex: 0 0 30px`，延迟行与回程行共用，标志放进去两列才继续对齐（值与丢包的左缘不动）。
+- 名字不能丢：回程行的 `title` 里只有「地区 · 线路 · 时间 · 状态」，所以按卡片那格的既有做法给回程行补了
+  `aria-label="运营商 + 线路值"`（延迟行仍然写运营商名，两边都没丢）。
+- 延迟行**不动**：卡片里的延迟块本来就是「电信 / 联通 / 移动」文字，列表跟随这个口径，只有回程两边
+  都改成标志。
+
+验证：`bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` / `UI_SMOKE_OK`；ui-smoke 新增断言——
+回程三行的 `.carrier-name` 里是 `.carrier-mark`（内含带 `fill` 的 `<svg>`、`aria-hidden`、无 id/style）、
+`aria-label` 等于「运营商 + 线路值」、延迟三行仍是「电信/联通/移动」文字。**对照组**：
+`git stash push -- web/app.js` 后同一套断言在「列表里的回程行第一项要是运营商标志」处失败。

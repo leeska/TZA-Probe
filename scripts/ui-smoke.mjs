@@ -1193,6 +1193,22 @@ for (const line of listRow.querySelectorAll(".net-line")) {
   assert(line.dataset.focusCarrier, "行内文本要带运营商");
   assert(line.getAttribute("title"), "行内文本要有各自的探测时间提示");
 }
+// 回程那三行的第一项跟卡片一致：官方标志，不再写运营商名（延迟三行仍是运营商名——
+// 卡片里的延迟块也是文字，两边一致）。名字不能丢：标志在 aria-label / data-focus-carrier 里。
+for (const line of listRow.querySelectorAll(".route-cell .route-line")) {
+  const mark = line.querySelector(".carrier-name .carrier-mark");
+  assert(mark && mark.querySelector("svg path[fill]"), "列表里的回程行第一项要是运营商标志");
+  assert(mark.getAttribute("aria-hidden") === "true", "列表里的标志同样是装饰");
+  assert(!mark.querySelector("[id]") && !mark.querySelector("[style]"), "列表里的标志也不能带 id / style");
+  assert(
+    line.getAttribute("aria-label") === `${line.dataset.focusCarrier} ${line.querySelector("strong").textContent}`,
+    `列表里不写运营商名就得在 aria-label 里留着，实际「${line.getAttribute("aria-label")}」`,
+  );
+}
+assert(
+  [...listRow.querySelectorAll(".net-cell .net-line .carrier-name")].map((s) => s.textContent.trim()).join("/") === "电信/联通/移动",
+  "延迟三行仍写运营商名（与卡片里的延迟块一致）",
+);
 const listSubs = [...listRow.querySelectorAll(".metrics-grid .metric small")].map((s) => s.textContent);
 assert.equal(listSubs.length, 4, "四个指标各留一行副标");
 // CPU 那格的副标是核心数（Agent 报的 runtime.NumCPU），不再写「系统计算负载」。
