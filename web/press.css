@@ -275,25 +275,37 @@ html[data-skin="press"] :is(.search, .public-main .toolbar .search) input:focus 
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.25);
 }
 
-/* 分段控件：印刷版是一排方章，选中那块红底纸字。 */
+/* 分段控件：印刷版是一排方章——选中那块把整半格压成实心墨章（纸色字），未选中那半留纸底灰字，
+   两半之间一条墨线。原先选中块是红底 + 自带一圈墨边，与外框叠成双层描边、四周还露米色缝
+   （用户：「这种样式有点怪怪的」）；四版对照图里用户挑了「填满 + 墨块」这版。
+   墨色用 var(--ink)：浅色是 #15120f、夜印翻成奶油色，纸色字跟着翻，两套主题都不用另写。 */
 html[data-skin="press"] .segmented {
   border: 2px solid var(--glass-border);
   background: var(--glass-bg-subtle);
   box-shadow: none;
-  padding: 3px;
-  gap: 3px;
+  padding: 0;
+  gap: 0;
 }
 
 html[data-skin="press"] .segmented button {
   font-family: var(--press-mono);
-  border: 2px solid transparent;
+  border: 0;
 }
 
 html[data-skin="press"] .segmented button.active {
-  background: #b72f24;
-  color: #fffaf0;
-  border-color: var(--glass-border);
+  background: var(--ink);
+  color: var(--press-paper);
   box-shadow: none;
+}
+
+/* 两半之间的墨线：选中的在左就画在右格左边，选中的在右就画在左格右边——选中的那块自己不带边，
+   所以任何一态的分隔线都只有一条。 */
+html[data-skin="press"] .segmented button:first-child:not(.active) {
+  border-right: 2px solid var(--glass-border);
+}
+
+html[data-skin="press"] .segmented button:last-child:not(.active) {
+  border-left: 2px solid var(--glass-border);
 }
 
 /* 胶囊与标签：方形芯片，2px 墨线。 */

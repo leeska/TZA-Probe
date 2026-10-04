@@ -908,6 +908,25 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       assert(/data-skin="press"/.test(s), `press.css 里的选择器必须限定皮肤：${s.slice(0, 60)}`);
     }
   }
+  // 分段开关（用户说旧写法「有点怪怪的」）：选中那块填满自己那半格、用墨色实心，不再自带描边。
+  // 旧写法是红底 + 自己一圈墨边，与外框叠成双层描边、四周还露米色缝。
+  assert(
+    /html\[data-skin="press"\] \.segmented \{[^}]*padding: 0[^}]*gap: 0/s.test(pressRules),
+    "印刷皮肤的分段开关不留内边距与缝：选中的那半格要顶到外框",
+  );
+  assert(
+    /html\[data-skin="press"\] \.segmented button\.active \{[^}]*background: var\(--ink\)[^}]*color: var\(--press-paper\)/s.test(pressRules),
+    "选中块是实心墨章 + 纸色字（浅色 / 夜印各自翻色）",
+  );
+  assert(
+    /button:first-child:not\(\.active\) \{[^}]*border-right: 2px solid var\(--glass-border\)/.test(pressRules) &&
+      /button:last-child:not\(\.active\) \{[^}]*border-left: 2px solid var\(--glass-border\)/.test(pressRules),
+    "两半之间那条墨线：选中的在左画在右格左边，选中的在右画在左格右边",
+  );
+  assert(
+    !/html\[data-skin="press"\] \.segmented button\.active \{[^}]*#b72f24/.test(pressRules),
+    "选中块不再用红版色铺底（旧写法的红块被用户否掉）",
+  );
   // theme-boot.js 决定首屏那一刻的皮肤（在样式表之前执行），单独验一遍。
   const bootDOM = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
     url: base + "/",
