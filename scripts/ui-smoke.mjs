@@ -908,8 +908,10 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       assert(/data-skin="press"/.test(s), `press.css 里的选择器必须限定皮肤：${s.slice(0, 60)}`);
     }
   }
-  // 分段开关（用户说旧写法「有点怪怪的」）：选中那块填满自己那半格、用墨色实心，不再自带描边。
-  // 旧写法是红底 + 自己一圈墨边，与外框叠成双层描边、四周还露米色缝。
+  // 分段开关（用户说旧写法「有点怪怪的」）：选中那块填满自己那半格、实心版色红，不再自带描边。
+  // 旧写法是红底 + 自己一圈墨边，与外框叠成双层描边、四周还露米色缝；后来用户又提了三条
+  // ——选中块没铺满内高（「没填满」）、点击时黑线会动（:active 的盖章位移 + 线画在按钮上）、
+  // 切换时右侧标签在临界点上左右跳（开关比列表里那 94px 的槽宽）。这四条都钉在这里。
   assert(
     /html\[data-skin="press"\] \.segmented \{[^}]*padding: 0[^}]*gap: 0/s.test(pressRules),
     "印刷皮肤的分段开关不留内边距与缝：选中的那半格要顶到外框",
@@ -919,9 +921,20 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "选中块是实心版色红章 + 纸面字（浅色 / 夜印各自翻色）",
   );
   assert(
-    /button:first-child:not\(\.active\) \{[^}]*border-right: 2px solid var\(--glass-border\)/.test(pressRules) &&
-      /button:last-child:not\(\.active\) \{[^}]*border-left: 2px solid var\(--glass-border\)/.test(pressRules),
-    "两半之间那条墨线：选中的在左画在右格左边，选中的在右画在左格右边",
+    /\.segmented \{[^}]*background-image: linear-gradient\(var\(--glass-border\), var\(--glass-border\)\)[^}]*background-size: 2px 100%[^}]*background-position: center/s.test(pressRules),
+    "两半之间那条墨线要画成容器正中间的一条背景线，不能画成某一半的边框（画在按钮上，点一下线就跟着挪）",
+  );
+  assert(
+    /\.segmented button \{[^}]*height: auto[^}]*align-self: stretch/s.test(pressRules),
+    "两半要按格子内高铺满：写死高度会让选中块上下各露 1px 底色（「没填满」）",
+  );
+  assert(
+    /\.segmented button:active \{[^}]*transform: none/s.test(pressRules),
+    "控件里的按钮不跟着通用规则做 :active 位移，否则红块与墨线会跳",
+  );
+  assert(
+    /\.segmented\.card-family button \{[^}]*padding: 0 8px/s.test(pressRules),
+    "地址族开关要压在列表里那 94px 的槽宽以内，否则右边标签在临界点上左右跳",
   );
   assert(
     !/html\[data-skin="press"\] \.segmented button\.active \{[^}]*#[0-9a-f]{3,8}/i.test(pressRules),

@@ -283,7 +283,13 @@ html[data-skin="press"] :is(.search, .public-main .toolbar .search) input:focus 
    两套主题的对比度都够（7.0:1 / 4.9:1），不用各写一份。 */
 html[data-skin="press"] .segmented {
   border: 2px solid var(--glass-border);
-  background: var(--glass-bg-subtle);
+  background-color: var(--glass-bg-subtle);
+  /* 两半之间那条墨线画在容器正中间：以前线是「没选中那半」的边框，点一下线就跟着那半挪 2px
+     （用户：「点击黑线会动」）。画成背景线，谁也搬不动它，而且两半等宽、谁选中都一样。 */
+  background-image: linear-gradient(var(--glass-border), var(--glass-border));
+  background-repeat: no-repeat;
+  background-size: 2px 100%;
+  background-position: center;
   box-shadow: none;
   padding: 0;
   gap: 0;
@@ -292,6 +298,10 @@ html[data-skin="press"] .segmented {
 html[data-skin="press"] .segmented button {
   font-family: var(--press-mono);
   border: 0;
+  /* 选中那半要铺满格子内高：按钮写死 32px 时外框内高是 34px，上下各露 1px 底色
+     （用户：「没填满」）。 */
+  height: auto;
+  align-self: stretch;
 }
 
 html[data-skin="press"] .segmented button.active {
@@ -300,14 +310,17 @@ html[data-skin="press"] .segmented button.active {
   box-shadow: none;
 }
 
-/* 两半之间的墨线：选中的在左就画在右格左边，选中的在右就画在左格右边——选中的那块自己不带边，
-   所以任何一态的分隔线都只有一条。 */
-html[data-skin="press"] .segmented button:first-child:not(.active) {
-  border-right: 2px solid var(--glass-border);
+/* 控件里的按钮不跟着「盖章」位移：通用规则里 :active 会让按钮平移 2px，红块与中间那条线会跟着跳
+   （用户：「点击黑线会动」）。 */
+html[data-skin="press"] .segmented button:active {
+  transform: none;
 }
 
-html[data-skin="press"] .segmented button:last-child:not(.active) {
-  border-left: 2px solid var(--glass-border);
+/* 地址族开关压到 94px 以内：列表里这一槽定宽 94px（单栈也占同样宽度，两种行的系统 / 架构标签
+   才对得齐）。开关一旦比槽宽，右边的标签就掉到下一行、并且在临界点上左右跳
+   （用户：「切换的时候这个位置会跳到旁边的位置」）。 */
+html[data-skin="press"] .segmented.card-family button {
+  padding: 0 8px;
 }
 
 /* 胶囊与标签：方形芯片，2px 墨线。 */
