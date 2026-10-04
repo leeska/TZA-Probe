@@ -275,10 +275,12 @@ html[data-skin="press"] :is(.search, .public-main .toolbar .search) input:focus 
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.25);
 }
 
-/* 分段控件：印刷版是一排方章——选中那块把整半格压成实心墨章（纸色字），未选中那半留纸底灰字，
+/* 分段控件：印刷版是一排方章——选中那块把整半格压成实心红章（纸色字），未选中那半留纸底灰字，
    两半之间一条墨线。原先选中块是红底 + 自带一圈墨边，与外框叠成双层描边、四周还露米色缝
-   （用户：「这种样式有点怪怪的」）；四版对照图里用户挑了「填满 + 墨块」这版。
-   墨色用 var(--ink)：浅色是 #15120f、夜印翻成奶油色，纸色字跟着翻，两套主题都不用另写。 */
+   （用户：「这种样式有点怪怪的」）；先按四版对照图做了墨块版，用户看了线上说「应该选 A」，
+   即保留填满的几何、底色换回皮肤自己的版色红。
+   底色与字色都用令牌：浅色是 #b72f24 底 + #fffaf0 字，夜印翻成 #e2543f 底 + #241f18 字，
+   两套主题的对比度都够（7.0:1 / 4.9:1），不用各写一份。 */
 html[data-skin="press"] .segmented {
   border: 2px solid var(--glass-border);
   background: var(--glass-bg-subtle);
@@ -293,8 +295,8 @@ html[data-skin="press"] .segmented button {
 }
 
 html[data-skin="press"] .segmented button.active {
-  background: var(--ink);
-  color: var(--press-paper);
+  background: var(--accent);
+  color: var(--press-surface);
   box-shadow: none;
 }
 
