@@ -5,6 +5,11 @@
 // 间距或标志尺寸动大一点就会折行）。这个脚本量真实页面：每个 .route-label 折了几行、
 // 需要多少宽度、格子给了多少、是不是居中。任何一格折行或不是居中，退出码 1。
 //
+// 折行怎么数（踩过）：`.route-label` 是 flex-wrap，装不下时**整个值**（连同标志）落到第二行，
+// 值自己仍然只有一行高——只量 strong 的高度永远得到「1 行」。要按格子的内容高度数：
+// content = clientHeight - paddingTop - paddingBottom（clientHeight 不含边框），
+// 再除以行高；同时用「标志顶边与值顶边之差」兜底（同一行里两者差约 3px，换行后差一整行）。
+//
 // 用法：
 //   node scripts/route-nowrap-check.mjs                              # 默认量线上 probe.tza.cc
 //   TZA_CHECK_URL=http://127.0.0.1:25911/ node scripts/route-nowrap-check.mjs
@@ -57,12 +62,17 @@ const rows = await page.evaluate(() =>
     const markWidth = mark ? mark.getBoundingClientRect().width : 0;
     const avail = chip.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const lh = parseFloat(getComputedStyle(strong).lineHeight) || 15;
+    // 折行按格子的内容高度数（flex-wrap 会把整个值挪到第二行，值自身仍是一行高），
+    // 并用「标志与值是否同一行」兜底。
+    const content = chip.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const sameRow = mark ? Math.abs(strong.getBoundingClientRect().top - mark.getBoundingClientRect().top) <= 8 : true;
     return {
       carrier: chip.dataset.focusCarrier || "?",
       value: strong.textContent.trim(),
       avail: +avail.toFixed(1),
       need: +(valueWidth + markWidth + gap).toFixed(1),
-      lines: Math.round(strong.getBoundingClientRect().height / lh),
+      lines: Math.max(1, Math.round(content / lh)),
+      sameRow,
       centered: cs.justifyContent === "center",
     };
   }),
@@ -75,7 +85,7 @@ if (!rows.length) {
 }
 
 const worst = rows.slice().sort((a, b) => a.avail - a.need - (b.avail - b.need))[0];
-const wrapped = rows.filter((r) => r.lines > 1);
+const wrapped = rows.filter((r) => r.lines > 1 || !r.sameRow);
 const offCenter = rows.filter((r) => !r.centered);
 console.log(
   `回程格 ${rows.length} 个 @${WIDTH}px：折行 ${wrapped.length} 个、非居中 ${offCenter.length} 个；最紧的一格「${worst.value}」需要 ${worst.need}px、可用 ${worst.avail}px（余 ${(worst.avail - worst.need).toFixed(1)}px）`,

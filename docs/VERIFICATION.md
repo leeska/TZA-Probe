@@ -1389,3 +1389,39 @@ node scripts/ui-smoke.mjs
     `samples` / `traffic_hour` / `traffic` 三张表都这么走。
   - `ui-smoke` 的「按额度降速的线路不该因为均值而降速」会**跨 UTC 整点时**偶发失败（那两笔用量落在
     两个小时桶里，窗口起点一挪 `avg_bps` 就冲到 3.2 Mbit/s）；与本次改动无关，重跑即绿。
+
+## 2026-10-04 回程格里的圆点换成运营商官方标志
+
+用户发来面板截图 + 一张三网标志的参考图：「这个三网前面的点可以换成小 logo 吗，类似第二张图的」。
+
+- 标志是**真商标的矢量轮廓，不是照着画的近似图**：从各家的官方词标 SVG 里裁出图形部分（词标右侧的文字
+  整段丢掉）。电信蓝 `#02489d`（两条弧线）、联通红 `#e60027`（中国结）、移动蓝绿 `#0086d0` + `#8ec320`
+  （五条回旋线）。交接时做过的处理：剥掉 id / class / style（一屏上同一份标志重复几十次，留 id 就是重复
+  id；`style` 属性还会被面板的 CSP `style-src 'self'` 整条丢掉）、坐标收成一位小数（11px 的显示尺寸下远
+  小于一个像素）、平移折进 `viewBox` 让外框从 0 0 起。三个标志合计 5.1KB，内联在新增的
+  `web/carrier-logos.js` 里（`carrierMark(carrier)` 返回回程格的第一项；电信 / 联通 / 移动之外仍退回原来
+  那颗 7px 灰点）。`web/app.js` 的 `routeCells` 删掉 `CARRIER_DOTS`，`.carrier-dot.ct|cu|cm` 三条配色
+  规则随之删掉（没有品牌配色可给）。
+- 几何：标志方框 11px，比圆点多占 4px，所以 `.route-label` 的 `padding` 从 `8px 4px` 收到 `8px 2px`——不
+  收回的话 390px 只剩 1.6px、375px 就折行。标志尺寸只写在 `.carrier-mark` 的 `width/height` 上，图形靠默认
+  的 `preserveAspectRatio` 在方框里居中留白（联通的中国结比另两个宽，所以它左右顶格、上下留白）。
+- 实测（真浏览器）：本机注入最长值「10099 → 9929」扫 430 / 414 / 390 / 375 / 360 五个宽度，390px 一格内容
+  93px、需要 89.4px、余 3.6px 一行读完；375px 折行。**与改动前逐宽度一致**——同一套量法在 `git stash`
+  出来的旧版（圆点 7px + 内边距 4px）上是「需要 85.4px、可用 84px、余 -1.4px」，两版都在 375px 折、
+  都在 390px 不折（余量同为 3.6px）。
+- 线上验收（`probe.tza.cc`，部署 `359e7bc`）：`route-nowrap-check` 390px 下 12 个回程格折行 0、非居中 0，
+  最紧一格「10099 → 9929」需要 89.4px、可用 93px；源站与公网 `healthz=200`、匿名 `/mcp` 401、`GET /mcp`
+  405、`tools=21`、节点 10 台在线 10 台；浅色 / 深色 / 印刷三种皮肤各截一遍（深色下三个标志与卡片背景对比
+  清楚，印刷皮肤的米色纸上同样清晰）。
+- 印刷皮肤下「10099 → 9929」**本来就折行**（等宽字体把它撑到 85.8px，一格只有 88px），这次没有变化。
+- 顺带修掉 `scripts/route-nowrap-check.mjs` 的一个盲区：它原先只量 `strong` 自己的高度，而 `.route-label`
+  是 `flex-wrap`——装不下时**整个值连同标志**落到第二行，值本身仍是一行高，于是一直报「折行 0」。现在按
+  格子的内容高度（`clientHeight - padding`）数行数，并用「标志与值是否同一行」兜底；修完在 375px 才如实
+  报出 12 格折行（旧口径在那里一直是绿的，等于没测）。
+- 验证：`go test ./...`、`gofmt -l`、`go vet`、`bash /root/work/tza-ui-regression.sh`（`PRESENTATION_OK` /
+  `UI_SMOKE_OK`）；ui-smoke 新增断言（第一项是 `carrier-mark ct|cu|cm`、内含带 `fill` 的 `<svg>`、不带
+  id / style、`aria-hidden`、`.carrier-mark` 11px 方框、`.route-label` 内边距 `8px 2px`、认不出的运营商
+  退回 7px 灰点），**对照组**：`git stash push -- web/app.js` 后必挂（`AssertionError: 回程标志要带运营商
+  配色类，实际「carrier-dot ct」`）。
+- 待确认：11px 是这一版挑的尺寸——用户若觉得小 / 大，改 `.carrier-mark` 一处即可，但每加大 1px 就要从内边距
+  或值字号里再挤 1px，否则「10099 → 9929」在 390px 折行。
