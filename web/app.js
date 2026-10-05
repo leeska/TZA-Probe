@@ -687,29 +687,36 @@ function routeCells(n, f) {
     .join("");
 }
 
-// 列表视图的行内文本：一家运营商一行，延迟、丢包与最近 20 次的色带横向排开。
+// 列表视图的行内文本：一家运营商一行，延迟、丢包与最近 BAR_COUNT 次的色带横向排开。
 // 回程标签在这里不截断（卡片那格为保持格子高度会截到两行、完整值放在 title 里），
 // 列表的要求是文字全给出来：长标签换行，不省略。
+// 行首与回程行一样放官方标志（用户点名：前面的「电信 / 联通 / 移动」也换成 logo——这样
+// 同一行右边的回程行、卡片里的延迟块、列表里的延迟行三处口径一致）；名字仍在 aria-label /
+// title / data-focus-carrier 里，点选与筛选照旧按 carrier 走。
 function latencyLines(n, f) {
   return f.latencies
     .map(
       (l) =>
-        `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}"><span class="carrier-name">${l.carrier}</span><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars">${sampleBars(l.history, (s) => s.latency, 200)}</span></button>`,
+        `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.carrier} ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="carrier-name">${carrierMark(l.carrier)}</span><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span></button>`,
     )
     .join("");
 }
 
 // 卡片视图的延迟块：一家运营商一块——上面一行「延迟 / 丢包」的文字，下面两条并排的小色带，
-// 每条画最近 CARD_BARS 次（参考图的形状就是这个：文字在上、色块在下，延迟与丢包并排）。
+// 每条画最近 BAR_COUNT 次（参考图的形状就是这个：文字在上、色块在下，延迟与丢包并排）。
 // 列宽用同一套三列栅格（运营商 30px + 两条等宽），所以「延迟」的数值正对着上面那条色带。
-const CARD_BARS = 10;
+// 行首和列表的延迟行一样是官方标志，名字留在 aria-label / data-focus-carrier 里。
+//
+// 格数两个视图共用一个值：列表原来画 20 格、卡片画 10 格，同一份数据在两个视图里格数不一样，
+// 用户点名统一到卡片的 10 格（列表那条 120px 宽，10 格比 20 格更接近卡片里格子的大小）。
+const BAR_COUNT = 10;
 const lossPercent = (s) => (s.sent ? Math.max(0, (s.sent - s.received) / s.sent * 100) : null);
 
 function latencyBands(n, f) {
   return f.latencies
     .map(
       (l) =>
-        `<button class="net-band ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}"><span class="band-head"><span class="carrier-name">${l.carrier}</span><span class="band-metric"><i>延迟</i><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="band-metric"><i>丢包</i><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span></span><span class="band-bars"><span class="quality-bars" title="最近 ${CARD_BARS} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, CARD_BARS)}</span><span class="quality-bars loss-bars" title="最近 ${CARD_BARS} 次丢包">${sampleBars(l.history, lossPercent, 20, CARD_BARS)}</span></span></button>`,
+        `<button class="net-band ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.carrier} 延迟 ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="band-head"><span class="carrier-name">${carrierMark(l.carrier)}</span><span class="band-metric"><i>延迟</i><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="band-metric"><i>丢包</i><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span></span><span class="band-bars"><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span><span class="quality-bars loss-bars" title="最近 ${BAR_COUNT} 次丢包">${sampleBars(l.history, lossPercent, 20, BAR_COUNT)}</span></span></button>`,
     )
     .join("");
 }

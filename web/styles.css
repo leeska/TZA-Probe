@@ -840,8 +840,8 @@ button.node-name:hover {
   font-weight: 400;
 }
 
-/* 两条色带各占一半、各自落在上面那一列的正下方（第 2 / 第 3 列），每条 10 格；
-   格子比列表里那条 20 格的稍大，10 次也看得出趋势。 */
+/* 两条色带各占一半、各自落在上面那一列的正下方（第 2 / 第 3 列），每条 10 格；列表里那条也是
+   10 格（两个视图共用 app.js 的 BAR_COUNT），只是列表的条固定 120px、格子因此更小。 */
 .net-band .band-bars .quality-bars {
   grid-column: 2;
   height: 8px;

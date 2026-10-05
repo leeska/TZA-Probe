@@ -757,10 +757,15 @@ const cardText = card.textContent;
 // 格子只画这台机器真有任务的组：它挂的是「上海 电信 / 联通 / 移动」，自定义的「其他」
 // 目标在新加坡，而卡片配的延迟地区是上海——不在卡片地区里的组不给格子。以前固定画满四格，
 // 那格永远「未检测」，看着像没加载完。
+// 延迟块的行首是官方标志（用户点名：文字换成 logo），按 data-focus-carrier 认家；
+// 名字没丢——aria-label 与筛选用的 data-focus-carrier 里都在。
+const bandCarriers = [...card.querySelectorAll(".latency-bands .net-band")].map(
+  (b) => b.dataset.focusCarrier,
+);
 for (const carrier of ["电信", "联通", "移动"])
-  assert(cardText.includes(carrier), `latency grid must list ${carrier}`);
+  assert(bandCarriers.includes(carrier), `延迟块要覆盖 ${carrier}，实际 ${bandCarriers.join("/")}`);
 assert(
-  !cardText.includes("其他"),
+  !bandCarriers.includes("其他"),
   "卡片地区之外的探测组（自定义的新加坡目标）不占一格",
 );
 assert.equal(card.querySelectorAll(".latency-bands .net-band").length, 3, "延迟只画真有任务的三网（一家一块）");
@@ -782,13 +787,28 @@ assert(
   "回程项也要在探测计划里",
 );
 // 卡片里的延迟块照参考图的形状来：一家运营商一块，上面一行「延迟 / 丢包」的文字、下面两条
-// 并排的小色带各 10 格（列表视图仍是行内一家一行、20 格）。以前卡片是一格一家、延迟与丢包
-// 各占一行数值加一条色带（三格 174px），窄卡片还要靠容器查询换布局。
+// 并排的小色带各 10 格（列表视图也是 10 格——两个视图共用 BAR_COUNT，用户点名看齐卡片）。
+// 以前卡片是一格一家、延迟与丢包各占一行数值加一条色带（三格 174px），窄卡片还要靠容器查询换布局。
+// 格数只有一处定义（app.js 的 BAR_COUNT），这里按源码守一道：三处色带都传这个常量，
+// 谁再写死格数这条就挂。
+assert(/const BAR_COUNT = 10;/.test(appSource), "两个视图共用同一个色带格数常量");
+assert.equal(
+  (appSource.match(/sampleBars\([^`]*?BAR_COUNT\)/g) || []).length,
+  3,
+  "三处色带（列表 1 条 + 卡片 2 条）都要传 BAR_COUNT，不许写死格数",
+);
 {
   const bands = card.querySelectorAll(".latency-bands .net-band");
   assert.equal(bands.length, 3, "延迟一家运营商一块");
   for (const band of bands) {
-    assert(band.querySelector(".band-head .carrier-name"), "每块要给运营商");
+    const mark = band.querySelector(".band-head .carrier-name .carrier-mark");
+    assert(mark && mark.querySelector("svg path[fill]"), "每块的行首要给运营商标志（与回程格子同一颗）");
+    assert(mark.getAttribute("aria-hidden") === "true", "卡片里的标志同样是装饰");
+    assert(!mark.querySelector("[id]") && !mark.querySelector("[style]"), "标志不能带 id / style");
+    assert(
+      band.getAttribute("aria-label")?.startsWith(band.dataset.focusCarrier),
+      `卡片里的延迟块不写运营商名就得在 aria-label 里留着，实际「${band.getAttribute("aria-label")}」`,
+    );
     const metrics = [...band.querySelectorAll(".band-head .band-metric")];
     assert.equal(metrics.length, 2, "每块上面要给「延迟 / 丢包」两项");
     assert(/^延迟/.test(metrics[0].textContent), "第一项是延迟");
@@ -1273,9 +1293,30 @@ for (const line of listRow.querySelectorAll(".route-cell .route-line")) {
     `列表里不写运营商名就得在 aria-label 里留着，实际「${line.getAttribute("aria-label")}」`,
   );
 }
+// 延迟三行也换成官方标志了（用户点名）：与同一行右边的回程行、与卡片里的延迟块口径一致。
+// 名字同样不能丢——aria-label / data-focus-carrier 里都在。
+for (const line of listRow.querySelectorAll(".net-cell .net-line")) {
+  const mark = line.querySelector(".carrier-name .carrier-mark");
+  assert(mark && mark.querySelector("svg path[fill]"), "列表里的延迟行第一项要是运营商标志");
+  assert(mark.getAttribute("aria-hidden") === "true", "列表里的标志同样是装饰");
+  assert(!mark.querySelector("[id]") && !mark.querySelector("[style]"), "列表里的标志也不能带 id / style");
+  assert(
+    line.getAttribute("aria-label")?.startsWith(line.dataset.focusCarrier),
+    `列表里不写运营商名就得在 aria-label 里留着，实际「${line.getAttribute("aria-label")}」`,
+  );
+}
+// 色带格数两个视图统一到 10 格（用户点名：列表看齐卡片）。列表原来画 20 格、卡片 10 格。
 assert(
-  [...listRow.querySelectorAll(".net-cell .net-line .carrier-name")].map((s) => s.textContent.trim()).join("/") === "电信/联通/移动",
-  "延迟三行仍写运营商名（与卡片里的延迟块一致）",
+  [...listRow.querySelectorAll(".net-cell .net-line .quality-bars")].every(
+    (b) => b.querySelectorAll(".quality-bar").length === 10,
+  ),
+  "列表里的延迟色带也要画 10 格（与卡片一致）",
+);
+assert(
+  [...listRow.querySelectorAll(".net-cell .net-line .quality-bars")].every((b) =>
+    /最近 10 次/.test(b.getAttribute("title")),
+  ),
+  "列表里的色带要写明最近 10 次",
 );
 const listSubs = [...listRow.querySelectorAll(".metrics-grid .metric small")].map((s) => s.textContent);
 assert.equal(listSubs.length, 4, "四个指标各留一行副标");
