@@ -207,12 +207,13 @@ html[data-skin="shadcn"] .overview-tile:hover {
 
 /* 品牌方块：玻璃版是蓝紫渐变药丸，极简版是一枚「主色实底」的方章。
    字色必须落在 .brand-mark 自己身上 —— 标记里是 `t<span>z</span>a`，只写 .brand-mark span
-   的话 t / a 两个字会继承 styles.css 的 #fff，在深色（近白底）下直接看不见。 */
+   的话 t / a 两个字会继承 styles.css 的 #fff，在深色（近白底）下直接看不见。
+   字距不碰：styles.css 给的是 -2px，换成 -0.02em 会把方块撑宽约 5px，390px 头部里
+   右侧那颗「管理控制台」跟着往外挪（实测 header 内 nav 右缘 362.5 → 367.2px）。 */
 html[data-skin="shadcn"] .brand-mark {
   background: var(--shadcn-primary);
   border: 1px solid var(--shadcn-primary);
   box-shadow: none;
-  letter-spacing: -0.02em;
   color: var(--shadcn-primary-fg);
 }
 

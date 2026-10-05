@@ -1538,6 +1538,9 @@ node scripts/ui-smoke.mjs
    只写 `.brand-mark span` 的话 `t` / `a` 会继承 styles.css 的 `color: #fff`——浅色（黑底）下正常，
    **深色（近白底 `#fafafa`）下两个字直接看不见**。改成 `.brand-mark { color: var(--shadcn-primary-fg) }`，
    `z` 用 `color: inherit` + `opacity: .6` 保持品牌彩的位置（两套主题自动对称）。
+   顺带**别碰这个方块的字距**：styles.css 给的是 `-2px`，皮肤里改成 `-0.02em` 会把方块撑宽 ~5px，
+   390px 下头部 nav 的右缘从 362.5px 推到 367.2px（右侧那颗「管理控制台」跟着往外挪）——皮肤只管
+   配色，不重量排版。
 3. **`*` 的兜底圆角会把圆点压成方块**：整片 `border-radius: var(--shadcn-radius) !important` 之后
    要逐类还原——圆形标记（`.node-dot` / `.live-label i` / `.overview .dot` / `.speed-icon` /
    `.carrier-dot` / `.chart-dot` / `.chip-remove` / `.modal-head button`）回 50%，延迟色带小格回 2px，
