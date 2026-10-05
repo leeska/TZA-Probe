@@ -1574,3 +1574,27 @@ node scripts/ui-smoke.mjs
   色板 `rgb(23,23,23)`、切换后 `data-skin` / `localStorage` / 按钮文字都对。
 - 后台与登录页各拍一次（浅色 / 深色）：侧栏选中项是「浅灰底 + 左侧 2px 主色标」，
   `+ 添加节点` 黑底白字，表格无白底白字 / 黑底黑字。
+
+### 2026-10-05 追加：把 `route-nowrap-check` 扩到三张皮肤，顺手修掉印刷皮肤的一处字体栈缺陷
+
+给 `scripts/route-nowrap-check.mjs` 加上 `TZA_SKIN` / `TZA_THEME` / `TZA_VIEW` 之后（同一份语料、
+同一台真浏览器），三张皮肤跑出来并不一致：
+
+- `glass`：21 格全 30px 高，最宽的值「10099 → 9929」74.4px，格内容需 89.4px / 可用 93px，折行 0。
+- `press`：**格高混合 43px / 30px，21 格里折了 15 格**；最宽的值 85.8px（比玻璃宽 11.4px），
+  连只有 3 个字母的「CTG」都被挤到第二行。
+- `shadcn`：与 `glass` 逐位一致（30px / 74.4px / 89.4px）。
+
+成因是 `--press-body` 的字体栈：原值 `Inter, "Noto Sans SC", system-ui, -apple-system, …` 在**装了
+Noto Sans SC 的机器**上先落到 Noto Sans SC（本机为了截图装了 `fonts-noto-cjk`，`system-ui` 在 Linux
+Chromium 上也指向它），这套字体的 11px 数字比玻璃皮肤落到的字体宽 11.4px——正好吃掉回程格只有
+3.6px 的余量。macOS 上没有 Noto Sans SC 时它会继续落到 system-ui（= SF Pro），所以此前没暴露。
+
+改法：把 `--press-body` 与默认皮肤对齐成 `-apple-system, BlinkMacSystemFont, Inter, "Segoe UI",
+"PingFang SC", "Hiragino Sans GB", sans-serif`，不再列 CJK 字体（玻璃皮肤本来也不列，中文靠浏览器
+逐字回退，实测无豆腐块）。`--shadcn-font` 同样把 `Inter` 收到 `-apple-system` / `BlinkMacSystemFont`
+之后：面板里最紧的一行是回程格，字体的取舍要让路，`Inter` 只在系统 UI 字体都取不到时才生效。
+
+验证：三张皮肤各跑一遍 `route-nowrap-check`（390px）→ 全部「折行 0、非居中 0」，最紧的一格
+`glass` 89.4/93（余 3.6px）、`press` 89.4/92（余 2.6px）、`shadcn` 89.4/93（余 3.6px）；逐格量高度
+三张都是 30px；真浏览器截图里印刷皮肤的中文正常、三格回程各占一行。

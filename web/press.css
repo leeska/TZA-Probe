@@ -47,7 +47,13 @@
   --press-hover: #ead8ba;
   --press-shadow: #15120f;
   --press-heading: "Noto Serif SC", "Songti SC", "SimSun", Georgia, serif;
-  --press-body: Inter, "Noto Sans SC", system-ui, -apple-system, "PingFang SC", sans-serif;
+  /* 字体栈与默认玻璃皮肤对齐（-apple-system / BlinkMacSystemFont / Segoe UI 之后直接落 sans-serif）：
+     原先写的是 `Inter, "Noto Sans SC", system-ui, …`，在装了 Noto Sans SC 的机器上（Linux 装了
+     fonts-noto-cjk、部分 Android）11px 的数字比玻璃皮肤宽 11.4px，390px 下回程格「10099 → 9929」
+     需要 85.8px 而格子只有 92px —— 连「CTG」都被挤成两行（实测 21 格折 15 格）。中文没有这条也不会
+     变成豆腐块：玻璃皮肤同样不列 CJK 字体，靠浏览器逐字回退。 */
+  --press-body: -apple-system, BlinkMacSystemFont, Inter, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", sans-serif;
   --press-mono: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
 }
 
