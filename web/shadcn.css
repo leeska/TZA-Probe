@@ -1,0 +1,562 @@
+/* ==========================================================================
+   TZA Probe · 现代极简（shadcn/ui）皮肤
+
+   第四张样式表，只在 <html data-skin="shadcn"> 时生效（选择器一律带 data-skin 前缀，
+   默认的液态玻璃皮肤一个字节都不受影响）。视觉语言取自 shadcn/ui 的 Neutral 主题
+   （ui.shadcn.com/themes，令牌源 https://ui.shadcn.com/r/themes/neutral.json）：
+   纯白 / 纯黑的中性面、1px 发丝描边、8px 圆角尺度、几乎没有阴影、无模糊无渐变，
+   次要文字走 muted-foreground，主按钮是近黑实底（深色下翻成近白）。
+   明暗仍走 data-theme，所以这是「同一套中性语言」的浅色与深色两份令牌。
+
+   规则顺序：令牌 → 底色 → 材质（关模糊 / 圆角尺度）→ 面 → 控件 → 排版 → 图表 → 弹层。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 令牌：shadcn Neutral（浅色 0 0% 100% / 深色 0 0% 3.9%）+ 面板自己的语义轴
+   -------------------------------------------------------------------------- */
+:root[data-skin="shadcn"] {
+  /* shadcn 原生的那一组（HSL 三值换算成 hex，注释里标出原始值） */
+  --shadcn-bg: #ffffff;          /* background        0 0% 100% */
+  --shadcn-card: #ffffff;        /* card / popover    0 0% 100% */
+  --shadcn-fg: #0a0a0a;          /* foreground        0 0% 3.9% */
+  --shadcn-muted: #f5f5f5;       /* muted / secondary 0 0% 96.1% */
+  --shadcn-muted-fg: #737373;    /* muted-foreground  0 0% 45.1% */
+  --shadcn-primary: #171717;     /* primary           0 0% 9% */
+  --shadcn-primary-fg: #fafafa;  /* primary-foreground 0 0% 98% */
+  --shadcn-border: #e5e5e5;      /* border / input    0 0% 89.8% */
+  --shadcn-ring: #0a0a0a;        /* ring              0 0% 3.9% */
+  --shadcn-hover: #f5f5f5;
+  --shadcn-hover-primary: #2e2e2e;
+  --shadcn-ring-soft: rgba(10, 10, 10, 0.1);
+
+  /* shadcn 的圆角尺度（--radius: 0.5rem，sm/md/lg/xl 依次 4/6/8/12px） */
+  --shadcn-r-sm: 4px;
+  --shadcn-r-md: 6px;
+  --shadcn-r-lg: 8px;
+  --shadcn-r-xl: 12px;
+  --shadcn-radius: var(--shadcn-r-lg);
+
+  --shadcn-font: Inter, "Inter var", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --shadcn-mono: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+
+  --shadcn-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadcn-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadcn-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+
+  /* 面板自己的公共令牌：styles.css / glass.css 都读这一套，换掉它整站跟着换。 */
+  --ink: var(--shadcn-fg);
+  --muted: var(--shadcn-muted-fg);
+  --subtle: #a3a3a3;
+  --line: var(--shadcn-border);
+  --accent: var(--shadcn-primary);
+  --accent-rgb: 23, 23, 23;
+
+  /* 语义轴：shadcn 的 destructive 取红，其余按同一套中性语言配的 600 档色阶 */
+  --green: #16a34a;
+  --green-rgb: 22, 163, 74;
+  --orange: #f59e0b;
+  --orange-rgb: 245, 158, 11;
+  --red: #ef4444;
+  --red-rgb: 239, 68, 68;
+  --purple: #7c3aed;
+  --purple-rgb: 124, 58, 237;
+  --cyan: #0d9488;
+  --cyan-rgb: 13, 148, 136;
+  --indigo: #4f46e5;
+
+  --glass-bg: var(--shadcn-card);
+  --glass-bg-subtle: var(--shadcn-muted);
+  --glass-bg-elevated: var(--shadcn-card);
+  --glass-border: var(--shadcn-border);
+  --glass-border-subtle: #ececec;
+  /* glass.css 里很多面写成 `box-shadow: var(--glass-shadow), var(--glass-inner-rim)`，
+     而 `none` 不能作为阴影列表里的一项——那样整条声明会被判无效丢掉（不只是内描边没了，
+     连投影一起没）。所以这里给一个全透明的阴影，效果等同「没有内描边」，但复合写法仍合法。 */
+  --glass-inner-rim: 0 0 #0000;
+  --glass-shadow: var(--shadcn-shadow-xs);
+  --glass-shadow-lg: var(--shadcn-shadow-md);
+  --blur: none;
+  --progress-track: var(--shadcn-muted);
+}
+
+:root[data-skin="shadcn"][data-theme="dark"] {
+  --shadcn-bg: #0a0a0a;          /* background        0 0% 3.9% */
+  --shadcn-card: #0a0a0a;        /* card              0 0% 3.9% */
+  --shadcn-elevated: #171717;
+  --shadcn-fg: #fafafa;          /* foreground        0 0% 98% */
+  --shadcn-muted: #262626;       /* muted / secondary 0 0% 14.9% */
+  --shadcn-muted-fg: #a3a3a3;    /* muted-foreground  0 0% 63.9% */
+  --shadcn-primary: #fafafa;     /* primary           0 0% 98% */
+  --shadcn-primary-fg: #171717;  /* primary-foreground 0 0% 9% */
+  --shadcn-border: #262626;      /* border / input    0 0% 14.9% */
+  --shadcn-ring: #d4d4d4;        /* ring              0 0% 83.1% */
+  --shadcn-hover: #262626;
+  --shadcn-hover-primary: #e5e5e5;
+  --shadcn-ring-soft: rgba(212, 212, 212, 0.18);
+
+  --shadcn-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadcn-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.6), 0 1px 2px -1px rgb(0 0 0 / 0.5);
+  --shadcn-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.6), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+
+  --subtle: #737373;
+  --glass-bg-elevated: var(--shadcn-elevated);
+  --glass-border-subtle: #262626;
+
+  /* 深色下语义色要往上提一档才读得清（红仍是 shadcn destructive 的亮色版） */
+  --green: #4ade80;
+  --green-rgb: 74, 222, 128;
+  --orange: #fbbf24;
+  --orange-rgb: 251, 191, 36;
+  --red: #f87171;
+  --red-rgb: 248, 113, 113;
+  --purple: #a78bfa;
+  --purple-rgb: 167, 139, 250;
+  --cyan: #2dd4bf;
+  --cyan-rgb: 45, 212, 191;
+  --indigo: #818cf8;
+}
+
+/* --------------------------------------------------------------------------
+   2. 底色：纯色面，没有玻璃皮肤那四团彩色光斑
+   -------------------------------------------------------------------------- */
+html[data-skin="shadcn"] body {
+  background: var(--shadcn-bg);
+  font-family: var(--shadcn-font);
+}
+
+/* 光斑画在 body::before 上（fixed inset -15% 的四团径向渐变 + 一层线性底），极简面不画。 */
+html[data-skin="shadcn"] body::before {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   3. 材质：没有毛玻璃；圆角回到 shadcn 的 8px 尺度
+   -------------------------------------------------------------------------- */
+
+/* 模糊整片关掉（玻璃皮肤有 15 处 backdrop-filter，逐个覆盖只会漏）。
+   字面量 !important 是有意的：这是皮肤的定义性声明，不是临时补丁。 */
+html[data-skin="shadcn"] *,
+html[data-skin="shadcn"] *::before,
+html[data-skin="shadcn"] *::after,
+html[data-skin="shadcn"] *::backdrop {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* 统一到 --radius（玻璃皮肤的面是 20-28px 的大圆角）。含 .node-grid.node-list .node-card
+   这类三权重的规则，所以只能 !important；随后按 shadcn 的尺度逐级还原，
+   再单独把真正的圆形标记放回去。 */
+html[data-skin="shadcn"] * {
+  border-radius: var(--shadcn-radius) !important;
+}
+
+/* 圆形标记：状态点 / 方向图标 / 运营商点 / 图表光标点 / 圆形按钮。 */
+html[data-skin="shadcn"] :is(.node-dot, .live-label i, .overview .dot, .speed-icon, .carrier-dot, .chart-dot, .chip-remove, .modal-head button) {
+  border-radius: 50% !important;
+}
+
+/* 圆角尺度：面 12px、容器 8px、控件与胶囊 6px、菜单项 4px。 */
+html[data-skin="shadcn"] :is(.node-card, .panel, dialog, .login-panel form, .overview-tile, .hero-meta, .catalog-picker, .webhook-panel, .admin-stats > div, .detail-stats > div) {
+  border-radius: var(--shadcn-r-xl) !important;
+}
+
+html[data-skin="shadcn"] :is(.public-header, .sidebar, .admin-top, .toolbar, .notice, .chart, .brand-mark, .node-grid.node-list .node-card) {
+  border-radius: var(--shadcn-r-lg) !important;
+}
+
+html[data-skin="shadcn"] :is(.button, button.primary, button.danger, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle, .skin-toggle, input:not([type="checkbox"]):not([type="radio"]), select, textarea, .select-trigger, .search input, .pill, .expiry-pill, .family-tag, .chip-family, .os-tag, .arch-tag, .target-chip, .tile-badge, .route-label, .speed-icon, .skin-swatch, .progress) {
+  border-radius: var(--shadcn-r-md) !important;
+}
+
+html[data-skin="shadcn"] :is(.select-pop, .skin-menu, details[open], .unlock-pop, .select-opt, .skin-option, #toast) {
+  border-radius: var(--shadcn-r-lg) !important;
+}
+
+html[data-skin="shadcn"] :is(.select-opt, .skin-option) {
+  border-radius: var(--shadcn-r-sm) !important;
+}
+
+/* 皮肤选择器里的三格色样是拼在一起的一条，格子本身不能圆。 */
+html[data-skin="shadcn"] .skin-swatch i {
+  border-radius: 0 !important;
+}
+
+/* 延迟色带的小格子与进度条：前者保持小数点级的方角，后者是 shadcn 的整圆进度条。 */
+html[data-skin="shadcn"] .quality-bar {
+  border-radius: 2px !important;
+}
+
+html[data-skin="shadcn"] :is(.metric progress, .progress) {
+  border-radius: 9999px !important;
+}
+
+/* --------------------------------------------------------------------------
+   4. 面：白纸 + 1px 发丝描边 + 极浅投影（面本身的底色与描边都由令牌带出来）
+   -------------------------------------------------------------------------- */
+/* glass.css 的悬停是「白描边 + 大投影」，中性面上白描边等于看不见，改成描边不动、投影加深。 */
+html[data-skin="shadcn"] .node-card:hover {
+  border-color: var(--shadcn-border);
+  box-shadow: var(--shadcn-shadow-sm);
+}
+
+html[data-skin="shadcn"] .overview-tile:hover {
+  border-color: var(--shadcn-border);
+  box-shadow: var(--shadcn-shadow-sm);
+}
+
+/* 品牌方块：玻璃版是蓝紫渐变药丸，极简版是一枚「主色实底」的方章。
+   字色必须落在 .brand-mark 自己身上 —— 标记里是 `t<span>z</span>a`，只写 .brand-mark span
+   的话 t / a 两个字会继承 styles.css 的 #fff，在深色（近白底）下直接看不见。 */
+html[data-skin="shadcn"] .brand-mark {
+  background: var(--shadcn-primary);
+  border: 1px solid var(--shadcn-primary);
+  box-shadow: none;
+  letter-spacing: -0.02em;
+  color: var(--shadcn-primary-fg);
+}
+
+/* 「z」在玻璃皮肤里是一点品牌彩；中性面里退成同色系的暗调（用不透明白，
+   两套主题自动对称：浅色是白字的 60%，深色是黑字的 60%）。 */
+html[data-skin="shadcn"] .brand-mark span {
+  color: inherit;
+  opacity: 0.6;
+}
+
+/* 状态点的发光环与脉冲（玻璃皮肤的 radar-pulse）在中性面上是噪声，去掉。 */
+html[data-skin="shadcn"] :is(.live-label i, .node-dot, .overview .dot) {
+  box-shadow: none;
+}
+
+html[data-skin="shadcn"] :is(.live-label i, .node-dot, .overview .dot)::after {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   5. 控件：白底发丝描边的小按钮，主按钮近黑实底（shadcn 的 default / primary）
+   -------------------------------------------------------------------------- */
+html[data-skin="shadcn"] :is(.button, button.primary, button.danger, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle, .skin-toggle) {
+  border: 1px solid var(--glass-border);
+  background: var(--shadcn-card);
+  box-shadow: var(--shadcn-shadow-xs);
+  font-family: var(--shadcn-font);
+  font-weight: 500;
+}
+
+html[data-skin="shadcn"] :is(.button, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle, .skin-toggle):not(:disabled):hover {
+  background: var(--shadcn-hover);
+  box-shadow: var(--shadcn-shadow-xs);
+}
+
+/* 主按钮：近黑实底 + 近白字（深色下自动翻成近白底 + 近黑字），没有任何渐变与光晕。 */
+html[data-skin="shadcn"] button.primary,
+html[data-skin="shadcn"] .primary {
+  background: var(--shadcn-primary) !important;
+  border-color: var(--shadcn-primary) !important;
+  color: var(--shadcn-primary-fg) !important;
+  box-shadow: none !important;
+}
+
+html[data-skin="shadcn"] button.primary:not(:disabled):hover,
+html[data-skin="shadcn"] .primary:not(:disabled):hover {
+  background: var(--shadcn-hover-primary) !important;
+  box-shadow: none !important;
+}
+
+html[data-skin="shadcn"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .select-trigger, .search input) {
+  border: 1px solid var(--glass-border);
+  background: var(--shadcn-card);
+  box-shadow: var(--shadcn-shadow-xs);
+  font-family: var(--shadcn-font);
+}
+
+/* 焦点：shadcn 的 ring —— 描边换成 ring 色，外面套一圈 2px 的软环，不用 outline。 */
+html[data-skin="shadcn"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .select-trigger, .search input):focus,
+html[data-skin="shadcn"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .select-trigger, .search input):focus-visible,
+html[data-skin="shadcn"] .search:focus-within {
+  border-color: var(--shadcn-ring);
+  box-shadow: 0 0 0 2px var(--shadcn-ring-soft);
+  outline: none;
+}
+
+html[data-skin="shadcn"] input[type="checkbox"],
+html[data-skin="shadcn"] input[type="radio"] {
+  accent-color: var(--shadcn-primary);
+}
+
+/* 分段控件：shadcn 的 Tabs —— 槽底是 muted 面、无描边，选中那半是「白底 + 细描边 + 极浅投影」
+   的小方片（不是玻璃皮肤的亮片，也不是印刷皮肤的实心章）。 */
+html[data-skin="shadcn"] .segmented {
+  border: 1px solid var(--glass-border-subtle);
+  background: var(--shadcn-muted);
+  box-shadow: none;
+  padding: 3px;
+  gap: 2px;
+}
+
+html[data-skin="shadcn"] .segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+html[data-skin="shadcn"] .segmented button.active {
+  background: var(--shadcn-card);
+  color: var(--ink);
+  box-shadow: var(--shadcn-shadow-xs);
+}
+
+html[data-skin="shadcn"] .segmented button:active {
+  transform: none;
+}
+
+/* 胶囊 / 小标签：shadcn 的 secondary Badge —— muted 底、发丝描边、次要文字色。 */
+html[data-skin="shadcn"] :is(.pill, .expiry-pill, .chip-family, .family-tag, .os-tag, .arch-tag, .target-chip, .tile-badge) {
+  border: 1px solid var(--glass-border);
+  background: var(--shadcn-muted);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+html[data-skin="shadcn"] .pill.good,
+html[data-skin="shadcn"] .expiry-pill {
+  border-color: rgba(var(--green-rgb), 0.35);
+  background: rgba(var(--green-rgb), 0.1);
+  color: var(--green);
+}
+
+html[data-skin="shadcn"] .pill.warn,
+html[data-skin="shadcn"] .expiry-pill.warning {
+  border-color: rgba(var(--orange-rgb), 0.4);
+  background: rgba(var(--orange-rgb), 0.12);
+  color: var(--orange);
+}
+
+html[data-skin="shadcn"] .chip-family.on {
+  background: var(--shadcn-primary);
+  border-color: var(--shadcn-primary);
+  color: var(--shadcn-primary-fg);
+}
+
+/* --------------------------------------------------------------------------
+   6. 排版：一套无衬线（不再有印刷皮肤的衬线标题），标题收紧字距、副标题走 muted
+   -------------------------------------------------------------------------- */
+html[data-skin="shadcn"] :is(h1, h2, h3, .hero h1, .login-story h1, .login-panel h2, .panel-head h3, .node-name, .overview-tile strong, .hero-meta strong, .page-heading h1) {
+  font-family: var(--shadcn-font);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+html[data-skin="shadcn"] :is(.eyebrow, .sidebar-caption) {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+/* 标题里那道三色渐变字（玻璃皮肤的招牌）在中性面上是唯一的彩色噪声，压回前景色。 */
+html[data-skin="shadcn"] :is(.hero h1 span, .login-story h1 span) {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--ink);
+}
+
+/* 节点名的悬停：玻璃皮肤是变蓝，而中性面里 --accent 就是前景色（变与不变看不出），
+   改成 shadcn 链接那种下划线，hover 才有反馈。 */
+html[data-skin="shadcn"] .node-name:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+html[data-skin="shadcn"] .page-heading h1 span {
+  background: var(--shadcn-muted) !important;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted) !important;
+  font-weight: 500 !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. 数据可视化：平色条形 + 细网格
+   -------------------------------------------------------------------------- */
+html[data-skin="shadcn"] :is(.metric progress, .progress) {
+  border: 0;
+  background: var(--progress-track);
+  box-shadow: none;
+}
+
+/* 注意：::-webkit-progress-value 与 ::-moz-progress-bar **必须分成两条规则**。
+   Chrome 把 ::-moz-progress-bar 当成未知伪元素，若与 webkit 那条写在同一个选择器列表里，
+   整条规则会被判无效丢弃。 */
+html[data-skin="shadcn"] .metric progress::-webkit-progress-value {
+  border-radius: 9999px;
+  box-shadow: none;
+}
+
+html[data-skin="shadcn"] .metric progress::-moz-progress-bar {
+  border-radius: 9999px;
+  box-shadow: none;
+}
+
+html[data-skin="shadcn"] .metrics-grid .metric:nth-child(1) progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+html[data-skin="shadcn"] .metrics-grid .metric:nth-child(1) progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+html[data-skin="shadcn"] .metrics-grid .metric:nth-child(2) progress::-webkit-progress-value {
+  background: var(--purple);
+}
+
+html[data-skin="shadcn"] .metrics-grid .metric:nth-child(2) progress::-moz-progress-bar {
+  background: var(--purple);
+}
+
+html[data-skin="shadcn"] .metrics-grid .metric:nth-child(3) progress::-webkit-progress-value {
+  background: var(--orange);
+}
+
+html[data-skin="shadcn"] .metrics-grid .metric:nth-child(3) progress::-moz-progress-bar {
+  background: var(--orange);
+}
+
+html[data-skin="shadcn"] .metrics-grid .metric:nth-child(4) progress::-webkit-progress-value {
+  background: var(--cyan);
+}
+
+html[data-skin="shadcn"] .metrics-grid .metric:nth-child(4) progress::-moz-progress-bar {
+  background: var(--cyan);
+}
+
+html[data-skin="shadcn"] .chart {
+  border: 1px solid var(--glass-border);
+  background: var(--shadcn-card);
+  box-shadow: var(--shadcn-shadow-xs);
+}
+
+html[data-skin="shadcn"] :is(.chart-grid, .chart text, .chart-axis span) {
+  color: var(--muted);
+}
+
+/* 回程芯片：白底发丝框，玻璃版那圈 inset 高光去掉。 */
+html[data-skin="shadcn"] .route-label {
+  border: 1px solid var(--glass-border-subtle);
+  background: var(--shadcn-muted);
+  box-shadow: none;
+}
+
+html[data-skin="shadcn"] .route-label:hover {
+  background: var(--shadcn-card);
+  border-color: var(--glass-border);
+  box-shadow: var(--shadcn-shadow-xs);
+}
+
+/* --------------------------------------------------------------------------
+   8. 悬停与按下：中性面不做位移（没有任何一块需要重新合成），反馈只走底色与描边
+   -------------------------------------------------------------------------- */
+html[data-skin="shadcn"] :is(.node-card, .overview-tile, .button, .theme-toggle, .skin-toggle, .route-label) {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+html[data-skin="shadcn"] .node-grid:not(.node-list) .node-card:hover,
+html[data-skin="shadcn"] :is(.overview-tile, .button, .theme-toggle, .skin-toggle, button):hover,
+html[data-skin="shadcn"] :is(.overview-tile, .button, .theme-toggle, .skin-toggle, button):active {
+  transform: none;
+}
+
+html[data-skin="shadcn"] .node-grid.node-list .node-card:hover {
+  transform: none;
+}
+
+/* 侧栏：选中项是 muted 底 + 左侧一条 2px 主色标（shadcn 侧栏的 accent 标），不是玻璃皮肤的蓝色实心块。 */
+html[data-skin="shadcn"] .sidebar nav button:hover {
+  background: var(--shadcn-hover) !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+html[data-skin="shadcn"] .sidebar nav button.active {
+  background: var(--shadcn-muted) !important;
+  color: var(--ink) !important;
+  box-shadow: inset 2px 0 0 0 var(--shadcn-primary) !important;
+  transform: none !important;
+}
+
+html[data-skin="shadcn"] .sidebar nav button:hover .nav-icon,
+html[data-skin="shadcn"] .sidebar nav button.active .nav-icon {
+  color: var(--ink);
+  stroke: var(--ink);
+}
+
+/* 列表行整行高亮用 muted 面。 */
+html[data-skin="shadcn"] .node-grid.node-list .net-line:hover,
+html[data-skin="shadcn"] .node-grid.node-list .speed-line:hover {
+  background: var(--shadcn-hover);
+}
+
+/* --------------------------------------------------------------------------
+   9. 弹层：下拉、皮肤菜单、通知与遮罩
+   -------------------------------------------------------------------------- */
+html[data-skin="shadcn"] :is(.select-shell.open .select-trigger, .select-trigger) {
+  border: 1px solid var(--glass-border);
+  background: var(--shadcn-card);
+  box-shadow: none;
+}
+
+html[data-skin="shadcn"] :is(.select-pop, .skin-menu, details[open], .unlock-pop) {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  box-shadow: var(--shadcn-shadow-md);
+}
+
+html[data-skin="shadcn"] :is(.select-opt:hover, .skin-option:hover) {
+  background: var(--shadcn-hover);
+}
+
+html[data-skin="shadcn"] .select-opt.selected {
+  background: var(--shadcn-muted);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+html[data-skin="shadcn"] .skin-option.on {
+  background: var(--shadcn-muted);
+  box-shadow: inset 0 0 0 1px var(--shadcn-primary);
+}
+
+/* 遮罩：shadcn 的 dialog overlay 是 80% 黑。 */
+html[data-skin="shadcn"] dialog::backdrop {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+html[data-skin="shadcn"] #toast {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--shadcn-r-lg) !important;
+  background: var(--glass-bg-elevated);
+  color: var(--ink);
+  box-shadow: var(--shadcn-shadow-md);
+  font-family: var(--shadcn-font);
+  font-weight: 500;
+}
+
+html[data-skin="shadcn"] :is(.modal-head .close:hover, .chip-remove:hover) {
+  background: var(--shadcn-hover);
+  color: var(--ink);
+}
+
+html[data-skin="shadcn"] ::-webkit-scrollbar-thumb {
+  background: rgba(10, 10, 10, 0.25);
+  border-radius: 9999px !important;
+}
+
+html[data-skin="shadcn"][data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(250, 250, 250, 0.25);
+}

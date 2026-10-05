@@ -2506,6 +2506,9 @@ pre,
 [data-swatch="press"] i:nth-child(1) { background: #f8f1df; }
 [data-swatch="press"] i:nth-child(2) { background: #fffaf0; }
 [data-swatch="press"] i:nth-child(3) { background: #b72f24; }
+[data-swatch="shadcn"] i:nth-child(1) { background: #f5f5f5; }
+[data-swatch="shadcn"] i:nth-child(2) { background: #ffffff; }
+[data-swatch="shadcn"] i:nth-child(3) { background: #171717; }
 
 .skin-copy {
   display: flex;

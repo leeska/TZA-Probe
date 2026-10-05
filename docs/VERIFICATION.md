@@ -1504,3 +1504,70 @@ node scripts/ui-smoke.mjs
 地址族 89×30、两半各 42.5 宽 26 高（= 内高）、墨线 `50% 50%` + `2px 100%`；工具条 116.03×38、
 两半各 56.02×34（= 内高）。线上复测（切换前后全元素对账）：身份区 / 开关 / 标签无一处位移，
 只有回程格与延迟条的内容随协议族换掉（预期）。
+
+## 2026-10-05 外观风格（皮肤）：现代极简（shadcn/ui）
+
+用户丢来 `https://ui.shadcn.com/`，要求「TZA探针用这个再加一个主题」。外观是两条正交的轴——明暗走
+`<html data-theme>`、视觉语言走 `<html data-skin>`——所以这是一张**新皮肤**，与 `glass`（默认）/
+`press` 并列的第三套视觉语言，而不是第三档明暗。
+
+- **令牌取自 shadcn 的 Neutral 主题**（页面上的主题选择器对应 registry
+  `https://ui.shadcn.com/r/themes/neutral.json`，HSL 三值换算成 hex）：浅色
+  `background 0 0% 100%`(#ffffff) / `foreground 0 0% 3.9%`(#0a0a0a) / `primary 0 0% 9%`(#171717) /
+  `muted 0 0% 96.1%`(#f5f5f5) / `muted-foreground 0 0% 45.1%`(#737373) / `border 0 0% 89.8%`(#e5e5e5)；
+  深色 `background 0 0% 3.9%`(#0a0a0a) / `foreground 0 0% 98%`(#fafafa) / `primary 0 0% 98%` /
+  `muted 0 0% 14.9%`(#262626) / `border 0 0% 14.9%`。圆角按 shadcn 的 `--radius: 0.5rem` 分档
+  （4 / 6 / 8 / 12px）。语义轴（成功 / 告警 / 危险 / 图表）取 destructive 红与同一族的 600 档色阶，
+  深色下整体上提一档才读得清。
+- **`web/shadcn.css` 是第四张样式表**，每条选择器都带 `html[data-skin="shadcn"]` / `:root[data-skin="shadcn"]`
+  前缀（默认玻璃皮肤一个字节都不受影响）。结构照 press：令牌 → 底色 → 材质 → 面 → 控件 → 排版 →
+  图表 → 弹层。定义性的三条是「关掉全部 `backdrop-filter`」「圆角统一到 `--shadcn-radius`」
+  「中性面不做悬停位移」。
+- 配套改动：`skins.js` 的 `SKINS` 加一项（`shadcn` / 现代极简 / 中性灰 · 发丝描边 · 小圆角）、
+  `skinChrome()` 加一组地址栏底色（`#ffffff` / `#0a0a0a`）、`theme-boot.js` 的皮肤白名单加 `shadcn`、
+  `index.html` 挂上第四张样式表、`styles.css` 加 `[data-swatch="shadcn"]` 的三格色板。
+
+### 三个踩过的坑（都会让整条规则被静默丢弃）
+
+1. **`--glass-inner-rim: none` 会让复合阴影整条失效**：glass.css 里很多面写成
+   `box-shadow: var(--glass-shadow), var(--glass-inner-rim)`，展开成 `…, none` 时按 CSS 语法
+   `none` 不能作为阴影列表的一项（`<shadow># | none`），**整条声明被判无效**——不只是内描边没了，
+   连投影一起没。press 皮肤恰好把这些面都重写了一遍才没露出来；这里给一个全透明阴影
+   `0 0 #0000`，效果等同、复合写法仍然合法。ui-smoke 新增一条断言钉住它。
+2. **品牌标记的字色必须写在元素自己身上**：标记的 HTML 是 `t<span>z</span>a`，
+   只写 `.brand-mark span` 的话 `t` / `a` 会继承 styles.css 的 `color: #fff`——浅色（黑底）下正常，
+   **深色（近白底 `#fafafa`）下两个字直接看不见**。改成 `.brand-mark { color: var(--shadcn-primary-fg) }`，
+   `z` 用 `color: inherit` + `opacity: .6` 保持品牌彩的位置（两套主题自动对称）。
+3. **`*` 的兜底圆角会把圆点压成方块**：整片 `border-radius: var(--shadcn-radius) !important` 之后
+   要逐类还原——圆形标记（`.node-dot` / `.live-label i` / `.overview .dot` / `.speed-icon` /
+   `.carrier-dot` / `.chart-dot` / `.chip-remove` / `.modal-head button`）回 50%，延迟色带小格回 2px，
+   `progress` 回整圆，皮肤选择器里那三格色样回 0（它们拼成一条色板，圆了就是三颗胶囊）。
+   另外 `::-webkit-progress-value` 与 `::-moz-progress-bar` 照旧**必须分成两条规则**。
+
+### 验证
+
+- `gofmt -l . && go vet ./... && go test ./...` 全绿；`bash /root/work/tza-ui-regression.sh` →
+  `PRESENTATION_OK` / `UI_SMOKE_OK`。
+- ui-smoke 的皮肤段扩到三张：菜单里 `["glass","press","shadcn"]`、点「现代极简」要落到
+  `data-skin` + `localStorage` + 按钮文字、切回默认要清键。原来只对 press.css 生效的两条皮肤表契约
+  （「每条选择器都要带自己的 `data-skin` 前缀」「webkit / moz 进度条伪元素分两条规则」）抽成
+  `assertSkinSheet(rules, id)`，press 与 shadcn 两张表一起过。**控制组**：往 shadcn.css 里塞一条
+  `body { color: red }`（故意漏前缀）重跑 ui-smoke → 断言确实失败（`assertSkinSheet` 抛错），删掉即绿。
+- 真浏览器（chromium + 线上库副本、时间整体前移，`/root/work/tza-skin-compare.mjs`）逐组合对账，
+  同一份数据下 glass → shadcn：
+  - `backdrop-filter` 命中元素 **45 → 0**，渐变 / 图片背景 **27 → 0**（玻璃皮肤的四团光斑与三处渐变
+    全部关掉），行内 `scrollWidth > clientWidth` 的元素 **20 → 0**（玻璃那 20 个是状态点 `::after`
+    脉冲环撑出来的，中性面不要脉冲环）。
+  - 版面不变：卡片视图 18 张卡高 520.8 → 522.8px（本机字体回退差异，macOS 上两者都落 `-apple-system`，
+    实测线上无感），列表视图每行仍 146px、第三行 182px。
+  - 回程格（390px，最紧的一格）折行 0、非居中 0；「10099 → 9929」需要 89.4px、可用 93px（余 3.6px），
+    与玻璃皮肤逐位一致——`scripts/route-nowrap-check.mjs` 现在接受 `TZA_SKIN` / `TZA_THEME` / `TZA_VIEW`，
+    三张皮肤都能跑。
+  - 关键控件实测：body `rgb(255,255,255)` / 深色 `rgb(10,10,10)`；卡片底 `#ffffff`（深色 `#0a0a0a`）、
+    描边 `1px #e5e5e5`（深色 `#262626`）、圆角 12px、阴影 `0 1px 2px rgb(0 0 0 / .05)`；
+    分段控件槽 `#f5f5f5` + 选中片白底细描边；主按钮 `#171717` 底 + `#fafafa` 字（深色自动翻成
+    `#fafafa` 底 + `#171717` 字）；品牌方章同步翻；`#toast` 白底黑字（深色反转）。
+- 皮肤选择器（`/root/work/tza-skin-menu-shot.mjs`）真浏览器点开：三项齐全、当前项选中态、
+  色板 `rgb(23,23,23)`、切换后 `data-skin` / `localStorage` / 按钮文字都对。
+- 后台与登录页各拍一次（浅色 / 深色）：侧栏选中项是「浅灰底 + 左侧 2px 主色标」，
+  `+ 添加节点` 黑底白字，表格无白底白字 / 黑底黑字。

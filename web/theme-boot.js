@@ -13,5 +13,6 @@
   var dark = pref === "dark" || (pref !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
   var root = document.documentElement;
   root.dataset.theme = dark ? "dark" : "light";
-  root.dataset.skin = skin === "press" ? "press" : "glass";
+  // 与 skins.js 的 SKINS 同名清单：认不出来的值（含 null）退回默认皮肤。
+  root.dataset.skin = skin === "press" || skin === "shadcn" ? skin : "glass";
 })();

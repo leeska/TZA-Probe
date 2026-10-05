@@ -1,14 +1,15 @@
-// 外观风格（皮肤）：面板有两套视觉语言 —— 默认的「液态玻璃」与「复古印刷」。
+// 外观风格（皮肤）：面板有三套视觉语言 —— 默认的「液态玻璃」、「复古印刷」与「现代极简」。
 // 明暗（data-theme）仍由 theme.js 决定，风格（data-skin）由这里决定，两者正交：
 // 同一套皮肤在浅色与深色下各有一份令牌。偏好存 localStorage 的 tza-skin，
 // theme-boot.js 在样式表生效前已把 data-skin 写到 <html> 上，避免首屏闪一下默认皮肤。
 const KEY = "tza-skin";
 
-// swatch 的三格颜色写在 press/styles 里（CSP 的 style-src 'self' 会忽略行内 style），
+// swatch 的三格颜色写在 styles.css 里（CSP 的 style-src 'self' 会忽略行内 style），
 // 这里只给 data-swatch 的值，配色见 styles.css 的 .skin-swatch 一段。
 export const SKINS = [
   { id: "glass", name: "液态玻璃", hint: "毛玻璃 · 圆角 · 柔和阴影" },
   { id: "press", name: "复古印刷", hint: "纸张方格 · 硬边框 · 衬线标题" },
+  { id: "shadcn", name: "现代极简", hint: "中性灰 · 发丝描边 · 小圆角" },
 ];
 
 const IDS = SKINS.map((s) => s.id);
@@ -23,11 +24,13 @@ export function skinPreference() {
   return IDS.includes(v) ? v : DEFAULT;
 }
 
-// 浏览器地址栏 / 状态栏的底色：玻璃是冷白，印刷是纸色。
+// 浏览器地址栏 / 状态栏的底色：玻璃是冷白，印刷是纸色，极简是纯白 / 纯黑。
+const CHROME = {
+  press: { light: "#f8f1df", dark: "#15120f" },
+  shadcn: { light: "#ffffff", dark: "#0a0a0a" },
+};
 export function skinChrome() {
-  return skinPreference() === "press"
-    ? { light: "#f8f1df", dark: "#15120f" }
-    : { light: "#edf2fb", dark: "#0f141c" };
+  return CHROME[skinPreference()] || { light: "#edf2fb", dark: "#0f141c" };
 }
 
 // 与 theme.js 各管一半：这里只管 data-skin、按钮文字与 meta 底色，明暗由 applyTheme 负责。
