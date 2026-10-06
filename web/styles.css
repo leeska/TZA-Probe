@@ -844,7 +844,7 @@ button.node-name:hover {
 }
 
 /* 两条色带各占一半、各自落在上面那一列的正下方（第 2 / 第 3 列），每条 10 格；列表里那条也是
-   10 格（两个视图共用 app.js 的 BAR_COUNT），只是列表的条固定 120px、格子因此更小。 */
+   10 格（两个视图共用 app.js 的 BAR_COUNT），只是列表那条会吃满格子剩余宽度、格子因此更大。 */
 .net-band .band-bars .quality-bars {
   grid-column: 2;
   height: 8px;
@@ -2884,7 +2884,7 @@ pre,
 }
 
 /* 数值与丢包各占固定宽度并右对齐：四行（含「未检测」那行）的数字因此排成一列，
-   色带固定 120px 且右对齐，四行右端自然对齐。 */
+   色带吃满剩余空间、右端贴齐格子右边界，四行自然对齐。 */
 .node-grid.node-list .net-line strong {
   flex: 0 0 46px;
   font-size: 12px;
@@ -2936,7 +2936,7 @@ pre,
   border-radius: 2px;
 }
 
-/* 没有探测数据的那行（例如「其他」）也要看得见整整一条 120px 的轨道，
+/* 没有探测数据的那行（例如「其他」）也要看得见整整一条轨道（与有数据的那几行同宽），
    否则四行里少一行会显得色带没对齐。 */
 .node-grid.node-list .net-line .quality-bar.idle {
   background: var(--line);

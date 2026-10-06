@@ -708,7 +708,7 @@ function latencyLines(n, f) {
 // 行首和列表的延迟行一样是官方标志，名字留在 aria-label / data-focus-carrier 里。
 //
 // 格数两个视图共用一个值：列表原来画 20 格、卡片画 10 格，同一份数据在两个视图里格数不一样，
-// 用户点名统一到卡片的 10 格（列表那条 120px 宽，10 格比 20 格更接近卡片里格子的大小）。
+// 用户点名统一到卡片的 10 格（列表那条吃满格子剩余宽度，10 格比 20 格更接近卡片里格子的大小）。
 const BAR_COUNT = 10;
 const lossPercent = (s) => (s.sent ? Math.max(0, (s.sent - s.received) / s.sent * 100) : null);
 
