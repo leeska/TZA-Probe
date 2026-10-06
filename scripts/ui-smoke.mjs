@@ -826,11 +826,13 @@ assert.equal(
   assert(!/\.latency-label|\.latency-grid/.test(styles), "方形延迟格那套样式已经撤掉");
   assert(!/@container node-card/.test(styles), "卡片不再按自身宽度换布局");
   // 两条色带必须落在上面那一列的正下方：头部与色带共用同一套三列栅格，色带各自认领第 2 / 3 列。
-  // 少了 grid-column，第一条色带会掉进 30px 的运营商槽里（真浏览器里两条一长一短、和文字错开）。
+  // 少了 grid-column，第一条色带会掉进运营商槽里（真浏览器里两条一长一短、和文字错开）。
+  // 槽宽只给标志本身的 11px：30px 是「写运营商名」时代的宽度，换成标志后那段空白白挂在
+  // 标志与「延迟」之间（用户标红框点名「空得有点多」）。
   const head = styles.match(/\.net-band \.band-head,\s*\n\.net-band \.band-bars \{([^}]*)\}/);
   assert(
-    head && /grid-template-columns: 30px minmax\(0, 1fr\) minmax\(0, 1fr\)/.test(head[1]),
-    "延迟块的文字与色带要共用同一套三列栅格",
+    head && /grid-template-columns: 11px minmax\(0, 1fr\) minmax\(0, 1fr\)/.test(head[1]),
+    "延迟块的文字与色带要共用同一套三列栅格，且运营商槽只有标志的宽度（11px）",
   );
   assert(
     /\.net-band \.band-bars \.quality-bars \{[^}]*grid-column: 2/.test(styles),
@@ -1305,6 +1307,13 @@ for (const line of listRow.querySelectorAll(".net-cell .net-line")) {
     `列表里不写运营商名就得在 aria-label 里留着，实际「${line.getAttribute("aria-label")}」`,
   );
 }
+// 运营商槽只给标志的宽度：槽定宽是为了「其他」那种没有标志的行（退回 7px 灰点）仍与上下行
+// 对齐，但 30px 是「写运营商名」时代的宽度——名字换成 11px 标志后，标志与数值之间白挂着一
+// 大段空白（用户标红框点名「空得有点多」）。卡片那处槽宽在 .band-head 的栅格里，上面已断。
+assert(
+  /\.node-grid\.node-list \.net-line \.carrier-name \{[^}]*flex: 0 0 11px/.test(styles),
+  "列表里运营商槽只有标志的宽度（11px），别把写名字用的 30px 槽留给标志",
+);
 // 色带格数两个视图统一到 10 格（用户点名：列表看齐卡片）。列表原来画 20 格、卡片 10 格。
 assert(
   [...listRow.querySelectorAll(".net-cell .net-line .quality-bars")].every(

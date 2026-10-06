@@ -778,7 +778,7 @@ button.node-name:hover {
 }
 
 /* 卡片里的延迟块：一家运营商一块——上面一行是「延迟 / 丢包」的文字，下面两条并排的小色带
-   （各 10 格）。头部与色带用同一套三列栅格（运营商 30px + 两条等宽），所以数值正对着自己
+   （各 10 格）。头部与色带用同一套三列栅格（运营商槽 11px + 两条等宽），所以数值正对着自己
    上面那条色带。以前是「一格一家、延迟与丢包各一行数值加一条色带」，三格就是 174px。 */
 .latency-bands {
   display: flex;
@@ -802,10 +802,13 @@ button.node-name:hover {
   background: var(--glass-bg-subtle);
 }
 
+/* 运营商槽 = 标志本身的宽度（11px）：槽定宽是为了「其他」那种没有标志的行（退回 7px 灰点）
+   仍与上下行对齐，但槽不该比标志宽——留 30px 时标志后面挂着一大段空白（用户标红框点名）。
+   两条色带各自认领第 2 / 3 列，所以槽一改，文字与色带一起左移，仍然对齐。 */
 .net-band .band-head,
 .net-band .band-bars {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 11px minmax(0, 1fr) minmax(0, 1fr);
   gap: 2px 10px;
   align-items: center;
 }
@@ -2873,8 +2876,11 @@ pre,
   background: var(--glass-bg-subtle);
 }
 
+/* 运营商槽在列表里也定宽，但只给标志本身的 11px（原来是 30px，等于给运营商名留的位置——
+   名字换成标志后那段空白就白挂在标志和数值之间了，用户标红框点名）。定宽是为了「其他」
+   那种没有标志的行（退回 7px 灰点）仍与上下行对齐；延迟行与回程行共用这一条。 */
 .node-grid.node-list .net-line .carrier-name {
-  flex: 0 0 30px;
+  flex: 0 0 11px;
 }
 
 /* 数值与丢包各占固定宽度并右对齐：四行（含「未检测」那行）的数字因此排成一列，
