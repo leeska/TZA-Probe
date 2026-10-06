@@ -1383,16 +1383,17 @@ assert.equal(
   0,
   "列表视图不该再出现卡片里的宽方块",
 );
-// 网速行里图标与数值**挨着**（不再 space-between），网速格是定宽 100px：
-// 格子比内容宽时，把两者推到两端会在中间留一段空白（用户标红框「这里也是」）。
+// 网速行是「图标靠左、数值靠右」，而网速那格必须**定宽 96px**（不是 fr）：
+// 格子越宽，多出来的空白就越落在图标与数值之间（用户标红框「这里也是」，119px 时空 42px）。
+// 96px 是量出来的下限 94px 加 2px 余量——正好装下最长的速率串「12.3 MB/s」（53.7px）。
 // 两条都是纯排版，jsdom 不算布局，只能断言样式文本。
 assert(
-  !/\.node-grid\.node-list \.speed-line \{[^}]*justify-content: space-between/.test(styles),
-  "网速行的图标与数值要挨着，不许再推到两端",
+  /\.node-grid\.node-list \.speed-line \{[^}]*justify-content: space-between/.test(styles),
+  "网速行要图标靠左、数值靠右",
 );
 assert(
-  /--row-cols:[^;]*minmax\(100px, 100px\)/.test(styles),
-  "网速那格要定宽 100px（写成 minmax(100px,100px)）——给 fr 会被撑到 119px，中间又空出来",
+  /--row-cols:[^;]*minmax\(96px, 96px\)/.test(styles),
+  "网速那格要定宽 96px（写成 minmax(96px,96px)）——给 fr 会被撑到 119px，图标与数值之间又空 42px",
 );
 
 // 架构（Agent 报的 GOARCH）要标在系统标签下面；卡片视图不动，两边都出这个标签。
@@ -1416,7 +1417,7 @@ assert(
 );
 // 手机端：一行仍是六格表格，放不下就整块横向滚动，不能竖排成卡片（那就与卡片视图没区别了）。
 assert(
-  /@media \(max-width: 1300px\)[\s\S]*?\.node-grid\.node-list \{[^}]*overflow-x: auto/.test(styles),
+  /@media \(max-width: 1296px\)[\s\S]*?\.node-grid\.node-list \{[^}]*overflow-x: auto/.test(styles),
   "窄屏下列表要横向滚动",
 );
 assert(
