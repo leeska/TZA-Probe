@@ -2743,10 +2743,15 @@ pre,
   /* 六格宽度：主机 / 指标 / 网速 / 延迟 / 回程 / 计费。
      --row-min 是这六个 min 的和；窄到放不下时整块横向滚动（见文件末尾的媒体查询），
      所以改下面的 min 时要把 --row-min 一起改（ui-smoke 会断言两者相等）。 */
-  --row-min: 1100px;
+  --row-min: 1080px;
   --row-gap: 18px;
+  /* 网速那格是**定宽**的 100px（写成 minmax(100px, 100px)，不是 fr）：一行一个方向的窄条，
+     内容只有 8px 内边距 + 16px 图标 + 8px 间距 + 最长的速率串（bytes() 最长 9 个字符，
+     「99.9 KB/s」≈ 57px）≈ 89px，再宽就只会把空白留在格子里。原来给的是 minmax(120px, 0.5fr)，
+     fr 会把它撑到 119px 而内容只占 69px——图标与数值之间 42px 的空洞（用户标红框「这里也是」）。
+     改 min 要同时改 --row-min 与下面的媒体查询阈值（ui-smoke 断言 --row-min == 六格 min 之和）。 */
   --row-cols:
-    minmax(150px, 0.8fr) minmax(280px, 1.35fr) minmax(120px, 0.5fr)
+    minmax(150px, 0.8fr) minmax(280px, 1.35fr) minmax(100px, 100px)
     minmax(300px, 1.3fr) minmax(145px, 0.6fr) minmax(105px, 0.5fr);
 }
 
@@ -2957,8 +2962,9 @@ pre,
   margin-bottom: 0;
 }
 
+/* 图标与数值挨着（不再 space-between）：格子定宽 100px 刚好装下最长的速率串，把两者推到
+   两端只会在中间留一段空白（用户标红框「这里也是」）。行内两行仍然对齐——图标同宽、间距同值。 */
 .node-grid.node-list .speed-line {
-  justify-content: space-between;
   gap: 8px;
   padding: 4px 8px;
   border-radius: 9px;
@@ -2966,7 +2972,7 @@ pre,
 
 /* 放不下六格时（窗口窄、手机）整块横向滚动：一行照样是主机 / 指标 / 网速 / 延迟 / 回程 / 计费，
    与卡片视图的区别才留得住。行撑到六格的最小宽度，滚动容器是 #nodes 本身。 */
-@media (max-width: 1320px) {
+@media (max-width: 1300px) {
   .node-grid.node-list {
     display: block;
     overflow-x: auto;
