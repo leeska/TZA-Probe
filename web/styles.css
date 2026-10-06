@@ -2918,16 +2918,16 @@ pre,
   font-weight: 400;
 }
 
-/* 最近 20 次的色带：固定 120px、9px 高（每格约 5px），四家运营商右端对齐——
-   固定宽度而不是吃完剩余空间，四行的色带才一样长。卡片里那格只有约 4px 宽、6px 高，
-   列表里要更清楚一层，所以才给到 300px 的延迟列。 */
+/* 最近 10 次的色带：9px 高，右端与格子右边界对齐——**吃掉剩余空间**而不是钉死 120px。
+   钉 120px 时槽收窄空出来的那 19px 会挂在「丢包」与色带之间，看着像色带被推走了（用户第一版
+   反馈的就是这种空档）；让色带自己长过去，一行就没有多余空白了。四行的格宽由格子宽度决定，
+   所以仍然一样长，只是比原来宽一点（1440 下约 154px、每格 14.5px）。 */
 .node-grid.node-list .net-line .quality-bars {
-  flex: 0 0 120px;
-  width: 120px;
+  flex: 1 1 120px;
+  width: auto;
   height: 9px;
   min-height: 9px;
   gap: 1px;
-  margin-left: auto;
 }
 
 .node-grid.node-list .net-line .quality-bar {

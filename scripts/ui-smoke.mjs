@@ -1352,10 +1352,12 @@ assert(
   !/\.node-grid\.node-list[^{]*\{[^}]*text-overflow:\s*ellipsis/.test(styles),
   "列表视图里不该有任何省略号",
 );
-// 观感（用户点名两处）：延迟色带要够大（固定 120px、9px 高的格子），实时网速竖排成两行。
+// 观感（用户点名两处）：延迟色带要够大（9px 高、吃掉格子剩余空间），实时网速竖排成两行。
+// 色带原来是钉死 120px 的；槽收窄后那 19px 会挂在「丢包」与色带之间（用户标红框说「空得有点多」），
+// 所以改成 flex: 1 1 120px 让它长过去——四行同格，宽度仍然一致。
 assert(
-  /\.node-grid\.node-list \.net-line \.quality-bars \{[^}]*flex: 0 0 120px/.test(styles),
-  "列表里的延迟色带要固定 120px 宽",
+  /\.node-grid\.node-list \.net-line \.quality-bars \{[^}]*flex: 1 1 120px/.test(styles),
+  "列表里的延迟色带要吃掉剩余空间（不再钉死 120px，否则丢包与色带之间留一段空档）",
 );
 assert(
   /\.node-grid\.node-list \.net-line \.quality-bar \{[^}]*height: 9px !important/.test(styles),
