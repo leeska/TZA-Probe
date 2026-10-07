@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chart } from "../web/charts.js";
 import { fold, searchKeys, searchMatch } from "../web/search.js";
-import { osLabel } from "../web/format.js";
+import { osLabel, gib, bytes } from "../web/format.js";
 // 系统标签的取数：有发行版就写发行版（Agent 读 /etc/os-release），老 Agent 只有 GOOS。
 assert.equal(osLabel({ metrics: { distro: "Debian 13", os: "linux" } }), "Debian 13");
 assert.equal(osLabel({ metrics: { distro: "Alpine 3.21", os: "linux" } }), "Alpine 3.21");
@@ -30,6 +30,18 @@ assert(
   !chart([], "cpu", "<script>").includes("<script>"),
   "labels must be escaped",
 );
+// 磁盘 / 内存按 1024 换算（gib），流量仍按 1000（bytes）——两套口径各管一摊，
+// 混回一个函数就会出现「100 GiB 的盘写成 105 GB」这种与 df -h、商家规格对不上的数字。
+assert.equal(gib(0), "0 B");
+assert.equal(gib(1), "1 B");
+assert.equal(gib(1024), "1.0 KiB");
+assert.equal(gib(1048576), "1.0 MiB");
+assert.equal(gib(8333946880), "7.8 GiB", "8 GB 的内存要写成 7.8 GiB（free -h 同值）");
+assert.equal(gib(105467994112), "98.2 GiB", "100 GiB 的盘不许写成 105 GB");
+assert.equal(gib(1099511627776), "1.0 TiB");
+assert.equal(bytes(105467994112), "105 GB", "流量那套仍是十进制");
+assert.equal(bytes(1099511627776), "1.1 TB");
+assert.equal(gib(NaN), "—");
 console.log(
   "PASS: time-proportional chart, offline gaps, empty history and escaped labels.",
 );

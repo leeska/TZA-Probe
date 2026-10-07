@@ -1,5 +1,5 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
-import { bytes, date, days, mbps, osLabel, percent, statusName } from "./format.js";
+import { bytes, date, days, gib, mbps, osLabel, percent, statusName } from "./format.js";
 import { detail } from "./detail.js";
 import { mountAdmin } from "./admin.js";
 import { applyTheme, themeButton } from "./theme.js";
@@ -180,8 +180,10 @@ function metricsInner(n) {
     hasMetrics = !!m;
   // CPU 那格的副标给核心数（Agent 报的 runtime.NumCPU），老 Agent 没报就退回原来的说明文字。
   const cpuSub = hasMetrics ? (m.cpu_cores ? `${m.cpu_cores} 核` : "系统计算负载") : "等待采集";
-  const memSub = hasMetrics ? `${bytes(m.memory_used)} / ${bytes(m.memory_total)}` : "未报告";
-  const diskSub = hasMetrics ? `${bytes(m.disk_used)} / ${bytes(m.disk_total)}` : "未报告";
+  // 内存与磁盘按 1024 换算（gib）：这两个量商家按 GiB 卖、`df -h` / `free -h` 也给 GiB；
+  // 速率与流量仍按十进制（bytes），与商家的流量口径一致。
+  const memSub = hasMetrics ? `${gib(m.memory_used)} / ${gib(m.memory_total)}` : "未报告";
+  const diskSub = hasMetrics ? `${gib(m.disk_used)} / ${gib(m.disk_total)}` : "未报告";
   const trafficSub = n.traffic_limit ? `${bytes(n.traffic_limit)} 额度 · ${esc({ sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.traffic_mode])}` : "无限制额度";
   // 达量降速：线路自带的两条规则都可能——按窗口平均带宽（德国商家）或按周期额度用满后
   // 限速（DMIT T1 这类不计量但限速）。只有真配了规则的线路才写这一行，没配的机器不显示

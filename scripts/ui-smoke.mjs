@@ -16,7 +16,7 @@ const { JSDOM, VirtualConsole } = require("jsdom");
 const { build } = require("esbuild");
 const root = fileURLToPath(new URL("../", import.meta.url));
 // 断言卡片上的数字用页面自己的格式化函数：写死字符串的话，格式化改了断言还在绿。
-const { bytes } = await import(new URL("../web/format.js", import.meta.url).href);
+const { bytes, gib } = await import(new URL("../web/format.js", import.meta.url).href);
 const token = (await readFile(process.env.TZA_TEST_ADMIN_FILE, "utf8")).trim();
 const bundle = await build({
   entryPoints: [path.join(root, "web/app.js")],
@@ -196,7 +196,7 @@ const report = await fetch(base + "/api/v1/agent/report", {
   headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
   body: JSON.stringify({
     protocol: 1,
-    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", distro: "Debian 13", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4", "ipv6"] },
+    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 2609623040, memory_total: 8333946880, disk_used: 12095188992, disk_total: 105467994112, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", distro: "Debian 13", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4", "ipv6"] },
   }),
 });
 assert.equal(report.status, 204, "agent report carrying both address families must be accepted");
@@ -1050,7 +1050,7 @@ const singleReport = await fetch(base + "/api/v1/agent/report", {
   headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
   body: JSON.stringify({
     protocol: 1,
-    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 1, memory_total: 2, disk_used: 1, disk_total: 2, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", distro: "Debian 13", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4"] },
+    metrics: { counter_id: "ui-smoke", cpu: 1, memory_used: 2609623040, memory_total: 8333946880, disk_used: 12095188992, disk_total: 105467994112, net_in: 0, net_out: 0, rate_in: 0, rate_out: 0, uptime: 60, os: "smoke", distro: "Debian 13", arch: "amd64", cpu_cores: 4, version: "smoke", ip_families: ["ipv4"] },
   }),
 });
 assert.equal(singleReport.status, 204, "agent report carrying a single address family must be accepted");
@@ -1136,6 +1136,21 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
   );
   assert.equal(compact.querySelectorAll(".speed-box").length, 0, "卡片里不再有宽大的速率方块");
   assert.equal(compact.querySelectorAll(".card-bottom").length, 0, "卡片底部不再有独立页脚");
+  // 内存与磁盘按 1024 换算（gib），流量按十进制（bytes）——「100 GiB 的盘写成 105 GB」
+  // 会让人以为算法算错了（用户就是这么问的），而商家规格与 df -h / free -h 都是 GiB。
+  const metricSub = (label) =>
+    [...compact.querySelectorAll(".metrics-grid .metric")]
+      .find((x) => x.querySelector("span")?.textContent === label)
+      ?.querySelector("small")?.textContent;
+  assert(
+    metricSub("内存") === `${gib(plannedNode.metrics.memory_used)} / ${gib(plannedNode.metrics.memory_total)}` &&
+      metricSub("磁盘") === `${gib(plannedNode.metrics.disk_used)} / ${gib(plannedNode.metrics.disk_total)}`,
+    `内存与磁盘要按 1024 换算，实际「${metricSub("内存")}」「${metricSub("磁盘")}」`,
+  );
+  assert(
+    !/GiB/.test(metricSub("周期用量") || ""),
+    `流量那一格不该跟着改成 1024（只有内存 / 磁盘是 GiB），实际「${metricSub("周期用量")}」`,
+  );
   const sub = compact.querySelector(".node-sub");
   assert(sub?.querySelector("p"), "地区与分组在头部第二行");
   assert(sub.querySelector("[data-card-family]"), "地址族开关也在第二行");

@@ -8,6 +8,20 @@ export function bytes(n = 0) {
   }
   return `${n.toFixed(i && n < 100 ? 1 : 0)} ${units[i]}`;
 }
+// 磁盘与内存按 1024 换算（KiB / MiB / GiB）：商家按 GiB 标称、`df -h` / `free -h` 也按 GiB 报，
+// 用十进制写出来会大 7.4%——100 GiB 的盘写成 105 GB、9.7 GiB 写成 10.4 GB，与规格和 df 都对不上。
+// 流量仍走 bytes() 的十进制：商家的流量口径本来就是十进制（1 TB = 1e12），两套单位是两种口径，
+// 不是不一致——卡片上「7.8 GiB」是内存、「9.6 GB」是流量，单位本身就把口径写清楚了。
+export function gib(n = 0) {
+  if (!Number.isFinite(n)) return "—";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let i = 0;
+  while (Math.abs(n) >= 1024 && i < 4) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(i && n < 100 ? 1 : 0)} ${units[i]}`;
+}
 export function date(value) {
   if (!value) return "—";
   return new Date(
