@@ -416,7 +416,13 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 		if err = s.queryRow(ctx, "SELECT coalesce(sum(incoming),0),coalesce(sum(outgoing),0) FROM traffic WHERE node_id=? AND day>=? AND day<?", v.ID, v.CycleStart, v.CycleEnd).Scan(&in, &out); err != nil {
 			return nil, err
 		}
-		v.TrafficUsed = model.Traffic(in, out, v.TrafficMode)
+		// 日桶只能整天算：锚点不在 00:00 时周期首日那一天的桶整体早于 cycle_start，被上面
+		// 这条查询整段丢掉，用小时桶把锚点之后的那一段补回来（见 cycleStartSlice）。
+		edgeIn, edgeOut, err := s.cycleStartSlice(ctx, v.ID, v.CycleStart, v.CycleEnd)
+		if err != nil {
+			return nil, err
+		}
+		v.TrafficUsed = model.Traffic(in+edgeIn, out+edgeOut, v.TrafficMode)
 		if v.AdjustmentCycle == v.CycleStart {
 			v.TrafficUsed = max(0, v.TrafficUsed+v.TrafficAdjustment)
 		}
@@ -439,6 +445,36 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 		views[i].Throttled = views[i].ThrottleActive()
 	}
 	return views, nil
+}
+
+// cycleStartSlice 返回周期首日里真正属于本周期的那一段流量。
+//
+// traffic 表按 UTC 整天存桶，Nodes 的 day>=cycle_start 只能整天算，于是计费锚点不在
+// 00:00 的节点（腾讯轻量 09-23 12:36、BWH DC9 09-15 15:17 都是）在周期一开始就出问题：
+// 首日那一天的桶整体早于 cycle_start，被整段丢掉——面板数字比商家自己的计费口径少了
+// 一整段（实测腾讯 40.6 MB / 3.4%），而且数字其实在锚点日 00:00 就归零，与卡片上写的
+// 锚点时刻对不上。这里用同一份网卡增量落的整点桶（traffic_hour）补回 [cycle_start, 当天 24:00)。
+//
+// 锚点不在整点时，含锚点的那一个小时横跨边界：宁可少算它（月周期约 0.03%），也不能
+// 多算——按周期额度降速的线路会因此提前被判定为用满。小时桶只留 30 天，切不到就退回
+// 原样（不补），任何情况下都不会多算。
+func (s *Store) cycleStartSlice(ctx context.Context, id string, start, end int64) (int64, int64, error) {
+	if start%86400 == 0 {
+		return 0, 0, nil // 锚点在整日边界：日桶已经精确覆盖，别动
+	}
+	from := start
+	if from%3600 != 0 {
+		from = from/3600*3600 + 3600
+	}
+	to := min(end, start/86400*86400+86400)
+	if from >= to {
+		return 0, 0, nil
+	}
+	var in, out int64
+	if err := s.queryRow(ctx, "SELECT coalesce(sum(incoming),0),coalesce(sum(outgoing),0) FROM traffic_hour WHERE node_id=? AND hour>=? AND hour<?", id, from, to).Scan(&in, &out); err != nil {
+		return 0, 0, err
+	}
+	return in, out, nil
 }
 
 // attachWindow 给每台节点算「降速窗口内的平均带宽」。
@@ -1164,8 +1200,10 @@ const (
 	unlockFinishWindow = 15 * time.Minute
 	samplesRetention   = 30 * 24 * time.Hour
 	trafficRetention   = 400 * 24 * time.Hour
-	// 小时桶只服务窗口内平均带宽（窗口上限 168 小时），留 30 天与 samples 同档。
-	trafficHourRetention = 30 * 24 * time.Hour
+	// 小时桶服务窗口内平均带宽（窗口上限 168 小时），也用来补周期首日那一段
+	// （锚点不在 00:00 时，日桶整天算会把首日整段丢掉，见 cycleStartSlice）——
+	// 月周期最长 31 天，留 45 天保证周期第一天的小时桶还在。
+	trafficHourRetention = 45 * 24 * time.Hour
 	JobsRetention        = 7 * 24 * time.Hour
 	eventsRetention      = 90 * 24 * time.Hour
 )

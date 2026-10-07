@@ -55,7 +55,72 @@ func TestCycleCorrectionPreservesCountersAndExpires(t *testing.T) {
 	}
 }
 
-// 读连接池与写连接并存：读要能并发，写要在读连接上被拒。
+// 计费锚点不在 00:00 UTC 时，周期首日只有一部分属于本周期：日桶整天存，首日那一天的桶
+// 整体早于 cycle_start，会被 day>=cycle_start 整段丢掉，必须用小时桶补回锚点之后的部分。
+// 补的时候有三条边界不能越：横跨锚点的那一个小时（少算可以、多算会让按额度降速的线路
+// 提前告警）、锚点日的第二天（整天已在日桶里，再补就是双算）、以及锚点在整点日的节点
+// （日桶本来就精确，小时桶一行都不该用）。
+func TestCycleAddsTheFirstPartialDayFromHourBuckets(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	anchor := time.Date(2026, 9, 23, 12, 36, 0, 0, time.UTC)
+	now := time.Date(2026, 9, 25, 6, 0, 0, 0, time.UTC)
+	add := func(name, billing string, mode string) string {
+		_, token, err := s.SaveNode(ctx, model.Node{Name: name, BillingAt: billing, TrafficMode: mode}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := s.Authenticate(ctx, token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	day := func(id string, at time.Time, in, out int64) {
+		if _, err := s.db.Exec("INSERT INTO traffic VALUES(?,?,?,?)", id, at.Unix(), in, out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hour := func(id string, at time.Time, in, out int64) {
+		if _, err := s.db.Exec("INSERT INTO traffic_hour VALUES(?,?,?,?)", id, at.Unix(), in, out); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 锚点 12:36 的节点：首日整天（含 00:00-12:36）在日桶里、必须整段丢掉，13:00 之后的小时桶补回来。
+	mid := add("mid-anchor", anchor.Format(time.RFC3339), "out")
+	day(mid, time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC), 1000, 2000)  // 周期首日整天：整段不属于本周期
+	day(mid, time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC), 100, 200)    // 周期内
+	day(mid, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), 9999, 9999)   // 上一个周期
+	hour(mid, time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC), 10, 20)    // 横跨锚点：不算
+	hour(mid, time.Date(2026, 9, 23, 13, 0, 0, 0, time.UTC), 30, 40)    // 算
+	hour(mid, time.Date(2026, 9, 23, 23, 0, 0, 0, time.UTC), 50, 60)    // 算
+	hour(mid, time.Date(2026, 9, 24, 5, 0, 0, 0, time.UTC), 7000, 8000) // 第二天：已在日桶里，再补就是双算
+
+	// 对照：锚点在整日边界，日桶精确，小时桶一行都不该用。
+	midnight := add("midnight-anchor", "2026-09-23T00:00:00Z", "out")
+	day(midnight, time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC), 1000, 2000)
+	day(midnight, time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC), 100, 200)
+	hour(midnight, time.Date(2026, 9, 23, 13, 0, 0, 0, time.UTC), 30, 40)
+
+	views, err := s.Nodes(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	for _, v := range views {
+		got[v.Name] = v.TrafficUsed
+	}
+	// 200（09-24 日桶）+ 40 + 60（锚点之后的小时桶）
+	if got["mid-anchor"] != 300 {
+		t.Fatalf("锚点 12:36 的周期用量 = %d，want 300（首日只补锚点之后的小时桶）", got["mid-anchor"])
+	}
+	// 2000（09-23 整天）+ 200（09-24）
+	if got["midnight-anchor"] != 2200 {
+		t.Fatalf("锚点在整点日的周期用量 = %d，want 2200（日桶精确，不许再叠小时桶）", got["midnight-anchor"])
+	}
+}
+
 func TestReadPoolServesConcurrentReadsWhileWriting(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
