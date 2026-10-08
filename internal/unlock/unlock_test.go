@@ -344,16 +344,33 @@ func TestOpenAIStates(t *testing.T) {
 }
 
 func TestRedditStates(t *testing.T) {
+	// 403 alone is not a verdict: only Reddit's own refusal copy is. A bare
+	// 403 is the shape a non-browser client gets (measured: h2 got 403 and a
+	// block page while h1 from the same IP got the site).
 	for _, tc := range []struct {
-		code int
-		want string
-	}{{403, model.UnlockNo}, {200, model.UnlockYes}} {
-		url, done := server(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(tc.code) })
-		got := runCheck(t, "reddit", map[string]string{"www.reddit.com": url})
-		done()
-		if got.Status != tc.want {
-			t.Errorf("reddit %d: status %q, want %q", tc.code, got.Status, tc.want)
-		}
+		name   string
+		code   int
+		body   string
+		want   string
+		detail string
+	}{
+		{"ok", 200, "<html>Reddit</html>", model.UnlockYes, ""},
+		{"blocked page", 403, `<div>You've been blocked by network security.</div>`, model.UnlockNo, ""},
+		{"rate limit", 403, "Whoa there, pardner!", model.UnlockNo, ""},
+		{"bare 403", 403, "nope", model.UnlockFailed, "HTTP 403"},
+		{"server error", 500, "", model.UnlockFailed, "HTTP 500"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url, done := server(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.code)
+				_, _ = io.WriteString(w, tc.body)
+			})
+			got := runCheck(t, "reddit", map[string]string{"www.reddit.com": url})
+			done()
+			if got.Status != tc.want || got.Detail != tc.detail {
+				t.Errorf("reddit %d/%q: got %q/%q, want %q/%q", tc.code, tc.body, got.Status, got.Detail, tc.want, tc.detail)
+			}
+		})
 	}
 }
 

@@ -727,19 +727,38 @@ func reddit(ctx context.Context, c *Client) model.UnlockResult {
 	if c.family == "ipv6" {
 		return res(model.UnlockFailed, "", "IPv6 unsupported")
 	}
-	r, err := c.do(ctx, true, "GET", "https://www.reddit.com/", nil, nil)
+	// HTTP/1.1 on purpose (see doPlain): over h2 Reddit's edge answers this
+	// client with its own 403 block page even from an IP it serves fine.
+	r, err := c.doPlain(ctx, "GET", "https://www.reddit.com/", map[string]string{
+		"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+	}, nil)
 	if err != nil {
 		return netErr(err)
 	}
-	drain(r)
+	page := read(r)
 	switch r.StatusCode {
-	case http.StatusForbidden:
-		return res(model.UnlockNo, "", "")
 	case http.StatusOK:
 		return res(model.UnlockYes, "", "")
+	case http.StatusForbidden:
+		// Only its own refusal copy makes this a verdict about the IP; a bare
+		// 403 (the shape a non-browser client gets) is a failure to judge.
+		if redditBlocked(page) {
+			return res(model.UnlockNo, "", "")
+		}
+		return res(model.UnlockFailed, "", "HTTP 403")
 	default:
 		return res(model.UnlockFailed, "", httpStatusDetail(r.StatusCode))
 	}
+}
+
+// redditBlocked recognises Reddit's own refusal pages: the network-security
+// block (the www shell says "You've been blocked by network security."; the
+// 1.5 KB one is titled Blocked) and the rate-limit notice.
+func redditBlocked(page string) bool {
+	l := strings.ToLower(page)
+	return strings.Contains(l, "blocked by network security") ||
+		strings.Contains(l, "whoa there") ||
+		strings.Contains(l, "blocked due to a network policy")
 }
 
 func steam(ctx context.Context, c *Client) model.UnlockResult {

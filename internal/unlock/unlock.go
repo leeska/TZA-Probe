@@ -70,6 +70,7 @@ type Options struct {
 type Client struct {
 	follow  *http.Client
 	direct  *http.Client
+	plain   *http.Client // HTTP/1.1 only, for the hosts that reject a non-browser h2 client
 	ua      string
 	timeout time.Duration
 	family  string
@@ -80,37 +81,42 @@ func clientFor(family, ua string, timeout time.Duration, hosts map[string]string
 	if ua == "" {
 		ua = DefaultUserAgent
 	}
-	follow, direct := newHTTPClients(family)
-	return &Client{follow: follow, direct: direct, ua: ua, timeout: timeout, family: family, hosts: hosts}
+	follow, direct, plain := newHTTPClients(family)
+	return &Client{follow: follow, direct: direct, plain: plain, ua: ua, timeout: timeout, family: family, hosts: hosts}
 }
 
 // newHTTPClients builds the redirect-following and redirect-stopping clients
-// over one shared Transport. When family is ipv4/ipv6 the dialer refuses the
-// other family at the connect syscall, so name resolution cannot leak a v6
-// connect on an ipv4-pinned round (and vice versa).
-func newHTTPClients(family string) (*http.Client, *http.Client) {
+// over one shared Transport, plus the HTTP/1.1-only client some checks need
+// (see doPlain). When family is ipv4/ipv6 the dialer refuses the other family
+// at the connect syscall, so name resolution cannot leak a v6 connect on an
+// ipv4-pinned round (and vice versa).
+func newHTTPClients(family string) (*http.Client, *http.Client, *http.Client) {
 	dialer := &net.Dialer{
 		Timeout:   15 * time.Second,
 		KeepAlive: 30 * time.Second,
 		Control:   familyControl(family),
 	}
-	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           dialer.DialContext,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   4,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   15 * time.Second,
-		ExpectContinueTimeout: time.Second,
-		ForceAttemptHTTP2:     true,
-		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+	newTransport := func(forceH2 bool) *http.Transport {
+		return &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           dialer.DialContext,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   4,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ExpectContinueTimeout: time.Second,
+			ForceAttemptHTTP2:     forceH2,
+			TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		}
 	}
+	transport := newTransport(true)
 	follow := &http.Client{Transport: transport}
 	direct := &http.Client{
 		Transport:     transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	return follow, direct
+	plain := &http.Client{Transport: newTransport(false)}
+	return follow, direct, plain
 }
 
 // familyControl implements the family pin. Go calls Control with the concrete
@@ -156,6 +162,24 @@ func (c *Client) url(raw string) string {
 // do issues one request. follow picks the redirect policy; hdr entries override
 // the defaults (notably User-Agent for the SD Gundam check).
 func (c *Client) do(ctx context.Context, follow bool, method, raw string, hdr map[string]string, body io.Reader) (*http.Response, error) {
+	cl := c.direct
+	if follow {
+		cl = c.follow
+	}
+	return c.doOn(ctx, cl, method, raw, hdr, body)
+}
+
+// doPlain issues one request over the HTTP/1.1-only client. Reddit's edge
+// answers a non-browser HTTP/2 client with a 403 and its block page while the
+// same IP over HTTP/1.1 gets the site (measured from one host: h2 403 / 1522
+// bytes, h1 200 / 8397 bytes, same second), so that check must not ride the
+// shared HTTP/2 transport.
+func (c *Client) doPlain(ctx context.Context, method, raw string, hdr map[string]string, body io.Reader) (*http.Response, error) {
+	return c.doOn(ctx, c.plain, method, raw, hdr, body)
+}
+
+// doOn is the request path both do and doPlain share.
+func (c *Client) doOn(ctx context.Context, cl *http.Client, method, raw string, hdr map[string]string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.url(raw), body)
 	if err != nil {
 		return nil, err
@@ -175,10 +199,7 @@ func (c *Client) do(ctx context.Context, follow bool, method, raw string, hdr ma
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}
-	if follow {
-		return c.send(ctx, req, c.follow)
-	}
-	return c.send(ctx, req, c.direct)
+	return c.send(ctx, req, cl)
 }
 
 // send issues a request, retrying the transport faults that are the network
