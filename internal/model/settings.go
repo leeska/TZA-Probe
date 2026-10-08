@@ -38,3 +38,59 @@ func ValidateLatencyWindowMinutes(minutes int) error {
 	}
 	return nil
 }
+
+// 前台默认外观：访客自己没选过（localStorage 里没有偏好）时用哪一套明暗与皮肤。
+// 默认值就是各处的内置默认（跟随系统 + 液态玻璃），所以没配过的部署行为不变；
+// 访客一旦自己点了切换，存下的偏好优先于这里。
+const (
+	SettingDefaultTheme = "default_theme"
+	SettingDefaultSkin  = "default_skin"
+
+	DefaultPanelTheme = "auto"
+	DefaultPanelSkin  = "glass"
+)
+
+// PanelThemes / PanelSkins 是允许写入的两组取值，与 web/theme.js 的 ORDER、
+// web/skins.js 的 SKINS 一一对应（httpapi 的测试会拿 web/skins.js 对一遍）。
+var PanelThemes = []string{"auto", "light", "dark"}
+var PanelSkins = []string{"glass", "press", "shadcn"}
+
+// PanelTheme / PanelSkin 把存下来的值变成可用值：空值或读不出来的值退回默认，
+// 认不出来的皮肤退回默认皮肤——设置里一个手滑的值不该让面板挂在一张不存在的皮肤上。
+func PanelTheme(stored string) string {
+	v := strings.TrimSpace(stored)
+	for _, ok := range PanelThemes {
+		if v == ok {
+			return v
+		}
+	}
+	return DefaultPanelTheme
+}
+
+func PanelSkin(stored string) string {
+	v := strings.TrimSpace(stored)
+	for _, ok := range PanelSkins {
+		if v == ok {
+			return v
+		}
+	}
+	return DefaultPanelSkin
+}
+
+func ValidatePanelTheme(v string) error {
+	for _, ok := range PanelThemes {
+		if v == ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("默认明暗须为 %s 之一", strings.Join(PanelThemes, " / "))
+}
+
+func ValidatePanelSkin(v string) error {
+	for _, ok := range PanelSkins {
+		if v == ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("默认皮肤须为 %s 之一", strings.Join(PanelSkins, " / "))
+}

@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -162,27 +163,82 @@ func (a *API) Handler() http.Handler {
 		}
 		view := config.Public()
 		view[model.SettingLatencyWindowMinutes] = window
+		theme, skin, err := a.panelDefaults(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		view[model.SettingDefaultTheme] = theme
+		view[model.SettingDefaultSkin] = skin
 		write(w, 200, view)
 	}))
 	// 面板显示项单独一个出口：通知那套的语义是「空值即清空」，混在同一个 PUT 里
 	// 会让只想改显示项的人顺手把 webhook 或 Bot Token 清掉。
 	mux.HandleFunc("PUT /api/v1/admin/panel", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		var v struct {
-			LatencyWindowMinutes *int `json:"latency_window_minutes"`
+			LatencyWindowMinutes *int    `json:"latency_window_minutes"`
+			DefaultTheme         *string `json:"default_theme"`
+			DefaultSkin          *string `json:"default_skin"`
 		}
 		if !decode(w, r, &v) {
 			return
 		}
-		if v.LatencyWindowMinutes == nil {
-			write(w, 400, map[string]string{"error": "latency_window_minutes 必填"})
+		if v.LatencyWindowMinutes == nil && v.DefaultTheme == nil && v.DefaultSkin == nil {
+			write(w, 400, map[string]string{"error": "至少给一项面板显示设置"})
 			return
 		}
-		if err := model.ValidateLatencyWindowMinutes(*v.LatencyWindowMinutes); err != nil {
-			write(w, 400, map[string]string{"error": err.Error()})
-			return
+		if v.LatencyWindowMinutes != nil {
+			if err := model.ValidateLatencyWindowMinutes(*v.LatencyWindowMinutes); err != nil {
+				write(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
 		}
-		respond(w, a.Store.SetSetting(r.Context(), model.SettingLatencyWindowMinutes, strconv.Itoa(*v.LatencyWindowMinutes)))
+		if v.DefaultTheme != nil {
+			if err := model.ValidatePanelTheme(*v.DefaultTheme); err != nil {
+				write(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if v.DefaultSkin != nil {
+			if err := model.ValidatePanelSkin(*v.DefaultSkin); err != nil {
+				write(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if v.LatencyWindowMinutes != nil {
+			if err := a.Store.SetSetting(r.Context(), model.SettingLatencyWindowMinutes, strconv.Itoa(*v.LatencyWindowMinutes)); err != nil {
+				fail(w, err)
+				return
+			}
+		}
+		if v.DefaultTheme != nil {
+			if err := a.Store.SetSetting(r.Context(), model.SettingDefaultTheme, *v.DefaultTheme); err != nil {
+				fail(w, err)
+				return
+			}
+		}
+		if v.DefaultSkin != nil {
+			if err := a.Store.SetSetting(r.Context(), model.SettingDefaultSkin, *v.DefaultSkin); err != nil {
+				fail(w, err)
+				return
+			}
+		}
+		respond(w, nil)
 	}))
+	// 前台默认外观必须在样式表之前定下来，否则首屏会先按内置默认闪一下再跳到设置里的皮肤。
+	// CSP 是 script-src 'self'，index.html 里写不了内联脚本，所以这里发一份几十字节的
+	// 动态脚本，由 index.html 在 theme-boot.js 之前引用。
+	mux.HandleFunc("GET /theme-default.js", func(w http.ResponseWriter, r *http.Request) {
+		theme, skin, err := a.panelDefaults(r.Context())
+		if err != nil {
+			theme, skin = model.DefaultPanelTheme, model.DefaultPanelSkin
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		if r.Method == http.MethodGet {
+			fmt.Fprintf(w, "window.__tzaDefault={theme:%q,skin:%q};\n", theme, skin)
+		}
+	})
 	mux.HandleFunc("PUT /api/v1/admin/settings", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		var v notify.Config
 		if !decode(w, r, &v) {
@@ -515,6 +571,21 @@ func (a *API) latencyWindow(ctx context.Context) (int, time.Time, error) {
 	}
 	minutes := model.LatencyWindowMinutes(stored)
 	return minutes, time.Now().Add(-time.Duration(minutes) * time.Minute), nil
+}
+
+// panelDefaults reads the visitor-facing default look: which 明暗 and which 皮肤 a
+// visitor sees before they pick anything themselves. Values are normalized, so a
+// hand-edited database row cannot hand the browser an unknown skin id.
+func (a *API) panelDefaults(ctx context.Context) (string, string, error) {
+	theme, err := a.Store.Setting(ctx, model.SettingDefaultTheme)
+	if err != nil {
+		return "", "", err
+	}
+	skin, err := a.Store.Setting(ctx, model.SettingDefaultSkin)
+	if err != nil {
+		return "", "", err
+	}
+	return model.PanelTheme(theme), model.PanelSkin(skin), nil
 }
 
 // latencySamples feeds the per-probe cells on the public card. Only nodes the

@@ -496,14 +496,15 @@ h1 {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
+  row-gap: 8px;
   margin-bottom: 5px;
 }
 
-/* 解锁徽标进了名字行以后，390px 上「名字 + 锁/分数 + 两个系统标签」放不下：不换行就会把
-   名字按 word-break 拆成三行（de-nosla-fra → de- / nosla- / fra）。所以名字行自己换行——
-   名字整段留在第一行，徽标与标签整组落到第二行并保持右对齐。 */
+/* 名字永远独占第一行、右侧那一排徽标永远在它下面的第二行，而且靠左——两行是定死的，
+   不按名字长短忽而一行忽而两行（实测同宽下：名字短的 24px、名字长的 58px，卡片头就不齐了）。
+   名字仍然完整显示（nowrap + ellipsis 只兜底极端长名），换行让位的是徽标那一排。 */
 .card-top .node-identity {
-  flex: 0 1 auto;
+  flex: 1 1 100%;
 }
 
 .card-top .node-name {
@@ -512,8 +513,12 @@ h1 {
   text-overflow: ellipsis;
 }
 
+/* 徽标靠左（与名字、与下面一行的「地区 · 分组」同一条左边缘）；不换行是为了它自己内部
+   也不会被拆成两行——要挪就整排一起挪。 */
 .card-top .card-actions {
-  margin-left: auto;
+  margin-left: 0;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
 }
 
 .node-sub {

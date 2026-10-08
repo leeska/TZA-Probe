@@ -1,6 +1,6 @@
 import { controlTask, bindTasks, taskRuns } from "./task-controls.js";
-import { themeButton } from "./theme.js";
-import { skinButton } from "./skins.js";
+import { themeButton, THEMES } from "./theme.js";
+import { skinButton, SKINS } from "./skins.js";
 import { showToken } from "./agent-setup.js";
 import { taskEditor, taskSummary } from "./task-editor.js";
 import { api, send, esc, toast, modal, guard } from "./api.js";
@@ -401,7 +401,10 @@ async function renderAlerts() {
     .sort((a, b) => a[0] - b[0])
     .map(([m, label]) => `<option value="${m}"${m === windowNow ? " selected" : ""}>${label}</option>`)
     .join("");
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>按节点配置提醒阈值，在这里管理统一通知出口和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section><section class="panel webhook-panel"><div><h3>面板显示</h3><p>公开面板的延迟色带每格代表一次探测，这里决定往回取多长的历史。</p><small>探测结果保留 7 天，所以一个月、三个月与「全部」目前都取到 7 天。窗口越大取数越慢：本机 17 台实测 1 小时 0.01 秒、24 小时 0.4 秒、7 天 1.2 秒（色带每组最多 20 格，密采目标 1 小时就满，选大只对稀疏目标有意义）。</small></div><div class="webhook-actions"><label class="window-field">延迟色带时间范围<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel"><div class="panel-head"><h3>最近事件</h3><span class="muted">最多 100 条 · 保存 90 天</span></div><div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody>${events.map((e) => `<tr><td data-label="时间">${date(e.at)}</td><td data-label="节点">${esc(e.node_name)}</td><td data-label="类型">${esc(kindName[e.kind] || e.kind)}</td><td data-label="状态"><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td data-label="内容">${esc(e.message)}</td><td data-label="通知">${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : configured ? "待发送 / 重试" : "未配置出口"}<small>${e.attempts} 次尝试</small>${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">暂无事件。提醒规则可在节点编辑页单独开启。</td></tr>'}</tbody></table></div></section>`;
+  // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
+  const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
+  const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : "glass";
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>按节点配置提醒阈值，在这里管理统一通知出口和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section><section class="panel webhook-panel"><div><h3>面板显示</h3><p>公开面板的延迟色带每格代表一次探测，这里决定往回取多长的历史。</p><small>探测结果保留 7 天，所以一个月、三个月与「全部」目前都取到 7 天。窗口越大取数越慢：本机 17 台实测 1 小时 0.01 秒、24 小时 0.4 秒、7 天 1.2 秒（色带每组最多 20 格，密采目标 1 小时就满，选大只对稀疏目标有意义）。</small></div><div class="webhook-actions"><label class="window-field">延迟色带时间范围<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>前台默认外观</h3><p>访客第一次打开面板时按这里的明暗与风格渲染；他自己点过右上角的切换之后，就按他选的那份来。</p><small>默认值在样式表之前就已落到 &lt;html&gt; 上，所以首屏不会先闪一下内置默认再跳到这套。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${s.id}"${s.id === skinNow ? " selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section><section class="panel"><div class="panel-head"><h3>最近事件</h3><span class="muted">最多 100 条 · 保存 90 天</span></div><div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody>${events.map((e) => `<tr><td data-label="时间">${date(e.at)}</td><td data-label="节点">${esc(e.node_name)}</td><td data-label="类型">${esc(kindName[e.kind] || e.kind)}</td><td data-label="状态"><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td data-label="内容">${esc(e.message)}</td><td data-label="通知">${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : configured ? "待发送 / 重试" : "未配置出口"}<small>${e.attempts} 次尝试</small>${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">暂无事件。提醒规则可在节点编辑页单独开启。</td></tr>'}</tbody></table></div></section>`;
   content().querySelector("#refresh-events").onclick = guard(renderAlerts);
   // 面板显示项走 /admin/panel：通知那个出口的语义是「空值即清空」，
   // 用同一个 PUT 保存显示项会顺手把 webhook 或 Bot Token 清掉。
@@ -410,6 +413,15 @@ async function renderAlerts() {
     await send("/admin/panel", "PUT", { latency_window_minutes: minutes });
     await renderAlerts();
     toast(`延迟色带时间窗已设为 ${minutes} 分钟`);
+  });
+  // 前台默认外观：访客还没自己选过时的第一屏。保存后即写进 /theme-default.js，
+  // 下一次打开（包括别的访客）就是新值；当前这份重渲染一遍让人当场看到。
+  content().querySelector("#save-look").onclick = guard(async () => {
+    const theme = content().querySelector("#default-theme").value;
+    const skin = content().querySelector("#default-skin").value;
+    await send("/admin/panel", "PUT", { default_theme: theme, default_skin: skin });
+    await renderAlerts();
+    toast(`前台默认外观：${THEMES.find((t) => t.id === theme).name} · ${SKINS.find((s) => s.id === skin).name}`);
   });
   content().querySelector("#test-webhook").onclick = guard(async () => {
     await send("/admin/settings/test", "POST");

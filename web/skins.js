@@ -14,7 +14,8 @@ export const SKINS = [
 
 const IDS = SKINS.map((s) => s.id);
 const NAME = Object.fromEntries(SKINS.map((s) => [s.id, s.name]));
-const DEFAULT = "glass";
+// 后台设的默认皮肤（/theme-default.js 写在 window.__tzaDefault 上）；认不出来就是内置默认。
+const DEFAULT = IDS.includes(window.__tzaDefault?.skin) ? window.__tzaDefault.skin : "glass";
 
 export function skinPreference() {
   let v = null;

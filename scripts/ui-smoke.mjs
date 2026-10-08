@@ -679,6 +679,46 @@ const saveWindow = async (minutes) => {
 };
 await saveWindow(1440);
 await saveWindow(60);
+// 前台默认外观：后台设的默认明暗 / 皮肤落进设置，并且首屏脚本（theme-boot.js 读的那份
+// /theme-default.js）必须跟着它走——否则访客第一眼还是内置默认。
+const themeField = $("#default-theme");
+const skinField = $("#default-skin");
+assert.equal(themeField.value, "auto", "未设置时默认明暗是跟随系统");
+assert.equal(skinField.value, "glass", "未设置时默认皮肤是液态玻璃");
+assert.equal(
+  [...themeField.options].map((o) => o.value).join(","),
+  "auto,light,dark",
+  "明暗三档",
+);
+// 皮肤清单与 web/skins.js 的 SKINS 同源，两边对不上会被 web/look_choices_test.go 抓到。
+assert.equal(
+  [...skinField.options].map((o) => o.value).join(","),
+  "glass,press,shadcn",
+  "皮肤三档",
+);
+const saveLook = async (theme, skin) => {
+  $("#default-theme").value = theme;
+  $("#default-skin").value = skin;
+  $("#save-look").click();
+  await until(
+    async () => {
+      const view = await (
+        await fetch(base + "/api/v1/admin/settings", { headers: { Cookie: cookie } })
+      ).json();
+      return view.default_theme === theme && view.default_skin === skin;
+    },
+    `default look ${theme}/${skin}`,
+  );
+  assert.equal($("#default-theme").value, theme, "重渲染后要显示已保存的明暗");
+  assert.equal($("#default-skin").value, skin, "重渲染后要显示已保存的皮肤");
+  const js = await (await fetch(base + "/theme-default.js")).text();
+  assert(
+    js.includes(`theme:"${theme}"`) && js.includes(`skin:"${skin}"`),
+    "首屏脚本没跟上设置: " + js,
+  );
+};
+await saveLook("dark", "press");
+await saveLook("auto", "glass");
 $("#logout").click();
 await until(() => $("#login"), "logout");
 assert.equal(
@@ -1699,17 +1739,19 @@ await until(
       /grid-template-columns: 1fr;\s*\/\* 单列时不再拉齐行高/.test(styles),
     "列表与单列视图不该拉平行高",
   );
-  // 解锁徽标进了卡片名字行以后，名字行必须自己换行：不加 flex-wrap 的话 390px 上
-  // 「名字 + 锁/分数 + 两个系统标签」会把名字按 word-break 拆成三行（实测量过：
-  // 带徽标 48px 高 / 3 行，去掉徽标 24px / 1 行）。样式文本断言盯住这条规则。
+  // 卡片头恒两行：名字独占第一行、右边那排徽标整组落到第二行并靠左。名字的长短不再改变
+  // 这个形态（实测同宽下：名字短的 24px、名字长的 58px，卡片头不齐），所以名字行自己
+  // 换行、徽标组不许在内部再折一次。样式文本断言盯住这两条。
   assert(
     /\.card-top \{[^}]*flex-wrap: wrap/.test(styles),
-    "卡片名字行要能换行（徽标 + 系统标签放不下时整组落到第二行）",
+    "卡片名字行要能换行（名字独占一行、徽标整组落到第二行）",
   );
   assert(
     /\.card-top \.node-name \{[^}]*white-space: nowrap/.test(styles) &&
-      /\.card-top \.card-actions \{[^}]*margin-left: auto/.test(styles),
-    "名字整段留在一行、徽标与标签换行后仍右对齐",
+      /\.card-top \.node-identity \{[^}]*flex: 1 1 100%/.test(styles) &&
+      /\.card-top \.card-actions \{[^}]*justify-content: flex-start/.test(styles) &&
+      /\.card-top \.card-actions \{[^}]*flex-wrap: nowrap/.test(styles),
+    "名字整段留在第一行、徽标组在第二行靠左且自身不再折行",
   );
   // 详情页同一处也不该给空图表或「请在后台创建并绑定任务」。
   publicDOM.window.document.querySelector(`[data-detail="${longNode.id}"]`).click();

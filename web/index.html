@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#edf2fb" />
+    <!-- 后台设的默认外观先落地（几十字节，同步阻塞），再让 theme-boot.js 定 data-theme/data-skin；
+         顺序反了首屏会先按内置默认闪一下。 -->
+    <script src="/theme-default.js"></script>
     <script src="/theme-boot.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

@@ -1,11 +1,16 @@
-// 亮暗主题：偏好存于 localStorage，"auto" 跟随系统。index.html 的内联脚本在样式
-// 生效前已按同样规则设置了 <html data-theme>，这里负责切换按钮和系统偏好变化。
+// 亮暗主题：偏好存于 localStorage，"auto" 跟随系统。后台设的默认明暗（"auto" / "light" /
+// "dark"，由 /theme-default.js 写在 window.__tzaDefault 上）用于访客还没自己选过的时候；
+// theme-boot.js 在样式生效前已按同样规则设置了 <html data-theme>，这里负责切换按钮和系统偏好变化。
 // 外观风格（data-skin）在 skins.js，两者正交：applyTheme 只管明暗，底色交给 skinChrome()。
 import { skinChrome } from "./skins.js";
 
 const KEY = "tza-theme";
 const ORDER = ["auto", "light", "dark"];
+// 后台默认值：认不出来（含未配置）就是内置默认「跟随系统」。
+const DEFAULT = ORDER.includes(window.__tzaDefault?.theme) ? window.__tzaDefault.theme : "auto";
 const LABEL = { auto: "跟随系统", light: "浅色", dark: "深色" };
+// 后台「前台默认外观」的下拉项就用这一份，别在 admin.js 里再抄一遍标签。
+export const THEMES = ORDER.map((id) => ({ id, name: LABEL[id] }));
 const ICON = {
   auto: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13" /><path d="M10 3.5a6.5 6.5 0 0 1 0 13" fill="currentColor" stroke="none"/></svg>',
   light: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="3.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></svg>',
@@ -18,7 +23,7 @@ export function preference() {
   try {
     v = localStorage.getItem(KEY);
   } catch {}
-  return ORDER.includes(v) ? v : "auto";
+  return ORDER.includes(v) ? v : DEFAULT;
 }
 
 function resolved(pref) {
@@ -43,7 +48,8 @@ const title = (pref) => `主题：${LABEL[pref]}，点击切换`;
 
 export function setPreference(pref) {
   try {
-    if (pref === "auto") localStorage.removeItem(KEY);
+    // 与后台默认一致就不留键：键在 = 访客自己选过，键不在 = 跟着后台默认走。
+    if (pref === DEFAULT) localStorage.removeItem(KEY);
     else localStorage.setItem(KEY, pref);
   } catch {}
   applyTheme(pref);
