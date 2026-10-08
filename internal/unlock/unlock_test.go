@@ -343,6 +343,51 @@ func TestOpenAIStates(t *testing.T) {
 	}
 }
 
+func TestClaudeStates(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		code   int
+		loc    string
+		want   string
+		detail string
+	}{
+		{"root", 200, "", model.UnlockYes, ""},
+		{"sign-in page", 200, "/login?returnTo=%2Fnew", model.UnlockYes, ""},
+		{"region block", 200, "/app-unavailable-in-region", model.UnlockNo, ""},
+		{"cloudflare 403", 403, "", model.UnlockFailed, "HTTP 403"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url, done := server(t, func(w http.ResponseWriter, r *http.Request) {
+				if tc.loc != "" && r.URL.Path == "/" {
+					http.Redirect(w, r, tc.loc, http.StatusFound)
+					return
+				}
+				w.WriteHeader(tc.code)
+			})
+			got := runCheck(t, "claude", map[string]string{"claude.ai": url})
+			done()
+			if got.Status != tc.want || got.Detail != tc.detail {
+				t.Errorf("claude %s: got %q/%q, want %q/%q", tc.name, got.Status, got.Detail, tc.want, tc.detail)
+			}
+		})
+	}
+}
+
+func TestTruncatedBodyIsNotAVerdict(t *testing.T) {
+	// A body cut short must not read as "no": the markers live deep in these
+	// documents (Prime Video's "currentTerritory" sat at 174 KB of 520 KB), so
+	// a half-read page looks exactly like a blocked one.
+	url, done := server(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "5000")
+		_, _ = io.WriteString(w, "<html>no territory marker in what arrived</html>")
+	})
+	got := runCheck(t, "prime_video", map[string]string{"www.primevideo.com": url})
+	done()
+	if got.Status != model.UnlockFailed {
+		t.Errorf("truncated body: status %q, want %q", got.Status, model.UnlockFailed)
+	}
+}
+
 func TestRedditStates(t *testing.T) {
 	// 403 alone is not a verdict: only Reddit's own refusal copy is. A bare
 	// 403 is the shape a non-browser client gets (measured: h2 got 403 and a

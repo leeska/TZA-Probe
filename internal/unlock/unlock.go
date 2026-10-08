@@ -70,7 +70,7 @@ type Options struct {
 type Client struct {
 	follow  *http.Client
 	direct  *http.Client
-	plain   *http.Client // HTTP/1.1 only, for the hosts that reject a non-browser h2 client
+	plain   *http.Client // HTTP/1.1 only: the hosts that refuse this client's h2
 	ua      string
 	timeout time.Duration
 	family  string
@@ -86,10 +86,18 @@ func clientFor(family, ua string, timeout time.Duration, hosts map[string]string
 }
 
 // newHTTPClients builds the redirect-following and redirect-stopping clients
-// over one shared Transport, plus the HTTP/1.1-only client some checks need
-// (see doPlain). When family is ipv4/ipv6 the dialer refuses the other family
-// at the connect syscall, so name resolution cannot leak a v6 connect on an
-// ipv4-pinned round (and vice versa).
+// over one shared Transport, plus the HTTP/1.1-only client one check needs (see
+// doPlain). When family is ipv4/ipv6 the dialer refuses the other family at the
+// connect syscall, so name resolution cannot leak a v6 connect on an ipv4-pinned
+// round (and vice versa).
+//
+// HTTP/2 by default — browsers speak it and every check except Reddit was
+// measured against the reference checkers on this transport. Reddit is the
+// measured exception: www.reddit.com answered this client's h2 with a 403 and
+// its block page while h1 got the site from the same IP in the same second (the
+// other direction happens too: Cloudflare 403s this client's h1 for
+// claude.ai), so the transport is picked per check off a measurement, not a
+// guess.
 func newHTTPClients(family string) (*http.Client, *http.Client, *http.Client) {
 	dialer := &net.Dialer{
 		Timeout:   15 * time.Second,
@@ -169,16 +177,14 @@ func (c *Client) do(ctx context.Context, follow bool, method, raw string, hdr ma
 	return c.doOn(ctx, cl, method, raw, hdr, body)
 }
 
-// doPlain issues one request over the HTTP/1.1-only client. Reddit's edge
-// answers a non-browser HTTP/2 client with a 403 and its block page while the
-// same IP over HTTP/1.1 gets the site (measured from one host: h2 403 / 1522
-// bytes, h1 200 / 8397 bytes, same second), so that check must not ride the
-// shared HTTP/2 transport.
+// doPlain issues one request over the HTTP/1.1-only client, for the hosts that
+// refuse the same client's HTTP/2 (www.reddit.com answered h2 with a 403 and
+// its block page, h1 with the site, same IP, same second).
 func (c *Client) doPlain(ctx context.Context, method, raw string, hdr map[string]string, body io.Reader) (*http.Response, error) {
 	return c.doOn(ctx, c.plain, method, raw, hdr, body)
 }
 
-// doOn is the request path both do and doPlain share.
+// doOn is the request path do and doPlain share.
 func (c *Client) doOn(ctx context.Context, cl *http.Client, method, raw string, hdr map[string]string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.url(raw), body)
 	if err != nil {
@@ -244,14 +250,15 @@ func retryable(err error) bool {
 	return true
 }
 
-// read drains a response body (capped) and closes it.
-func read(resp *http.Response) string {
+// read reads the whole body and reports a failure to read it. A half-read body
+// must never be judged as if the markers it never reached were absent: Prime
+// Video's "currentTerritory" sat 174 KB into a 520 KB document, so a connection
+// cut short looks exactly like a blocked page. maxBody caps the read; hitting
+// the cap is not an error.
+func read(resp *http.Response) (string, error) {
 	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return string(b)
-	}
-	return string(b)
+	return string(b), err
 }
 
 // drain closes a response we do not care to read.

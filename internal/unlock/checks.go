@@ -81,7 +81,11 @@ func netflix(ctx context.Context, c *Client) model.UnlockResult {
 		if err != nil {
 			return page{}, err
 		}
-		p := page{status: r.StatusCode, body: read(r)}
+		body, rerr := read(r)
+		if rerr != nil {
+			return page{}, rerr
+		}
+		p := page{status: r.StatusCode, body: body}
 		if r.Request != nil && r.Request.URL != nil {
 			p.path = r.Request.URL.Path
 		}
@@ -186,7 +190,11 @@ func netflixCDN(ctx context.Context, c *Client) model.UnlockResult {
 			} `json:"location"`
 		} `json:"targets"`
 	}
-	if err := json.Unmarshal([]byte(read(r)), &v); err != nil {
+	rb, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
+	if err := json.Unmarshal([]byte(rb), &v); err != nil {
 		return res(model.UnlockFailed, "", "bad speedtest payload")
 	}
 	// Prefer the egress's own location (what the panel wants: where this IP is
@@ -243,7 +251,11 @@ func disneyPlus(ctx context.Context, c *Client) model.UnlockResult {
 		if err != nil {
 			return "", 0, err
 		}
-		return read(r), r.StatusCode, nil
+		rb, rerr := read(r)
+		if rerr != nil {
+			return "", r.StatusCode, rerr
+		}
+		return rb, r.StatusCode, nil
 	}
 
 	const devicesBody = `{"deviceFamily":"browser","applicationRuntime":"chrome","deviceProfile":"windows","attributes":{}}`
@@ -313,7 +325,10 @@ func youtubePremium(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	// GL is the catalogue this egress is served; countryCode elsewhere on the
 	// page can name something else (a Hong Kong box reported US there).
 	if cc := quotedAfter(page, `"GL":"`); len(cc) == 2 {
@@ -333,7 +348,10 @@ func youtubeCDN(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	host := ""
 	for _, line := range strings.Split(page, "\n") {
 		line = strings.TrimSpace(line)
@@ -363,11 +381,20 @@ func youtubeCDN(ctx context.Context, c *Client) model.UnlockResult {
 }
 
 func primeVideo(ctx context.Context, c *Client) model.UnlockResult {
-	r, err := c.do(ctx, true, "GET", "https://www.primevideo.com", nil, nil)
+	// Amazon hands a client that accepts only gzip a 143 KB document with no
+	// territory marker, and the full 519 KB page (marker at 174 KB) to one that
+	// accepts br or nothing: measured 0/3 marker with gzip against 3/3 with br
+	// and 9/9 with identity, so ask for the uncompressed document.
+	r, err := c.do(ctx, true, "GET", "https://www.primevideo.com", map[string]string{
+		"Accept-Encoding": "identity",
+	}, nil)
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	if cc := quotedAfter(page, `"currentTerritory":"`); len(cc) == 2 {
 		return res(model.UnlockYes, strings.ToUpper(cc), "")
 	}
@@ -386,7 +413,11 @@ func tvbAnywhere(ctx context.Context, c *Client) model.UnlockResult {
 		Allow   bool   `json:"allow_in_this_country"`
 		Country string `json:"country"`
 	}
-	if err := json.Unmarshal([]byte(read(r)), &v); err != nil {
+	rb, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
+	if err := json.Unmarshal([]byte(rb), &v); err != nil {
 		return res(model.UnlockFailed, "", "bad geoip payload")
 	}
 	if v.Allow {
@@ -431,7 +462,10 @@ func dazn(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	body := read(r)
+	body, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	var v struct {
 		Region struct {
 			IsAllowed         bool   `json:"IsAllowed"`
@@ -460,7 +494,10 @@ func openAI(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	trace := read(r)
+	trace, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	loc := ""
 	if i := strings.Index(trace, "loc="); i >= 0 {
 		rest := trace[i+4:]
@@ -474,7 +511,10 @@ func openAI(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r2)
+	page, rerr := read(r2)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	if strings.Contains(page, "VPN") || r2.StatusCode == http.StatusForbidden {
 		return res(model.UnlockBanned, "", "VPN Blocked")
 	}
@@ -492,7 +532,10 @@ func gemini(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	// The app bundle carries the region as `,2,1,200,"XXX"`. Nothing else on
 	// the page is an availability verdict we trust: the `45631641` flag the
 	// reference check greps reads false on egresses the app still serves (a
@@ -513,17 +556,22 @@ func claude(ctx context.Context, c *Client) model.UnlockResult {
 		return netErr(err)
 	}
 	drain(r)
-	final := "https://claude.ai/"
+	final, path := "https://claude.ai/", "/"
 	if r.Request != nil && r.Request.URL != nil {
-		final = r.Request.URL.String()
+		final, path = r.Request.URL.String(), r.Request.URL.Path
 	}
-	switch final {
-	case "https://claude.ai/", "https://claude.ai":
-		return res(model.UnlockYes, "", "")
-	case "https://www.anthropic.com/app-unavailable-in-region":
+	switch {
+	case r.StatusCode == http.StatusForbidden:
+		// Cloudflare refusing this client is not a verdict about the IP.
+		return res(model.UnlockFailed, "", "HTTP 403")
+	case strings.Contains(final, "app-unavailable-in-region"):
 		return res(model.UnlockNo, "", "")
+	case r.StatusCode == http.StatusOK && (path == "/" || strings.HasPrefix(path, "/login")):
+		// The root or the sign-in page means the app answered: a blocked region
+		// is redirected to anthropic.com/app-unavailable-in-region instead.
+		return res(model.UnlockYes, "", "")
 	default:
-		return res(model.UnlockNo, "", final)
+		return res(model.UnlockFailed, "", final)
 	}
 }
 
@@ -622,9 +670,11 @@ func okx(ctx context.Context, c *Client) model.UnlockResult {
 	}
 	if region == "" {
 		if t, err := c.do(ctx, false, "GET", "https://www.okx.com/cdn-cgi/trace", nil, nil); err == nil {
-			trace := read(t)
-			if loc := traceValue(trace, "loc"); loc != "" {
-				region = strings.ToUpper(loc)
+			trace, rerr := read(t)
+			if rerr == nil {
+				if loc := traceValue(trace, "loc"); loc != "" {
+					region = strings.ToUpper(loc)
+				}
 			}
 		}
 	}
@@ -639,7 +689,10 @@ func bing(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	if strings.Contains(page, "cn.bing.com") {
 		return res(model.UnlockYes, "CN", "")
 	}
@@ -657,7 +710,10 @@ func apple(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	body := strings.TrimSpace(read(r))
+	body, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	if len(body) >= 2 {
 		body = body[:2]
 	}
@@ -672,7 +728,10 @@ func googlePlay(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	const marker = `<div class="yVZQTb">`
 	i := strings.Index(page, marker)
 	if i < 0 {
@@ -695,7 +754,10 @@ func googleSearch(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := strings.ToLower(read(r))
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	blocked := strings.Contains(page, "unusual traffic from") ||
 		strings.Contains(page, "is blocked") ||
 		strings.Contains(page, "unaddressed abuse")
@@ -716,7 +778,10 @@ func wikipedia(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := strings.ToLower(read(r))
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	if strings.Contains(page, "banned") {
 		return res(model.UnlockNo, "", "")
 	}
@@ -728,14 +793,19 @@ func reddit(ctx context.Context, c *Client) model.UnlockResult {
 		return res(model.UnlockFailed, "", "IPv6 unsupported")
 	}
 	// HTTP/1.1 on purpose (see doPlain): over h2 Reddit's edge answers this
-	// client with its own 403 block page even from an IP it serves fine.
+	// client with its own 403 block page even from an IP it serves fine. The
+	// Accept header asks for the document; the site sends its block page either
+	// way.
 	r, err := c.doPlain(ctx, "GET", "https://www.reddit.com/", map[string]string{
 		"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 	}, nil)
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	switch r.StatusCode {
 	case http.StatusOK:
 		return res(model.UnlockYes, "", "")
@@ -766,7 +836,10 @@ func steam(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
+	page, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	i := strings.Index(page, "priceCurrency")
 	if i < 0 {
 		return res(model.UnlockFailed, "", "page error")
@@ -794,7 +867,10 @@ func oneTrust(ctx context.Context, c *Client) model.UnlockResult {
 	if err != nil {
 		return netErr(err)
 	}
-	body := read(r)
+	body, rerr := read(r)
+	if rerr != nil {
+		return netErr(rerr)
+	}
 	// The body is a JSONP call: jsonFeed({...});
 	if i := strings.IndexByte(body, '{'); i >= 0 {
 		if j := strings.LastIndexByte(body, '}'); j > i {
