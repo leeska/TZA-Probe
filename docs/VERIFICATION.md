@@ -2052,3 +2052,27 @@ enamel name badge with exactly the two Chinese characters 家人」，其余一�
 390px 实测卡片 `358x907.5`（浅色，立绘 359）/ `358x896.8`（夜版，立绘 349）；
 `card-overflow-check` 六个宽度越界 0、`route-nowrap-check` 折行 0 非居中 0；
 `go test` / `gofmt` / `go vet` / `ui-smoke` / `presentation-test` 全绿。
+
+## 2026-10-08 US-BWH-DC9 进角色名单：照搬瓦工官网的金黄→琥珀风格 + 美国元素
+
+需求：「下一步搬瓦工」。先去官网取风格（同 VMISS 那套做法，`/root/work/vmiss-probe.mjs`）：
+BandwagonHost 的站是老的 WHMCS 模板（灰底 `#dbdbdb`、Arial、赭色 `#DC9700`），真正代表品牌的是
+**logo 与 banner**——logo 是圆胖的 slogan 体「Bandwagon」金黄→橙渐变（`#FFC107`→`#F57C00`）
+配黑色描边与投影，后面「HOST」是银灰 `#D1D5DB`；banner 是**棕金渐变底 + 黑机架 + 金色灯**
+的机房意象。中文圈叫它**搬瓦工**。
+
+**人物 = 品牌风格 × 地区 × 线路**：蜜金发 + 银灰挑染（金黄 + HOST 银灰）、琥珀色眼睛、
+白水手领 + 金领巾 + 深棕镶边（品牌棕金）、一枚**大篷车轮发夹**（名字就叫 Bandwagon）、
+美国元素落在星条缎带 + 星形别针；胸口铭牌写 **Bandwagon**（铭牌这一件继续跟系列统一：
+NoSla 写「家人」、VMISS 写 VMISS、搬瓦工写 Bandwagon，放大裁片逐字母复核过 B-A-N-D-W-A-G-O-N）。
+线路身份取真实回程：**CN2GIA · 10099→9929 · CMIN2**（洛杉矶 DC9，159–167ms，19/24 解锁，USD 35.42/年）。
+立绘 `web/anime/us-bwh-dc9.webp`（85110 字节），牌面白仍从 y≈752 起，两档裁切不用动。
+
+**线上（`2.0.0-dev+51a735b`）**：源站与经 CF `healthz=200`、12/12 在线；
+`/anime/us-bwh-dc9.webp` 200（85110）；390px 卡片 `358x907.5`（浅色）/ `358x896.8`（夜版），
+立绘 359/349；`card-overflow-check` 六个宽度越界 0、`route-nowrap-check` 折行 0 非居中 0；
+`go test` / `gofmt` / `go vet` / `ui-smoke` / `presentation-test` 全绿。
+
+**四台线路机到这里齐了**：`JP-NoSla-Gen2`（樱花簪 / 千鸟格 / 家人铭牌）、
+`DE-NoSla-FRA`（黑红金 / Dirndl / 家人铭牌）、`US-VMISS-TRI`（VMISS 蓝白科技风 / 云朵 / VMISS 铭牌）、
+`US-BWH-DC9`（搬瓦工金黄 / 大篷车轮 / Bandwagon 铭牌）。剩下 `SH-Tencent-Lite` 还没做。
