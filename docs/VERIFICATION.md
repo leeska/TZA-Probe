@@ -1990,3 +1990,41 @@ litterbox 这次整站 500、catbox 回 412「Invalid uploader」、0x0.st 回 5
 200（77480 字节）；390px 实测两台 NoSla 卡片同为 `358x907.5`（立绘 359、`metrics-grid` 114、
 延迟带 137、回程格 32）；`card-overflow-check` 六个宽度越界 0、`route-nowrap-check` 折行 0 非居中 0；
 `go test` / `gofmt` / `go vet` / `ui-smoke` / `presentation-test` 全绿。
+
+## 2026-10-08 二次元皮肤适配夜版；JP 补日本元素、两台 NoSla 都挂「家人」铭牌
+
+同一轮里两条反馈：「还要适配暗色模式」＋「JP的要有日本元素，然后 nosla 的都要有家人元素
+（可以是发夹或铭牌等有家人字样）」。
+
+**一、夜版（原先等于没适配）**
+
+- 现象：上一版把卡片子树里的令牌在**两套主题下都覆盖成浅色**（本意是「牌子是实物白板」），
+  结果整页深色里，只有这两张带立绘的卡是白的——夜版看着像漏了没改。真 Chrome 打线上
+  12 张卡：10 张深色、2 张白。
+- 改法：`--anime-sign / --anime-sign-line` 在暗色下另给一份（`#1d2130 / #2c3149`），
+  浅色那套令牌的覆盖限定到 `:not([data-theme="dark"])`；立绘在夜版里**只裁到牌沿**
+  （`aspect-ratio: 768 / 752`，浅色仍 `768 / 775`）——不裁的话深色牌面上会露一条 20 多像素的
+  白牌面；夜版立绘再压一档亮度（`brightness(0.82) saturate(0.94)`）。卡片因此矮了 10.7px
+  （390px 下 907.5 → 896.8），这是裁切带来的，两套主题各自内部一致。
+- 验证：线上 390px 实测——浅色 `358x907.5`（立绘 359）、夜版 `358x896.8`（立绘 349），
+  其余分块高度一模一样；夜版卡身取色为深色（`#1d2130` 一带）、正文浅色，牌沿处没有白色带；
+  `card-overflow-check`（皮肤 = 二次元，夜版）六个宽度「越界 0 个」。
+
+**二、JP 补日本元素**：樱花簪（簪身 + 垂穗）、水手领上的千鸟格、红白缎带；
+`web/anime/jp-nosla-gen2.webp` 换成新图（78992 字节）。
+
+**三、两台 NoSla 都挂「家人」铭牌**：胸口一枚白底黑字小铭牌，写「家人」——
+fal `nano-banana-pro` 以各自原立绘为底图走 edit，提示词里点明「only change: pin a small white
+enamel name badge with exactly the two Chinese characters 家人」，其余一律保持；
+`web/anime/de-nosla-fra.webp` 一并换新（83204 字节）。复核：vision 放大到胸口裁片，
+两张图的牌子都读出「家人」，牌面仍为空、双手仍抓在牌顶边。
+
+**线上（`2.0.0-dev+fdabd1f`）**：源站与经 CF `healthz=200`、12/12 在线；
+`/anime/jp-nosla-gen2.webp` 200（78992）、`/anime/de-nosla-fra.webp` 200（83204）；
+`route-nowrap-check` 折行 0 非居中 0；`go test` / `gofmt` / `go vet` / `ui-smoke` /
+`presentation-test` 全绿（ui-smoke 新增三条夜版断言：暗色牌子令牌、浅色令牌的 `not()` 限定、
+夜版裁切比例）。回滚点 `/usr/local/bin/tza-server.previous`。
+
+**记一笔**：`ui-smoke` 与那台在跑 Chromium 截图的任务并发时，出现过一次
+`expected: 'dark'` 的失败（jsdom 侧断言在 CPU 抢占下超时/错序），机器空下来连跑两次都绿；
+批量截图与 UI 回归不要同时跑。
