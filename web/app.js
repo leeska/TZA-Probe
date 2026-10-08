@@ -7,6 +7,7 @@ import { applySkin, skinButton } from "./skins.js";
 import { searchMatch } from "./search.js";
 import { carrierMark } from "./carrier-logos.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
+import { castId } from "./anime-cast.js";
 import "./ui-select.js";
 
 const app = document.querySelector("#app");
@@ -737,10 +738,15 @@ function routeLines(n, f) {
 
 function gridInner(n) {
   const f = nodeFacts(n);
+  // 二次元皮肤（data-skin="anime"）的线路机立绘：只有名单里的节点才渲染这一层，
+  // 其余皮肤下 .anime-stage 是 display:none（见 styles.css）。图片走样式表的 [data-cast] 规则。
+  // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
+  // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这两个标记区分。
+  const cast = castId(n);
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
-  return `<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
+  return `${cast ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"></div>` : ""}<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

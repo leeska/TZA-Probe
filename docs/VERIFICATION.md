@@ -1900,3 +1900,62 @@ Chromium 上也指向它），这套字体的 11px 数字比玻璃皮肤落到�
 - `scripts/ui-smoke.mjs` 增加两条样式文本断言（`metrics-grid` 必须 `minmax(0, 1fr)`、
   `throttle-note` 必须 `white-space: normal`）——jsdom 不做布局，只有正则能拦住回退。
 - 部署脚本的线上验收里加上这道检查（与回程格布局守卫并列）。
+
+## 2026-10-08 二次元皮肤：线路机角色立绘 + 牌子式数据卡
+
+需求原话：「新加一个皮肤，每台机器都用一个二次元女生人物代替，但是只对线路机做形象设计……
+基调就是线路 + 商家特色」。落地时又收窄了一次：**先在真实面板里实现，不要效果图**。
+
+**设定（web/anime-cast.js 的开头写着同一句话）**：形象 = 线路身份 × 商家气质；只对线路机做，
+名单外的节点在二次元皮肤里照旧是一张浅色卡片，不摆占位立绘。首个进名单的是
+`JP-NoSla-Gen2`（Gen.2 亚太精品线 × NoSla「家人云」），人物图 `web/anime/jp-nosla-gen2.webp`
+（768 宽，68KB，源码里跑 `node /root/work/tza-img-webp.mjs` 从立绘转出来）。
+
+**一、新皮肤怎么落**
+
+- `web/anime.css`：以 `web/shadcn.css` 的结构为底（那份的结构性声明是「无毛玻璃、一档圆角、
+  发丝描边」），改令牌与圆角尺度：浅色白面 `#ffffff` + 樱花粉主色 `#ff7aa2`、底 `#f4f5fd`；
+  深色底 `#14161f`、正文 `#eef1fa`。选择器一律 `[data-skin="anime"]` 前缀——
+  `scripts/ui-smoke.mjs` 的 `assertSkinSheet` 会拦下漏前缀的规则。
+- `web/index.html` 在 `shadcn.css` 之后引 `anime.css`（皮肤样式表按顺序覆盖）；
+  `web/skins.js` 的 `SKINS`／`CHROME`、`web/theme-boot.js` 的首屏白名单、
+  `internal/model/settings.go` 的 `PanelSkins` 三处同步加上 `anime`
+  （`web/look_choices_test.go` 把 Go 侧清单与前端清单钉在一起，只加一边会失败）。
+  `web/styles.css` 补了皮肤色卡 `[data-swatch="anime"]` 与立绘层的默认 `display: none`。
+- 后台「默认外观」因此也能设成二次元：`PUT /api/v1/admin/panel {default_skin:"anime"}`。
+
+**二、人物怎么进卡片（融合，不是角落贴图）**
+
+- `web/app.js` 的 `gridInner` 只为「在名单里的」节点渲染一层
+  `<div class="anime-stage" data-cast="jp-nosla-gen2" data-bleed>`，图片按
+  `[data-cast]` 挂在样式表上——面板 CSP 是 `style-src 'self'`，行内 `background-image` 会被丢掉，
+  这也是前面效果图阶段踩过的坑（同一条：data URL 超过约 2MB 会被浏览器丢弃）。
+- 立绘按标的顶边裁切：`aspect-ratio: 768 / 775` 显示原图上方 56%，也就是**少女 + 牌子的顶边**；
+  牌子本体由卡片自己的白底接着画下去，所以数据落在卡片里读起来就像写在她举的牌子上。
+  卡片是 `overflow: hidden`，立绘用负外边距通铺到卡片边框，圆角由卡片裁出来。
+- `data-bleed` 是给布局守卫看的：`scripts/card-overflow-check.mjs` 对带这个标记的元素
+  按「卡片边框盒」判定（通铺本身是设计意图），对其他元素仍按「卡片内容盒」判定，
+  原来那条窄屏指标格越界的守卫强度没有降低。
+
+**三、验证**
+
+- `gofmt -l .` 空、`go vet ./...` 静默、`go test ./...` 全通过（含新增的
+  `web/anime_cast_test.go`：名单里的每个 id 都要有 `[data-cast]` 规则、`/anime/<id>.webp`
+  文件在、样式表里挂的每个 id 都要在名单里——三处任一处对不上都是「静默不显示」，只有它能拦）。
+- `scripts/ui-smoke.mjs`：皮肤菜单出现第四项、点它落到 `<html data-skin="anime">` 并写进
+  localStorage、`theme-boot.js` 首屏就定好 `anime`、`/anime.css` 的令牌与立绘规则按文本断言、
+  角色名单外的节点不渲染 `.anime-stage`。真服务 + jsdom 全绿（`UI_SMOKE_OK`）。
+- 真 Chrome 打本地服务（生产库副本）量真实卡片：`JP-NoSla-Gen2` 在 390px 下
+  `358x907.5`，其中立绘 `359`、`card-top` 55、`node-sub` 30、`metrics-grid` 114、
+  `card-stats` 52、延迟带 137、回程格 32；同页其他 11 台仍是 554.3 的普通卡片。
+- `scripts/card-overflow-check.mjs`（皮肤 = 二次元）320/344/360/375/390/414 六个宽度
+  「越界 0 个」，指标格 112/124/132/140/147/159；加 `data-bleed` 之前它报 6 处
+  （全宽 21.5px 的立绘层），修正后归零。
+- `scripts/route-nowrap-check.mjs`（皮肤 = 二次元，390px）：12 个回程格折行 0、非居中 0，
+  最紧的一格「未知」需要 37px、可用 93px。
+- 目视：立绘裁切口正落在牌子顶边，手指完整、牌沿一条线（无重影 / 无错位），
+  深色主题下卡片仍是白面深字、页面变深。
+
+**待办**：其余线路机（DMIT / BWH 等）还没有人物。加一台 = 往 `web/anime-cast.js` 的名单里
+加一条 + 放一张 `web/anime/<id>.webp` + 在 `anime.css` 里补一行 `[data-cast]` 规则，
+`web/anime_cast_test.go` 会替你把这三件事对齐。

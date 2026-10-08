@@ -7,7 +7,7 @@
   var d = window.__tzaDefault || {};
   // 后台默认：没配过就是内置默认（跟随系统 + 液态玻璃），与 model.DefaultPanel* 一致。
   var themeDefault = d.theme === "light" || d.theme === "dark" ? d.theme : "auto";
-  var skinDefault = d.skin === "press" || d.skin === "shadcn" ? d.skin : "glass";
+  var skinDefault = d.skin === "press" || d.skin === "shadcn" || d.skin === "anime" ? d.skin : "glass";
   var pref = null;
   try {
     pref = localStorage.getItem("tza-theme");
@@ -22,5 +22,5 @@
   var root = document.documentElement;
   root.dataset.theme = dark ? "dark" : "light";
   // 与 skins.js 的 SKINS 同名清单：认不出来的值（含 null）退回默认皮肤。
-  root.dataset.skin = skin === "press" || skin === "shadcn" ? skin : skinDefault;
+  root.dataset.skin = skin === "press" || skin === "shadcn" || skin === "anime" ? skin : skinDefault;
 })();

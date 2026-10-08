@@ -485,6 +485,12 @@ h1 {
   flex-direction: column;
 }
 
+/* 二次元皮肤的线路机立绘层：由 app.js 只为「角色名单里」的节点渲染（web/anime-cast.js）。
+   其他皮肤不摆它，所以这里默认不显示；二次元皮肤在 anime.css 里把它放开。 */
+.anime-stage {
+  display: none;
+}
+
 /* 整张卡片可点：打开综合信息；卡片内的格子有自己的聚焦详情。 */
 .node-card { cursor: pointer; }
 
@@ -2530,6 +2536,9 @@ pre,
 [data-swatch="shadcn"] i:nth-child(1) { background: #f5f5f5; }
 [data-swatch="shadcn"] i:nth-child(2) { background: #ffffff; }
 [data-swatch="shadcn"] i:nth-child(3) { background: #171717; }
+[data-swatch="anime"] i:nth-child(1) { background: #f4f5fd; }
+[data-swatch="anime"] i:nth-child(2) { background: #ffffff; }
+[data-swatch="anime"] i:nth-child(3) { background: #ff7aa2; }
 
 .skin-copy {
   display: flex;

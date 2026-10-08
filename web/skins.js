@@ -10,6 +10,7 @@ export const SKINS = [
   { id: "glass", name: "液态玻璃", hint: "毛玻璃 · 圆角 · 柔和阴影" },
   { id: "press", name: "复古印刷", hint: "纸张方格 · 硬边框 · 衬线标题" },
   { id: "shadcn", name: "现代极简", hint: "中性灰 · 发丝描边 · 小圆角" },
+  { id: "anime", name: "二次元", hint: "线路机角色 · 白面樱花粉" },
 ];
 
 const IDS = SKINS.map((s) => s.id);
@@ -29,6 +30,7 @@ export function skinPreference() {
 const CHROME = {
   press: { light: "#f8f1df", dark: "#15120f" },
   shadcn: { light: "#ffffff", dark: "#0a0a0a" },
+  anime: { light: "#f4f5fd", dark: "#14161f" },
 };
 export function skinChrome() {
   return CHROME[skinPreference()] || { light: "#edf2fb", dark: "#0f141c" };

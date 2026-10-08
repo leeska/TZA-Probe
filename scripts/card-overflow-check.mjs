@@ -56,11 +56,18 @@ for (const width of WIDTHS) {
       const name = c.querySelector(".node-name")?.textContent.trim() || "?";
       const grid = c.querySelector(".metrics-grid");
       if (grid) cols.push([...grid.children].map((cell) => Math.round(cell.getBoundingClientRect().width)).join("/"));
+      // 通铺层（[data-bleed]，如二次元皮肤的立绘）本来就盖满卡片，越过内边距是设计意图：
+      // 它的上限是卡片边框盒，越过边框盒才算真被切掉。
+      const bleeded = cr.right - parseFloat(cs.borderRightWidth) + 0.5;
+      const bleededLeft = cr.left + parseFloat(cs.borderLeftWidth) - 0.5;
       for (const el of c.querySelectorAll("*")) {
         if (getComputedStyle(el).position === "fixed") continue;
         const r = el.getBoundingClientRect();
         if (!r.width && !r.height) continue;
-        const over = r.right - inner;
+        const bleed = el.hasAttribute("data-bleed");
+        const over = bleed
+          ? Math.max(r.right - bleeded, bleededLeft - r.left)
+          : r.right - inner;
         if (over > 0.5) {
           bad.push({
             name,

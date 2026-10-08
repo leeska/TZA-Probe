@@ -1,0 +1,629 @@
+/* ==========================================================================
+   TZA Probe · 二次元（线路机角色）皮肤
+
+   第五张样式表，只在 <html data-skin="anime"> 时生效（选择器一律带 data-skin 前缀，
+   默认的液态玻璃皮肤一个字节都不受影响）。视觉语言：白面 + 樱花粉主色 + 浅蓝灰底纸，
+   平涂、无模糊、无渐变，圆角比「现代极简」大一档（面级 18px）。
+   它比别的皮肤多一层结构：线路机的卡片顶部是**角色立绘**（少女举着牌子），
+   立绘只画到牌子的上沿，牌子本体由卡片自己的白底接着画下去——所以数据看起来
+   「写在牌子上」。立绘由 app.js 按 web/anime-cast.js 的名单渲染 .anime-stage，
+   图片本体在 web/anime/*.webp（go:embed 进二进制）。
+
+   明暗仍走 data-theme，所以这是同一套语言的浅色与深色两份令牌。
+   规则顺序：令牌 → 底色 → 材质 → 面 → 控件 → 排版 → 图表 → 弹层 → 角色立绘。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 令牌：白面 + 樱花粉主色 + 浅蓝灰底；深色是同一套语言的「夜版」
+   -------------------------------------------------------------------------- */
+:root[data-skin="anime"] {
+  --anime-bg: #f4f5fd;
+  --anime-card: #ffffff;
+  --anime-fg: #262b3a;
+  --anime-muted: #f1f2fa;
+  --anime-muted-fg: #7c8496;
+  --anime-primary: #ff7aa2;
+  --anime-primary-fg: #ffffff;
+  --anime-border: #e6e8f4;
+  --anime-ring: #ffb3c9;
+  --anime-hover: #f7f1f5;
+  --anime-hover-primary: #ff5f8f;
+  --anime-ring-soft: rgba(255, 122, 162, 0.22);
+
+  /* 圆角尺度：面 18px、容器 14px、控件 10px、小物件 6px */
+  --anime-r-sm: 6px;
+  --anime-r-md: 10px;
+  --anime-r-lg: 14px;
+  --anime-r-xl: 18px;
+  --anime-radius: var(--anime-r-lg);
+
+  /* 字体栈与其余三张皮肤统一：拉丁与系统 UI 字体在前，不列 CJK 字体（列了回程格会折行） */
+  --anime-font: -apple-system, BlinkMacSystemFont, Inter, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", sans-serif;
+  --anime-mono: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+
+  --anime-shadow-xs: 0 1px 2px rgb(76 86 140 / 0.06);
+  --anime-shadow-sm: 0 2px 6px rgb(76 86 140 / 0.08);
+  --anime-shadow-md: 0 8px 22px rgb(76 86 140 / 0.12);
+
+  /* 面板自己的公共令牌：styles.css / glass.css 读的也是这一套 */
+  --ink: var(--anime-fg);
+  --muted: var(--anime-muted-fg);
+  --subtle: #aab1c4;
+  --line: var(--anime-border);
+  --accent: var(--anime-primary);
+  --accent-rgb: 255, 122, 162;
+
+  --green: #2fbf71;
+  --green-rgb: 47, 191, 113;
+  --orange: #f0a02a;
+  --orange-rgb: 240, 160, 42;
+  --red: #f2545b;
+  --red-rgb: 242, 84, 91;
+  --purple: #9b7bf0;
+  --purple-rgb: 155, 123, 240;
+  --cyan: #3ec7c0;
+  --cyan-rgb: 62, 199, 192;
+  --indigo: #6d7ff0;
+
+  --glass-bg: var(--anime-card);
+  --glass-bg-subtle: var(--anime-muted);
+  --glass-bg-elevated: var(--anime-card);
+  --glass-border: var(--anime-border);
+  --glass-border-subtle: #eff1f9;
+  /* glass.css 里很多面写成 `box-shadow: var(--glass-shadow), var(--glass-inner-rim)`，
+     而 `none` 不能作为阴影列表里的一项——整条声明会被判无效丢掉。给一个全透明的阴影，
+     效果等同「没有内描边」，但复合写法仍合法。 */
+  --glass-inner-rim: 0 0 #0000;
+  --glass-shadow: var(--anime-shadow-sm);
+  --glass-shadow-lg: var(--anime-shadow-md);
+  --blur: none;
+  --progress-track: #eef0f8;
+
+  /* 「牌子」：立绘里那块白牌子的面与描边，卡片自己接着往下画 */
+  --anime-sign: #ffffff;
+  --anime-sign-line: #e3e9f2;
+}
+
+:root[data-skin="anime"][data-theme="dark"] {
+  --anime-bg: #14161f;
+  --anime-card: #1d2130;
+  --anime-elevated: #232838;
+  --anime-fg: #eef1fa;
+  --anime-muted: #262b3c;
+  --anime-muted-fg: #a3abc4;
+  --anime-primary: #ff9ab8;
+  --anime-primary-fg: #1b1e2e;
+  --anime-border: #2c3149;
+  --anime-ring: #ff9ab8;
+  --anime-hover: #262b3c;
+  --anime-hover-primary: #ffb0c8;
+  --anime-ring-soft: rgba(255, 154, 184, 0.24);
+
+  --anime-shadow-xs: 0 1px 2px rgb(0 0 0 / 0.5);
+  --anime-shadow-sm: 0 2px 6px rgb(0 0 0 / 0.55);
+  --anime-shadow-md: 0 10px 24px rgb(0 0 0 / 0.6);
+
+  --subtle: #6f7791;
+  --line: var(--anime-border);
+  --glass-bg-elevated: var(--anime-elevated);
+  --glass-border-subtle: #262b3c;
+  --progress-track: #262b3c;
+
+  --green: #4ade80;
+  --green-rgb: 74, 222, 128;
+  --orange: #fbbf24;
+  --orange-rgb: 251, 191, 36;
+  --red: #f87171;
+  --red-rgb: 248, 113, 113;
+  --purple: #a78bfa;
+  --purple-rgb: 167, 139, 250;
+  --cyan: #2dd4bf;
+  --cyan-rgb: 45, 212, 191;
+  --indigo: #818cf8;
+}
+
+/* --------------------------------------------------------------------------
+   2. 底色：纯色面，没有玻璃皮肤那四团彩色光斑
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] body {
+  background: var(--anime-bg);
+  font-family: var(--anime-font);
+}
+
+/* 光斑画在 body::before 上（fixed inset -15% 的四团径向渐变 + 一层线性底），极简面不画。 */
+html[data-skin="anime"] body::before {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   3. 材质：没有毛玻璃；圆角回到 anime 的 8px 尺度
+   -------------------------------------------------------------------------- */
+
+/* 模糊整片关掉（玻璃皮肤有 15 处 backdrop-filter，逐个覆盖只会漏）。
+   字面量 !important 是有意的：这是皮肤的定义性声明，不是临时补丁。 */
+html[data-skin="anime"] *,
+html[data-skin="anime"] *::before,
+html[data-skin="anime"] *::after,
+html[data-skin="anime"] *::backdrop {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* 统一到 --radius（玻璃皮肤的面是 20-28px 的大圆角）。含 .node-grid.node-list .node-card
+   这类三权重的规则，所以只能 !important；随后按 anime 的尺度逐级还原，
+   再单独把真正的圆形标记放回去。 */
+html[data-skin="anime"] * {
+  border-radius: var(--anime-radius) !important;
+}
+
+/* 圆形标记：状态点 / 方向图标 / 运营商点 / 图表光标点 / 圆形按钮。 */
+html[data-skin="anime"] :is(.node-dot, .live-label i, .overview .dot, .speed-icon, .carrier-dot, .chart-dot, .chip-remove, .modal-head button) {
+  border-radius: 50% !important;
+}
+
+/* 圆角尺度：面 12px、容器 8px、控件与胶囊 6px、菜单项 4px。 */
+html[data-skin="anime"] :is(.node-card, .panel, dialog, .login-panel form, .overview-tile, .hero-meta, .catalog-picker, .webhook-panel, .admin-stats > div, .detail-stats > div) {
+  border-radius: var(--anime-r-xl) !important;
+}
+
+html[data-skin="anime"] :is(.public-header, .sidebar, .admin-top, .toolbar, .notice, .chart, .brand-mark, .node-grid.node-list .node-card) {
+  border-radius: var(--anime-r-lg) !important;
+}
+
+html[data-skin="anime"] :is(.button, button.primary, button.danger, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle, .skin-toggle, input:not([type="checkbox"]):not([type="radio"]), select, textarea, .select-trigger, .search input, .pill, .expiry-pill, .family-tag, .chip-family, .os-tag, .arch-tag, .target-chip, .tile-badge, .route-label, .speed-icon, .skin-swatch, .progress) {
+  border-radius: var(--anime-r-md) !important;
+}
+
+html[data-skin="anime"] :is(.select-pop, .skin-menu, details[open], .unlock-pop, .select-opt, .skin-option, #toast) {
+  border-radius: var(--anime-r-lg) !important;
+}
+
+html[data-skin="anime"] :is(.select-opt, .skin-option) {
+  border-radius: var(--anime-r-sm) !important;
+}
+
+/* 皮肤选择器里的三格色样是拼在一起的一条，格子本身不能圆。 */
+html[data-skin="anime"] .skin-swatch i {
+  border-radius: 0 !important;
+}
+
+/* 延迟色带的小格子与进度条：前者保持小数点级的方角，后者是 anime 的整圆进度条。 */
+html[data-skin="anime"] .quality-bar {
+  border-radius: 2px !important;
+}
+
+html[data-skin="anime"] :is(.metric progress, .progress) {
+  border-radius: 9999px !important;
+}
+
+/* --------------------------------------------------------------------------
+   4. 面：白纸 + 1px 发丝描边 + 极浅投影（面本身的底色与描边都由令牌带出来）
+   -------------------------------------------------------------------------- */
+/* glass.css 的悬停是「白描边 + 大投影」，中性面上白描边等于看不见，改成描边不动、投影加深。 */
+html[data-skin="anime"] .node-card:hover {
+  border-color: var(--anime-border);
+  box-shadow: var(--anime-shadow-sm);
+}
+
+html[data-skin="anime"] .overview-tile:hover {
+  border-color: var(--anime-border);
+  box-shadow: var(--anime-shadow-sm);
+}
+
+/* 品牌方块：玻璃版是蓝紫渐变药丸，极简版是一枚「主色实底」的方章。
+   字色必须落在 .brand-mark 自己身上 —— 标记里是 `t<span>z</span>a`，只写 .brand-mark span
+   的话 t / a 两个字会继承 styles.css 的 #fff，在深色（近白底）下直接看不见。
+   字距不碰：styles.css 给的是 -2px，换成 -0.02em 会把方块撑宽约 5px，390px 头部里
+   右侧那颗「管理控制台」跟着往外挪（实测 header 内 nav 右缘 362.5 → 367.2px）。 */
+html[data-skin="anime"] .brand-mark {
+  background: var(--anime-primary);
+  border: 1px solid var(--anime-primary);
+  box-shadow: none;
+  color: var(--anime-primary-fg);
+}
+
+/* 「z」在玻璃皮肤里是一点品牌彩；中性面里退成同色系的暗调（用不透明白，
+   两套主题自动对称：浅色是白字的 60%，深色是黑字的 60%）。 */
+html[data-skin="anime"] .brand-mark span {
+  color: inherit;
+  opacity: 0.6;
+}
+
+/* 状态点的发光环与脉冲（玻璃皮肤的 radar-pulse）在中性面上是噪声，去掉。 */
+html[data-skin="anime"] :is(.live-label i, .node-dot, .overview .dot) {
+  box-shadow: none;
+}
+
+html[data-skin="anime"] :is(.live-label i, .node-dot, .overview .dot)::after {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   5. 控件：白底发丝描边的小按钮，主按钮近黑实底（anime 的 default / primary）
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] :is(.button, button.primary, button.danger, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle, .skin-toggle) {
+  border: 1px solid var(--glass-border);
+  background: var(--anime-card);
+  box-shadow: var(--anime-shadow-xs);
+  font-family: var(--anime-font);
+  font-weight: 500;
+}
+
+html[data-skin="anime"] :is(.button, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle, .skin-toggle):not(:disabled):hover {
+  background: var(--anime-hover);
+  box-shadow: var(--anime-shadow-xs);
+}
+
+/* 主按钮：近黑实底 + 近白字（深色下自动翻成近白底 + 近黑字），没有任何渐变与光晕。 */
+html[data-skin="anime"] button.primary,
+html[data-skin="anime"] .primary {
+  background: var(--anime-primary) !important;
+  border-color: var(--anime-primary) !important;
+  color: var(--anime-primary-fg) !important;
+  box-shadow: none !important;
+}
+
+html[data-skin="anime"] button.primary:not(:disabled):hover,
+html[data-skin="anime"] .primary:not(:disabled):hover {
+  background: var(--anime-hover-primary) !important;
+  box-shadow: none !important;
+}
+
+html[data-skin="anime"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .select-trigger, .search input) {
+  border: 1px solid var(--glass-border);
+  background: var(--anime-card);
+  box-shadow: var(--anime-shadow-xs);
+  font-family: var(--anime-font);
+}
+
+/* 焦点：anime 的 ring —— 描边换成 ring 色，外面套一圈 2px 的软环，不用 outline。 */
+html[data-skin="anime"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .select-trigger, .search input):focus,
+html[data-skin="anime"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .select-trigger, .search input):focus-visible,
+html[data-skin="anime"] .search:focus-within {
+  border-color: var(--anime-ring);
+  box-shadow: 0 0 0 2px var(--anime-ring-soft);
+  outline: none;
+}
+
+html[data-skin="anime"] input[type="checkbox"],
+html[data-skin="anime"] input[type="radio"] {
+  accent-color: var(--anime-primary);
+}
+
+/* 分段控件：anime 的 Tabs —— 槽底是 muted 面、无描边，选中那半是「白底 + 细描边 + 极浅投影」
+   的小方片（不是玻璃皮肤的亮片，也不是印刷皮肤的实心章）。 */
+html[data-skin="anime"] .segmented {
+  border: 1px solid var(--glass-border-subtle);
+  background: var(--anime-muted);
+  box-shadow: none;
+  padding: 3px;
+  gap: 2px;
+}
+
+html[data-skin="anime"] .segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+html[data-skin="anime"] .segmented button.active {
+  background: var(--anime-card);
+  color: var(--ink);
+  box-shadow: var(--anime-shadow-xs);
+}
+
+html[data-skin="anime"] .segmented button:active {
+  transform: none;
+}
+
+/* 胶囊 / 小标签：anime 的 secondary Badge —— muted 底、发丝描边、次要文字色。 */
+html[data-skin="anime"] :is(.pill, .expiry-pill, .chip-family, .family-tag, .os-tag, .arch-tag, .target-chip, .tile-badge) {
+  border: 1px solid var(--glass-border);
+  background: var(--anime-muted);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+html[data-skin="anime"] .pill.good,
+html[data-skin="anime"] .expiry-pill {
+  border-color: rgba(var(--green-rgb), 0.35);
+  background: rgba(var(--green-rgb), 0.1);
+  color: var(--green);
+}
+
+html[data-skin="anime"] .pill.warn,
+html[data-skin="anime"] .expiry-pill.warning {
+  border-color: rgba(var(--orange-rgb), 0.4);
+  background: rgba(var(--orange-rgb), 0.12);
+  color: var(--orange);
+}
+
+html[data-skin="anime"] .chip-family.on {
+  background: var(--anime-primary);
+  border-color: var(--anime-primary);
+  color: var(--anime-primary-fg);
+}
+
+/* --------------------------------------------------------------------------
+   6. 排版：一套无衬线（不再有印刷皮肤的衬线标题），标题收紧字距、副标题走 muted
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] :is(h1, h2, h3, .hero h1, .login-story h1, .login-panel h2, .panel-head h3, .node-name, .overview-tile strong, .hero-meta strong, .page-heading h1) {
+  font-family: var(--anime-font);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+html[data-skin="anime"] :is(.eyebrow, .sidebar-caption) {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+/* 标题里那道三色渐变字（玻璃皮肤的招牌）在中性面上是唯一的彩色噪声，压回前景色。 */
+html[data-skin="anime"] :is(.hero h1 span, .login-story h1 span) {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--ink);
+}
+
+/* 节点名的悬停：玻璃皮肤是变蓝，而中性面里 --accent 就是前景色（变与不变看不出），
+   改成 anime 链接那种下划线，hover 才有反馈。 */
+html[data-skin="anime"] .node-name:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+html[data-skin="anime"] .page-heading h1 span {
+  background: var(--anime-muted) !important;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted) !important;
+  font-weight: 500 !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. 数据可视化：平色条形 + 细网格
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] :is(.metric progress, .progress) {
+  border: 0;
+  background: var(--progress-track);
+  box-shadow: none;
+}
+
+/* 注意：::-webkit-progress-value 与 ::-moz-progress-bar **必须分成两条规则**。
+   Chrome 把 ::-moz-progress-bar 当成未知伪元素，若与 webkit 那条写在同一个选择器列表里，
+   整条规则会被判无效丢弃。 */
+html[data-skin="anime"] .metric progress::-webkit-progress-value {
+  border-radius: 9999px;
+  box-shadow: none;
+}
+
+html[data-skin="anime"] .metric progress::-moz-progress-bar {
+  border-radius: 9999px;
+  box-shadow: none;
+}
+
+html[data-skin="anime"] .metrics-grid .metric:nth-child(1) progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+html[data-skin="anime"] .metrics-grid .metric:nth-child(1) progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+html[data-skin="anime"] .metrics-grid .metric:nth-child(2) progress::-webkit-progress-value {
+  background: var(--purple);
+}
+
+html[data-skin="anime"] .metrics-grid .metric:nth-child(2) progress::-moz-progress-bar {
+  background: var(--purple);
+}
+
+html[data-skin="anime"] .metrics-grid .metric:nth-child(3) progress::-webkit-progress-value {
+  background: var(--orange);
+}
+
+html[data-skin="anime"] .metrics-grid .metric:nth-child(3) progress::-moz-progress-bar {
+  background: var(--orange);
+}
+
+html[data-skin="anime"] .metrics-grid .metric:nth-child(4) progress::-webkit-progress-value {
+  background: var(--cyan);
+}
+
+html[data-skin="anime"] .metrics-grid .metric:nth-child(4) progress::-moz-progress-bar {
+  background: var(--cyan);
+}
+
+html[data-skin="anime"] .chart {
+  border: 1px solid var(--glass-border);
+  background: var(--anime-card);
+  box-shadow: var(--anime-shadow-xs);
+}
+
+html[data-skin="anime"] :is(.chart-grid, .chart text, .chart-axis span) {
+  color: var(--muted);
+}
+
+/* 回程芯片：白底发丝框，玻璃版那圈 inset 高光去掉。 */
+html[data-skin="anime"] .route-label {
+  border: 1px solid var(--glass-border-subtle);
+  background: var(--anime-muted);
+  box-shadow: none;
+}
+
+html[data-skin="anime"] .route-label:hover {
+  background: var(--anime-card);
+  border-color: var(--glass-border);
+  box-shadow: var(--anime-shadow-xs);
+}
+
+/* --------------------------------------------------------------------------
+   8. 悬停与按下：中性面不做位移（没有任何一块需要重新合成），反馈只走底色与描边
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] :is(.node-card, .overview-tile, .button, .theme-toggle, .skin-toggle, .route-label) {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+html[data-skin="anime"] .node-grid:not(.node-list) .node-card:hover,
+html[data-skin="anime"] :is(.overview-tile, .button, .theme-toggle, .skin-toggle, button):hover,
+html[data-skin="anime"] :is(.overview-tile, .button, .theme-toggle, .skin-toggle, button):active {
+  transform: none;
+}
+
+html[data-skin="anime"] .node-grid.node-list .node-card:hover {
+  transform: none;
+}
+
+/* 侧栏：选中项是 muted 底 + 左侧一条 2px 主色标（anime 侧栏的 accent 标），不是玻璃皮肤的蓝色实心块。 */
+html[data-skin="anime"] .sidebar nav button:hover {
+  background: var(--anime-hover) !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+html[data-skin="anime"] .sidebar nav button.active {
+  background: var(--anime-muted) !important;
+  color: var(--ink) !important;
+  box-shadow: inset 2px 0 0 0 var(--anime-primary) !important;
+  transform: none !important;
+}
+
+html[data-skin="anime"] .sidebar nav button:hover .nav-icon,
+html[data-skin="anime"] .sidebar nav button.active .nav-icon {
+  color: var(--ink);
+  stroke: var(--ink);
+}
+
+/* 列表行整行高亮用 muted 面。 */
+html[data-skin="anime"] .node-grid.node-list .net-line:hover,
+html[data-skin="anime"] .node-grid.node-list .speed-line:hover {
+  background: var(--anime-hover);
+}
+
+/* --------------------------------------------------------------------------
+   9. 弹层：下拉、皮肤菜单、通知与遮罩
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] :is(.select-shell.open .select-trigger, .select-trigger) {
+  border: 1px solid var(--glass-border);
+  background: var(--anime-card);
+  box-shadow: none;
+}
+
+html[data-skin="anime"] :is(.select-pop, .skin-menu, details[open], .unlock-pop) {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  box-shadow: var(--anime-shadow-md);
+}
+
+html[data-skin="anime"] :is(.select-opt:hover, .skin-option:hover) {
+  background: var(--anime-hover);
+}
+
+html[data-skin="anime"] .select-opt.selected {
+  background: var(--anime-muted);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+html[data-skin="anime"] .skin-option.on {
+  background: var(--anime-muted);
+  box-shadow: inset 0 0 0 1px var(--anime-primary);
+}
+
+/* 遮罩：anime 的 dialog overlay 是 80% 黑。 */
+html[data-skin="anime"] dialog::backdrop {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+html[data-skin="anime"] #toast {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--anime-r-lg) !important;
+  background: var(--glass-bg-elevated);
+  color: var(--ink);
+  box-shadow: var(--anime-shadow-md);
+  font-family: var(--anime-font);
+  font-weight: 500;
+}
+
+html[data-skin="anime"] :is(.modal-head .close:hover, .chip-remove:hover) {
+  background: var(--anime-hover);
+  color: var(--ink);
+}
+
+html[data-skin="anime"] ::-webkit-scrollbar-thumb {
+  background: rgba(10, 10, 10, 0.25);
+  border-radius: 9999px !important;
+}
+
+html[data-skin="anime"][data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(250, 250, 250, 0.25);
+}
+
+/* --------------------------------------------------------------------------
+   N. 角色立绘（二次元皮肤比别的皮肤多的一层）
+
+   app.js 只为「有 cast 的节点」渲染 <div class="anime-stage" data-cast="…">，
+   其余皮肤下它保持 styles.css 里的 display:none。立绘是竖版 768×1376：
+   少女 + 一块几乎满宽的空白牌子，牌子的上沿实测在图片高度的 55%（757/1376）。
+   这里把立绘裁到 775/1376（牌子顶边 + 8px 牌面），好让卡片自己的白底接着画下去——
+   于是「牌子」看起来一直延伸到卡片底部，数据就写在牌面上。
+   -------------------------------------------------------------------------- */
+
+html[data-skin="anime"] .anime-stage {
+  display: block;
+  /* 卡片自己有 22px 内边距，立绘要通铺到卡片边（圆角交给卡片的 overflow:hidden 裁） */
+  margin: -22px -22px 16px;
+  /* 裁到牌子顶边：768:775 → 高度 ≈ 卡片宽 × 1.009 */
+  aspect-ratio: 768 / 775;
+  background-color: #e9eef6;
+  background-repeat: no-repeat;
+  background-position: top center;
+  background-size: 100% auto;
+}
+
+/* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是 web/anime/<id>.webp。
+   走样式表而不是行内 style —— 页面 CSP 是 style-src 'self'，行内的 background-image 会被丢掉。 */
+html[data-skin="anime"] .anime-stage[data-cast="jp-nosla-gen2"] {
+  background-image: url("/anime/jp-nosla-gen2.webp");
+}
+
+/* 深色下立绘压一档亮度，免得那块浅色底在夜版里刺眼 */
+html[data-skin="anime"][data-theme="dark"] .anime-stage {
+  filter: brightness(0.9) saturate(0.96);
+}
+
+/* 卡片 = 她举着的那块牌子：**两套主题下都是白底黑字**（牌子是实物，夜版里也不是黑的），
+   所以这里把卡片子树里的令牌就地覆盖成浅色那套，只有页面本体跟着 data-theme 变。 */
+html[data-skin="anime"] .node-card {
+  --ink: #232838;
+  --muted: #7c8496;
+  --subtle: #aab1c4;
+  --line: #e6e8f4;
+  --glass-bg: #ffffff;
+  --glass-bg-subtle: #f1f2fa;
+  --glass-border: #e6e8f4;
+  --glass-border-subtle: #eff1f9;
+  --progress-track: #eef0f8;
+  background: var(--anime-sign);
+  border: 1px solid var(--anime-sign-line);
+  box-shadow: var(--anime-shadow-sm);
+}
+
+html[data-skin="anime"] .node-card:hover {
+  box-shadow: var(--anime-shadow-md);
+  border-color: var(--anime-sign-line);
+}
+
+/* 列表视图不摆立绘：一行一台的密度下放不下人物（元素照旧渲染，只是不显示） */
+html[data-skin="anime"] .node-grid.node-list .anime-stage {
+  display: none;
+}

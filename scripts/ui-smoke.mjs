@@ -693,7 +693,7 @@ assert.equal(
 // 皮肤清单与 web/skins.js 的 SKINS 同源，两边对不上会被 web/look_choices_test.go 抓到。
 assert.equal(
   [...skinField.options].map((o) => o.value).join(","),
-  "glass,press,shadcn",
+  "glass,press,shadcn,anime",
   "皮肤三档",
 );
 const saveLook = async (theme, skin) => {
@@ -905,7 +905,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   const opts = [...menu.querySelectorAll(".skin-option")];
   assert.deepEqual(
     opts.map((o) => o.dataset.skinOption),
-    ["glass", "press", "shadcn"],
+    ["glass", "press", "shadcn", "anime"],
     "三张皮肤都要列出来",
   );
   assert.equal(opts.find((o) => o.classList.contains("on"))?.dataset.skinOption, "glass", "当前皮肤要有选中态");
@@ -927,6 +927,18 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert.equal(pubDoc.documentElement.dataset.skin, "shadcn", "选「现代极简」要落到 <html data-skin>");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "shadcn", "偏好要存进 localStorage");
   assert(/现代极简/.test(skinBtn.textContent), "按钮文字跟着换");
+  // 第四张皮肤：二次元（线路机角色立绘）。
+  skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  pubDoc.querySelector('[data-skin-option="anime"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  assert.equal(pubDoc.documentElement.dataset.skin, "anime", "选「二次元」要落到 <html data-skin>");
+  assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "anime", "偏好要存进 localStorage");
+  assert(/二次元/.test(skinBtn.textContent), "按钮文字跟着换");
+  // 立绘层只给角色名单里的节点：这台测试节点不在名单里，所以一张卡都不该有 .anime-stage。
+  assert.equal(
+    pubDoc.querySelectorAll(".anime-stage").length,
+    0,
+    "角色名单外的节点不摆立绘（web/anime-cast.js）",
+  );
   // 选回默认皮肤要把偏好键清掉，不在浏览器里留一份与默认值重复的设置。
   skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
   pubDoc.querySelector('[data-skin-option="glass"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
@@ -936,7 +948,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 皮肤表本身：只在 data-skin="<id>" 下生效。每张皮肤各有一条必须有的底座：
   // 印刷＝纸底 + 圆角归零，极简＝中性令牌 + 圆角统一到 --shadcn-radius。
   const homeHTML = await (await fetch(base + "/")).text();
-  for (const id of ["press", "shadcn"]) {
+  for (const id of ["press", "shadcn", "anime"]) {
     assert(
       homeHTML.includes(`/${id}.css`),
       `index.html 必须挂上 ${id}.css，否则皮肤永远不会生效`,
@@ -947,6 +959,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert(/--press-paper:/.test(pressCSS) && /border-radius: 0 !important/.test(pressCSS), "纸底与圆角归零是皮肤底座");
   assert(/:root\[data-skin="press"\]\[data-theme="dark"\]/.test(pressCSS), "深色下要有自己的一份令牌");
   const shadcnCSS = await (await fetch(base + "/shadcn.css")).text();
+  const animeCSS = await (await fetch(base + "/anime.css")).text();
   assert(/\[data-skin="shadcn"\]/.test(shadcnCSS), "皮肤规则要限定在 data-skin=shadcn 下");
   assert(
     /:root\[data-skin="shadcn"\]\s*\{[^}]*--shadcn-bg: #ffffff[^}]*--shadcn-fg: #0a0a0a/s.test(shadcnCSS) &&
@@ -967,6 +980,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 先把注释剥掉再解析规则：注释里也会出现 ::-webkit-progress-value 之类的字样。
   const pressRules = pressCSS.replace(/\/\*[\s\S]*?\*\//g, "");
   const shadcnRules = shadcnCSS.replace(/\/\*[\s\S]*?\*\//g, "");
+  const animeRules = animeCSS.replace(/\/\*[\s\S]*?\*\//g, "");
   // 选择器列表按「顶层逗号」拆——:is(a, b) 里的逗号不是分隔符。
   const splitTop = (list) => {
     const out = [];
@@ -1001,8 +1015,34 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       }
     }
   };
+  assert(/\[data-skin="anime"\]/.test(animeCSS), "皮肤规则要限定在 data-skin=anime 下");
+  assert(
+    /:root\[data-skin="anime"\]\s*\{[^}]*--anime-bg: #f4f5fd[^}]*--anime-primary: #ff7aa2/s.test(animeCSS) &&
+      /:root\[data-skin="anime"\]\[data-theme="dark"\]\s*\{[^}]*--anime-bg: #14161f[^}]*--anime-fg: #eef1fa/s.test(animeCSS),
+    "二次元皮肤要有浅色与深色两份令牌（浅色白面樱花粉 / 夜版深蓝灰）",
+  );
+  assert(
+    /border-radius: var\(--anime-radius\) !important/.test(animeCSS) &&
+      /backdrop-filter: none !important/.test(animeCSS),
+    "圆角统一到二次元的尺度、且没有毛玻璃，是这张皮肤的定义性声明",
+  );
+  // 立绘层：默认（styles.css）不显示，二次元皮肤里放开；图片按 data-cast 挂在样式表上
+  // （页面 CSP 是 style-src 'self'，行内 background-image 会被丢掉）。
+  assert(
+    /\.anime-stage \{\s*display: none;\s*\}/.test(cssSource),
+    "立绘层默认不显示，别的皮肤才不会被它顶开",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.anime-stage \{[^}]*display: block[^}]*aspect-ratio: 768 \/ 775/s.test(animeCSS),
+    "二次元皮肤里立绘要通铺卡片顶部、并按牌子顶边裁切",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.anime-stage\[data-cast="jp-nosla-gen2"\] \{[^}]*url\("\/anime\/jp-nosla-gen2\.webp"\)/s.test(animeCSS),
+    "角色名单里的 id 要有对应的人物图规则",
+  );
   assertSkinSheet(pressRules, "press");
   assertSkinSheet(shadcnRules, "shadcn");
+  assertSkinSheet(animeRules, "anime");
   // 分段开关（用户说旧写法「有点怪怪的」）：选中那块填满自己那半格、实心版色红，不再自带描边。
   // 旧写法是红底 + 自己一圈墨边，与外框叠成双层描边、四周还露米色缝；后来用户又提了三条
   // ——选中块没铺满内高（「没填满」）、点击时黑线会动（:active 的盖章位移 + 线画在按钮上）、
@@ -1049,6 +1089,9 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
   assert.equal(bootDOM.window.document.documentElement.dataset.skin, "shadcn", "第三张皮肤同样要在首屏定好");
   // 认不出来的值退回默认皮肤，别把 <html data-skin> 写成任意字符串。
+  bootDOM.window.localStorage.setItem("tza-skin", "anime");
+  bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
+  assert.equal(bootDOM.window.document.documentElement.dataset.skin, "anime", "第四张皮肤同样要在首屏定好");
   bootDOM.window.localStorage.setItem("tza-skin", "no-such-skin");
   bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
   assert.equal(bootDOM.window.document.documentElement.dataset.skin, "glass", "无法识别的皮肤要退回默认");

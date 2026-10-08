@@ -53,7 +53,7 @@ const (
 // PanelThemes / PanelSkins 是允许写入的两组取值，与 web/theme.js 的 ORDER、
 // web/skins.js 的 SKINS 一一对应（httpapi 的测试会拿 web/skins.js 对一遍）。
 var PanelThemes = []string{"auto", "light", "dark"}
-var PanelSkins = []string{"glass", "press", "shadcn"}
+var PanelSkins = []string{"glass", "press", "shadcn", "anime"}
 
 // PanelTheme / PanelSkin 把存下来的值变成可用值：空值或读不出来的值退回默认，
 // 认不出来的皮肤退回默认皮肤——设置里一个手滑的值不该让面板挂在一张不存在的皮肤上。
