@@ -1959,3 +1959,13 @@ Chromium 上也指向它），这套字体的 11px 数字比玻璃皮肤落到�
 **待办**：其余线路机（DMIT / BWH 等）还没有人物。加一台 = 往 `web/anime-cast.js` 的名单里
 加一条 + 放一张 `web/anime/<id>.webp` + 在 `anime.css` 里补一行 `[data-cast]` 规则，
 `web/anime_cast_test.go` 会替你把这三件事对齐。
+
+**线上（2026-10-08，`2.0.0-dev+d7753d5`，主控 de-netcup-1o）**：源站与经 CF 的 `healthz=200`、
+匿名 MCP `401`、12/12 在线；远端预检 0s 就绪（本次没有库结构变更，无迁移行数）。
+新皮肤的三份资源都能直取：`/anime.css` 200（24510 字节）、`/anime/jp-nosla-gen2.webp` 200
+（68180 字节）、`/anime-cast.js` 200；`/skins.js` 里第四项 `{id:"anime",name:"二次元"}` 在位。
+真 Chrome 打生产页量：390px 下 `JP-NoSla-Gen2` 卡片 `358x907.5`（立绘 359、`metrics-grid` 114、
+延迟带 137、回程格 32），1440px 下 `430.7x980.8`（立绘 433）；深色主题里卡片仍是白面深字
+（取色 `#ffffff`，四周页面 `#111a1a` 一带的深底），立绘与牌沿的接缝取色无重影。
+线上 `card-overflow-check`（皮肤 = 二次元）六个宽度「越界 0 个」、`route-nowrap-check`
+「折行 0 / 非居中 0」。回滚点：`/usr/local/bin/tza-server.previous`。
