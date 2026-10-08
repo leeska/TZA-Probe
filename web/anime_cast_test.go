@@ -30,6 +30,9 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	if !strings.Contains(string(app), `class="anime-stage"`) {
 		t.Error("app.js 要渲染 .anime-stage 立绘层")
 	}
+	if !strings.Contains(string(app), `data-cast="${cast}"`) {
+		t.Error("app.js 要在卡壳上挂 data-cast（牌面配色按它上色）")
+	}
 
 	ids := regexp.MustCompile(`(?m)^\s{2}"([a-z0-9-]+)":\s*\{`).FindAllStringSubmatch(string(cast), -1)
 	if len(ids) == 0 {
@@ -42,6 +45,14 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		}
 		if !strings.Contains(string(css), `url("/anime/`+id+`.webp")`) {
 			t.Errorf("anime.css 里角色 %q 的人物图路径不是 /anime/%s.webp", id, id)
+		}
+		// 牌面配色（卡壳上的 .node-card[data-cast]）与它的夜版，是「加一台机器」的第四、第五处：
+		// 漏了不会报错，只会让这台机的卡片停在默认白面——所以和立绘、名单一起守住。
+		if !strings.Contains(string(css), `.node-card[data-cast="`+id+`"]`) {
+			t.Errorf("anime.css 缺少角色 %q 的牌面配色（.node-card[data-cast]）", id)
+		}
+		if !strings.Contains(string(css), `[data-theme="dark"] .node-card[data-cast="`+id+`"]`) {
+			t.Errorf("anime.css 缺少角色 %q 的夜版牌面配色", id)
 		}
 		if _, err := os.Stat("anime/" + id + ".webp"); err != nil {
 			t.Errorf("人物图 web/anime/%s.webp 不存在: %v", id, err)

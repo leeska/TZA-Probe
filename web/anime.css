@@ -586,6 +586,11 @@ html[data-skin="anime"] .anime-stage {
   margin: -22px -22px 16px;
   /* 裁到牌子顶边：768:775 → 高度 ≈ 卡片宽 × 1.009 */
   aspect-ratio: 768 / 775;
+  /* 牌沿色带：立绘底边压一条 3px 的角色色（卡壳上的 --cast-stripe 继承进来）。
+     只能用 border-image：写死颜色没法给 DE 做黑红金三段，渐变色值按角色给。
+     border-box 高度不变，所以立绘只是早裁 3px（那 3px 本来就是牌面白条）。 */
+  border-bottom: 3px solid transparent;
+  border-image: var(--cast-stripe, none) 1;
   background-color: #e9eef6;
   background-repeat: no-repeat;
   background-position: top center;
@@ -647,4 +652,124 @@ html[data-skin="anime"] .node-card:hover {
 /* 列表视图不摆立绘：一行一台的密度下放不下人物（元素照旧渲染，只是不显示） */
 html[data-skin="anime"] .node-grid.node-list .anime-stage {
   display: none;
+}
+
+/* --------------------------------------------------------------------------
+   N+2. 牌面配色：立绘之外，卡片本体也跟着角色的风格走（2026-10-08）
+   - app.js 在卡壳上挂 data-cast（立绘层在卡片**内部**，父级读不到它的 data-cast，
+     所以卡壳上再挂一份；两处都出自 castId()，不会漂）。
+   - 只改「材质」——牌面底色、格子底色、描边、进度轨、强调色；正文令牌（--ink/--muted）、
+     字号、行高、排版一律不碰，所以数据可读性不变，夜版也只是换成对应的暗色。
+   - 加一台机器时的第四处对齐：立绘 / 名单 / 样式规则 / 这里的一份配色，
+     由 web/anime_cast_test.go 一起守住（少了配色直接红）。
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] .node-card[data-cast] {
+  --glass-bg: var(--cast-board);
+  --glass-bg-subtle: var(--cast-cell);
+  --glass-border: var(--cast-line);
+  --glass-border-subtle: var(--cast-line);
+  --progress-track: var(--cast-track);
+  --accent: var(--cast-accent);
+  --accent-rgb: var(--cast-accent-rgb);
+  background-color: var(--cast-board);
+  background-image: var(--cast-motif);
+  background-size: var(--cast-motif-size);
+  border-color: var(--cast-line);
+}
+
+/* JP-NoSla-Gen2 · 家人云 × 日本：樱花粉牌面 + 极淡花瓣点 */
+html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
+  --cast-board: #ffe7f1;
+  --cast-cell: rgb(255 255 255 / 0.58);
+  --cast-line: #f6b1cc;
+  --cast-track: #ffd3e3;
+  --cast-accent: #e8457c;
+  --cast-accent-rgb: 232, 69, 124;
+  --cast-stripe: linear-gradient(90deg, #ffd9e8, #ff7aa2 50%, #ffd9e8);
+  --cast-motif: radial-gradient(circle at 50% 50%, rgb(232 69 124 / 0.18) 1.3px, transparent 1.6px);
+  --cast-motif-size: 15px 15px;
+}
+
+/* DE-NoSla-FRA · 家人云 × 德国：暖白牌面 + 黑红金细竖纹 */
+html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
+  --cast-board: #fff5e0;
+  --cast-cell: rgb(255 255 255 / 0.56);
+  --cast-line: #e7cd90;
+  --cast-track: #fbe5b9;
+  --cast-accent: #a8761c;
+  --cast-accent-rgb: 168, 118, 28;
+  --cast-stripe: linear-gradient(90deg, #262626 0 33.4%, #c41e3a 33.4% 66.7%, #f0be3c 66.7% 100%);
+  --cast-motif: repeating-linear-gradient(90deg, rgb(24 24 24 / 0.07) 0 7px, rgb(196 30 58 / 0.08) 7px 14px, rgb(240 190 60 / 0.13) 14px 21px);
+  --cast-motif-size: auto;
+}
+
+/* US-VMISS-TRI · VMISS × 美国：极淡天蓝牌面 + 蓝色小点（官网的蓝点涂鸦） */
+html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
+  --cast-board: #e9f2ff;
+  --cast-cell: rgb(255 255 255 / 0.58);
+  --cast-line: #aec9ff;
+  --cast-track: #d6e6ff;
+  --cast-accent: #1d55e0;
+  --cast-accent-rgb: 29, 85, 224;
+  --cast-stripe: linear-gradient(90deg, #7ba4ff, #2d65ee 55%, #f2c21b);
+  --cast-motif: radial-gradient(circle at 50% 50%, rgb(29 85 224 / 0.16) 1.3px, transparent 1.6px);
+  --cast-motif-size: 15px 15px;
+}
+
+/* US-BWH-DC9 · 搬瓦工 × 美国：暖琥珀牌面 + 斜向金线 */
+html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
+  --cast-board: #fff3dc;
+  --cast-cell: rgb(255 255 255 / 0.56);
+  --cast-line: #e9c684;
+  --cast-track: #f9e2b8;
+  --cast-accent: #b0710a;
+  --cast-accent-rgb: 176, 113, 10;
+  --cast-stripe: linear-gradient(90deg, #ffc107, #f57c00);
+  --cast-motif: repeating-linear-gradient(135deg, rgb(200 128 20 / 0.14) 0 5px, transparent 5px 15px);
+  --cast-motif-size: auto;
+}
+
+/* 夜版：牌面各自的暗色，纹样用同色系提亮一点；强调色提亮保证在深底上够亮 */
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="jp-nosla-gen2"] {
+  --cast-stripe: linear-gradient(90deg, #ffd9e8, #ff7aa2 50%, #ffd9e8);
+  --cast-board: #201b22;
+  --cast-cell: #282029;
+  --cast-line: #3a2c38;
+  --cast-track: #33262e;
+  --cast-accent: #ff9ab8;
+  --cast-accent-rgb: 255, 154, 184;
+  --cast-motif: radial-gradient(circle at 50% 50%, rgb(255 154 184 / 0.10) 1.1px, transparent 1.4px);
+}
+
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="de-nosla-fra"] {
+  --cast-stripe: linear-gradient(90deg, #262626 0 33.4%, #c41e3a 33.4% 66.7%, #f0be3c 66.7% 100%);
+  --cast-board: #1f1e1a;
+  --cast-cell: #26241e;
+  --cast-line: #3a352a;
+  --cast-track: #322d24;
+  --cast-accent: #e0b75c;
+  --cast-accent-rgb: 224, 183, 92;
+  --cast-motif: repeating-linear-gradient(90deg, rgb(255 255 255 / 0.022) 0 7px, rgb(196 30 58 / 0.05) 7px 14px, rgb(240 190 60 / 0.05) 14px 21px);
+}
+
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-vmiss-tri"] {
+  --cast-stripe: linear-gradient(90deg, #7ba4ff, #2d65ee 55%, #f2c21b);
+  --cast-board: #171d2b;
+  --cast-cell: #1d2536;
+  --cast-line: #2b3a5c;
+  --cast-track: #243149;
+  --cast-accent: #6f9bff;
+  --cast-accent-rgb: 111, 155, 255;
+  --cast-motif: radial-gradient(circle at 50% 50%, rgb(111 155 255 / 0.11) 1.1px, transparent 1.4px);
+}
+
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
+  --cast-stripe: linear-gradient(90deg, #ffc107, #f57c00);
+  --cast-board: #221c13;
+  --cast-cell: #2a2216;
+  --cast-line: #3c2f1c;
+  --cast-track: #33281a;
+  --cast-accent: #e0a63c;
+  --cast-accent-rgb: 224, 166, 60;
+  --cast-motif: repeating-linear-gradient(135deg, rgb(224 166 60 / 0.10) 0 5px, transparent 5px 15px);
 }

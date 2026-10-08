@@ -439,8 +439,13 @@ function renderCards() {
 
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
 // 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
-const cardShell = (n, inner) =>
-  `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}">${inner}</article>`;
+const cardShell = (n, inner) => {
+  // 二次元皮肤：卡壳上也挂一份角色 id。立绘层 `.anime-stage` 是卡片**内部**的元素，
+  // 卡片自己读不到它的 data-cast，而皮肤样式表要按角色给整张牌面上色
+  // （`.node-card[data-cast="…"]`），所以这里再挂一份——两处都由 castId() 出，不会漂。
+  const cast = castId(n);
+  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}"${cast ? ` data-cast="${cast}"` : ""}>${inner}</article>`;
+};
 
 function card(n) {
   return cardShell(n, cardInner(n));
