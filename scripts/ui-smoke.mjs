@@ -1040,6 +1040,20 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     /html\[data-skin="anime"\] \.anime-stage\[data-cast="jp-nosla-gen2"\] \{[^}]*url\("\/anime\/jp-nosla-gen2\.webp"\)/s.test(animeCSS),
     "角色名单里的 id 要有对应的人物图规则",
   );
+  // 夜版：牌子的底色/描边要有暗色那一份，卡片子树的浅色令牌只能作用在浅色下，
+  // 立绘在夜版里只裁到牌沿——不然深色的牌面上会露一条白牌面。
+  assert(
+    /--anime-sign: #1d2130;[\s\S]*?--anime-sign-line: #2c3149;/.test(animeCSS),
+    "夜版要给牌子自己的底色与描边（否则卡片还是白的）",
+  );
+  assert(
+    /html\[data-skin="anime"\]:not\(\[data-theme="dark"\]\) \.node-card \{/.test(animeRules),
+    "浅色那套令牌只能作用在浅色下，夜版要让暗色令牌落进卡片",
+  );
+  assert(
+    /html\[data-skin="anime"\]\[data-theme="dark"\] \.anime-stage \{[^}]*aspect-ratio: 768 \/ 752/s.test(animeCSS),
+    "夜版立绘裁到牌沿，不露白牌面",
+  );
   assertSkinSheet(pressRules, "press");
   assertSkinSheet(shadcnRules, "shadcn");
   assertSkinSheet(animeRules, "anime");

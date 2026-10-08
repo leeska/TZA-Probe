@@ -104,6 +104,8 @@
   --anime-shadow-sm: 0 2px 6px rgb(0 0 0 / 0.55);
   --anime-shadow-md: 0 10px 24px rgb(0 0 0 / 0.6);
 
+  --anime-sign: #1d2130;
+  --anime-sign-line: #2c3149;
   --subtle: #6f7791;
   --line: var(--anime-border);
   --glass-bg-elevated: var(--anime-elevated);
@@ -600,14 +602,18 @@ html[data-skin="anime"] .anime-stage[data-cast="de-nosla-fra"] {
   background-image: url("/anime/de-nosla-fra.webp");
 }
 
-/* 深色下立绘压一档亮度，免得那块浅色底在夜版里刺眼 */
+/* 深色下立绘压一档亮度，免得那块浅色底在夜版里刺眼；并且**只裁到牌子顶沿**
+   （浅色下裁到 775，会露出 20 多像素白牌面——夜版里牌子是深色的，露白就对不上了）。 */
 html[data-skin="anime"][data-theme="dark"] .anime-stage {
-  filter: brightness(0.9) saturate(0.96);
+  aspect-ratio: 768 / 752;
+  background-color: #262b3c;
+  filter: brightness(0.82) saturate(0.94);
 }
 
-/* 卡片 = 她举着的那块牌子：**两套主题下都是白底黑字**（牌子是实物，夜版里也不是黑的），
-   所以这里把卡片子树里的令牌就地覆盖成浅色那套，只有页面本体跟着 data-theme 变。 */
-html[data-skin="anime"] .node-card {
+/* 卡片 = 她举着的那块牌子。浅色下牌子是白面深字（跟立绘里画的那块白牌一致），
+   夜版里牌子跟着夜色变深（立在--anime-sign / --anime-sign-line 上），
+   所以卡片子树里那几个令牌只在浅色下就地覆盖成浅色那套。 */
+html[data-skin="anime"]:not([data-theme="dark"]) .node-card {
   --ink: #232838;
   --muted: #7c8496;
   --subtle: #aab1c4;
@@ -617,6 +623,9 @@ html[data-skin="anime"] .node-card {
   --glass-border: #e6e8f4;
   --glass-border-subtle: #eff1f9;
   --progress-track: #eef0f8;
+}
+
+html[data-skin="anime"] .node-card {
   background: var(--anime-sign);
   border: 1px solid var(--anime-sign-line);
   box-shadow: var(--anime-shadow-sm);
