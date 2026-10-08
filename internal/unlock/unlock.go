@@ -166,13 +166,61 @@ func (c *Client) do(ctx context.Context, follow bool, method, raw string, hdr ma
 	if req.Header.Get("Accept") == "" {
 		req.Header.Set("Accept", "*/*")
 	}
+	// Browsers always send a language; without one the CDNs served us their
+	// en-US defaults (a Hong Kong egress was told youtube GL=US and Play
+	// "United States"), so every request carries one unless a check overrides.
+	if req.Header.Get("Accept-Language") == "" {
+		req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	}
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}
 	if follow {
-		return c.follow.Do(req)
+		return c.send(ctx, req, c.follow)
 	}
-	return c.direct.Do(req)
+	return c.send(ctx, req, c.direct)
+}
+
+// send issues a request, retrying the transport faults that are the network
+// rather than the IP's verdict (a reset or an EOF mid-handshake). Real timeouts
+// are not retried: the round's budget is what ran out, and another try would
+// only spend more of it.
+func (c *Client) send(ctx context.Context, req *http.Request, cl *http.Client) (*http.Response, error) {
+	resp, err := cl.Do(req)
+	for attempt := 1; err != nil && attempt <= 2 && ctx.Err() == nil && retryable(err); attempt++ {
+		if req.GetBody == nil {
+			return resp, err
+		}
+		body, gerr := req.GetBody()
+		if gerr != nil {
+			return resp, err
+		}
+		next, nerr := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), body)
+		if nerr != nil {
+			return resp, err
+		}
+		next.Header = req.Header.Clone()
+		req = next
+		select {
+		case <-ctx.Done():
+			return resp, err
+		case <-time.After(time.Duration(attempt) * 400 * time.Millisecond):
+		}
+		resp, err = cl.Do(req)
+	}
+	return resp, err
+}
+
+// retryable reports whether a transport error is worth one more attempt.
+func retryable(err error) bool {
+	if err == nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return false
+	}
+	return true
 }
 
 // read drains a response body (capped) and closes it.
@@ -235,6 +283,23 @@ func quotedAfter(s, marker string) string {
 		return ""
 	}
 	return rest[:j]
+}
+
+// boolAfter returns "true" or "false" for an unquoted `"key":true` literal, ""
+// when the key is absent or does not carry a boolean.
+func boolAfter(s, marker string) string {
+	i := strings.Index(s, marker)
+	if i < 0 {
+		return ""
+	}
+	rest := strings.TrimLeft(s[i+len(marker):], " ")
+	switch {
+	case strings.HasPrefix(rest, "true"):
+		return "true"
+	case strings.HasPrefix(rest, "false"):
+		return "false"
+	}
+	return ""
 }
 
 // okStatus reports the statuses Netflix treats as "region page served".

@@ -3,6 +3,7 @@ package unlock
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -99,18 +100,27 @@ func TestRunOrder(t *testing.T) {
 }
 
 func TestNetflixStates(t *testing.T) {
-	newServer := func(c812, c701 int, location string) (string, func()) {
+	// A 200 page is either the title or the "not available in your country"
+	// notice — the status code cannot tell them apart, so the fixtures serve
+	// bodies and the check has to read them.
+	const notice = `<div>Oh no! This title currently isn’t available to watch in your country.</div>`
+	const ww = `"requestCountry":{"supportedLocales":["en"],"id":"WW","countryName":"Nowhere"}`
+	regionBody := func(cc string) string {
+		return `"requestCountry":{"supportedLocales":["en"],"id":"` + cc + `","countryName":"X"}`
+	}
+	newServer := func(c812, c701 int, b812, b701 string) (string, func()) {
 		return server(t, func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/title/81280792":
+			switch {
+			case strings.HasPrefix(r.URL.Path, "/title/81280792"):
 				w.WriteHeader(c812)
-			case "/title/70143836":
+				_, _ = io.WriteString(w, b812)
+			case strings.HasPrefix(r.URL.Path, "/title/70143836"):
 				w.WriteHeader(c701)
-			case "/title/80018499":
-				if location != "" {
-					w.Header().Set("Location", location)
-				}
+				_, _ = io.WriteString(w, b701)
+			case r.URL.Path == "/de-en/title/81280792":
+				// region-redirect landing page without the region block
 				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, "<html>LEGO Ninjago</html>")
 			default:
 				w.WriteHeader(http.StatusOK)
 			}
@@ -120,18 +130,19 @@ func TestNetflixStates(t *testing.T) {
 	cases := []struct {
 		name       string
 		c812, c701 int
-		location   string
+		b812, b701 string
 		want       string
 		region     string
 	}{
-		{"originals", 404, 404, "", model.UnlockOriginalsOnly, ""},
-		{"banned", 403, 403, "", model.UnlockBanned, ""},
-		{"region", 200, 200, "https://www.netflix.com/jp/title/80018499", model.UnlockYes, "JP"},
-		{"default", 200, 200, "", model.UnlockYes, "US"},
+		{"notice means originals only", 200, 200, notice, notice, model.UnlockOriginalsOnly, ""},
+		{"both titles gone means originals only", 404, 404, "", "", model.UnlockOriginalsOnly, ""},
+		{"both blocked", 403, 403, "", "", model.UnlockBanned, ""},
+		{"one withheld title still counts as a region", 200, 200, ww, notice, model.UnlockYes, "WW"},
+		{"region comes from the page", 200, 200, regionBody("JP"), regionBody("JP"), model.UnlockYes, "JP"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			url, done := newServer(tc.c812, tc.c701, tc.location)
+			url, done := newServer(tc.c812, tc.c701, tc.b812, tc.b701)
 			defer done()
 			got := runCheck(t, "netflix", map[string]string{"www.netflix.com": url})
 			if got.Status != tc.want {
@@ -142,6 +153,150 @@ func TestNetflixStates(t *testing.T) {
 			}
 		})
 	}
+
+	// The region survives on the URL alone when the body has no region block:
+	// the title 301s to its per-region path, which is what the panel shows for
+	// a full catalogue.
+	t.Run("region from the redirect path", func(t *testing.T) {
+		url, done := server(t, func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/title/81280792") {
+				http.Redirect(w, r, "http://"+r.Host+"/de-en/title/81280792", http.StatusMovedPermanently)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, "/title/70143836") {
+				http.Redirect(w, r, "http://"+r.Host+"/de-en/title/70143836", http.StatusMovedPermanently)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, "<html>LEGO Ninjago</html>")
+		})
+		defer done()
+		got := runCheck(t, "netflix", map[string]string{"www.netflix.com": url})
+		if got.Status != model.UnlockYes || got.Region != "DE" {
+			t.Fatalf("got %q/%q, want yes/DE", got.Status, got.Region)
+		}
+	})
+}
+
+func TestGeminiRegion(t *testing.T) {
+	newServer := func(page string) (string, func()) {
+		return server(t, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, page)
+		})
+	}
+	// The `45631641` flag some checks grep is not a country gate: it reads
+	// false on egresses a browser still gets the whole app from, so a page
+	// carrying it must not be turned into "no".
+	cases := []struct {
+		name   string
+		page   string
+		want   string
+		region string
+	}{
+		{"region triple", `x,2,1,200,"USA"y`, model.UnlockYes, "USA"},
+		{"flag false is not a verdict", `,2,1,200,"DEU"y\"45631641\":false`, model.UnlockYes, "DEU"},
+		{"flag true", `,2,1,200,"JPN"y\"45631641\":true`, model.UnlockYes, "JPN"},
+		{"old marker without a region", `45631641,null,true`, model.UnlockYes, ""},
+		{"neither", `<html>nothing</html>`, model.UnlockNo, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			url, done := newServer(tc.page)
+			defer done()
+			got := runCheck(t, "gemini", map[string]string{"gemini.google.com": url})
+			if got.Status != tc.want || got.Region != tc.region {
+				t.Fatalf("got %q/%q, want %q/%q", got.Status, got.Region, tc.want, tc.region)
+			}
+		})
+	}
+}
+
+func TestDisneyPlusDeviceFlow(t *testing.T) {
+	// One server stands in for the whole bamgrid host: the devices call hands
+	// out an assertion, the token call either refuses the IP or hands out a
+	// refresh token, and the device query names the catalogue.
+	newServer := func(tokenBody, gqlBody string, gqlCode int, preview string) (string, func()) {
+		return server(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/devices":
+				_, _ = io.WriteString(w, `{"assertion":"assert-1"}`)
+			case "/token":
+				_, _ = io.WriteString(w, tokenBody)
+			case "/graph/v1/device/graphql":
+				w.WriteHeader(gqlCode)
+				_, _ = io.WriteString(w, gqlBody)
+			default: // the preview landing page
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, preview)
+			}
+		})
+	}
+	run := func(url string) model.UnlockResult {
+		return runCheck(t, "disneyplus", map[string]string{
+			"disney.api.edge.bamgrid.com": url,
+			"disneyplus.com":              url,
+		})
+	}
+
+	t.Run("blocked egress", func(t *testing.T) {
+		url, done := newServer(`{"error":"unauthorized_client","error_description":"forbidden-location"}`, "", 200, "")
+		defer done()
+		got := run(url)
+		if got.Status != model.UnlockBanned {
+			t.Fatalf("got %q, want banned (detail %q)", got.Status, got.Detail)
+		}
+	})
+	t.Run("region from the device session", func(t *testing.T) {
+		url, done := newServer(`{"refresh_token":"rt-1"}`, `{"countryCode":"HK","inSupportedLocation":true}`, 200, "<html>hi</html>")
+		defer done()
+		got := run(url)
+		if got.Status != model.UnlockYes || got.Region != "HK" {
+			t.Fatalf("got %q/%q, want yes/HK", got.Status, got.Region)
+		}
+	})
+	t.Run("announced but not launched", func(t *testing.T) {
+		url, done := newServer(`{"refresh_token":"rt-1"}`, `{"countryCode":"DE","inSupportedLocation":false}`, 200, "<html>hi</html>")
+		defer done()
+		got := run(url)
+		if got.Status != model.UnlockNo {
+			t.Fatalf("got %q, want no (detail %q)", got.Status, got.Detail)
+		}
+	})
+	t.Run("no assertion is a failure, never a verdict", func(t *testing.T) {
+		url, done := server(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/devices" {
+				_, _ = io.WriteString(w, `{}`)
+				return
+			}
+			_, _ = io.WriteString(w, `{"countryCode":"US","inSupportedLocation":true}`)
+		})
+		defer done()
+		got := run(url)
+		if got.Status != model.UnlockFailed {
+			t.Fatalf("got %q, want failed", got.Status)
+		}
+	})
+	t.Run("preview landing page means no", func(t *testing.T) {
+		url, done := server(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/devices":
+				_, _ = io.WriteString(w, `{"assertion":"assert-1"}`)
+			case "/token":
+				_, _ = io.WriteString(w, `{"refresh_token":"rt-1"}`)
+			case "/graph/v1/device/graphql":
+				_, _ = io.WriteString(w, `{"countryCode":"US","inSupportedLocation":true}`)
+			case "/unavailable/":
+				_, _ = io.WriteString(w, "<html>not here</html>")
+			default:
+				http.Redirect(w, r, "http://"+r.Host+"/unavailable/", http.StatusFound)
+			}
+		})
+		defer done()
+		got := run(url)
+		if got.Status != model.UnlockNo {
+			t.Fatalf("got %q, want no (detail %q)", got.Status, got.Detail)
+		}
+	})
 }
 
 func TestOpenAIStates(t *testing.T) {

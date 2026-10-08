@@ -49,46 +49,117 @@ var checks = map[string]check{
 // ---------------------------------------------------------------------------
 // Streaming
 
+// Netflix's licensed-title probes. Both are non-originals: a catalogue that
+// carries them is a full catalogue, an egress Netflix only grants originals to
+// renders the "not available in your country" notice in their place.
+const (
+	netflixTitleA = "https://www.netflix.com/title/81280792" // LEGO Ninjago
+	netflixTitleB = "https://www.netflix.com/title/70143836" // Breaking Bad
+)
+
+// netflixNotice is the copy Netflix puts where a title it will not serve to
+// this egress would be. Matching the phrase (rather than the leading "Oh no!")
+// survives the apostrophe and wording of the headline.
+const netflixNotice = "available to watch in your country"
+
 func netflix(ctx context.Context, c *Client) model.UnlockResult {
-	r1, err := c.do(ctx, false, "GET", "https://www.netflix.com/title/81280792", nil, nil)
+	// Both URLs answer 200 whichever catalogue the egress gets, and the region
+	// redirect only happens where a catalogue is served at all — so the status
+	// code alone cannot tell a region page from the originals-only notice. The
+	// body decides, exactly like the reference check (grep 'Oh no!').
+	hdrs := map[string]string{
+		"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+		"Accept-Language": "en-US,en;q=0.9",
+	}
+	type page struct {
+		status int
+		body   string
+		path   string
+	}
+	fetch := func(raw string) (page, error) {
+		r, err := c.do(ctx, true, "GET", raw, hdrs, nil)
+		if err != nil {
+			return page{}, err
+		}
+		p := page{status: r.StatusCode, body: read(r)}
+		if r.Request != nil && r.Request.URL != nil {
+			p.path = r.Request.URL.Path
+		}
+		return p, nil
+	}
+	p1, err := fetch(netflixTitleA)
 	if err != nil {
 		return netErr(err)
 	}
-	drain(r1)
-	r2, err := c.do(ctx, false, "GET", "https://www.netflix.com/title/70143836", nil, nil)
+	p2, err := fetch(netflixTitleB)
 	if err != nil {
 		return netErr(err)
 	}
-	drain(r2)
 	switch {
-	case r1.StatusCode == http.StatusNotFound && r2.StatusCode == http.StatusNotFound:
-		return res(model.UnlockOriginalsOnly, "", "Originals Only")
-	case r1.StatusCode == http.StatusForbidden && r2.StatusCode == http.StatusForbidden:
+	case p1.status == http.StatusForbidden && p2.status == http.StatusForbidden:
 		return res(model.UnlockBanned, "", "HTTP 403")
+	case p1.status == http.StatusNotFound && p2.status == http.StatusNotFound:
+		// The older shape of the same answer: both licensed titles are gone
+		// from this egress's catalogue.
+		return res(model.UnlockOriginalsOnly, "", "Originals Only")
+	case !okStatus(p1.status) && !okStatus(p2.status):
+		return res(model.UnlockFailed, "", httpStatusDetail(p1.status))
 	}
-	if !okStatus(r1.StatusCode) && !okStatus(r2.StatusCode) {
-		return res(model.UnlockFailed, "", "unexpected status")
+	// Originals only: Netflix withholds both licensed titles, which it renders
+	// as the "not available in your country" notice in the title page.
+	if netflixWithheld(p1.body) && netflixWithheld(p2.body) {
+		return res(model.UnlockOriginalsOnly, "", "Originals Only")
 	}
-	// A served region page carries the region in the Location header of the
-	// per-region title: /<cc>-<n>/...  No header means the default catalogue.
-	r3, err := c.do(ctx, false, "GET", "https://www.netflix.com/title/80018499", nil, nil)
-	if err != nil {
-		return netErr(err)
-	}
-	drain(r3)
-	loc := r3.Header.Get("Location")
-	if loc == "" {
-		return res(model.UnlockYes, "US", "")
-	}
-	parts := strings.SplitN(loc, "/", 5)
-	if len(parts) < 5 {
-		return res(model.UnlockFailed, "", "unexpected location")
-	}
-	region := strings.ToUpper(strings.SplitN(parts[3], "-", 2)[0])
+	region := netflixRegion(p1.body)
 	if region == "" {
-		region = "US"
+		region = netflixRegion(p2.body)
+	}
+	if region == "" {
+		region = netflixRegionFromPath(p1.path)
+	}
+	if region == "" {
+		region = netflixRegionFromPath(p2.path)
 	}
 	return res(model.UnlockYes, region, "")
+}
+
+// netflixWithheld reports whether the page is Netflix's "this title isn't
+// available in your country" notice instead of the title itself.
+func netflixWithheld(body string) bool {
+	return strings.Contains(body, netflixNotice) || strings.Contains(body, "Oh no!")
+}
+
+// netflixRegion reads the region Netflix reports for the request itself, from
+// the page's `"requestCountry":{…,"id":"DE","countryName":"Germany"}` block.
+func netflixRegion(body string) string {
+	i := strings.Index(body, `"requestCountry"`)
+	if i < 0 {
+		return ""
+	}
+	cc := strings.ToUpper(quotedAfter(body[i:], `"id":"`))
+	if len(cc) != 2 || !isUpper(cc) {
+		return ""
+	}
+	return cc
+}
+
+// netflixRegionFromPath reads the region off a region-prefixed path such as
+// /de-en/title/81280792, the fallback when the page body carries no region.
+func netflixRegionFromPath(path string) string {
+	seg := strings.TrimPrefix(path, "/")
+	if i := strings.IndexByte(seg, '/'); i >= 0 {
+		seg = seg[:i]
+	}
+	if i := strings.IndexByte(seg, '-'); i < 0 {
+		return ""
+	} else {
+		seg = seg[:i]
+	}
+	cc := strings.ToUpper(seg)
+	if len(cc) != 2 || !isUpper(cc) {
+		return ""
+	}
+	return cc
 }
 
 func netflixCDN(ctx context.Context, c *Client) model.UnlockResult {
@@ -140,35 +211,101 @@ func netflixCDN(ctx context.Context, c *Client) model.UnlockResult {
 	return res(model.UnlockYes, region, "")
 }
 
+// Disney+ device-flow constants. The bearer is the public client credential the
+// web app ships in its bundle (same for every client); the two bodies are the
+// request templates the reference check keeps, with the per-round values
+// (device assertion, refresh token) substituted in.
+const (
+	disneyDeviceBearer = "Bearer ZGlzbmV5JmJyb3dzZXImMS4wLjA.Cu56AgSfBTDag5NiRA81oLHkDZfu5L3CKadnefEAY84"
+
+	disneyAssertionPlaceholder    = "DISNEYASSERTION"
+	disneyRefreshTokenPlaceholder = "ILOVEDISNEY"
+
+	disneyTokenBody = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&latitude=0&longitude=0&platform=browser&subject_token=DISNEYASSERTION&subject_token_type=urn%3Abamtech%3Aparams%3Aoauth%3Atoken-type%3Adevice"
+
+	disneyRefreshBody = `{"query":"mutation refreshToken($input: RefreshTokenInput!) {\n            refreshToken(refreshToken: $input) {\n                activeSession {\n                    sessionId\n                }\n            }\n        }","variables":{"input":{"refreshToken":"ILOVEDISNEY"}}}`
+)
+
 func disneyPlus(ctx context.Context, c *Client) model.UnlockResult {
-	hdrs := map[string]string{"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
-	r, err := c.do(ctx, false, "GET", "https://www.disneyplus.com/", hdrs, nil)
+	// The marketing page answers 200 with a CDN's `region` header for every
+	// egress (it read `us` for a Frankfurt box), so it cannot decide anything.
+	// The verdict comes from Disney's own device flow, which is also what the
+	// reference check drives: a device assertion, a token exchange that answers
+	// `forbidden-location` when the IP is blocked, and a device session query
+	// that names the catalogue this egress gets.
+	auth := map[string]string{"Authorization": disneyDeviceBearer}
+	post := func(follow bool, url, ctype, body string) (string, int, error) {
+		h := map[string]string{"Content-Type": ctype}
+		for k, v := range auth {
+			h[k] = v
+		}
+		r, err := c.do(ctx, follow, "POST", url, h, strings.NewReader(body))
+		if err != nil {
+			return "", 0, err
+		}
+		return read(r), r.StatusCode, nil
+	}
+
+	const devicesBody = `{"deviceFamily":"browser","applicationRuntime":"chrome","deviceProfile":"windows","attributes":{}}`
+	dev, _, err := post(false, "https://disney.api.edge.bamgrid.com/devices", "application/json; charset=UTF-8", devicesBody)
 	if err != nil {
 		return netErr(err)
 	}
-	page := read(r)
-	if strings.Contains(page, "forbidden-location") {
-		return res(model.UnlockBanned, "", "forbidden-location")
+	if strings.Contains(dev, "403 ERROR") {
+		return res(model.UnlockBanned, "", "IP Banned By Disney+")
 	}
-	loc := r.Header.Get("Location")
-	switch loc {
-	case "https://preview.disneyplus.com/unavailable/":
-		return res(model.UnlockBanned, "", "unavailable")
-	case "https://disneyplus.disney.co.jp/":
-		return res(model.UnlockYes, "JP", "")
-	case "":
-		// No redirect: the region cookie (else the region header) names the
-		// catalogue this egress is being served.
-		if cc := cookieValue(r, "x-dss-country"); cc != "" {
-			return res(model.UnlockYes, strings.ToUpper(cc), "")
-		}
-		if reg := r.Header.Get("region"); reg != "" {
-			return res(model.UnlockYes, strings.ToUpper(reg), "")
-		}
-		return res(model.UnlockYes, "", "")
-	default:
+	assertion := quotedAfter(dev, `"assertion":"`)
+	if assertion == "" {
+		return res(model.UnlockFailed, "", "no device assertion")
+	}
+
+	tok, _, err := post(false, "https://disney.api.edge.bamgrid.com/token",
+		"application/x-www-form-urlencoded; charset=UTF-8",
+		strings.Replace(disneyTokenBody, disneyAssertionPlaceholder, assertion, 1))
+	if err != nil {
+		return netErr(err)
+	}
+	if strings.Contains(tok, "forbidden-location") || strings.Contains(tok, "403 ERROR") {
+		return res(model.UnlockBanned, "", "IP Banned By Disney+")
+	}
+	refresh := quotedAfter(tok, `"refresh_token":"`)
+	if refresh == "" {
+		return res(model.UnlockFailed, "", "no refresh token")
+	}
+
+	gql, _, err := post(true, "https://disney.api.edge.bamgrid.com/graph/v1/device/graphql", "application/json",
+		strings.Replace(disneyRefreshBody, disneyRefreshTokenPlaceholder, refresh, 1))
+	if err != nil {
+		return netErr(err)
+	}
+	region := strings.ToUpper(quotedAfter(gql, `"countryCode":"`))
+	supported := boolAfter(gql, `"inSupportedLocation":`)
+	if region == "" {
 		return res(model.UnlockNo, "", "")
 	}
+	if region == "JP" {
+		return res(model.UnlockYes, "JP", "")
+	}
+	if supported == "false" {
+		// The catalogue is announced for this region but not live yet.
+		return res(model.UnlockNo, region, "not launched yet")
+	}
+	if supported != "true" {
+		return res(model.UnlockFailed, "", "no location verdict")
+	}
+	// A preview/unavailable landing page overrides the region answer.
+	r, err := c.do(ctx, true, "GET", "https://disneyplus.com", nil, nil)
+	if err != nil {
+		return netErr(err)
+	}
+	drain(r)
+	if r.Request != nil && r.Request.URL != nil {
+		final := r.Request.URL.String()
+		if strings.Contains(final, "preview") || strings.Contains(final, "unavailable") {
+			return res(model.UnlockNo, "", "")
+		}
+	}
+	return res(model.UnlockYes, region, "")
 }
 
 func youtubePremium(ctx context.Context, c *Client) model.UnlockResult {
@@ -177,10 +314,12 @@ func youtubePremium(ctx context.Context, c *Client) model.UnlockResult {
 		return netErr(err)
 	}
 	page := read(r)
-	if cc := quotedAfter(page, `"countryCode":"`); len(cc) == 2 {
+	// GL is the catalogue this egress is served; countryCode elsewhere on the
+	// page can name something else (a Hong Kong box reported US there).
+	if cc := quotedAfter(page, `"GL":"`); len(cc) == 2 {
 		return res(model.UnlockYes, strings.ToUpper(cc), "")
 	}
-	if cc := quotedAfter(page, `"GL":"`); len(cc) == 2 {
+	if cc := quotedAfter(page, `"countryCode":"`); len(cc) == 2 {
 		return res(model.UnlockYes, strings.ToUpper(cc), "")
 	}
 	if strings.Contains(page, "premiumPurchaseButton") || strings.Contains(page, "manageSubscriptionButton") {
@@ -354,9 +493,11 @@ func gemini(ctx context.Context, c *Client) model.UnlockResult {
 		return netErr(err)
 	}
 	page := read(r)
-	// The app bundle carries the region as `,2,1,200,"XXX"`. The historical
-	// "45631641,null,true" availability marker flipped to false upstream, so the
-	// region triple is the stable signal; fall back to the old marker alone.
+	// The app bundle carries the region as `,2,1,200,"XXX"`. Nothing else on
+	// the page is an availability verdict we trust: the `45631641` flag the
+	// reference check greps reads false on egresses the app still serves (a
+	// browser in Frankfurt and in Hong Kong both render the full app), so it
+	// is not a country gate and must not turn a working Gemini into "no".
 	if cc := boundedAfter(page, `,2,1,200,"`, `"`); len(cc) == 3 && isUpper(cc) {
 		return res(model.UnlockYes, cc, "")
 	}
