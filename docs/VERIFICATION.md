@@ -1969,3 +1969,24 @@ Chromium 上也指向它），这套字体的 11px 数字比玻璃皮肤落到�
 （取色 `#ffffff`，四周页面 `#111a1a` 一带的深底），立绘与牌沿的接缝取色无重影。
 线上 `card-overflow-check`（皮肤 = 二次元）六个宽度「越界 0 个」、`route-nowrap-check`
 「折行 0 / 非居中 0」。回滚点：`/usr/local/bin/tza-server.previous`。
+
+## 2026-10-08 DE-NoSla-FRA 进角色名单：德国元素
+
+需求：「nosla 的 DE 机的人物要融合德国元素」。设定延续「线路 × 商家」——
+法兰克福 + 三网回程 CTG / 10099→9929 / CMIN2（150–190ms）× NoSla 家人云；
+德国元素落在**黑红金（国旗色）发带与围裙缎带、Dirndl 白衬衫 + 深色胸衣 + 白围裙、
+麻花辫上的椒盐卷饼发夹**，画风与第一张立绘同一套。
+
+**加一台 = 三处各一行**：名单 `web/anime-cast.js`、样式 `web/anime.css` 的 `[data-cast]` 规则、
+图片 `web/anime/de-nosla-fra.webp`（768 宽、76KB，`node /root/work/tza-img-webp.mjs` 转）；
+三处对齐由 `web/anime_cast_test.go` 守住。
+
+**生图链路（这轮踩的坑）**：fal `nano-banana-pro` 以第一张立绘为底图走 edit（锁住画风、构图、
+双手抓牌顶边、空牌面），提示词里明写「no text anywhere」；**参考图必须是外网可直取的直链**：
+litterbox 这次整站 500、catbox 回 412「Invalid uploader」、0x0.st 回 503（自述被 AI 爬虫刷到
+关停上传），最后用 uguu（`https://n.uguu.se/…`）拿到直链并一次成功，x0.at 也返回直链可用。
+
+**线上（`2.0.0-dev+15d8849`）**：源站与经 CF `healthz=200`、12/12 在线；`/anime/de-nosla-fra.webp`
+200（77480 字节）；390px 实测两台 NoSla 卡片同为 `358x907.5`（立绘 359、`metrics-grid` 114、
+延迟带 137、回程格 32）；`card-overflow-check` 六个宽度越界 0、`route-nowrap-check` 折行 0 非居中 0；
+`go test` / `gofmt` / `go vet` / `ui-smoke` / `presentation-test` 全绿。
