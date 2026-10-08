@@ -2028,3 +2028,27 @@ enamel name badge with exactly the two Chinese characters 家人」，其余一�
 **记一笔**：`ui-smoke` 与那台在跑 Chromium 截图的任务并发时，出现过一次
 `expected: 'dark'` 的失败（jsdom 侧断言在 CPU 抢占下超时/错序），机器空下来连跑两次都绿；
 批量截图与 UI 回归不要同时跑。
+
+## 2026-10-08 US-VMISS-TRI 进角色名单：照 VMISS 官网的品牌风格 + 美国元素
+
+需求：「然后做 vmiss，你可以去他官网看看，找到契合的风格，然后还要加上地区风格，也就是 us」。
+
+**先去官网取风格**：`browser_exec` 在本机是坏的（`npm MODULE_NOT_FOUND ./cache/policy.js`，要
+`hermes tools` 重装 Chromium），改用 puppeteer-core 直连 Chromium 的 `/root/work/vmiss-probe.mjs`
+——量样式表里色值出现频次 + 抓 logo/插画 URL + 截图，再让 vision 读画面。读出来的品牌语言：
+正文近黑 `#161518` + 大量白，主色亮蓝 `#2563EB`（样式表里 `#2d65ee`）、淡蓝底 `#EEF3FF`、
+**一点亮黄 `#F2C21B`**；logo 是 periwinkle 蓝（`#727CF5` / `#8E96F7`）的 V 字风帆；
+吉祥物是「飞在云里」的 3D 卡通人配**手绘云朵 / 圆环 / 蓝色虚线涂鸦**，hero 上写 FLY IN THE CLOUDS。
+
+**人物 = 品牌风格 × 地区 × 线路**：蓝挑染 + 云朵发夹（品牌色与「云上飞行」）+ 黄星发夹；
+美国元素落在红白蓝星条缎带与领口的星条小徽章；胸口铭牌写 **VMISS**——铭牌这一件跟两台 NoSla
+统一（她们写「家人」= 家人云，这台写卖家名）。线路身份取真实回程：
+**CN2GIA · 10099→9929 · CMIN2**（美西三网精品，实测 159–165ms，21/24 解锁，CAD 45.00/年）。
+立绘 `web/anime/us-vmiss-tri.webp`（78216 字节，768 宽），牌面白仍从 y≈752 开始，
+所以浅色 `768/775`、夜版 `768/752` 两档裁切都不用动。
+
+**线上（`2.0.0-dev+fea4384`）**：源站与经 CF `healthz=200`、12/12 在线；
+`/anime/us-vmiss-tri.webp` 200（78216）、`/anime-cast.js` 里名单在位；
+390px 实测卡片 `358x907.5`（浅色，立绘 359）/ `358x896.8`（夜版，立绘 349）；
+`card-overflow-check` 六个宽度越界 0、`route-nowrap-check` 折行 0 非居中 0；
+`go test` / `gofmt` / `go vet` / `ui-smoke` / `presentation-test` 全绿。
