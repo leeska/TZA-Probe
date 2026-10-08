@@ -145,7 +145,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 6 {
+	if version > 7 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -198,6 +198,14 @@ func Open(path string) (*Store, error) {
 		// 解锁检测结论（每台节点 × 每个服务一行）。不回填：结论是 Agent 报上来的，
 		// 没有历史数据可推。
 		if _, err = db.Exec("BEGIN; CREATE TABLE IF NOT EXISTS unlocks(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, service TEXT NOT NULL, status TEXT NOT NULL, region TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', tested_at INTEGER NOT NULL, PRIMARY KEY(node_id,service)); CREATE INDEX IF NOT EXISTS unlocks_age ON unlocks(tested_at); PRAGMA user_version=6; COMMIT;"); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 7 {
+		// 回程补测队列（每台节点 × 每条探针一行，见 Store.Finish）。不回填：它是
+		// 「刚出了一次未知」的短命标记，迁移时的旧结果没有补测可言。
+		if _, err = db.Exec("BEGIN; CREATE TABLE IF NOT EXISTS retries(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, probe_key TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(node_id,probe_key)); CREATE INDEX IF NOT EXISTS retries_at ON retries(at); PRAGMA user_version=7; COMMIT;"); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -346,8 +354,10 @@ CREATE TABLE alert_state(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CA
 CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, node_name TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, active INTEGER NOT NULL, at INTEGER NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE unlocks(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, service TEXT NOT NULL, status TEXT NOT NULL, region TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', tested_at INTEGER NOT NULL, PRIMARY KEY(node_id,service));
 CREATE INDEX unlocks_age ON unlocks(tested_at);
+CREATE TABLE retries(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, probe_key TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(node_id,probe_key));
+CREATE INDEX retries_at ON retries(at);
 CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-PRAGMA user_version=6;
+PRAGMA user_version=7;
 COMMIT;`
 
 func (s *Store) Close() error {
@@ -608,6 +618,10 @@ func (s *Store) DeleteTask(ctx context.Context, id string) error {
 	}
 	if n, _ := r.RowsAffected(); n == 0 {
 		return ErrNotFound
+	}
+	// 补测行按 probe_key（taskID|…）记，没有指向 tasks 的外键，任务删掉时一起清。
+	if _, err = tx.ExecContext(ctx, "DELETE FROM retries WHERE probe_key LIKE ?", id+"|%"); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -976,15 +990,40 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 	if err != nil {
 		return nil, err
 	}
+	// 补测队列：Finish 在「这次回程没测出骨干证据、上一次是好的」时排一条两分钟后的
+	// 补测。这里把它读出来当提前到点的 due 用（读完即领，领走就删，见下面的循环）。
+	retry := map[string]int64{}
+	pending, err := tx.QueryContext(ctx, "SELECT probe_key,at FROM retries WHERE node_id=?", node)
+	if err != nil {
+		return nil, err
+	}
+	for pending.Next() {
+		var key string
+		var at int64
+		if err = pending.Scan(&key, &at); err != nil {
+			pending.Close()
+			return nil, err
+		}
+		retry[key] = at
+	}
+	err = pending.Err()
+	pending.Close()
+	if err != nil {
+		return nil, err
+	}
 	// Oldest due first prevents starvation when many targets share a node.
 	due := func(t model.Task) int64 {
 		if requested[t.ID] > last[t.ProbeKey()] {
 			return requested[t.ID]
 		}
+		d := int64(0)
 		if at, ok := last[t.ProbeKey()]; ok {
-			return at + int64(t.Interval)
+			d = at + int64(t.Interval)
 		}
-		return 0
+		if at, ok := retry[t.ProbeKey()]; ok && at < d {
+			return at
+		}
+		return d
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return due(candidates[i]) < due(candidates[j]) })
 	out := []model.Job{}
@@ -997,6 +1036,12 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 		j := model.Job{ID: model.Secret()[:24], Task: t}
 		if _, err = tx.ExecContext(ctx, "INSERT INTO jobs(id,task_id,node_id,task,issued,probe_key) VALUES(?,?,?,?,?,?)", j.ID, t.ID, node, encode(t), now.Unix(), t.ProbeKey()); err != nil {
 			return nil, err
+		}
+		if _, ok := retry[t.ProbeKey()]; ok {
+			// 领走就等于用掉了：留着它这条探针会因为「补测时间已过」被无限重领。
+			if _, err = tx.ExecContext(ctx, "DELETE FROM retries WHERE node_id=? AND probe_key=?", node, t.ProbeKey()); err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, j)
 	}
@@ -1045,6 +1090,24 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 	n, _ := result.RowsAffected()
 	if n == 0 {
 		return ErrConflict
+	}
+	// 回程「未知」多半是一次抖动：一条没走到目标的 trace 就会把那条探针写成未知，而正常
+	// 周期要等一整个 interval（本机 1 小时）才重测，面板上于是挂着整整一轮的未知。所以只要
+	// 上一次是好的、这一次没有骨干证据，就排一次两分钟后的补测（Lease 会提前领走它）。
+	// 补测再没证据时不再续命——两轮都空就按正常周期走，否则一条长期测不出的目标会每两分钟
+	// 烧一次 trace。
+	if task.Kind == model.RouteKind && r.Route == model.RouteUnknown {
+		var prev string
+		perr := tx.QueryRowContext(ctx, "SELECT result FROM jobs WHERE node_id=? AND probe_key=? AND id<>? AND result IS NOT NULL ORDER BY issued DESC LIMIT 1", node, task.ProbeKey(), r.JobID).Scan(&prev)
+		if perr != nil && !errors.Is(perr, sql.ErrNoRows) {
+			return perr
+		}
+		var before model.Result
+		if prev != "" && json.Unmarshal([]byte(prev), &before) == nil && before.Route != "" && before.Route != model.RouteUnknown {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO retries(node_id,probe_key,at) VALUES(?,?,?) ON CONFLICT(node_id,probe_key) DO UPDATE SET at=excluded.at", node, task.ProbeKey(), now.Add(routeRetryDelay).Unix()); err != nil {
+				return err
+			}
+		}
 	}
 	// 解锁结论在同一事务里落到 unlocks：面板读到的永远是整轮结果，不会看到半轮。
 	if len(r.Unlocks) > 0 && task.Kind == model.UnlockKind {
@@ -1206,6 +1269,12 @@ const (
 	trafficHourRetention = 45 * 24 * time.Hour
 	JobsRetention        = 7 * 24 * time.Hour
 	eventsRetention      = 90 * 24 * time.Hour
+	// routeRetryDelay 是一次回程补测的等待时长：抖动通常就是十几秒到一两分钟的事，
+	// 等两分钟既避开正在过境的那一段，又不至于让面板把「未知」挂成常态。
+	routeRetryDelay = 2 * time.Minute
+	// retryRetention 只兜底：补测在 Lease 领走时就删了，留下来的都是节点离线时排下的
+	// 死行（也可能是已删任务的），一天之后一律清掉。
+	retryRetention = 24 * time.Hour
 )
 
 func (s *Store) Clean(ctx context.Context, now time.Time) error {
@@ -1219,7 +1288,7 @@ func (s *Store) Clean(ctx context.Context, now time.Time) error {
 	for _, q := range []struct {
 		query string
 		age   time.Duration
-	}{{"DELETE FROM samples WHERE at<?", samplesRetention}, {"DELETE FROM traffic WHERE day<?", trafficRetention}, {"DELETE FROM traffic_hour WHERE hour<?", trafficHourRetention}, {"DELETE FROM jobs WHERE issued<?", JobsRetention}, {"DELETE FROM events WHERE at<?", eventsRetention}} {
+	}{{"DELETE FROM samples WHERE at<?", samplesRetention}, {"DELETE FROM traffic WHERE day<?", trafficRetention}, {"DELETE FROM traffic_hour WHERE hour<?", trafficHourRetention}, {"DELETE FROM jobs WHERE issued<?", JobsRetention}, {"DELETE FROM events WHERE at<?", eventsRetention}, {"DELETE FROM retries WHERE at<?", retryRetention}} {
 		if _, err = tx.ExecContext(ctx, q.query, now.Add(-q.age).Unix()); err != nil {
 			return err
 		}

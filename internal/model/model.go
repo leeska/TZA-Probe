@@ -682,6 +682,10 @@ type LatencySample struct {
 // built-in catalogue.
 const UnlockKind = "unlock"
 
+// RouteKind 是回程（traceroute 分类）任务的 kind：面板上每个运营商一行结论，
+// 一条没测出骨干证据的 trace 就会把那一行写成「未知」。见 storage 的补测逻辑。
+const RouteKind = "route"
+
 // UnlockMinInterval is the shortest unlock interval. One round is a couple of
 // dozen HTTPS requests from the node's own IP, so this is deliberately an order
 // of magnitude coarser than a latency probe.

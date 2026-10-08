@@ -137,10 +137,16 @@ func RouteLabel(hops []Hop) string {
 		}
 	}
 	if len(out) == 0 {
-		return "未知"
+		return RouteUnknown
 	}
 	return strings.Join(out, " → ")
 }
+
+// RouteUnknown is what RouteLabel reports when a trace carried no evidence of
+// any operator backbone: a trace that timed out mid-path, or one that stayed
+// inside the target's own ASN. Callers compare against this instead of the
+// literal so the wording lives in one place (the panel shows it as 「未知」).
+const RouteUnknown = "未知"
 
 // ctLabel names the single 电信 product a trace carries. CTG wins over CN2: a
 // trace that shows CTGNet hops is a CTG line and its 59.43.* hops are that
