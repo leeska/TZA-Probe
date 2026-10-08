@@ -1798,3 +1798,60 @@ Chromium 上也指向它），这套字体的 11px 数字比玻璃皮肤落到�
   `memory_used / memory_total`，与单位无关，未改。
 - 流量、额度、速率继续十进制：商家的流量口径本来就是十进制（1 TB = 1e12），
   改成 1024 会让面板比商家账单小 7.4%。
+
+## 2026-10-08 卡片头恒两行、后台可设前台默认外观、回程未知后补测一次
+
+三件事都来自同一轮反馈（用户截了三张卡片 + 三条要求）。线上：`2.0.0-dev+<sha>`，
+源站与经 CF 的 `healthz=200`，12/12 在线。
+
+**一、卡片头恒两行，右边那排徽标靠左**
+
+- 现象：同一个宽度下，名字短的卡片头 24px（名字 + `21/24` + 发行版 + 架构一行装下），
+  名字长的那两台（`US-干杯Cloud-AT&T.5` / `US-干杯Cloud-Frontier`）58px——右边整排被挤到
+  第二行，卡片头于是不齐。用户要的是「统一这个行为」，并选定「恒两行、第二行靠左」。
+- 改动：`.card-top .node-identity { flex: 1 1 100% }` 让名字独占第一行，
+  `.card-top .card-actions` 去掉 `margin-left: auto`、改为 `justify-content: flex-start`
+  加 `flex-wrap: nowrap`（要挪就整排一起挪，不许自己内部再折）。名字仍完整显示，
+  `nowrap + ellipsis` 只兜底极端长名。
+- 验证：真 Chrome 按 1440 / 1200 / 390 三个宽度量 12 台真实卡片——改后头部高度
+  `24→56px` 全部一致、徽标组左边缘与名字、与第二行的「地区 · 分组」同一条线（x=23）；
+  改前是 `24 / 24 … 58 / 58`。`scripts/ui-smoke.mjs` 的样式文本断言按新规则改写
+  （旧断言写的是「右对齐」，先红后绿）。
+
+**二、后台可设前台的默认外观**
+
+- `PUT /api/v1/admin/panel` 新增 `default_theme`（`auto` / `light` / `dark`）与
+  `default_skin`（`glass` / `press` / `shadcn`），`GET /api/v1/admin/settings` 读回；
+  只改延迟窗口不会碰这两项，坏值 400、匿名 401。
+- 首屏顺序：`index.html` 在 `theme-boot.js` 之前引 `/theme-default.js`——一份几十字节的
+  动态脚本（`window.__tzaDefault={theme:…,skin:…}`）。CSP 是 `script-src 'self'`，写不了
+  内联脚本；放到样式表之后会先按内置默认闪一下。访客自己点过切换（localStorage 有键）
+  就听他的，键在 = 自己选过、键不在 = 跟后台默认。
+- 验证：`internal/httpapi/panel_look_test.go` 覆盖存取 / 只改窗口不冲外观 / 坏值 / 匿名 /
+  `/theme-default.js` 内容；`web/look_choices_test.go` 把 `model.PanelThemes`、
+  `model.PanelSkins` 与 `theme.js` 的 `ORDER`、`skins.js` 的 `SKINS` 钉在一起（对不上就会
+  存下一个前端不认识的 id，表现为「设置了没生效」），并断言 `index.html` 里两个脚本的顺序；
+  `scripts/ui-smoke.mjs` 真服务 + jsdom 走「保存 → 读回 → 首屏脚本跟着变」，
+  最后改回内置默认，不影响后面的色带断言。
+
+**三、回程「未知」后补测一次**
+
+- 现象：三网回程偶发三个运营商同时显示「未知」。查生产库：回程任务每小时一轮，
+  面板取该运营商**最新一次**结果；某些轮次 traceroute 没走到目标（`status=timeout`、
+  hops 24、只到 AS4134），那一条就写「未知」，而覆盖它要等下一轮——线上实测
+  13:26–13:28 日本那台 IPv4 三个运营商连着 6 条 `timeout`，13:28:32 自行恢复，
+  这两分钟里卡片就是三个「未知」。不是渲染问题。
+- 改动：新增 `retries` 表（`user_version=7`）。`Finish` 在「`route` 任务、这次没有骨干
+  证据、上一次是好的」时排一条两分钟后的补测；`Lease` 把到点的补测当提前到期的探针领走并
+  删掉那一行；补测再没证据时**不续命**（上一轮也是未知就按正常周期走），
+  一条长期测不出的目标不会每两分钟烧一次 trace。节点删除走外键级联，任务删除按
+  `probe_key LIKE 'taskID|%'` 清，`Clean` 额外扫掉一天的残留。
+- 验证：`internal/storage/route_retry_test.go` 走完整时序——好结果不排补测、未知后 1 分钟不
+  发 / 2 分到点发、领走后不会被重复领（否则会无限补测）、补测再失败要等正常周期；
+  `go test ./...`、`go vet ./...`、`gofmt`、`git diff --check` 全绿。
+
+**待确认**：
+
+- 补测按「探针」记，不按「运营商行」记：三网那台一次只领一条回程探针
+  （Lease 对同 kind 每轮只发一条），所以三个运营商一起未知时是挨个补上，约一分钟内收齐。
+- 回程间隔本身没动（仍按任务配置），补测只是「这一次」的例外。
