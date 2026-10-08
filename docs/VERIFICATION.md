@@ -1801,8 +1801,20 @@ Chromium 上也指向它），这套字体的 11px 数字比玻璃皮肤落到�
 
 ## 2026-10-08 卡片头恒两行、后台可设前台默认外观、回程未知后补测一次
 
-三件事都来自同一轮反馈（用户截了三张卡片 + 三条要求）。线上：`2.0.0-dev+<sha>`，
-源站与经 CF 的 `healthz=200`，12/12 在线。
+三件事都来自同一轮反馈（用户截了三张卡片 + 三条要求）。线上：`2.0.0-dev+288df49`，
+源站与经 CF 的 `healthz=200`，12/12 在线；库迁到 `user_version=7`（新增 `retries` 表，0 行）。
+
+**线上实测（真 Chrome 打生产页，干净访客）**：
+
+- 卡片头高度分布 `{"56": 12}`——12 张卡片全部两行、高度一致；徽标组左边缘 `x=23`，
+  与状态点、与「地区 · 分组」同一条线（名字在 `x=41`，被状态点让出 18px）。
+  部署前同三个卡片实测 `24 / 58 / 58`。
+- 默认外观：`PUT /admin/panel {default_theme:dark, default_skin:press}`（204）→ 干净访客
+  首屏 `<html data-theme="dark" data-skin="press">`、`window.__tzaDefault` 同步、
+  `meta[theme-color]` 变 `#15120f`、头部仍恒两行（印刷皮肤下 54px）；改回
+  `auto / glass` 后首屏恢复 `light / glass`。
+- 回程补测：`retries` 表上线时 0 行（没碰上未知），行为由
+  `internal/storage/route_retry_test.go` 的完整时序守住。
 
 **一、卡片头恒两行，右边那排徽标靠左**
 
