@@ -213,7 +213,17 @@ func (r Runner) runUnlock(ctx context.Context, j model.Job) model.Result {
 	result := model.Result{JobID: j.ID, Status: "failed", Route: "未知", Hops: []model.Hop{}}
 	ctx, cancel := context.WithTimeout(ctx, unlockBudget)
 	defer cancel()
-	results := unlock.Run(ctx, unlock.Options{Family: j.Task.Family})
+	// The round describes the node's IPv4 egress — pinned, not left to the
+	// host's default. A dual-stack box otherwise probed over IPv6, and the two
+	// paths disagree on the catalogue: one US box reads a Hong Kong catalogue
+	// over v4 and a US one over v6, a Hong Kong box reports Youtube GL=HK over
+	// v4 and GL=US over v6. That is why these numbers disagreed with every
+	// other checker's. j.Task.Family still overrides when a task names one.
+	family := j.Task.Family
+	if family == "" {
+		family = "ipv4"
+	}
+	results := unlock.Run(ctx, unlock.Options{Family: family})
 	if len(results) == 0 {
 		// 一项都没跑出来（被取消、目录为空）不是「未解锁」，是一轮没完成。
 		result.Reason = "tool_failed"
