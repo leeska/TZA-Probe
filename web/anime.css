@@ -602,6 +602,10 @@ html[data-skin="anime"] .anime-stage[data-cast="de-nosla-fra"] {
   background-image: url("/anime/de-nosla-fra.webp");
 }
 
+html[data-skin="anime"] .anime-stage[data-cast="us-vmiss-tri"] {
+  background-image: url("/anime/us-vmiss-tri.webp");
+}
+
 /* 深色下立绘压一档亮度，免得那块浅色底在夜版里刺眼；并且**只裁到牌子顶沿**
    （浅色下裁到 775，会露出 20 多像素白牌面——夜版里牌子是深色的，露白就对不上了）。 */
 html[data-skin="anime"][data-theme="dark"] .anime-stage {
