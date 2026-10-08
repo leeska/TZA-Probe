@@ -2076,3 +2076,24 @@ NoSla 写「家人」、VMISS 写 VMISS、搬瓦工写 Bandwagon，放大裁片�
 **四台线路机到这里齐了**：`JP-NoSla-Gen2`（樱花簪 / 千鸟格 / 家人铭牌）、
 `DE-NoSla-FRA`（黑红金 / Dirndl / 家人铭牌）、`US-VMISS-TRI`（VMISS 蓝白科技风 / 云朵 / VMISS 铭牌）、
 `US-BWH-DC9`（搬瓦工金黄 / 大篷车轮 / Bandwagon 铭牌）。剩下 `SH-Tencent-Lite` 还没做。
+
+## 2026-10-08 二次元皮肤：牌面配色——卡片本体也跟着角色走
+
+需求：「卡片背景也要有人物风格」。
+
+- **两份 data-cast**：`app.js` 的 `cardShell` 多挂一份（立绘层 `.anime-stage` 在卡片**内部**，
+  卡片自身读不到它的 data-cast，而整张牌面上色要按角色来；两处同一个 `castId()`，不会漂）。
+- **anime.css 新增「牌面配色」段**：每台机一份 `--cast-board / --cast-cell / --cast-line /
+  --cast-track / --cast-accent / --cast-stripe`；只改**材质**（牌面底色、格子底色、描边、
+  进度轨、强调色），正文令牌 `--ink/--muted`、字号行高排版一律不碰 → 数据可读性不变。
+  JP 樱花粉 + 花瓣点 · DE 暖白 + 黑红金细竖纹 · VMISS 天蓝 + 蓝点 · 搬瓦工 琥珀 + 斜向金线。
+- **牌沿色带**：立绘底边压 3px `border-image: var(--cast-stripe) 1`（DE 是黑红金三段）。
+  border-box 高度不变，所以立绘只早裁 3px——那 3px 本来就是牌面白条。
+- **第一版浅色配得太淡**（vision 复核读出来「几乎还是白卡、纹样看不出来」）→ 加重底色、
+  格子改成半透明 `rgb(255 255 255 / 0.58)` 让牌面透出来、纹样浓度约翻倍，再复核才通过。
+- **守卫**：`web/anime_cast_test.go` 增加两条（`.node-card[data-cast="…"]` 与它的夜版必须存在），
+  加一台机器时漏掉配色会直接红——现在「加一台」是四处对齐：立绘 / 名单 / 样式规则 / 牌面配色。
+- **线上（`2.0.0-dev+458d2e9`）**：源站与经 CF `healthz=200`、12/12 在线；390px 卡片浅色
+  `358x907.5`、夜版 `358x896.8`（立绘 359/349）；`card-overflow-check` 六个宽度越界 0、
+  `route-nowrap-check` 折行 0 非居中 0；`go test` / `gofmt` / `go vet` / `ui-smoke` /
+  `presentation-test` 全绿。
