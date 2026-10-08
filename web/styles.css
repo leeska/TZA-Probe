@@ -635,7 +635,12 @@ button.node-name:hover {
 /* Metrics Grid (2x2 equal height) */
 .metrics-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 两列都要写成 minmax(0, 1fr)：`1fr` 的最小值是内容的 min-content，而「近 24 小时均值 … ·
+     阈值 …」这行降速说明是 nowrap，于是那一列永远不窄于整句话（实测 199px）。卡片内容一小于
+     199 + 79 + 18 就把整格顶出卡片右边框——卡片是 overflow: hidden，靠右的数值就被边框切掉
+     （实测 360px 顶出 13.4px、344px 29.4px、320px 53.4px，被切的是「33.4%」「8.7 GB」）。
+     钉成 minmax(0, …) 之后列宽只按容器分配，降速说明自己折行，见下面那条。 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px 18px;
   margin-bottom: 0;
 }
@@ -692,6 +697,14 @@ button.node-name:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 降速说明是这一格里唯一的整句话（「近 24 小时均值 … · 阈值 …」/「用满 … 额度 · 限速 …」），
+   让它折行：窄屏上截成省略号等于把阈值/额度这半句信息丢掉，而它是用户专门要看的那一行。
+   （列表视图的次要文字本来就是允许折行的，这里只是把卡片跟上。）折行只让配了降速规则的
+   那几张卡高一点点，不会再出现「整格顶出卡片、右对齐的数值被边框切掉」那种情况。 */
+.metric small.throttle-note {
+  white-space: normal;
 }
 
 /* 达量降速那一行（近 N 小时平均带宽 / 降速阈值）：与上一行的额度说明同款，

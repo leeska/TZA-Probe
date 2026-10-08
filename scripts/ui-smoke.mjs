@@ -1191,6 +1191,19 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     !/GiB/.test(metricSub("周期用量") || ""),
     `流量那一格不该跟着改成 1024（只有内存 / 磁盘是 GiB），实际「${metricSub("周期用量")}」`,
   );
+  // 指标格的两列都必须写成 minmax(0, 1fr)：`1fr` 的最小值是内容的 min-content，而降速说明
+  // （「近 24 小时均值 … · 阈值 …」）是一整句话，会把那一列撑到比容器还宽、整格顶出卡片，
+  // 卡片 overflow: hidden 就把右对齐的数值切掉（用户 2026-10-08 截图报过「边界溢出了」）。
+  // jsdom 不做布局，只有样式文本断言拦得住；真布局由 scripts/card-overflow-check.mjs 在
+  // 部署验收里按 320–414px 逐张卡片量。
+  assert(
+    /\.metrics-grid \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/.test(styles),
+    "指标格两列要 minmax(0, 1fr)：1fr 的最小值是内容宽度，长说明会把整格顶出卡片",
+  );
+  assert(
+    /\.metric small\.throttle-note \{[^}]*white-space: normal/.test(styles),
+    "降速说明是整句话，要允许折行（截成省略号就把阈值/额度那半句丢了）",
+  );
   const sub = compact.querySelector(".node-sub");
   assert(sub?.querySelector("p"), "地区与分组在头部第二行");
   assert(sub.querySelector("[data-card-family]"), "地址族开关也在第二行");
