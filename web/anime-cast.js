@@ -28,6 +28,13 @@ export const CAST = {
     crew: "云上飞行",
     note: "美西三网精品（CN2GIA / 9929 / CMIN2，160ms 上下）；卖家 VMISS 是加拿大公司，官网是蓝白科技风 + 云朵涂鸦 + 亮黄点缀，所以人物做成蓝挑染 + 云朵发夹 + 星条缎带 + 黄星发夹，胸口铭牌写 VMISS",
   },
+  "us-bwh-dc9": {
+    id: "us-bwh-dc9",
+    line: "CN2GIA · 10099→9929 · CMIN2",
+    vendor: "BandwagonHost",
+    crew: "搬瓦工",
+    note: "洛杉矶 DC9：电信 CN2GIA + 联通 9929 + 移动 CMIN2（159–167ms）；卖家是搬瓦工（BandwagonHost），官网是金黄→琥珀渐变 #FFC107→#F57C00 配深棕/黑与银灰 HOST，吉祥物意象是黑机架 + 金色灯；所以人物做成蜜金发 + 银灰挑染 + 金领巾，配一枚大篷车轮发夹，再叠美国星条缎带，胸口铭牌写 Bandwagon",
+  },
 };
 
 // 有立绘的节点才画人物：名字（大小写不敏感、去首尾空格）在名单里即可。
