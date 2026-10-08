@@ -54,9 +54,17 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		if !strings.Contains(string(css), `[data-theme="dark"] .node-card[data-cast="`+id+`"]`) {
 			t.Errorf("anime.css 缺少角色 %q 的夜版牌面配色", id)
 		}
+		if !strings.Contains(string(css), `--cast-art-url: url("/anime/`+id+`.webp")`) {
+			t.Errorf("anime.css 里角色 %q 缺 --cast-art-url（立绘与「下半身」共用这一张图）", id)
+		}
 		if _, err := os.Stat("anime/" + id + ".webp"); err != nil {
 			t.Errorf("人物图 web/anime/%s.webp 不存在: %v", id, err)
 		}
+	}
+	// 卷起时立绘要裁到牌沿，而这个像素每台不同（实测 JP 751 / DE 752 / VMISS 751 / 搬瓦工 764），
+	// 所以每个角色都得给一条 --cast-line-y，少一条那台机卷起来就会露出她的背景底色。
+	if got, want := strings.Count(string(css), "--cast-line-y:"), len(ids); got != want {
+		t.Errorf("--cast-line-y 要 %d 条（每个角色一条），现在是 %d 条", want, got)
 	}
 	for _, m := range regexp.MustCompile(`data-cast="([a-z0-9-]+)"`).FindAllStringSubmatch(string(css), -1) {
 		if !strings.Contains(string(cast), `"`+m[1]+`":`) {

@@ -939,6 +939,41 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     0,
     "角色名单外的节点不摆立绘（web/anime-cast.js）",
   );
+  // 卷轴：点「卷起」→ 卡壳挂上 data-rolled、状态落 localStorage；点卷轴 → 摊开、本地那份也清掉。
+  // 本地库里没有名字正好等于角色名单的节点，所以这里塞一张合成卡——走的仍是页面里同一段代码
+  // （点击是 document 上的委托，状态机与真实卡片共用）。
+  const foldHost = pubDoc.createElement("div");
+  foldHost.innerHTML =
+    '<article class="node-card" data-node="fold-fixture" data-cast="us-bwh-dc9">' +
+    '<div class="anime-stage" data-cast="us-bwh-dc9" data-bleed></div>' +
+    '<button class="anime-fold-btn" type="button" data-fold="us-bwh-dc9" aria-expanded="true"></button>' +
+    '<button class="anime-roll" type="button" data-fold="us-bwh-dc9" aria-expanded="true">' +
+    '<span class="anime-roll-name">US-BWH-DC9</span></button>' +
+    '<div class="anime-hem" data-bleed></div><div class="card-top"></div></article>';
+  pubDoc.body.appendChild(foldHost);
+  const foldCard = foldHost.querySelector(".node-card");
+  const foldClick = (sel) =>
+    pubDoc.querySelector(sel).dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  foldClick(".anime-fold-btn");
+  assert.equal(foldCard.dataset.rolled, "true", "点「卷起」要把卡片标成卷起");
+  assert.deepEqual(
+    JSON.parse(publicDOM.window.localStorage.getItem("tza-anime-rolled")),
+    ["us-bwh-dc9"],
+    "卷起状态要记住（刷新之后还卷着）",
+  );
+  assert.equal(
+    foldHost.querySelector(".anime-roll").getAttribute("aria-expanded"),
+    "false",
+    "卷起后卷轴自己就是展开控件（aria-expanded=false）",
+  );
+  foldClick(".anime-roll");
+  assert.equal(foldCard.dataset.rolled, undefined, "点卷轴要摊开");
+  assert.deepEqual(
+    JSON.parse(publicDOM.window.localStorage.getItem("tza-anime-rolled")),
+    [],
+    "摊开后本地那份状态也要清掉",
+  );
+  foldHost.remove();
   // 选回默认皮肤要把偏好键清掉，不在浏览器里留一份与默认值重复的设置。
   skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
   pubDoc.querySelector('[data-skin-option="glass"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
@@ -1037,7 +1072,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "二次元皮肤里立绘要通铺卡片顶部、并按牌子顶边裁切",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-stage\[data-cast="jp-nosla-gen2"\] \{[^}]*url\("\/anime\/jp-nosla-gen2\.webp"\)/s.test(animeCSS),
+    /html\[data-skin="anime"\] \.anime-stage\[data-cast="jp-nosla-gen2"\] \{[^}]*background-image: var\(--cast-art-url\)/s.test(animeCSS),
     "角色名单里的 id 要有对应的人物图规则",
   );
   // 夜版：牌子的底色/描边要有暗色那一份，卡片子树的浅色令牌只能作用在浅色下，
@@ -1053,6 +1088,35 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert(
     /html\[data-skin="anime"\]\[data-theme="dark"\] \.anime-stage \{[^}]*aspect-ratio: 768 \/ 752/s.test(animeCSS),
     "夜版立绘裁到牌沿，不露白牌面",
+  );
+  // 卷轴（卡片可以卷起来）：规则少一条就会变成「点了没反应」或者「卷起了数据还挂着」。
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-cast="jp-nosla-gen2"\] \{[^}]*--cast-art-url: url\("\/anime\/jp-nosla-gen2\.webp"\)/s.test(animeCSS),
+    "每台机的牌面配色里要带自己的立绘图址（立绘与「下半身」共用同一张图）",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] > \*:not\(\.anime-stage\):not\(\.anime-roll\):not\(\.anime-hem\) \{\s*display: none;/.test(animeCSS),
+    "卷起时数据要整块收起（只留立绘 / 卷轴 / 下半身三件）",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.anime-roll,\s*html\[data-skin="anime"\] \.anime-hem \{ display: none; \}/.test(animeCSS),
+    "摊开时卷轴与下半身都不出现",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] \.anime-hem \{ display: block; \}/.test(animeCSS),
+    "卷起之后才露出她的下半身",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.anime-hem \{[^}]*aspect-ratio: 768 \/ 341/s.test(animeCSS),
+    "下半身取立绘最下面那段（y=1035→1376）",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.anime-roll-name/.test(animeCSS),
+    "卷轴上要印节点名",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] \.anime-stage\[data-cast\] \{[^}]*aspect-ratio: 768 \/ var\(--cast-line-y, 752\)/s.test(animeCSS),
+    "卷起时立绘裁到牌沿（每台机的牌沿像素不同，走 --cast-line-y）",
   );
   assertSkinSheet(pressRules, "press");
   assertSkinSheet(shadcnRules, "shadcn");

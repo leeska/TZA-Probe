@@ -417,6 +417,9 @@ function renderCards() {
           : null,
       );
     });
+  // 卷轴状态每次渲染后刷一遍：卡壳上的 data-rolled 决定了数据区是摊开还是卷起，
+  // 局部补丁不会动它，但整块重绘换了新卡壳，所以在这里统一补上（含 aria-expanded）。
+  applyFolded();
   for (const c of document.querySelectorAll(".node-card"))
     c.onclick = guard((e) => {
       // 卡片里已有自己行为的控件（协议开关、格子、节点名）不触发整卡的综合信息
@@ -436,6 +439,55 @@ function renderCards() {
     };
   }
 }
+
+// 二次元皮肤的「卷轴」：把卡片卷起来——数据收进卷轴，露出她举牌时挡住的下半身。
+// 收起状态挂在**卡壳**上（`.node-card[data-rolled="true"]`），不是重绘出来的内容：
+// 每秒轻刷新与 10 秒全量刷新都走补丁路径（只改文本/属性、不换元素），卡壳上的属性不会被它们擦掉；
+// 每次渲染后再统一 applyFolded() 刷一遍，落库的是角色 id（节点名小写），刷新页面也还卷着。
+const FOLD_KEY = "tza-anime-rolled";
+const FOLD_ICON =
+  '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 10.2 8 6.2l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const foldedCasts = new Set(
+  (() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(FOLD_KEY) || "[]");
+      return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  })(),
+);
+function saveFolded() {
+  try {
+    localStorage.setItem(FOLD_KEY, JSON.stringify([...foldedCasts]));
+  } catch {
+    /* 隐私模式写不进去，忽略：这一轮的状态仍在内存里 */
+  }
+}
+// 卡壳上的状态 + 两个控制件的 aria-expanded：卷起后由卷轴本身展开，展开时由立绘右上角的胶囊卷起。
+function applyFolded() {
+  for (const card of document.querySelectorAll(".node-card[data-cast]")) {
+    const rolled = foldedCasts.has(card.dataset.cast);
+    if (rolled) card.dataset.rolled = "true";
+    else delete card.dataset.rolled;
+    for (const btn of card.querySelectorAll("[data-fold]"))
+      btn.setAttribute("aria-expanded", String(!rolled));
+  }
+}
+function toggleFolded(cast) {
+  if (!cast) return;
+  foldedCasts.has(cast) ? foldedCasts.delete(cast) : foldedCasts.add(cast);
+  saveFolded();
+  applyFolded();
+}
+// 委托在 document 上：卡片内容会被 patchInto 局部替换，绑在按钮上的 onclick 会随之失效，
+// 委托一次就够（也省掉每次渲染后重新绑一遍的那趟遍历）。
+document.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.("[data-fold]");
+  if (!btn) return;
+  e.stopPropagation();
+  toggleFolded(btn.dataset.fold);
+});
 
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
 // 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
@@ -748,10 +800,20 @@ function gridInner(n) {
   // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
   // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这两个标记区分。
   const cast = castId(n);
+  // 卷轴三件套（只有名单里的节点才渲染）：立绘右上角的「卷起」胶囊、收起后的卷轴条（印着节点名）、
+  // 以及卷轴下方露出来的下半身。可见性全在 anime.css 里按卡壳上的 data-rolled 切，这里只负责摆出来。
+  const fold = cast
+    ? `<button class="anime-fold-btn" type="button" data-fold="${cast}" aria-label="卷起卡片" aria-expanded="true">${FOLD_ICON}<span>卷起</span></button>` +
+      `<button class="anime-roll" type="button" data-fold="${cast}" aria-label="展开卡片" aria-expanded="true">` +
+      `<span class="anime-roll-cap"></span>` +
+      `<span class="anime-roll-label"><span class="node-dot anime-roll-dot ${n.online ? "" : "offline"}"></span><span class="anime-roll-name">${esc(n.name)}</span></span>` +
+      `<span class="anime-roll-cap"></span></button>` +
+      `<div class="anime-hem" data-bleed aria-hidden="true"></div>`
+    : "";
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
-  return `${cast ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"></div>` : ""}<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
+  return `${cast ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"></div>${fold}` : ""}<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

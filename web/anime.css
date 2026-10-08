@@ -600,19 +600,19 @@ html[data-skin="anime"] .anime-stage {
 /* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是 web/anime/<id>.webp。
    走样式表而不是行内 style —— 页面 CSP 是 style-src 'self'，行内的 background-image 会被丢掉。 */
 html[data-skin="anime"] .anime-stage[data-cast="jp-nosla-gen2"] {
-  background-image: url("/anime/jp-nosla-gen2.webp");
+  background-image: var(--cast-art-url);
 }
 
 html[data-skin="anime"] .anime-stage[data-cast="de-nosla-fra"] {
-  background-image: url("/anime/de-nosla-fra.webp");
+  background-image: var(--cast-art-url);
 }
 
 html[data-skin="anime"] .anime-stage[data-cast="us-vmiss-tri"] {
-  background-image: url("/anime/us-vmiss-tri.webp");
+  background-image: var(--cast-art-url);
 }
 
 html[data-skin="anime"] .anime-stage[data-cast="us-bwh-dc9"] {
-  background-image: url("/anime/us-bwh-dc9.webp");
+  background-image: var(--cast-art-url);
 }
 
 /* 深色下立绘压一档亮度，免得那块浅色底在夜版里刺眼；并且**只裁到牌子顶沿**
@@ -679,6 +679,8 @@ html[data-skin="anime"] .node-card[data-cast] {
 
 /* JP-NoSla-Gen2 · 家人云 × 日本：樱花粉牌面 + 极淡花瓣点 */
 html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
+  --cast-art-url: url("/anime/jp-nosla-gen2.webp");   /* 立绘与「下半身」共用同一张图 */
+  --cast-line-y: 752;   /* 牌沿像素：卷起时裁到这里（实测值） */
   --cast-board: #ffe7f1;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #f6b1cc;
@@ -692,6 +694,8 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
 
 /* DE-NoSla-FRA · 家人云 × 德国：暖白牌面 + 黑红金细竖纹 */
 html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
+  --cast-art-url: url("/anime/de-nosla-fra.webp");   /* 立绘与「下半身」共用同一张图 */
+  --cast-line-y: 752;   /* 牌沿像素：卷起时裁到这里（实测值） */
   --cast-board: #fff5e0;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e7cd90;
@@ -705,6 +709,8 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
 
 /* US-VMISS-TRI · VMISS × 美国：极淡天蓝牌面 + 蓝色小点（官网的蓝点涂鸦） */
 html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
+  --cast-art-url: url("/anime/us-vmiss-tri.webp");   /* 立绘与「下半身」共用同一张图 */
+  --cast-line-y: 752;   /* 牌沿像素：卷起时裁到这里（实测值） */
   --cast-board: #e9f2ff;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #aec9ff;
@@ -718,6 +724,8 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
 
 /* US-BWH-DC9 · 搬瓦工 × 美国：暖琥珀牌面 + 斜向金线 */
 html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
+  --cast-art-url: url("/anime/us-bwh-dc9.webp");   /* 立绘与「下半身」共用同一张图 */
+  --cast-line-y: 764;   /* 牌沿像素：卷起时裁到这里（实测值） */
   --cast-board: #fff3dc;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e9c684;
@@ -784,3 +792,103 @@ html[data-skin="anime"] .anime-stage[data-cast="us-bwh-dc9"] {
 html[data-skin="anime"][data-theme="dark"] .anime-stage[data-cast="us-bwh-dc9"] {
   aspect-ratio: 768 / 764;
 }
+
+/* --------------------------------------------------------------------------
+   N+3. 卷轴：卡片可以卷起来（2026-10-09）
+   —— 收起后数据整块收进卷轴，卷轴上印着节点名，卷轴下面是她的下半身（原来被那块牌子挡住的那段）。
+   - 收起状态是**卡壳**上的 data-rolled（app.js 的 applyFolded 维护），不是重绘出来的内容：
+     每秒轻刷新与 10 秒全量刷新都走补丁路径、卡壳上的属性不会被擦掉，所以卷起来以后不会自己摊开。
+   - 立绘是一张图取三段：头（0 → --cast-line-y）、牌面（被卷掉）、下半身（1035 → 1376，四张同一行）。
+     下半身那段用 background-position: bottom —— 底部对齐天然取到图的最下缘，不用写偏移像素。
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] .node-card[data-cast] { position: relative; }
+
+/* 摊开时：立绘右上角一枚「卷起」胶囊 */
+html[data-skin="anime"] .anime-fold-btn {
+  position: absolute; top: 10px; right: 12px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px 0 7px;
+  border: 1px solid color-mix(in srgb, var(--cast-accent) 42%, transparent); border-radius: 999px;
+  background: color-mix(in srgb, var(--cast-board) 88%, transparent);
+  color: var(--cast-accent); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+}
+html[data-skin="anime"] .anime-fold-btn:hover { background: var(--cast-board); }
+html[data-skin="anime"] .anime-fold-btn svg { width: 11px; height: 11px; }
+
+/* 摊开时卷轴与下半身都不出现 */
+html[data-skin="anime"] .anime-roll,
+html[data-skin="anime"] .anime-hem { display: none; }
+
+/* 卷轴本体：两端各一卷纸的横截面（同心环 + 一道从圆心甩出的螺旋缝），中间是纸卷的圆柱身子
+   —— 圆柱的影子压在上下的边沿、两端压出纸往卷里弯下去的暗面，中间留一条受光亮带。 */
+html[data-skin="anime"] .anime-roll {
+  width: calc(100% + 24px); margin: 0 -12px; height: 40px; padding: 0; border: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 0;
+  cursor: pointer; color: var(--cast-accent); background: none;
+  box-shadow: 0 12px 18px -9px rgb(20 16 36 / 0.5);
+}
+html[data-skin="anime"] .anime-roll-label {
+  flex: 1 1 auto; min-width: 0; height: 32px; margin: 0 -7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  /* 纸身的上下边按椭圆裁一下：就是圆柱的轮廓（两端的尖角被圆盘压住，等于卷进轴里）。
+     光源在左上：受光亮带偏上，下缘留一条反光，别做成对称的渐变胶囊。 */
+  clip-path: ellipse(50% 50% at 50% 50%);
+  background-image:
+    /* 斜着走的螺旋纸缝：一圈一圈绕过去 */
+    repeating-linear-gradient(100deg, rgb(24 18 40 / 0.05) 0 1.6px, transparent 1.6px 26px),
+    radial-gradient(40% 190% at 0% 50%, rgb(24 18 40 / 0.36), transparent 70%),
+    radial-gradient(40% 190% at 100% 50%, rgb(24 18 40 / 0.36), transparent 70%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--cast-accent) 6%, var(--cast-board)) 0%,
+      color-mix(in srgb, var(--cast-accent) 42%, var(--cast-board)) 30%,
+      color-mix(in srgb, var(--cast-accent) 26%, var(--cast-board)) 62%,
+      color-mix(in srgb, var(--cast-accent) 18%, var(--cast-board)) 82%,
+      color-mix(in srgb, var(--cast-accent) 34%, var(--cast-board)) 100%
+    );
+  box-shadow: inset 0 4px 6px -3px rgb(24 18 40 / 0.5), inset 0 -2px 4px -2px rgb(24 18 40 / 0.35);
+}
+html[data-skin="anime"] .anime-roll-name {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.09em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.45);
+}
+html[data-skin="anime"] .anime-roll-cap {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
+  background-image:
+    /* 从圆心甩出去的一道缝：读起来是「卷」，不是「靶心」 */
+    conic-gradient(from 20deg at 50% 50%, rgb(24 18 40 / 0.22) 0deg 10deg, transparent 10deg 360deg),
+    repeating-radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--cast-accent) 38%, var(--cast-board)) 0 1.4px,
+      color-mix(in srgb, var(--cast-accent) 4%, var(--cast-board)) 1.4px 3px
+    );
+  box-shadow: inset -3px 0 6px -2px rgb(24 18 40 / 0.3), inset 3px 0 6px -2px rgb(255 255 255 / 0.34),
+    0 1px 3px rgb(24 18 40 / 0.24);
+}
+html[data-skin="anime"] .anime-roll-dot { flex: 0 0 auto; }
+
+/* 下半身：同一张立绘取最下面那段（1035→1376），底部对齐 */
+html[data-skin="anime"] .anime-hem {
+  position: relative; margin: 0 -22px; aspect-ratio: 768 / 341;
+  background-color: #e9eef6; background-image: var(--cast-art-url);
+  background-repeat: no-repeat; background-position: bottom center; background-size: 100% auto;
+}
+/* 卷轴压在腿上方的一点阴影，不然两段是硬拼的 */
+html[data-skin="anime"] .anime-hem::after {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 16px;
+  background-image: linear-gradient(180deg, rgb(24 20 38 / 0.16), transparent);
+  pointer-events: none;
+}
+
+/* 收起：数据全收进卷轴，只留「头 + 卷轴 + 下半身」；卡片底部不再留内边距（腿直接抵到卡边） */
+html[data-skin="anime"] .node-card[data-rolled="true"] { padding-bottom: 0; }
+html[data-skin="anime"] .node-card[data-rolled="true"] > *:not(.anime-stage):not(.anime-roll):not(.anime-hem) { display: none; }
+html[data-skin="anime"] .node-card[data-rolled="true"] .anime-stage[data-cast] { position: relative; margin-bottom: 0; aspect-ratio: 768 / var(--cast-line-y, 752); }
+html[data-skin="anime"] .node-card[data-rolled="true"] .anime-stage[data-cast]::after {
+  content: ""; position: absolute; inset: auto 0 0 0; height: 18px; pointer-events: none;
+  background-image: linear-gradient(0deg, rgb(24 20 38 / 0.20), transparent);
+}
+html[data-skin="anime"] .node-card[data-rolled="true"] .anime-roll { display: flex; }
+html[data-skin="anime"] .node-card[data-rolled="true"] .anime-hem { display: block; }
+
+html[data-skin="anime"][data-theme="dark"] .anime-hem { background-color: #262b3c; filter: brightness(0.82) saturate(0.94); }
