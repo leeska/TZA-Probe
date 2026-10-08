@@ -596,6 +596,10 @@ html[data-skin="anime"] .anime-stage[data-cast="jp-nosla-gen2"] {
   background-image: url("/anime/jp-nosla-gen2.webp");
 }
 
+html[data-skin="anime"] .anime-stage[data-cast="de-nosla-fra"] {
+  background-image: url("/anime/de-nosla-fra.webp");
+}
+
 /* 深色下立绘压一档亮度，免得那块浅色底在夜版里刺眼 */
 html[data-skin="anime"][data-theme="dark"] .anime-stage {
   filter: brightness(0.9) saturate(0.96);
