@@ -773,3 +773,14 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-accent-rgb: 224, 166, 60;
   --cast-motif: repeating-linear-gradient(135deg, rgb(224 166 60 / 0.10) 0 5px, transparent 5px 15px);
 }
+
+/* 立绘是生成的，牌沿高度每台会差几个像素（实测：JP 751 / DE 752 / VMISS 751 / 搬瓦工 764）。
+   默认裁切是「浅色 = 775、夜版 = 752」（对应 751–752 这三台），搬瓦工这张牌沿更低，
+   照默认裁会露出十几像素她的背景底色，所以单独按实测比例裁。 */
+html[data-skin="anime"] .anime-stage[data-cast="us-bwh-dc9"] {
+  aspect-ratio: 768 / 788;
+}
+
+html[data-skin="anime"][data-theme="dark"] .anime-stage[data-cast="us-bwh-dc9"] {
+  aspect-ratio: 768 / 764;
+}
