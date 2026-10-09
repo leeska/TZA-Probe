@@ -2229,14 +2229,16 @@ NoSla 写「家人」、VMISS 写 VMISS、搬瓦工写 Bandwagon，放大裁片�
 - `scripts/release.sh <tag> <dist 目录> [sha]`：走 GitHub Release API 建 tag、建 release（`generate_release_notes`）、上传发行包与 `.sha256`（同名资产先删后传），最后读回核对；替代原 workflow 的 release job。仓库当前是私有的，资产只能用带凭据的下载（匿名 404），`install.sh --version vX.Y.Z` 走的一直是这条路。
 - 驱动脚本（本机 `/root/work/tza-pipeline.sh`，不进仓库）：串起「编译机（LA 66.132.239.153）上取该 sha 的检出 → 跑流水线 → 产物取回 `/root/work/dist/<sha>/` → 本地 `sha256sum -c` 复核」；提交还没推到 GitHub 时走 `git bundle`（裸 SHA 建 bundle 会被拒，先挂 `refs/hermes/pipeline` 临时 ref）；该提交里还没有 `pipeline.sh` 时就用本机这份 scp 过去跑。
 - `.github/workflows/check.yml` 删除，workflow 另经 API `disable`（state 变 `disabled_manually`），避免旧文件被重新启用后继续烧配额。
+- 编进 `internal/agentdist/bin/` 的 Agent 在流水线退出时删掉：那里是只被本地 `.gitignore` 忽略的未跟踪文件，`git checkout --force` 不会清，留着会让编译机上换成别的提交部署时把旧 Agent 内嵌进去（部署脚本在那台直接 `go build ./cmd/server`）；同目录的 README 补了这段说明。
 
-**改法**：新增 `scripts/pipeline.sh`、`scripts/release.sh`；`.gitignore` 加 `dist/` 与 `internal/agentdist/bin/tza-agent-linux-*`（流水线产物不进仓库）；README「部署与维护」一节改成上面的命令；删除 `.github/workflows/check.yml`。
+**改法**：新增 `scripts/pipeline.sh`、`scripts/release.sh`；`.gitignore` 加 `dist/`（`internal/agentdist/bin/` 自己那份 `.gitignore` 早就忽略 Agent 二进制）；README「部署与维护」一节改成上面的命令；`internal/agentdist/bin/README.md` 补上「流水线就是这段、编完要删」的说明；删除 `.github/workflows/check.yml`。
 
 **验证**：编译机 LA 上 `bash /root/work/tza-pipeline.sh all`（sha 3f8cfd7）
 - 检查段：`gofmt` 无输出、`go vet ./...` rc=0（0s）、`go test ./...` rc=0（2s，全 `ok`）、`go test -race ./...` rc=0（36s——编译机有 gcc，所以这一步与 CI 完全一致；Hermes 主机没 gcc，脚本会自己说明并跳过）、`web/*.js` 19 个文件 rc=0、presentation-test 5 条 PASS、ui-smoke PASS（47s）。
 - 构建段：两个架构的 Agent 编入 0s（10.4MB / 9.6MB），两个架构的 Server 编译 + 打包 9s；产物 `tza-probe-linux-amd64.tar.gz` 17.74MB、`tza-probe-linux-arm64.tar.gz` 16.92MB，取回本机后 `sha256sum -c SHA256SUMS` 两行 OK（amd64 `ca807b5e…`、arm64 `280d0e85…`）；抽查包内 `tza-server` / `tza-agent` 的 `file` 类型分别是 x86-64 与 aarch64，`--version` 输出 `2.0.0-dev+3f8cfd7`。
 - 计时：编译机侧 97s（vet 0s + test 2s + race 36s + web 与 presentation 1s + ui-smoke 47s + 构建打包 9s），本机从发起到产物复核完成 1m47s。对照原 Actions：test 2m27s + build 1m30s（且 build 必挂），Actions 那条路总耗时接近且没有产物。
 - 提交推送后在 85d0bb2（就是这次改动本身）上重跑一遍：编译机侧 **58s**、本机到产物复核完成 **1m10s**，产物 `sha256sum -c` 两次 OK（amd64 `75435cf1…`、arm64 `eb07c0e5…`）。
+- 31cea90（加完退场清理那次）再跑一遍：编译机侧 **59s**、端到端 **1m11s**，产物 `sha256sum -c` 两次 OK（amd64 `1755ea3d…`、arm64 `4387c593…`）；跑完编译机检出里 `internal/agentdist/bin/` 只剩 `README.md`，两个 Agent 已删。同一提交上 `DRY=1 SHA=31cea90 bash /root/work/deploy/tza-probe-deploy-netcup.sh` 复跑：LA 侧 1607ms 构建三件套、取回后三行 sha256 全 OK（未触碰主控）——确认改动没碰坏生产部署那条路。
 - 发布路径实测（`scripts/release.sh`，用一个自测 tag `v0.0.0-selftest` 指向 85d0bb2）：建 tag → 建 release → 4 个资产全部 `state=uploaded`（两个 tarball 各约 1.8s、两个 `.sha256` 各约 0.8s）→ 读回 4/4 名称与大小。随后按 asset API **带认证**取回 amd64 包（仓库是私有的，匿名下载 404，`install.sh --version` 本来就是这条路），与本地产物 `cmp` **逐字节一致**（sha256 `75435cf1…`），解包结构与 CI 相同（`./tza-server`、`./tza-agent`、`deploy/`、`docs/`）。核对完把这次自测的 release 与 tag 都删掉：复检 release 404、release 数 0、tag 数 0。
 
 **待确认**：无。
