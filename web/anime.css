@@ -936,10 +936,10 @@ html[data-skin="anime"] .anime-roll-label::after {
 }
 html[data-skin="anime"] .anime-roll-name {
   position: relative; z-index: 1;
-  font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.03em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  text-shadow: 0 0 3px rgb(255 255 255 / 1), 0 1px 0 rgb(255 255 255 / 0.95),
-    0 2px 2px rgb(40 32 60 / 0.18);
+  /* 只留一圈贴边白晕：大范围发光的版本在手机上把字糊成一团（复核说像「重影」）。 */
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.9), 0 0 1px rgb(255 255 255 / 0.7);
 }
 html[data-skin="anime"] .anime-roll-dot { flex: 0 0 auto; }
 
@@ -991,15 +991,15 @@ html[data-skin="anime"] .node-card[data-rolled="true"] .anime-hands {
   background-size: auto var(--cast-figure-h, 720px);
   -webkit-mask-image: linear-gradient(
     180deg,
-    transparent 0 calc((var(--cast-hand, 0.45) - 0.065) * 100%),
-    #000 calc((var(--cast-hand, 0.45) - 0.045) * 100%) calc((var(--cast-hand, 0.45) + 0.045) * 100%),
-    transparent calc((var(--cast-hand, 0.45) + 0.065) * 100%)
+    transparent 0 calc((var(--cast-hand, 0.45) - 0.046) * 100%),
+    #000 calc((var(--cast-hand, 0.45) - 0.032) * 100%) calc((var(--cast-hand, 0.45) + 0.032) * 100%),
+    transparent calc((var(--cast-hand, 0.45) + 0.046) * 100%)
   );
   mask-image: linear-gradient(
     180deg,
-    transparent 0 calc((var(--cast-hand, 0.45) - 0.065) * 100%),
-    #000 calc((var(--cast-hand, 0.45) - 0.045) * 100%) calc((var(--cast-hand, 0.45) + 0.045) * 100%),
-    transparent calc((var(--cast-hand, 0.45) + 0.065) * 100%)
+    transparent 0 calc((var(--cast-hand, 0.45) - 0.046) * 100%),
+    #000 calc((var(--cast-hand, 0.45) - 0.032) * 100%) calc((var(--cast-hand, 0.45) + 0.032) * 100%),
+    transparent calc((var(--cast-hand, 0.45) + 0.046) * 100%)
   );
 }
 
