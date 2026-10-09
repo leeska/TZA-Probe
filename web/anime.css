@@ -1032,14 +1032,39 @@ html[data-skin="anime"] .node-card[data-rolled="true"] .anime-plate-name { displ
 html[data-skin="anime"] .node-grid:not(.node-list) .node-name { display: none; }
 
 html[data-skin="anime"] .node-card .card-body {
-  margin: 0 -22px;
-  padding: 10px 22px 12px;
-  border-bottom: 1px solid var(--cast-line, #e6e8f4);
-  background: color-mix(in srgb, var(--cast-board, #fff) 52%, #ffffff);
+  /* 看板：完整四边框 + 内容全部嵌在框内（负外边距那版会让内容落在框外，用户否掉了） */
+  margin: 2px 0 0;
+  padding: 12px 13px 13px;
+  border: 2px solid var(--cast-line, #e6e8f4);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--cast-board, #fff) 62%, #ffffff);
 }
 html[data-skin="anime"][data-theme="dark"] .node-card .card-body {
-  background: color-mix(in srgb, var(--cast-board, #1b1f2e) 60%, #000000);
+  background: color-mix(in srgb, var(--cast-board, #1b1f2e) 70%, #000000);
 }
+/* 卡片头：绿点 + 节点名 = 一个按钮，点它折叠/展开（不再有右上角「卷起」） */
+html[data-skin="anime"] .card-top { row-gap: 4px; }
+html[data-skin="anime"] .card-top .fold-name {
+  flex: 1 1 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+html[data-skin="anime"] .card-top .fold-name:hover { color: var(--cast-accent, #e8457c); }
+html[data-skin="anime"] .card-top .fold-name .fold-name-text { min-width: 0; overflow-wrap: anywhere; }
+html[data-skin="anime"] .node-card .detail-row { display: flex; justify-content: flex-end; margin: 2px 0 8px; }
+html[data-skin="anime"] .node-card .detail-row:empty { display: none; }
 
 html[data-skin="anime"] .detail-open {
   height: 22px;

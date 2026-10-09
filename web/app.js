@@ -529,16 +529,7 @@ document.addEventListener(
   { passive: true },
 );
 
-// 点卡片本体 = 卷起 / 展开（不再弹详细页；详细看卡片动作区那个「详细」按钮）。
-// 落在交互件上的点击不接管：按钮、链接、下拉、输入、放大徽章、以及两个折叠控件自己。
-document.addEventListener("click", (e) => {
-  const card = e.target?.closest?.(".node-card[data-cast]");
-  if (!card) return;
-  if (e.target.closest("button, a, input, select, textarea, label, summary, [data-fold], [data-detail], details, .family-switch"))
-    return;
-  if (window.getSelection?.()?.toString()) return; // 正在选字，不当作点击
-  toggleFolded(card.dataset.cast);
-});
+// 折叠只由节点名（卡片头那个「绿点+名字」按钮）和收起态的卷轴触发，见 [data-fold] 的处理。
 
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
 // 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
@@ -855,15 +846,14 @@ function gridInner(n) {
   // 牌子是**画进立绘里的贴图**（2026-10-09 起），所以这里只剩一层字，不再有 UI 画的纸带。
   // 可见性全在 anime.css 里按卡壳上的 data-rolled 切，这里只负责摆出来。
   const fold = cast
-    ? `<button class="anime-fold-btn" type="button" data-fold="${cast}" data-bleed aria-label="卷起卡片" aria-expanded="true">${FOLD_ICON}<span>卷起</span></button>` +
-      `<button class="anime-roll" type="button" data-fold="${cast}" data-bleed aria-label="展开卡片" aria-expanded="true">` +
+    ? `<button class="anime-roll" type="button" data-fold="${cast}" data-bleed aria-label="展开卡片" aria-expanded="true">` +
       `<span class="anime-roll-label" data-bleed><span class="node-dot anime-roll-dot ${n.online ? "" : "offline"}"></span><span class="anime-roll-name">${esc(n.name)}</span></span>` +
       `</button>`
     : "";
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
-  return `${cast ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-plate-name" data-bleed>${esc(n.name)}</span><span class="anime-blink" data-bleed aria-hidden="true"></span></div>${fold}` : ""}<div class="card-body"><div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><span class="node-name">${esc(n.name)}</span></div><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div>`;
+  return `${cast ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>${fold}` : ""}<div class="card-body"><div class="card-top">${cast ? `<button class="fold-name" type="button" data-fold="${cast}" aria-expanded="true" aria-controls="body-${n.id}"><span class="node-dot ${n.online ? "" : "offline"}"></span><span class="fold-name-text">${esc(n.name)}</span></button>` : `<div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><span class="node-name">${esc(n.name)}</span></div>`}<div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div class="detail-row">${cast ? `<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button>` : ""}</div><div class="node-sub" id="body-${n.id}"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div>`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。
