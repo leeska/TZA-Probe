@@ -690,6 +690,7 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
   --cast-plate-t: 0.318;
   --cast-plate-w: 0.967;
   --cast-plate-h: 0.122;
+  --cast-board-t: 0.301;   /* 画里那块牌子的上沿（实测板面从 0.305 起、描边再往上两个像素），看板就接在这 */
   --cast-cut: 0.439;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
   --cast-board: #ffe7f1;
   --cast-cell: rgb(255 255 255 / 0.58);
@@ -714,6 +715,7 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
   --cast-plate-t: 0.321;
   --cast-plate-w: 0.96;
   --cast-plate-h: 0.107;
+  --cast-board-t: 0.302;   /* 画里那块牌子的上沿（实测板面从 0.306 起） */
   --cast-cut: 0.428;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
   --cast-board: #fff5e0;
   --cast-cell: rgb(255 255 255 / 0.56);
@@ -738,6 +740,7 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
   --cast-plate-t: 0.307;
   --cast-plate-w: 0.94;
   --cast-plate-h: 0.134;
+  --cast-board-t: 0.280;   /* 画里那块牌子的上沿（实测板面从 0.284 起） */
   --cast-cut: 0.44;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
   --cast-board: #e9f2ff;
   --cast-cell: rgb(255 255 255 / 0.58);
@@ -762,6 +765,7 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-plate-t: 0.319;
   --cast-plate-w: 0.967;
   --cast-plate-h: 0.112;
+  --cast-board-t: 0.296;   /* 画里那块牌子的上沿（实测板面从 0.300 起） */
   --cast-cut: 0.432;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
   --cast-board: #fff3dc;
   --cast-cell: rgb(255 255 255 / 0.56);
@@ -1048,8 +1052,8 @@ html[data-skin="anime"][data-theme="dark"] .node-card:not([data-cast]) .card-bod
 }
 
 /* 有立绘的卡片：「看板」= 数据容器本身（2026-10-09，规格由 gpt-6.1-sol 看图给）：
-   - 板面从她手上沿（--cast-plate-t × 立绘高）开始，一直铺到卡片底部：
-     margin-top 用「它现在的位置 - 板沿位置」算出来，正好接在她手那条线上；
+   - 板面上沿接在**画里那块牌子**的上沿（--cast-board-t，逐台实测 0.28~0.302），
+     一直铺到卡片底部——板沿正好压住画里那块旧牌子的上沿描边，不会露出来一条线；
    - 左右各 1px 内缩（内边距 22 + 边框 1 = 左 23px，再让 1px），落在卡宽的 6.7% / 93.3%，
      比画里那块牌子（15.9% ～ 84.1%）宽一大截；
    - 白底 #fffdfb + 3px 灰褐实边框 + 小圆角，数据各行正常排在板内；
@@ -1061,7 +1065,7 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
   width: calc(100% - 2px);
   min-width: 0;
   max-width: 100%;
-  margin: calc((var(--cast-plate-t, 0.318) - var(--cast-cut, 0.44)) * var(--cast-figure-h, 720px) - 16px) 1px 0;
+  margin: calc((var(--cast-board-t, 0.302) - var(--cast-cut, 0.44)) * var(--cast-figure-h, 720px) - 16px) 1px 0;
   padding: 22px 15px 16px;
   border: 3px solid #cdb7b4;
   border-radius: 4px;
@@ -1070,9 +1074,10 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
 
 /* 她双手仍扶着板沿：只把立绘里「手指压过板沿」的那一小条（板顶往下 ~30px）用同一张图以
    multiply 叠在板面上——白板 × 白板 ≈ 原样，只有手会透出来，等于把手指抠到新板上沿，
-   不做整套 SVG mask，也不用重画立绘。横向再遮掉最外 8%：那块旧牌子自己的细描边正好落在
-   那里，不遮会在新板里透出一个灰色「鬼框」。高度只取一小条，旧牌子的下沿横线也进不来。
-   夜版板面是深色，multiply 会把手上色压到发黑，索性不叠。 */
+   不做整套 SVG mask，也不用重画立绘。横向只留两只手所在的两个窗口（按立绘宽 --cast-art-w
+   算），把画里那块旧牌子的左右描边一并挡在窗外，否则它会在新板里透出两道短竖边（鬼框）。
+   高度只取一小条，旧牌子的下沿横线也进不来。夜版板面是深色，multiply 会把手上色压到发黑，
+   索性不叠。 */
 html[data-skin="anime"] .node-card[data-cast] .card-body::before {
   content: "";
   position: absolute;
@@ -1083,12 +1088,13 @@ html[data-skin="anime"] .node-card[data-cast] .card-body::before {
   height: 30px;
   background-image: var(--cast-art-url);
   background-repeat: no-repeat;
-  background-position: center calc(-1 * var(--cast-plate-t, 0.318) * var(--cast-figure-h, 720px));
+  background-position: center calc(-1 * var(--cast-board-t, 0.302) * var(--cast-figure-h, 720px));
   background-size: auto var(--cast-figure-h, 720px);
   mix-blend-mode: multiply;
   pointer-events: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0 8%, #000 8% 92%, transparent 92% 100%);
-  mask-image: linear-gradient(90deg, transparent 0 8%, #000 8% 92%, transparent 92% 100%);
+  /* 两个手窗：立绘横向 6%~36% 与 64%~94%（中间与两侧留空，旧牌子的描边正好在留空里） */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, transparent calc(50% - 0.44 * var(--cast-art-w, 275px)), #000 calc(50% - 0.42 * var(--cast-art-w, 275px)), #000 calc(50% - 0.16 * var(--cast-art-w, 275px)), transparent calc(50% - 0.14 * var(--cast-art-w, 275px)), transparent calc(50% + 0.14 * var(--cast-art-w, 275px)), #000 calc(50% + 0.16 * var(--cast-art-w, 275px)), #000 calc(50% + 0.42 * var(--cast-art-w, 275px)), transparent calc(50% + 0.44 * var(--cast-art-w, 275px)), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, transparent calc(50% - 0.44 * var(--cast-art-w, 275px)), #000 calc(50% - 0.42 * var(--cast-art-w, 275px)), #000 calc(50% - 0.16 * var(--cast-art-w, 275px)), transparent calc(50% - 0.14 * var(--cast-art-w, 275px)), transparent calc(50% + 0.14 * var(--cast-art-w, 275px)), #000 calc(50% + 0.16 * var(--cast-art-w, 275px)), #000 calc(50% + 0.42 * var(--cast-art-w, 275px)), transparent calc(50% + 0.44 * var(--cast-art-w, 275px)), transparent 100%);
 }
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body::before {
   display: none;
