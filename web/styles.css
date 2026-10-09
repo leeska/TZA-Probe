@@ -512,6 +512,70 @@ h1 {
   margin-bottom: 5px;
 }
 
+/* 两套皮肤共用名字折叠按钮；名字本身没有 data-detail。 */
+.node-card .card-top .fold-name {
+  flex: 1 1 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.node-card .fold-name .node-dot {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.node-card .fold-name-text {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.node-card .detail-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 2px 0 8px;
+}
+.node-card .card-body > [id][hidden],
+.node-card .card-top .card-actions[hidden] {
+  display: none !important;
+}
+
+/* 不改普通卡片的背景、边框及外边距，只约束内容的实际宽度。 */
+.node-card,
+.node-card .card-body {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.node-card .card-body * {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+.node-card .card-body :is(p, span, a, button, label, strong, small, dt, dd, th, td) {
+  white-space: normal;
+}
+@media (max-width: 360px) {
+  .node-card .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .node-card .card-body :is(.card-top, .card-actions, .node-sub, .detail-row) {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
 /* 名字永远独占第一行、右侧那一排徽标永远在它下面的第二行，而且靠左——两行是定死的，
    不按名字长短忽而一行忽而两行（实测同宽下：名字短的 24px、名字长的 58px，卡片头就不齐了）。
    名字仍然完整显示（nowrap + ellipsis 只兜底极端长名），换行让位的是徽标那一排。 */
@@ -528,9 +592,12 @@ h1 {
 /* 徽标靠左（与名字、与下面一行的「地区 · 分组」同一条左边缘）；不换行是为了它自己内部
    也不会被拆成两行——要挪就整排一起挪。 */
 .card-top .card-actions {
+  min-width: 0;
+  max-width: 100%;
   margin-left: 0;
   justify-content: flex-start;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  flex-shrink: 1;
 }
 
 .node-sub {

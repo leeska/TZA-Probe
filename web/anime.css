@@ -1029,10 +1029,15 @@ html[data-skin="anime"] .anime-plate-name {
 }
 html[data-skin="anime"] .node-card[data-rolled="true"] .anime-plate-name { display: none; }
 
-html[data-skin="anime"] .node-grid:not(.node-list) .node-name { display: none; }
+/* 节点名只保留在看板头部，不再印在立绘牌面上。 */
+html[data-skin="anime"] .node-grid:not(.node-list) .anime-plate-name { display: none; }
 
 html[data-skin="anime"] .node-card .card-body {
-  /* 看板：完整四边框 + 内容全部嵌在框内（负外边距那版会让内容落在框外，用户否掉了） */
+  /* 看板四边闭合；宽度包含边框与内边距，不使用负外边距。 */
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   margin: 2px 0 0;
   padding: 12px 13px 13px;
   border: 2px solid var(--cast-line, #e6e8f4);
