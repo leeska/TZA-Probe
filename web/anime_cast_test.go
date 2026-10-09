@@ -63,11 +63,11 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	}
 	// 立绘是透明底全身像 + 手里那块牌子（牌子画在图里），每台的几何量不同、少一条那台机的构图就会崩：
 	// --cast-art-w 立绘在卡上的宽、--cast-plate-l/t/w/h 牌面在立绘框里的矩形（印节点名用）、
-	// --cast-cut 摊开时露到牌子的下沿、--cast-eye-top/bottom 眼睛带（眨眼层只在这里淡入）。
+	// --cast-cut 摊开时露到牌子的下沿。眨眼层是整图切换，没有眼睛带这类几何量。
 	for _, m := range ids {
 		id := m[1]
 		for _, v := range []string{"--cast-figure-h:", "--cast-art-w:", "--cast-plate-l:", "--cast-plate-t:",
-			"--cast-plate-w:", "--cast-plate-h:", "--cast-cut:", "--cast-eye-top:", "--cast-eye-bottom:"} {
+			"--cast-plate-w:", "--cast-plate-h:", "--cast-cut:"} {
 			if !strings.Contains(string(css), v) {
 				t.Errorf("anime.css 里角色 %q 缺 %s（全身立绘的几何量）", id, v)
 			}
