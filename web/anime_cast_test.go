@@ -61,18 +61,20 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 			t.Errorf("人物图 web/anime/%s.webp 不存在: %v", id, err)
 		}
 	}
-	// 立绘是透明底全身像，三样几何量每台不同、少一条那台机的构图就会崩：
-	// --cast-hand 手停在哪一行（卷轴压在这条线上）、--cast-eye-top/bottom 眼睛带（眨眼层只在这里淡入）。
+	// 立绘是透明底全身像 + 手里那块牌子（牌子画在图里），每台的几何量不同、少一条那台机的构图就会崩：
+	// --cast-art-w 立绘在卡上的宽、--cast-plate-l/t/w/h 牌面在立绘框里的矩形（印节点名用）、
+	// --cast-cut 摊开时露到牌子的下沿、--cast-eye-top/bottom 眼睛带（眨眼层只在这里淡入）。
 	for _, m := range ids {
 		id := m[1]
-		for _, v := range []string{"--cast-figure-h:", "--cast-hand:", "--cast-eye-top:", "--cast-eye-bottom:"} {
+		for _, v := range []string{"--cast-figure-h:", "--cast-art-w:", "--cast-plate-l:", "--cast-plate-t:",
+			"--cast-plate-w:", "--cast-plate-h:", "--cast-cut:", "--cast-eye-top:", "--cast-eye-bottom:"} {
 			if !strings.Contains(string(css), v) {
 				t.Errorf("anime.css 里角色 %q 缺 %s（全身立绘的几何量）", id, v)
 			}
 		}
 	}
-	// 段首的「立绘层」规则必须按高度放全身像、并且裁在手上：background-size 用 auto + --cast-figure-h，
-	// 高度用 figure-h × --cast-hand。改回「按宽度铺满」= 她会被拉成满宽，两侧的留白和卷轴位置全错。
+	// 段首的「立绘层」规则必须按高度放全身像、并且裁在她手里那块牌子的下沿：background-size 用 auto + --cast-figure-h，
+	// 高度用 figure-h × --cast-cut。改回「按宽度铺满」= 她会被拉成满宽，两侧留白和牌面落点全错。
 	stage := regexp.MustCompile(`(?s)html\[data-skin="anime"\] \.anime-stage \{(.*?)\n\}`).FindStringSubmatch(string(css))
 	if stage == nil {
 		t.Fatal("anime.css 里找不到 .anime-stage 的规则")
@@ -80,7 +82,7 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		body := stage[1]
 		for _, want := range []string{
 			"background-size: auto var(--cast-figure-h, 720px);",
-			"height: calc(var(--cast-figure-h, 720px) * var(--cast-hand, 0.56));",
+			"height: calc(var(--cast-figure-h, 720px) * var(--cast-cut, 0.44));",
 			"overflow: hidden;",
 		} {
 			if !strings.Contains(body, want) {
@@ -100,6 +102,16 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	}
 	if got, want := strings.Count(string(css), "--cast-blink-dur:"), len(ids); got != want {
 		t.Errorf("--cast-blink-dur 要 %d 条（四个人得错开眨眼，不然四张卡同时眨），现在是 %d 条", want, got)
+	}
+	// 牌面矩形：每台一条，印名字的位置就是靠它算的，少一台那张卡的名字就会印到牌子外面。
+	for _, v := range []string{"--cast-plate-l:", "--cast-plate-t:", "--cast-plate-w:", "--cast-plate-h:", "--cast-cut:"} {
+		if got, want := strings.Count(string(css), v), len(ids); got != want {
+			t.Errorf("%s 要 %d 条（每台一条：牌面逐台实测），现在是 %d 条", v, want, got)
+		}
+	}
+	// 牌子上只有「字」：卷轴纸带（渐变纸面 / 卷边伪元素）是上一版被否掉的做法，回来就直接红。
+	if strings.Contains(string(css), "卷边：纸身靠上那道") || regexp.MustCompile(`(?s)\.anime-roll-label \{[^}]*background-image:`).Match(css) {
+		t.Error("anime.css 的 .anime-roll-label 里又出现纸面背景了：名字应该直接印在她手里那块牌子上")
 	}
 	for _, m := range regexp.MustCompile(`data-cast="([a-z0-9-]+)"`).FindAllStringSubmatch(string(css), -1) {
 		if !strings.Contains(string(cast), `"`+m[1]+`":`) {

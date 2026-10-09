@@ -840,17 +840,14 @@ function gridInner(n) {
   // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
   // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这两个标记区分。
   const cast = castId(n);
-  // 卷轴两件（只有名单里的节点才渲染）：立绘右上角的「卷起」胶囊、收起后压在她手上那条线的卷轴条
-  // （印着节点名）。可见性全在 anime.css 里按卡壳上的 data-rolled 切，这里只负责摆出来。
+  // 折叠两件（只有名单里的节点才渲染）：立绘右上角的「卷起」胶囊、收起后印在她手里那块牌子上的名字。
+  // 牌子是**画进立绘里的贴图**（2026-10-09 起），所以这里只剩一层字，不再有 UI 画的纸带。
+  // 可见性全在 anime.css 里按卡壳上的 data-rolled 切，这里只负责摆出来。
   const fold = cast
     ? `<button class="anime-fold-btn" type="button" data-fold="${cast}" data-bleed aria-label="卷起卡片" aria-expanded="true">${FOLD_ICON}<span>卷起</span></button>` +
       `<button class="anime-roll" type="button" data-fold="${cast}" data-bleed aria-label="展开卡片" aria-expanded="true">` +
       `<span class="anime-roll-label" data-bleed><span class="node-dot anime-roll-dot ${n.online ? "" : "offline"}"></span><span class="anime-roll-name">${esc(n.name)}</span></span>` +
-      `</button>` +
-      // 收起态再叠一层「她手那一条」：卷轴压在她躯干上面（节点名才看得见），
-      // 但手要在卷轴**上面**——不然轴盖着她的手，看起来像一根贴上去的标签条而不是她拿着的卷。
-      // 图还是那一张立绘，只靠蒙版露出她手那一横条（跟闭眼层同一套做法）。
-      `<span class="anime-hands" data-bleed aria-hidden="true"></span>`
+      `</button>`
     : "";
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
