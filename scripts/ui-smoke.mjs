@@ -2300,7 +2300,7 @@ await until(() => unlockCard()?.querySelector(".unlock-badge"), "公开卡片的
   assert.equal(badge.getAttribute("aria-expanded"), "false", "收起时 aria-expanded 为 false");
 }
 // 详情弹窗里的「解锁检测」块：标题 + 分数 + 分类 + 服务列表 + 检测时间。
-unlockCard().querySelector(".detail-open").click();
+unlockCard().querySelector("[data-detail]").click();
 await until(() => publicDOM.window.document.querySelector("#dialog .unlock-block"), "详情里的解锁块");
 {
   const text = publicDOM.window.document.querySelector("#dialog .unlock-block").textContent;
