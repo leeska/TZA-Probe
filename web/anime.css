@@ -1088,7 +1088,7 @@ html[data-skin="anime"] .node-card[data-cast] .card-body::before {
   height: 30px;
   /* 板沿压在旧牌子描边的上沿上（--cast-board-t = 实测描边行），旧描边+内阴影正好被下面 3px
      实边框盖住；叠加层不裁剪，手指从板沿连续画下来（裁剪会在手指上留下一条硬横边）。 */
-  clip-path: none;
+  clip-path: inset(3px 0 0 0);   /* 正好切在新板沿下缘：手指的接触阴影不再压到边框，边框整条同色 */
   background-image: var(--cast-art-url);
   background-repeat: no-repeat;
   background-position: center calc(-1 * var(--cast-board-t, 0.299) * var(--cast-figure-h, 720px));
