@@ -690,7 +690,7 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
   --cast-plate-t: 0.318;
   --cast-plate-w: 0.967;
   --cast-plate-h: 0.122;
-  --cast-board-t: 0.303;   /* 画里那块牌子的上沿（实测板沿描边在 0.3039，即立绘高的 30.4%），看板就接在这 */
+  --cast-board-t: 0.299;   /* 画里那块牌子的上沿（实测板沿描边在 0.3039，即立绘高的 30.4%），看板就接在这 */
   --cast-cut: 0.439;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
   --cast-board: #ffe7f1;
   --cast-cell: rgb(255 255 255 / 0.58);
@@ -715,7 +715,7 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
   --cast-plate-t: 0.321;
   --cast-plate-w: 0.96;
   --cast-plate-h: 0.107;
-  --cast-board-t: 0.305;   /* 画里那块牌子的上沿（实测板沿描边在 0.3057） */
+  --cast-board-t: 0.301;   /* 画里那块牌子的上沿（实测板沿描边在 0.3057） */
   --cast-cut: 0.428;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
   --cast-board: #fff5e0;
   --cast-cell: rgb(255 255 255 / 0.56);
@@ -740,7 +740,7 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
   --cast-plate-t: 0.307;
   --cast-plate-w: 0.94;
   --cast-plate-h: 0.134;
-  --cast-board-t: 0.295;   /* 画里那块牌子的上沿（实测板沿描边在 0.2956） */
+  --cast-board-t: 0.291;   /* 画里那块牌子的上沿（实测板沿描边在 0.2956） */
   --cast-cut: 0.44;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
   --cast-board: #e9f2ff;
   --cast-cell: rgb(255 255 255 / 0.58);
@@ -765,7 +765,7 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-plate-t: 0.319;
   --cast-plate-w: 0.967;
   --cast-plate-h: 0.112;
-  --cast-board-t: 0.297;   /* 画里那块牌子的上沿（实测板沿描边在 0.2978） */
+  --cast-board-t: 0.293;   /* 画里那块牌子的上沿（实测板沿描边在 0.2978） */
   --cast-cut: 0.432;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
   --cast-board: #fff3dc;
   --cast-cell: rgb(255 255 255 / 0.56);
@@ -1065,7 +1065,7 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
   width: calc(100% - 2px);
   min-width: 0;
   max-width: 100%;
-  margin: calc((var(--cast-board-t, 0.303) - var(--cast-cut, 0.44)) * var(--cast-figure-h, 720px) - 16px) 1px 0;
+  margin: calc((var(--cast-board-t, 0.299) - var(--cast-cut, 0.44)) * var(--cast-figure-h, 720px) - 16px) 1px 0;
   padding: 22px 15px 16px;
   border: 3px solid #cdb7b4;
   border-radius: 4px;
@@ -1087,11 +1087,11 @@ html[data-skin="anime"] .node-card[data-cast] .card-body::before {
   right: -3px;
   height: 30px;
   /* 板沿下面那 3~4px 是旧牌子自己的描边+内阴影，留着会在新板沿下透出一道灰线（gpt 验收指出的）；
-     把这一小条裁掉，手指从板沿下方一点开始画，视觉上仍是从板沿探出来。 */
-  clip-path: inset(4px 0 0 0);
+     把这一小条裁掉（板沿再往上抬 3px 一起把旧描边的抗锯齿边盖掉），手指从板沿下方一点开始画。 */
+  clip-path: inset(5px 0 0 0);
   background-image: var(--cast-art-url);
   background-repeat: no-repeat;
-  background-position: center calc(-1 * var(--cast-board-t, 0.303) * var(--cast-figure-h, 720px));
+  background-position: center calc(-1 * var(--cast-board-t, 0.299) * var(--cast-figure-h, 720px));
   background-size: auto var(--cast-figure-h, 720px);
   mix-blend-mode: multiply;
   pointer-events: none;
