@@ -11,3 +11,7 @@ __pycache__/
 *.pyc
 gui-test-screenshots/
 node_modules/
+
+# 自建流水线（scripts/pipeline.sh）的产物与内嵌 Agent 二进制，不进仓库
+dist/
+internal/agentdist/bin/tza-agent-linux-*

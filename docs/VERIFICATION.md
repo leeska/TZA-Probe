@@ -2218,3 +2218,23 @@ NoSla 写「家人」、VMISS 写 VMISS、搬瓦工写 Bandwagon，放大裁片�
   与 `html[data-skin="anime"] .node-card` 两条牌面令牌规则一起删掉了（ui-smoke 的断言抓住并补回）；
   卷轴通铺**不能再加负 margin**——绝对定位的包含块本来就是卡片 padding box，加了就会越过卡片边框盒，
   被判成「真被切掉」（`card-overflow-check` 12 处越界）；`.anime-blink` 也要标 `data-bleed`。
+
+## 2026-10-09 自建流水线：检查与构建改成 `scripts/pipeline.sh`，不再依赖 GitHub Actions
+
+**需求**：仓库原有的 `Check and build` workflow 每次 push 都在 build 任务上失败——test 任务全绿（`go test -race` + `go vet` + web 语法 + presentation-test + ui-smoke），build 任务的两步编译也成功，挂的是第 5 步 `actions/upload-artifact@v4`（artifact 存储配额用尽），arm64 那个 job 随之 cancelled、release 永远 skipped。要接着用 Actions 只能买配额，而这一步真正要做的事（测一遍 + 编两个发行包）在自己的编译机上是几十秒的事。
+
+**做法**：把 CI 搬到自己机器上，脚本进仓库、随时可复现。
+
+- `scripts/pipeline.sh [check|build|all]`：check 段与 CI 同口径（`gofmt -l .` 必须无输出、`go vet ./...`、`go test ./...`、有 gcc 时再跑 `go test -race ./...`、`node --input-type=module --check` 过 `web/*.js`、`scripts/presentation-test.mjs`、一次性 Server 上的 `scripts/ui-smoke.mjs`）；build 段先按 `GOARCH` 编两个架构的 Agent 到 `internal/agentdist/bin/`（Server 用 `//go:embed bin` 内嵌它们），再逐架构编 Server 并打包成 `dist/tza-probe-linux-{amd64,arm64}.tar.gz` + `.sha256` + `SHA256SUMS` + `VERSION`；包内是 Server、该架构 Agent、README、LICENSE、`deploy/`、`docs/`——与 CI 当年的产物同名同构，`deploy/install.sh --version vX.Y.Z` 那条路不用改。
+- `scripts/release.sh <tag> <dist 目录> [sha]`：走 GitHub Release API 建 tag、建 release（`generate_release_notes`）、上传发行包与 `.sha256`（同名资产先删后传），最后读回核对；替代原 workflow 的 release job。
+- 驱动脚本（本机 `/root/work/tza-pipeline.sh`，不进仓库）：串起「编译机（LA 66.132.239.153）上取该 sha 的检出 → 跑流水线 → 产物取回 `/root/work/dist/<sha>/` → 本地 `sha256sum -c` 复核」；提交还没推到 GitHub 时走 `git bundle`（裸 SHA 建 bundle 会被拒，先挂 `refs/hermes/pipeline` 临时 ref）；该提交里还没有 `pipeline.sh` 时就用本机这份 scp 过去跑。
+- `.github/workflows/check.yml` 删除，workflow 另经 API `disable`（state 变 `disabled_manually`），避免旧文件被重新启用后继续烧配额。
+
+**改法**：新增 `scripts/pipeline.sh`、`scripts/release.sh`；`.gitignore` 加 `dist/` 与 `internal/agentdist/bin/tza-agent-linux-*`（流水线产物不进仓库）；README「部署与维护」一节改成上面的命令；删除 `.github/workflows/check.yml`。
+
+**验证**：编译机 LA 上 `bash /root/work/tza-pipeline.sh all`（sha 3f8cfd7）
+- 检查段：`gofmt` 无输出、`go vet ./...` rc=0（0s）、`go test ./...` rc=0（2s，全 `ok`）、`go test -race ./...` rc=0（36s——编译机有 gcc，所以这一步与 CI 完全一致；Hermes 主机没 gcc，脚本会自己说明并跳过）、`web/*.js` 19 个文件 rc=0、presentation-test 5 条 PASS、ui-smoke PASS（47s）。
+- 构建段：两个架构的 Agent 编入 0s（10.4MB / 9.6MB），两个架构的 Server 编译 + 打包 9s；产物 `tza-probe-linux-amd64.tar.gz` 17.74MB、`tza-probe-linux-arm64.tar.gz` 16.92MB，取回本机后 `sha256sum -c SHA256SUMS` 两行 OK（amd64 `ca807b5e…`、arm64 `280d0e85…`）；抽查包内 `tza-server` / `tza-agent` 的 `file` 类型分别是 x86-64 与 aarch64，`--version` 输出 `2.0.0-dev+3f8cfd7`。
+- 计时：编译机侧 97s（vet 0s + test 2s + race 36s + web 与 presentation 1s + ui-smoke 47s + 构建打包 9s），本机从发起到产物复核完成 1m47s。对照原 Actions：test 2m27s + build 1m30s（且 build 必挂），Actions 那条路总耗时接近且没有产物。
+
+**待确认**：无。

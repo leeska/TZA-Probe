@@ -58,7 +58,7 @@ check_go() {
   say "go test ./..."
   t0=$(now)
   "$GO" test ./... > "$TMP/test.log" 2>&1; rc=$?
-  grep -c '^ok' "$TMP/test.log" | xargs -I{} note "ok 包数: {}"
+  note "ok 包数: $(grep -c '^ok' "$TMP/test.log")"
   grep -E '^(FAIL|---)' "$TMP/test.log" | head -20 | sed 's/^/   /'
   note "go test $(dur $t0) rc=$rc"; [ "$rc" = 0 ] || FAILED=1
 
@@ -160,8 +160,8 @@ run_build() {
     cp -r deploy docs "$stage/"
     ( cd "$stage" && tar -czf "$OUT/tza-probe-linux-$arch.tar.gz" . ) || { FAILED=1; return; }
     ( cd "$OUT" && sha256sum "tza-probe-linux-$arch.tar.gz" > "tza-probe-linux-$arch.tar.gz.sha256" ) || { FAILED=1; return; }
-    if [ "$arch" = "$(go env GOARCH)" ]; then
-      note "server --version: $("$stage/tza-server" --version)"
+    if [ "$arch" = "$("$GO" env GOARCH)" ]; then
+      note "server --version: $("$stage/tza-server" --version 2>&1 | tail -1)"
     fi
   done
   note "server amd64+arm64 与打包: $(dur $t1)"

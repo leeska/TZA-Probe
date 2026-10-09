@@ -143,10 +143,17 @@ Server 在 `POST /mcp` 上提供 [Model Context Protocol](https://modelcontextpr
 
 参见 [组件边界](docs/ARCHITECTURE.md) 和 [HTTP 协议](docs/API.md)。
 
+检查与构建不再依赖 GitHub Actions（2026-10-09 起）：`scripts/pipeline.sh` 在任意装了 Go 1.27 与 Node ≥ 20.19 的 Linux 上跑完整套检查并打包，`scripts/release.sh` 用 GitHub Release API 发版。实际在自建编译机（3 核 Ryzen 9 9950X）上跑完整套约 1 分 45 秒。
+
 ```sh
-go test -race ./...
-go vet ./...
+bash scripts/pipeline.sh check   # gofmt / go vet / go test（有 gcc 时加 -race）/ web/*.js 语法 /
+                                 # presentation-test.mjs / 一次性 Server 上的 ui-smoke.mjs
+bash scripts/pipeline.sh build   # dist/tza-probe-linux-{amd64,arm64}.tar.gz(+.sha256)：Server（内嵌两个架构的 Agent）+ README + LICENSE + deploy/ + docs/
+bash scripts/pipeline.sh all     # 默认：check 后 build
+GITHUB_TOKEN=... bash scripts/release.sh vX.Y.Z dist   # 打 tag、建 Release、传发行包（install.sh --version 用的就是它）
 ```
+
+`UI_SMOKE=0` 跳过 ui-smoke，`OUT=<目录>` 换产物目录，`TZA_NODE` / `TZA_NPM` 指定 Node 与 npm（本仓库的 ui-smoke 需要 Node ≥ 20.19 才能 import `web/format.js`）。
 
 本项目没有插件市场、远程终端、任意命令、文件管理、多数据库、自动更新和旧协议适配。功能扩展通过明确接口和版本化 API 实现。
 
