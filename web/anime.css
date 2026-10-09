@@ -996,3 +996,60 @@ html[data-skin="anime"] .anime-blink {
   html[data-skin="anime"] .anime-stage,
   html[data-skin="anime"] .anime-roll { animation: anime-breathe 5.4s ease-in-out infinite; }
 }
+
+
+/* --------------------------------------------------------------------------
+   N+5. 立绘牌面上印节点名 + 数据面板通铺到卡边（2026-10-09）
+   - 名字只出现一次：印在她手里那块牌子的正中（牌面位置逐台实测 --cast-plate-*），
+     卡片下方数据区不再重复（.node-name 在卡片视图里隐藏，列表视图仍用它）。
+   - 数据面板（.card-body）左右各负 22px 抵消卡片内边距，直接顶到卡片两边的边框上，
+     上下各压一条角色色的边框线，内容仍留在框内（padding 由自己给）。
+   - 卷起态里牌子被卷轴盖住，牌面名字跟着藏掉（避免和卷轴上的名字重影）。
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] .anime-plate-name {
+  position: absolute;
+  z-index: 2;
+  left: calc(50% - var(--cast-art-w, 275px) / 2 + var(--cast-art-w, 275px) * var(--cast-plate-l, 0));
+  top: calc(var(--cast-figure-h, 720px) * var(--cast-plate-t, 0.32));
+  width: calc(var(--cast-art-w, 275px) * var(--cast-plate-w, 0.96));
+  height: calc(var(--cast-figure-h, 720px) * var(--cast-plate-h, 0.12));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  box-sizing: border-box;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  text-align: center;
+  color: color-mix(in srgb, var(--cast-accent, #e8457c) 62%, #232838);
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.55);
+  pointer-events: none;
+}
+html[data-skin="anime"] .node-card[data-rolled="true"] .anime-plate-name { display: none; }
+
+html[data-skin="anime"] .node-grid:not(.node-list) .node-name { display: none; }
+
+html[data-skin="anime"] .node-card .card-body {
+  margin: 0 -22px;
+  padding: 10px 22px 12px;
+  border-bottom: 1px solid var(--cast-line, #e6e8f4);
+  background: color-mix(in srgb, var(--cast-board, #fff) 52%, #ffffff);
+}
+html[data-skin="anime"][data-theme="dark"] .node-card .card-body {
+  background: color-mix(in srgb, var(--cast-board, #1b1f2e) 60%, #000000);
+}
+
+html[data-skin="anime"] .detail-open {
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--cast-line, #e6e8f4);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cast-cell, #fff) 70%, #ffffff);
+  color: var(--ink, #232838);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+html[data-skin="anime"] .detail-open:hover { border-color: var(--cast-accent, #e8457c); }
