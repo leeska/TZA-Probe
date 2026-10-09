@@ -1086,9 +1086,9 @@ html[data-skin="anime"] .node-card[data-cast] .card-body::before {
   left: -3px;
   right: -3px;
   height: 30px;
-  /* 板沿下面那 3~4px 是旧牌子自己的描边+内阴影，留着会在新板沿下透出一道灰线（gpt 验收指出的）；
-     把这一小条裁掉（板沿再往上抬 3px 一起把旧描边的抗锯齿边盖掉），手指从板沿下方一点开始画。 */
-  clip-path: inset(5px 0 0 0);
+  /* 板沿压在旧牌子描边的上沿上（--cast-board-t = 实测描边行），旧描边+内阴影正好被下面 3px
+     实边框盖住；叠加层不裁剪，手指从板沿连续画下来（裁剪会在手指上留下一条硬横边）。 */
+  clip-path: none;
   background-image: var(--cast-art-url);
   background-repeat: no-repeat;
   background-position: center calc(-1 * var(--cast-board-t, 0.299) * var(--cast-figure-h, 720px));
