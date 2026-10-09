@@ -2149,3 +2149,63 @@ NoSla 写「家人」、VMISS 写 VMISS、搬瓦工写 Bandwagon，放大裁片�
 - **已知天花板**：卷轴是纯 CSS 画的（两端卷纸横截面 + 圆柱纸身 + 椭圆裁切轮廓 + 斜向螺旋缝）。
   试了五版（木轴头 → 圆盘 → 椭圆裁切 + 螺旋缝），vision 复核始终读成「一卷纸但不像 3D 卷轴」——
   要更立体得换 SVG 弧线（含弯曲的节点名）或生成一张卷轴贴图，别在渐变上继续加细节。
+
+## 2026-10-09 二次元皮肤：卷轴和人物融合 + 呼吸 / 眨眼 / 飘带动效
+
+- **融合**：立绘裁到**她指尖那一行**（`--cast-line-y` 每台实测：JP 771 / DE 779 / VMISS 771 / 搬瓦工 799），
+  卷轴从立绘下沿往上叠 16px 且 `z-index` 比立绘低 —— 她的手指压住卷轴上沿。纸筒横穿整张卡、两端被卡边
+  裁掉（不再画端面），纸色与立绘里那块板同色。
+- **动效**：呼吸（立绘 ±1.6px / 5.4s）、眨眼（同一人的闭眼帧整层交叉淡入 0.16s ×2/周期，四人初始延迟
+  0.4 / 2.1 / 3.3 / 1.2s 错开）、飘带轻摆（±2° / 6.6s）；三样都关在
+  `@media (prefers-reduced-motion: no-preference)` 里。
+- **不影响其他皮肤**：`anime.css` 由 index.html 无条件引入、规则都带 `html[data-skin="anime"]` 前缀，
+  因此新元素在所有皮肤下都是无样式裸元素 —— 底座 `styles.css` 统一 `display: none`（ui-smoke 逐条断言），
+  另加一条「anime.css 里所有选择器必须带皮肤前缀」的守卫；四张皮肤各截同一节点卡片人工核对。
+- **实测**：
+  - `go test ./...` 全绿（`web` 包含闭眼帧文件 / `--cast-blink-url` / `--cast-blink-dur` 三条新守卫）。
+  - `tza-ui-regression.sh`：`PRESENTATION_OK` + `UI_SMOKE_OK`（新增卷轴融合几何、闭眼层、动效媒体查询、
+    底座默认隐藏、皮肤前缀五组断言）。
+  - `card-overflow-check`：anime 浅/深 + glass 浅/深 + press + shadcn **全部 PASS**（320–414px 六个宽度）。
+  - `route-nowrap-check`：`10099 → 9929` 一行读完、折行 0。
+  - 眨眼帧对齐：睁眼 / 闭眼两张立绘在头部区域的最佳位移 **dx=0 dy=0**，平均像素差 4.7–5.3/255。
+  - 卡片高度：卷起态 358×536（摊开 358×907.5）。
+
+## 2026-10-09 二次元皮肤：GPT-Image 2.5 透明底全身立绘 + 卷轴透明度 / 露全身 / 裸眼 3D
+
+- **立绘换模型换体裁**：GPT Image 2.5（sunburst）edit，`image_size` 显式给 `{"width":1024,"height":1536}`
+  （预设 `portrait_4_3` 只出 768×1024）；提示词要求「全身、头到脚、双手停在腰前、不要牌子、透明底」。
+  8 张（4 睁眼 + 4 闭眼）→ 按人物包围盒裁切（JP 666×1523 / DE 506×1520 / VMISS 537×1493 / 搬瓦工 612×1522）
+  → webp q0.9，单张 132–178KB。**透明底是关键**：卡片自己的底色/纹样就是她的背景，没有矩形图框。
+- **三个几何量**（每个角色一份，`web/anime.css`）：`--cast-figure-h: 720px`（全身按高度缩放，不是按宽度铺满）、
+  `--cast-hand`（她的手停在哪一行，卷轴压这条线）、`--cast-eye-top/bottom`（眼睛带）。实测值：
+  JP `.42 / 9.9%–18.8%`、DE `.41 / 8.2%–17.1%`、VMISS `.40 / 7.2%–16.2%`、搬瓦工 `.39 / 23.1%–32%`。
+  **手线怎么量**：先按肤色像素找峰值是错的（那是裙子下的腿，三个人都偏了 10–15% 身高），
+  要拿标尺图（`tza-ruler.mjs` 在立绘上叠带标签的横线）逐台目测，再用 `dbg-hand.mjs` 同卡换值定相截图收货。
+- **展开态**：立绘层高 = `720 × --cast-hand`（JP 302 / DE 295 / VMISS 288 / 搬瓦工 281）——只露到头→手，
+  数据面板的上沿正好落在她手那条线上，于是数据看起来写在她扶着的那块牌上。
+- **收起态**：立绘层放到 `--cast-figure-h` 全身（实测卡片 `358×722`、`.anime-stage=720`），数据整块收起；
+  卷轴绝对定位压在手线上（实测轴心 294.3px vs 手线 295.2px，差 1px）、**通铺到卡片边框内侧、两端被卡片裁掉**
+  （纸卷没有端面，「假盖子 / 假圆盘」那个问题从根上没了）；`z-index: 0` 比立绘的 1 低，她的手与前臂压在轴上。
+- **卷轴透明度**：皮肤菜单底部多一行滑块（只有二次元皮肤出现），25%–100%，存 `tza-anime-roll-alpha`、
+  以 `--anime-roll-alpha` 挂 `<html>`（`theme-boot.js` 首屏先读，免得先满透明度闪一下）。
+  实测拖到 60%：卷轴 `opacity=0.6`、`localStorage=0.6`、`--anime-roll-alpha=0.6`、菜单不被拖关。
+- **裸眼 3D**：`app.js` 在指针移动时把指针相对卡心的位置写成**无单位**变量 `--tilt-nx/--tilt-ny`（-1…1），
+  样式表拿同一个量同时算角度（卡片 `rotateX/Y` 3°/3.4°）和**层间差速**（立绘 −9/−6px、卷轴 −15/−9px）。
+  无单位是因为 CSS 里 `deg` 不能乘 `px`。实测：`is-tilt` 挂上、卡片 `transform` 是真 3D 矩阵（`matrix3d`）、
+  立绘位移 −3.08/+1.47 vs 卷轴 −5.13/+2.20。系统开「减少动态效果」时不转；jsdom 里没有 `matchMedia`，
+  取值要写成 `typeof matchMedia === "function" ? … : null`，否则 `ui-smoke` 一跑就 ReferenceError。
+- **眨眼「看不到」的真因（两条）**：① 底座 `styles.css` 把 `.anime-blink` 默认 `display:none`，
+  `anime.css` 里只写了 `animation` 没放开显示 —— 动画一直在跑、那一层永远不渲染；
+  ② 删飘带时按 `\{[^}]*\}` 删 `@keyframes anime-ribbon`，只删到第一个 `}`，留下
+  `50% { transform: rotate(2.6deg); } }` 两行残渣，把后面那条动画规则整条吃掉。
+  修好后实测：4 张卡 `animation-name=anime-blink`、时长 6.4/5.9/5.4/4.6s、延迟 2.1/1.2/0.4/3.3s、`display:block`；
+  定相截图复核（`TZA_MOTION=shut/open`）：闭眼帧只有睑线无瞳无高光、睁眼帧有瞳有高光。
+  另外**眨眼不该关在 `prefers-reduced-motion` 里**（纯透明度切换不是位移），呼吸与倾斜才听系统的。
+- **不影响其他皮肤**：切回玻璃皮肤实测 `visibleAnimeElements: []`；ui-smoke 守住「底座默认隐藏 +
+  anime.css 选择器全带皮肤前缀 + 闭眼层在二次元下 `display:block`」。
+- **回归**：`go test ./...` / `gofmt` / `go vet` 全绿；`PRESENTATION_OK` + `UI_SMOKE_OK`；
+  `card-overflow-check` 六宽度 **越界 0**；`route-nowrap-check` 折行 0、非居中 0。
+- **踩到的坑**：改写 `anime.css` 整段时把 `html[data-skin="anime"]:not([data-theme="dark"]) .node-card`
+  与 `html[data-skin="anime"] .node-card` 两条牌面令牌规则一起删掉了（ui-smoke 的断言抓住并补回）；
+  卷轴通铺**不能再加负 margin**——绝对定位的包含块本来就是卡片 padding box，加了就会越过卡片边框盒，
+  被判成「真被切掉」（`card-overflow-check` 12 处越界）；`.anime-blink` 也要标 `data-bleed`。

@@ -3,6 +3,27 @@
 // 同一套皮肤在浅色与深色下各有一份令牌。偏好存 localStorage 的 tza-skin，
 // theme-boot.js 在样式表生效前已把 data-skin 写到 <html> 上，避免首屏闪一下默认皮肤。
 const KEY = "tza-skin";
+// 二次元皮肤的卷轴透明度：皮肤菜单里的滑块改，存 localStorage、以 --anime-roll-alpha 挂到 <html> 上
+// （theme-boot.js 首屏会先读一遍）。范围 0.25–1：再低节点名就看不清了。
+const ALPHA_KEY = "tza-anime-roll-alpha";
+export const ALPHA_MIN = 0.25;
+
+export function rollAlpha() {
+  let v = NaN;
+  try {
+    v = parseFloat(localStorage.getItem(ALPHA_KEY));
+  } catch {}
+  return isFinite(v) && v >= ALPHA_MIN && v <= 1 ? v : 1;
+}
+
+export function setRollAlpha(v) {
+  const a = Math.min(1, Math.max(ALPHA_MIN, Math.round(v * 100) / 100));
+  try {
+    a >= 1 ? localStorage.removeItem(ALPHA_KEY) : localStorage.setItem(ALPHA_KEY, String(a));
+  } catch {}
+  document.documentElement.style.setProperty("--anime-roll-alpha", String(a));
+  return a;
+}
 
 // swatch 的三格颜色写在 styles.css 里（CSP 的 style-src 'self' 会忽略行内 style），
 // 这里只给 data-swatch 的值，配色见 styles.css 的 .skin-swatch 一段。
@@ -98,6 +119,17 @@ function renderMenu(el) {
       `<svg class="skin-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 12.5l4.4 4.4L18.5 8"/></svg>` +
       `</button>`,
   ).join("");
+  // 二次元皮肤在菜单底部多一行：卷轴透明度。只有当前皮肤是它的时候才给——
+  // 别的皮肤下卷轴根本不存在，摆一个滑块只会让人以为它对玻璃皮肤也有用。
+  if (cur === "anime") {
+    const pct = Math.round(rollAlpha() * 100);
+    el.innerHTML +=
+      `<div class="skin-tune" data-anime-tune>` +
+      `<label for="anime-roll-alpha">卷轴透明度</label>` +
+      `<input id="anime-roll-alpha" type="range" min="25" max="100" step="5" value="${pct}" data-roll-alpha aria-label="卷轴透明度">` +
+      `<output for="anime-roll-alpha">${pct}%</output>` +
+      `</div>`;
+  }
 }
 
 function closeMenu() {
@@ -139,7 +171,17 @@ document.addEventListener("click", (e) => {
     setSkin(opt.dataset.skinOption);
     return;
   }
+  // 透明度滑块的点击不算「点空白」，否则一拖菜单就没了。
+  if (e.target.closest?.("[data-anime-tune]")) return;
   closeMenu();
+});
+// input 的委托挂在 document 上：菜单是 body 上的常驻节点，重新渲染后不需要重绑。
+document.addEventListener("input", (e) => {
+  const r = e.target.closest?.("[data-roll-alpha]");
+  if (!r) return;
+  const a = setRollAlpha(Number(r.value) / 100);
+  const out = r.parentElement?.querySelector("output");
+  if (out) out.textContent = `${Math.round(a * 100)}%`;
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeMenu();

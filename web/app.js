@@ -489,6 +489,46 @@ document.addEventListener("click", (e) => {
   toggleFolded(btn.dataset.fold);
 });
 
+// 裸眼 3D：指针在卡上移动时，把指针相对卡心的位置写成两个**无单位**变量（-1…1）挂到卡壳上，
+// anime.css 用一个量同时算「卡片转几度」和「立绘 / 卷轴多走几像素」——层间差速就是立体感的来源。
+// 只在这张卡上写、离场就删，所以不 tilt 的卡片一点合成开销都没有；系统开了「减少动态效果」就不做。
+// jsdom（scripts/ui-smoke.mjs 里 eval 这份脚本）没有 matchMedia，取不到就当没开「减少动态效果」。
+const TILT_OFF = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+function tiltCard(card, e) {
+  const r = card.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  const nx = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width - 0.5) * 2));
+  const ny = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height - 0.5) * 2));
+  card.style.setProperty("--tilt-nx", nx.toFixed(3));
+  card.style.setProperty("--tilt-ny", ny.toFixed(3));
+}
+function untiltCard(card) {
+  card.style.removeProperty("--tilt-nx");
+  card.style.removeProperty("--tilt-ny");
+  card.classList.remove("is-tilt");
+}
+document.addEventListener(
+  "pointermove",
+  (e) => {
+    if (TILT_OFF?.matches || e.pointerType === "touch") return;
+    const card = e.target?.closest?.(".node-card[data-cast]");
+    for (const other of document.querySelectorAll(".node-card[data-cast].is-tilt"))
+      if (other !== card) untiltCard(other);
+    if (!card) return;
+    tiltCard(card, e);
+    card.classList.add("is-tilt");
+  },
+  { passive: true },
+);
+document.addEventListener(
+  "pointerout",
+  (e) => {
+    const card = e.target?.closest?.(".node-card[data-cast]");
+    if (card && !card.contains(e.relatedTarget)) untiltCard(card);
+  },
+  { passive: true },
+);
+
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
 // 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
 const cardShell = (n, inner) => {
@@ -800,19 +840,18 @@ function gridInner(n) {
   // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
   // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这两个标记区分。
   const cast = castId(n);
-  // 卷轴三件套（只有名单里的节点才渲染）：立绘右上角的「卷起」胶囊、收起后的卷轴条（印着节点名）、
-  // 以及卷轴下方露出来的下半身。可见性全在 anime.css 里按卡壳上的 data-rolled 切，这里只负责摆出来。
+  // 卷轴两件（只有名单里的节点才渲染）：立绘右上角的「卷起」胶囊、收起后压在她手上那条线的卷轴条
+  // （印着节点名）。可见性全在 anime.css 里按卡壳上的 data-rolled 切，这里只负责摆出来。
   const fold = cast
     ? `<button class="anime-fold-btn" type="button" data-fold="${cast}" data-bleed aria-label="卷起卡片" aria-expanded="true">${FOLD_ICON}<span>卷起</span></button>` +
       `<button class="anime-roll" type="button" data-fold="${cast}" data-bleed aria-label="展开卡片" aria-expanded="true">` +
       `<span class="anime-roll-label" data-bleed><span class="node-dot anime-roll-dot ${n.online ? "" : "offline"}"></span><span class="anime-roll-name">${esc(n.name)}</span></span>` +
-      `<span class="anime-roll-ribbon" aria-hidden="true"></span></button>` +
-      `<div class="anime-hem" data-bleed aria-hidden="true"></div>`
+      `</button>`
     : "";
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
-  return `${cast ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" aria-hidden="true"></span></div>${fold}` : ""}<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
+  return `${cast ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>${fold}` : ""}<div class="card-top"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button></div><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

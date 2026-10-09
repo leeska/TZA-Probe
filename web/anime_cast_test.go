@@ -61,10 +61,32 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 			t.Errorf("人物图 web/anime/%s.webp 不存在: %v", id, err)
 		}
 	}
-	// 立绘裁到「她指尖那一行」：这个像素每台不同（实测 JP 771 / DE 779 / VMISS 771 / 搬瓦工 799），
-	// 少一条那台机就会切掉手指，卷起来时手也搭不到卷轴上沿。
-	if got, want := strings.Count(string(css), "--cast-line-y:"), len(ids); got != want {
-		t.Errorf("--cast-line-y 要 %d 条（每个角色一条），现在是 %d 条", want, got)
+	// 立绘是透明底全身像，三样几何量每台不同、少一条那台机的构图就会崩：
+	// --cast-hand 手停在哪一行（卷轴压在这条线上）、--cast-eye-top/bottom 眼睛带（眨眼层只在这里淡入）。
+	for _, m := range ids {
+		id := m[1]
+		for _, v := range []string{"--cast-figure-h:", "--cast-hand:", "--cast-eye-top:", "--cast-eye-bottom:"} {
+			if !strings.Contains(string(css), v) {
+				t.Errorf("anime.css 里角色 %q 缺 %s（全身立绘的几何量）", id, v)
+			}
+		}
+	}
+	// 段首的「立绘层」规则必须按高度放全身像、并且裁在手上：background-size 用 auto + --cast-figure-h，
+	// 高度用 figure-h × --cast-hand。改回「按宽度铺满」= 她会被拉成满宽，两侧的留白和卷轴位置全错。
+	stage := regexp.MustCompile(`(?s)html\[data-skin="anime"\] \.anime-stage \{(.*?)\n\}`).FindStringSubmatch(string(css))
+	if stage == nil {
+		t.Fatal("anime.css 里找不到 .anime-stage 的规则")
+	} else {
+		body := stage[1]
+		for _, want := range []string{
+			"background-size: auto var(--cast-figure-h, 720px);",
+			"height: calc(var(--cast-figure-h, 720px) * var(--cast-hand, 0.56));",
+			"overflow: hidden;",
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("anime.css 的 .anime-stage 少了 %q", want)
+			}
+		}
 	}
 	// 眨眼要用同一个人的闭眼帧：图不在、或样式里没引用，那台机就不会眨眼（其它三台照眨，更难发现）。
 	for _, m := range ids {

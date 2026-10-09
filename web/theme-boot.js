@@ -23,4 +23,11 @@
   root.dataset.theme = dark ? "dark" : "light";
   // 与 skins.js 的 SKINS 同名清单：认不出来的值（含 null）退回默认皮肤。
   root.dataset.skin = skin === "press" || skin === "shadcn" || skin === "anime" ? skin : skinDefault;
+  // 二次元皮肤的卷轴透明度（皮肤菜单里的滑块改，skins.js 写 localStorage）也在这里先挂上，
+  // 否则首屏会先用满透明度画一次卷轴再跳成用户设的值。
+  var alpha = null;
+  try {
+    alpha = parseFloat(localStorage.getItem("tza-anime-roll-alpha"));
+  } catch (e) {}
+  if (isFinite(alpha) && alpha >= 0.25 && alpha <= 1) root.style.setProperty("--anime-roll-alpha", String(alpha));
 })();

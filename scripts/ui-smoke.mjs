@@ -949,7 +949,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     '<button class="anime-fold-btn" type="button" data-fold="us-bwh-dc9" aria-expanded="true"></button>' +
     '<button class="anime-roll" type="button" data-fold="us-bwh-dc9" aria-expanded="true">' +
     '<span class="anime-roll-name">US-BWH-DC9</span></button>' +
-    '<div class="anime-hem" data-bleed></div><div class="card-top"></div></article>';
+    '<div class="card-top"></div></article>';
   pubDoc.body.appendChild(foldHost);
   const foldCard = foldHost.querySelector(".node-card");
   const foldClick = (sel) =>
@@ -966,6 +966,8 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "false",
     "卷起后卷轴自己就是展开控件（aria-expanded=false）",
   );
+  // 闭眼层的显示在下面「二次元皮肤里 display:block」那条 CSS 断言里查：
+  // jsdom 里没有装样式表，这里量 computed style 永远是空字符串。
   foldClick(".anime-roll");
   assert.equal(foldCard.dataset.rolled, undefined, "点卷轴要摊开");
   assert.deepEqual(
@@ -999,7 +1001,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 于是别的皮肤下那三件套是**没有样式的裸元素**——必须靠底座样式表默认藏起来（漏一个就会冒出一颗裸按钮）。
   // 这就是「加动画不要影响到其他皮肤」的第一道闸。
   const baseCSS = await (await fetch(base + "/styles.css")).text();
-  for (const cls of [".anime-stage", ".anime-roll", ".anime-hem", ".anime-blink", ".anime-fold-btn"]) {
+  for (const cls of [".anime-stage", ".anime-roll", ".anime-blink", ".anime-fold-btn"]) {
     assert(
       new RegExp("\\" + cls + "[^{]*\\{[^}]*display: none", "s").test(baseCSS),
       `底座样式表要把 ${cls} 默认藏掉（anime.css 的规则都带皮肤前缀，别的皮肤下它没有样式）`,
@@ -1083,16 +1085,18 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 底座里现在是「三件套」一起默认藏（立绘 / 卷轴 / 下半身 / 闭眼层 / 卷起按钮），
   // 逐条列出来，免得以后新增一个元素只加在 anime.css 里、别的皮肤冒裸元素。
   assert(
-    /\.anime-stage,\s*\.anime-roll,\s*\.anime-hem,\s*\.anime-blink,\s*\.anime-fold-btn \{\s*display: none;\s*\}/.test(cssSource),
-    "立绘 / 卷轴 / 下半身默认都不显示，别的皮肤才不会被它顶开",
+    /\.anime-stage,\s*\.anime-roll,\s*\.anime-blink,\s*\.anime-fold-btn \{\s*display: none;\s*\}/.test(cssSource),
+    "立绘 / 卷轴 / 闭眼层 / 卷起按钮默认都不显示，别的皮肤才不会被它顶开",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-stage \{[^}]*display: block[^}]*aspect-ratio: 768 \/ var\(--cast-line-y, 775\)/s.test(animeCSS),
-    "二次元皮肤里立绘要通铺卡片顶部、并按牌子顶边裁切",
+    /html\[data-skin="anime"\] \.anime-stage \{[^}]*display: block[^}]*height: calc\(var\(--cast-figure-h, 720px\) \* var\(--cast-hand, 0\.56\)\)/s.test(animeCSS) &&
+      /background-size: auto var\(--cast-figure-h, 720px\)/.test(animeCSS) &&
+      /overflow: hidden/.test(animeCSS),
+    "立绘是透明底全身像：按高度缩放（不是按宽度铺满），只露到她的手那一行——牌子就是卡片自己",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-stage\[data-cast="jp-nosla-gen2"\] \{[^}]*background-image: var\(--cast-art-url\)/s.test(animeCSS),
-    "角色名单里的 id 要有对应的人物图规则",
+    /html\[data-skin="anime"\] \.anime-stage\[data-cast="jp-nosla-gen2"\],[\s\S]*?\.anime-stage\[data-cast="us-bwh-dc9"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
+    "四个角色的立绘层都要挂上自己的图（同一条逗号选择器，四个 data-cast 都得在里面）",
   );
   // 夜版：牌子的底色/描边要有暗色那一份，卡片子树的浅色令牌只能作用在浅色下，
   // 立绘在夜版里只裁到牌沿——不然深色的牌面上会露一条白牌面。
@@ -1105,26 +1109,66 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "浅色那套令牌只能作用在浅色下，夜版要让暗色令牌落进卡片",
   );
   assert(
-    /html\[data-skin="anime"\]\[data-theme="dark"\] \.anime-stage \{[^}]*background-color: #262b3c/s.test(animeCSS),
-    "夜版立绘底色跟着主题走",
+    /html\[data-skin="anime"\]\[data-theme="dark"\] \.anime-stage \{[^}]*filter: brightness\(0\.86\)/s.test(animeCSS),
+    "夜版把人物压一档亮度（立绘是透明底，底色跟着卡片走）",
   );
   // 卷轴：融合 + 动效。缺一条就是「卷轴又变回一根横条」或者「不会眨眼」。
   assert(
-    /html\[data-skin="anime"\] \.anime-roll \{[^}]*z-index: 0[^}]*margin: -16px -22px 0/s.test(animeCSS) &&
+    /html\[data-skin="anime"\] \.anime-roll \{[^}]*left: 0; right: 0; z-index: 0;[^}]*top: calc\(var\(--cast-figure-h, 720px\) \* var\(--cast-hand, 0\.45\) - 24px\)[^}]*margin: 0 -22px;/s.test(animeCSS) &&
       /html\[data-skin="anime"\] \.anime-stage \{[^}]*position: relative[^}]*z-index: 1/s.test(animeCSS),
-    "卷轴要叠在立绘下沿上面、层级比立绘低——她的手指才压得住卷轴上沿（融合的关键）",
+    "卷轴要压在她手那条线上、通铺整卡（两端交给卡片裁掉，就不会有假端面），层级比立绘低——她的手才搭在卷轴上",
+  );
+  const blinkRule = /html\[data-skin="anime"\] \.anime-blink \{([^}]*)\}/
+    .exec(animeCSS)?.[1] || "";
+  assert(
+    // 逐条查、不靠顺序：这条规则里属性顺序以后会变，正则串起来写会假失败。
+    /height: var\(--cast-figure-h, 720px\)/.test(blinkRule) &&
+      /background-image: var\(--cast-blink-url\)/.test(blinkRule) &&
+      /background-size: auto var\(--cast-figure-h, 720px\)/.test(blinkRule) &&
+      /mask-image: linear-gradient/.test(blinkRule) &&
+      /top: 0;/.test(blinkRule),
+    "闭眼帧要和立绘同一张图同一套缩放，盒子取整张立绘的高（蒙版百分比才在展开 / 收起两种状态下都对得上）",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-blink \{[^}]*background-image: var\(--cast-blink-url\)[^}]*mask-image: linear-gradient/s.test(animeCSS),
-    "闭眼帧要和立绘同一张图同一套定位，只用蒙版把可见范围限在头部",
+    /--cast-eye-top: 9\.9%;/.test(animeCSS) && /--cast-eye-bottom: 18\.8%;/.test(animeCSS),
+    "眼睛带（睁眼闭眼两帧差异的峰值 ±5%，这里是 JP 实测值）要作为几何量写进每个角色",
+  );
+  // 注释里正好写着「不放在 prefers-reduced-motion 里」，不剥注释会被当成命中（假失败）。
+  const animeNoComments = animeCSS.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert(
+    /html\[data-skin="anime"\] \.anime-blink \{[^}]*display: block[^}]*background-image: var\(--cast-blink-url\)/s.test(animeNoComments) &&
+      /html\[data-skin="anime"\] \.anime-blink \{[^}]*animation: anime-blink var\(--cast-blink-dur, 5s\)/s.test(animeNoComments) &&
+      !/prefers-reduced-motion[\s\S]{0,600}animation: anime-blink/.test(animeNoComments),
+    "眨眼是纯透明度切换，不放进 prefers-reduced-motion —— 系统开了「减少动态效果」也该看得到她眨眼",
   );
   assert(
-    /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*anime-breathe[\s\S]*anime-blink[\s\S]*anime-ribbon[\s\S]*\}/.test(animeCSS),
-    "呼吸 / 眨眼 / 飘带三样动效都要在 prefers-reduced-motion: no-preference 里（系统关掉动效时不得硬播）",
+    /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*anime-breathe[\s\S]*\}/.test(animeNoComments),
+    "会晃人的位移（呼吸 / 3D 倾斜）才听系统的：prefers-reduced-motion: no-preference 外不硬播",
+  );
+  // 卷轴透明度：滑块在皮肤菜单里，值落在 <html> 的 --anime-roll-alpha 上（skins.js / theme-boot.js）。
+  assert(
+    /html\[data-skin="anime"\] \.anime-roll \{[^}]*opacity: var\(--anime-roll-alpha, 1\)/s.test(animeCSS),
+    "卷轴透明度要挂在 --anime-roll-alpha 上，滑块才有东西可调",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-roll-ribbon \{[^}]*clip-path: polygon/s.test(animeCSS),
-    "卷轴右端那根书签飘带（她的强调色，自己会摆）",
+    /html\[data-skin="anime"\] \.skin-tune \{/.test(animeCSS) && /input\[type="range"\]/.test(animeCSS),
+    "皮肤菜单里那一行「卷轴透明度」要有样式（滑块本体是 input[type=range]）",
+  );
+  // 裸眼 3D：指针在卡上时卡片转一点、立绘与卷轴各自多走一点（层间差速）。
+  assert(
+    /\.node-card\[data-cast\]\.is-tilt \{[^}]*rotateX\(calc\(var\(--tilt-ny, 0\) \* -3deg\)\)[^}]*rotateY\(calc\(var\(--tilt-nx, 0\) \* 3\.4deg\)\)/s.test(animeCSS) &&
+      /\.node-card\[data-cast\]\.is-tilt \.anime-stage \{[^}]*translate3d\(calc\(var\(--tilt-nx, 0\) \* -9px\)/s.test(animeCSS),
+    "卡片要按指针转一点、立绘再往前多走一点——层间差速就是裸眼 3D 的来源",
+  );
+  assert(
+    /addEventListener\(\s*"pointermove"/.test(appSource) && /setProperty\("--tilt-nx"/.test(appSource) &&
+      /prefers-reduced-motion: reduce/.test(appSource),
+    "3D 倾斜由 app.js 的指针委托写 --tilt-nx / --tilt-ny（无单位：CSS 里 deg 不能乘 px），且要听「减少动态效果」",
+  );
+  assert(
+    // 飘带那一版被两次复核都当成「凭空浮着的贴纸」，整条去掉了。别再有人顺手加回来。
+    !/anime-roll-ribbon/.test(animeCSS) && !/anime-roll-ribbon/.test(appSource),
+    "卷轴不再挂书签飘带（复核说它像凭空浮着的贴纸）；元素、样式、动效三处都要干净",
   );
   // 卷轴（卡片可以卷起来）：规则少一条就会变成「点了没反应」或者「卷起了数据还挂着」。
   assert(
@@ -1132,40 +1176,25 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "每台机的牌面配色里要带自己的立绘图址（立绘与「下半身」共用同一张图）",
   );
   assert(
-    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] > \*:not\(\.anime-stage\):not\(\.anime-roll\):not\(\.anime-hem\) \{\s*display: none;/.test(animeCSS),
-    "卷起时数据要整块收起（只留立绘 / 卷轴 / 下半身三件）",
+    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] > \*:not\(\.anime-stage\):not\(\.anime-roll\) \{\s*display: none;/.test(animeCSS),
+    "卷起时数据要整块收起（只留立绘与卷轴两件）",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-roll,\s*html\[data-skin="anime"\] \.anime-hem \{ display: none; \}/.test(animeCSS),
-    "摊开时卷轴与下半身都不出现",
+    /html\[data-skin="anime"\] \.anime-roll \{ display: none; \}/.test(animeCSS) &&
+      /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] \.anime-roll \{ display: flex;/s.test(animeCSS),
+    "摊开时卷轴不出现，卷起来才出现（display:none → flex）",
   );
   assert(
-    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] \.anime-hem \{ display: block; \}/.test(animeCSS),
-    "卷起之后才露出她的下半身",
+    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] \.anime-stage \{\s*height: var\(--cast-figure-h, 720px\);/.test(animeCSS),
+    "卷起来之后立绘层放到全身（720px）——以前只放「下半身」那一段，看得到人才怪",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-hem \{[^}]*aspect-ratio: 768 \/ 341/s.test(animeCSS),
-    "下半身取立绘最下面那段（y=1035→1376）",
+    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] \{ padding-bottom: 0; \}/.test(animeCSS),
+    "卷起来后卡片底部不留内边距（她的脚直接抵到卡边）",
   );
   assert(
     /html\[data-skin="anime"\] \.anime-roll-name/.test(animeCSS),
     "卷轴上要印节点名",
-  );
-  assert(
-    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] > \*:not\(\.anime-stage\):not\(\.anime-roll\):not\(\.anime-hem\) \{\s*display: none;/s.test(animeCSS),
-    "卷起来时数据要整块收起（只留立绘 / 卷轴 / 下半身）",
-  );
-  assert(
-    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] \.anime-hem \{ display: block;/s.test(animeCSS),
-    "卷起来之后才露出她的下半身",
-  );
-  assert(
-    /html\[data-skin="anime"\] \.node-card\[data-rolled="true"\] \.anime-roll \{ display: flex;/s.test(animeCSS),
-    "卷起来之后才出现卷轴（摊开时它是 display:none）",
-  );
-  assert(
-    /html\[data-skin="anime"\] \.anime-roll,\s*html\[data-skin="anime"\] \.anime-hem \{ display: none; \}/s.test(animeCSS),
-    "摊开时卷轴与下半身都不出现",
   );
   assertSkinSheet(pressRules, "press");
   assertSkinSheet(shadcnRules, "shadcn");
