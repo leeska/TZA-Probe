@@ -582,10 +582,15 @@ html[data-skin="anime"][data-theme="dark"] ::-webkit-scrollbar-thumb {
 
 html[data-skin="anime"] .anime-stage {
   display: block;
+  /* 相对定位 + z-index:1：卷起来时卷轴要**压在她下面**（她的手指搭在卷轴上沿，见 N+3）。
+     层级只在这张卡自己的层叠上下文里比（卡壳是 position: relative），不越过卡片。 */
+  position: relative;
+  z-index: 1;
   /* 卡片自己有 22px 内边距，立绘要通铺到卡片边（圆角交给卡片的 overflow:hidden 裁） */
   margin: -22px -22px 16px;
-  /* 裁到牌子顶边：768:775 → 高度 ≈ 卡片宽 × 1.009 */
-  aspect-ratio: 768 / 775;
+  /* 裁到**她指尖那一行**：--cast-line-y 是每台机实测出来的像素（JP 771 / DE 779 / VMISS 771 / 搬瓦工 799），
+     这样手指不会被切掉，卷起来时手正好搭在卷轴上沿。 */
+  aspect-ratio: 768 / var(--cast-line-y, 775);
   /* 牌沿色带：立绘底边压一条 3px 的角色色（卡壳上的 --cast-stripe 继承进来）。
      只能用 border-image：写死颜色没法给 DE 做黑红金三段，渐变色值按角色给。
      border-box 高度不变，所以立绘只是早裁 3px（那 3px 本来就是牌面白条）。 */
@@ -618,7 +623,6 @@ html[data-skin="anime"] .anime-stage[data-cast="us-bwh-dc9"] {
 /* 深色下立绘压一档亮度，免得那块浅色底在夜版里刺眼；并且**只裁到牌子顶沿**
    （浅色下裁到 775，会露出 20 多像素白牌面——夜版里牌子是深色的，露白就对不上了）。 */
 html[data-skin="anime"][data-theme="dark"] .anime-stage {
-  aspect-ratio: 768 / 752;
   background-color: #262b3c;
   filter: brightness(0.82) saturate(0.94);
 }
@@ -680,7 +684,7 @@ html[data-skin="anime"] .node-card[data-cast] {
 /* JP-NoSla-Gen2 · 家人云 × 日本：樱花粉牌面 + 极淡花瓣点 */
 html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
   --cast-art-url: url("/anime/jp-nosla-gen2.webp");   /* 立绘与「下半身」共用同一张图 */
-  --cast-line-y: 752;   /* 牌沿像素：卷起时裁到这里（实测值） */
+  --cast-line-y: 771;   /* 裁到指尖那一行（实测）——她的手正好搭在卷轴上沿 */
   --cast-board: #ffe7f1;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #f6b1cc;
@@ -690,12 +694,15 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
   --cast-stripe: linear-gradient(90deg, #ffd9e8, #ff7aa2 50%, #ffd9e8);
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(232 69 124 / 0.18) 1.3px, transparent 1.6px);
   --cast-motif-size: 15px 15px;
+  --cast-blink-url: url("/anime/jp-nosla-gen2-blink.webp");   /* 同一个人的闭眼帧（edit 出来，实测 dx=dy=0 对齐） */
+  --cast-blink-dur: 5.6s;
+  --cast-blink-delay: 0.4s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
 }
 
 /* DE-NoSla-FRA · 家人云 × 德国：暖白牌面 + 黑红金细竖纹 */
 html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
   --cast-art-url: url("/anime/de-nosla-fra.webp");   /* 立绘与「下半身」共用同一张图 */
-  --cast-line-y: 752;   /* 牌沿像素：卷起时裁到这里（实测值） */
+  --cast-line-y: 779;   /* 裁到指尖那一行（实测）——她的手正好搭在卷轴上沿 */
   --cast-board: #fff5e0;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e7cd90;
@@ -705,12 +712,15 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
   --cast-stripe: linear-gradient(90deg, #262626 0 33.4%, #c41e3a 33.4% 66.7%, #f0be3c 66.7% 100%);
   --cast-motif: repeating-linear-gradient(90deg, rgb(24 24 24 / 0.07) 0 7px, rgb(196 30 58 / 0.08) 7px 14px, rgb(240 190 60 / 0.13) 14px 21px);
   --cast-motif-size: auto;
+  --cast-blink-url: url("/anime/de-nosla-fra-blink.webp");   /* 同一个人的闭眼帧（edit 出来，实测 dx=dy=0 对齐） */
+  --cast-blink-dur: 6.4s;
+  --cast-blink-delay: 2.1s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
 }
 
 /* US-VMISS-TRI · VMISS × 美国：极淡天蓝牌面 + 蓝色小点（官网的蓝点涂鸦） */
 html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
   --cast-art-url: url("/anime/us-vmiss-tri.webp");   /* 立绘与「下半身」共用同一张图 */
-  --cast-line-y: 752;   /* 牌沿像素：卷起时裁到这里（实测值） */
+  --cast-line-y: 771;   /* 裁到指尖那一行（实测）——她的手正好搭在卷轴上沿 */
   --cast-board: #e9f2ff;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #aec9ff;
@@ -720,12 +730,15 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
   --cast-stripe: linear-gradient(90deg, #7ba4ff, #2d65ee 55%, #f2c21b);
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(29 85 224 / 0.16) 1.3px, transparent 1.6px);
   --cast-motif-size: 15px 15px;
+  --cast-blink-url: url("/anime/us-vmiss-tri-blink.webp");   /* 同一个人的闭眼帧（edit 出来，实测 dx=dy=0 对齐） */
+  --cast-blink-dur: 5.0s;
+  --cast-blink-delay: 3.3s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
 }
 
 /* US-BWH-DC9 · 搬瓦工 × 美国：暖琥珀牌面 + 斜向金线 */
 html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-art-url: url("/anime/us-bwh-dc9.webp");   /* 立绘与「下半身」共用同一张图 */
-  --cast-line-y: 764;   /* 牌沿像素：卷起时裁到这里（实测值） */
+  --cast-line-y: 799;   /* 裁到指尖那一行（实测）——她的手正好搭在卷轴上沿 */
   --cast-board: #fff3dc;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e9c684;
@@ -735,6 +748,9 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-stripe: linear-gradient(90deg, #ffc107, #f57c00);
   --cast-motif: repeating-linear-gradient(135deg, rgb(200 128 20 / 0.14) 0 5px, transparent 5px 15px);
   --cast-motif-size: auto;
+  --cast-blink-url: url("/anime/us-bwh-dc9-blink.webp");   /* 同一个人的闭眼帧（edit 出来，实测 dx=dy=0 对齐） */
+  --cast-blink-dur: 5.9s;
+  --cast-blink-delay: 1.2s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
 }
 
 /* 夜版：牌面各自的暗色，纹样用同色系提亮一点；强调色提亮保证在深底上够亮 */
@@ -794,18 +810,24 @@ html[data-skin="anime"][data-theme="dark"] .anime-stage[data-cast="us-bwh-dc9"] 
 }
 
 /* --------------------------------------------------------------------------
-   N+3. 卷轴：卡片可以卷起来（2026-10-09）
-   —— 收起后数据整块收进卷轴，卷轴上印着节点名，卷轴下面是她的下半身（原来被那块牌子挡住的那段）。
+   N+3. 卷轴：卡片可以卷起来 + 会动（2026-10-09 第二版）
+   —— 收起后数据整块收进卷轴，卷轴上印节点名，卷轴下面是她的下半身（原来被那块牌子挡住的那段）。
    - 收起状态是**卡壳**上的 data-rolled（app.js 的 applyFolded 维护），不是重绘出来的内容：
-     每秒轻刷新与 10 秒全量刷新都走补丁路径、卡壳上的属性不会被擦掉，所以卷起来以后不会自己摊开。
-   - 立绘是一张图取三段：头（0 → --cast-line-y）、牌面（被卷掉）、下半身（1035 → 1376，四张同一行）。
-     下半身那段用 background-position: bottom —— 底部对齐天然取到图的最下缘，不用写偏移像素。
+     每秒轻刷新与 10 秒全量刷新都走补丁路径、卡壳上的属性不会被擦掉，所以卷起来之后不会自己摊开。
+   - 融合：立绘裁到**她指尖那一行**，卷轴再从立绘下沿往上叠 16px、并且 z-index 比立绘低——
+     于是她的手指压在卷轴的上沿，卷轴的纸又和立绘里那块纸（白板）同色，看起来就是「她把这块板卷成了一个卷」。
+     纸永远是纸色（暗色下和立绘一起压暗），不跟着牌面染色。
+   - 一张立绘取三段：头（0 → --cast-line-y）、牌面（卷掉）、下半身（y 1035→1376，四张同一行，
+     用 background-position: bottom 取图的下缘）。
+   - 动效三样，全在 @media (prefers-reduced-motion: no-preference) 里：
+     呼吸（整块立绘 ±1.6px）、眨眼（闭眼帧整层淡入 0.16s，节奏按角色错开）、书签飘带轻摆。
+     闭眼帧是拿同一张立绘 edit 出来的另一张 webp（实测最佳位移 dx=dy=0），所以对齐不用补偿。
    -------------------------------------------------------------------------- */
 html[data-skin="anime"] .node-card[data-cast] { position: relative; }
 
 /* 摊开时：立绘右上角一枚「卷起」胶囊 */
 html[data-skin="anime"] .anime-fold-btn {
-  position: absolute; top: 10px; right: 12px; z-index: 2;
+  position: absolute; top: 10px; right: 12px; z-index: 3;
   display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px 0 7px;
   border: 1px solid color-mix(in srgb, var(--cast-accent) 42%, transparent); border-radius: 999px;
   background: color-mix(in srgb, var(--cast-board) 88%, transparent);
@@ -814,56 +836,95 @@ html[data-skin="anime"] .anime-fold-btn {
 html[data-skin="anime"] .anime-fold-btn:hover { background: var(--cast-board); }
 html[data-skin="anime"] .anime-fold-btn svg { width: 11px; height: 11px; }
 
-/* 摊开时卷轴与下半身都不出现 */
+/* 闭眼帧：和立绘同一张图、同一个定位，只用一层羽化蒙版把可见范围限在头部（眼睛在 26% 上下），
+   免得两张图在别处的细微差异也跟着闪。 */
+html[data-skin="anime"] .anime-blink {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  background-image: var(--cast-blink-url);
+  background-repeat: no-repeat; background-position: top center; background-size: 100% auto;
+  /* 蒙版范围要盖住眼睛：眼睛在立绘可见高度的 34%–46%（第一版写到 30% 就把眼睛裁在外面了，
+     结果眨眼层画面里根本没眨眼）。头到下巴约 55%，所以 52% 实心、62% 化开。 */
+  -webkit-mask-image: linear-gradient(180deg, #000 0 52%, transparent 62%);
+  mask-image: linear-gradient(180deg, #000 0 52%, transparent 62%);
+}
+
+/* 摊开时卷轴 / 下半身都不出现 */
 html[data-skin="anime"] .anime-roll,
 html[data-skin="anime"] .anime-hem { display: none; }
 
-/* 卷轴本体：两端各一卷纸的横截面（同心环 + 一道从圆心甩出的螺旋缝），中间是纸卷的圆柱身子
-   —— 圆柱的影子压在上下的边沿、两端压出纸往卷里弯下去的暗面，中间留一条受光亮带。 */
+/* 卷轴本体：一根横穿整张卡的纸筒（两端被卡边裁掉，所以不用假装端面），
+   纸色和她手里那块板同色，往上叠 16px、z-index 低于立绘 → 她的手指压在上沿。
+   纸筒感：上缘一条卷边亮线 + 一道压痕、中间横向反光带、下缘收暗。 */
 html[data-skin="anime"] .anime-roll {
-  width: calc(100% + 24px); margin: 0 -12px; height: 40px; padding: 0; border: 0;
-  display: flex; align-items: center; justify-content: space-between; gap: 0;
-  cursor: pointer; color: var(--cast-accent); background: none;
-  box-shadow: 0 12px 18px -9px rgb(20 16 36 / 0.5);
+  position: relative; z-index: 0;
+  width: calc(100% + 44px); margin: -16px -22px 0; height: 54px; padding: 16px 0 0; border: 0;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: color-mix(in srgb, var(--cast-accent) 62%, #2a2733); background: none;
 }
 html[data-skin="anime"] .anime-roll-label {
-  flex: 1 1 auto; min-width: 0; height: 32px; margin: 0 -7px;
+  position: relative;
+  flex: 1 1 auto; min-width: 0; height: 38px;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  /* 纸身的上下边按椭圆裁一下：就是圆柱的轮廓（两端的尖角被圆盘压住，等于卷进轴里）。
-     光源在左上：受光亮带偏上，下缘留一条反光，别做成对称的渐变胶囊。 */
-  clip-path: ellipse(50% 50% at 50% 50%);
   background-image:
-    /* 斜着走的螺旋纸缝：一圈一圈绕过去 */
-    repeating-linear-gradient(100deg, rgb(24 18 40 / 0.05) 0 1.6px, transparent 1.6px 26px),
-    radial-gradient(40% 190% at 0% 50%, rgb(24 18 40 / 0.36), transparent 70%),
-    radial-gradient(40% 190% at 100% 50%, rgb(24 18 40 / 0.36), transparent 70%),
+    repeating-linear-gradient(100deg, rgb(36 32 52 / 0.05) 0 1.3px, transparent 1.3px 21px),
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--cast-accent) 6%, var(--cast-board)) 0%,
-      color-mix(in srgb, var(--cast-accent) 42%, var(--cast-board)) 30%,
-      color-mix(in srgb, var(--cast-accent) 26%, var(--cast-board)) 62%,
-      color-mix(in srgb, var(--cast-accent) 18%, var(--cast-board)) 82%,
-      color-mix(in srgb, var(--cast-accent) 34%, var(--cast-board)) 100%
+      #c6c9d5 0%,
+      #e9ebf2 7%,
+      #fdfdfe 20%,
+      #ffffff 34%,
+      #fcfcff 52%,
+      #f0f1f7 68%,
+      #dcdfe8 86%,
+      #c2c6d3 100%
     );
-  box-shadow: inset 0 4px 6px -3px rgb(24 18 40 / 0.5), inset 0 -2px 4px -2px rgb(24 18 40 / 0.35);
+  box-shadow: inset 0 5px 7px -4px rgb(28 24 42 / 0.5), inset 0 -6px 8px -4px rgb(28 24 42 / 0.4),
+    inset 0 -2px 0 -1px rgb(255 255 255 / 0.5);
+}
+/* 她的手压在纸上的投影：纸筒上沿两侧各一团，免得手看起来是贴上去的 */
+html[data-skin="anime"] .anime-roll-label::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(40% 130% at 17% 0%, rgb(40 32 60 / 0.32), transparent 74%),
+    radial-gradient(40% 130% at 83% 0%, rgb(40 32 60 / 0.32), transparent 74%);
+}
+/* 卷边：纸身靠上那道「卷起来的边」——上面一条亮线、下面一条压痕 */
+html[data-skin="anime"] .anime-roll-label::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.75;
+  background-image: linear-gradient(
+    180deg,
+    transparent 0 15%,
+    rgb(255 255 255 / 0.75) 17%,
+    rgb(255 255 255 / 0.9) 19%,
+    rgb(46 40 64 / 0.20) 21%,
+    rgb(46 40 64 / 0.10) 24%,
+    transparent 27% 100%
+  );
 }
 html[data-skin="anime"] .anime-roll-name {
-  font-size: 12px; font-weight: 700; letter-spacing: 0.09em;
+  position: relative; z-index: 1;
+  font-size: 12.5px; font-weight: 700; letter-spacing: 0.055em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  text-shadow: 0 1px 0 rgb(255 255 255 / 0.45);
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.8), 0 2px 2px rgb(40 32 60 / 0.16);
 }
-html[data-skin="anime"] .anime-roll-cap {
-  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
-  background-image:
-    /* 从圆心甩出去的一道缝：读起来是「卷」，不是「靶心」 */
-    conic-gradient(from 20deg at 50% 50%, rgb(24 18 40 / 0.22) 0deg 10deg, transparent 10deg 360deg),
-    repeating-radial-gradient(
-      circle at 50% 50%,
-      color-mix(in srgb, var(--cast-accent) 38%, var(--cast-board)) 0 1.4px,
-      color-mix(in srgb, var(--cast-accent) 4%, var(--cast-board)) 1.4px 3px
-    );
-  box-shadow: inset -3px 0 6px -2px rgb(24 18 40 / 0.3), inset 3px 0 6px -2px rgb(255 255 255 / 0.34),
-    0 1px 3px rgb(24 18 40 / 0.24);
+/* 书签飘带：上端打结、两条尾巴垂到她腿上（自己会轻轻摆） */
+html[data-skin="anime"] .anime-roll-ribbon {
+  position: absolute; top: calc(100% - 20px); right: 54px; z-index: 2;
+  width: 13px; height: 64px; transform-origin: top center;
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--cast-accent) 70%, #15121c),
+    color-mix(in srgb, var(--cast-accent) 24%, #ffffff) 42%,
+    color-mix(in srgb, var(--cast-accent) 76%, #15121c)
+  );
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
+  filter: drop-shadow(0 2px 3px rgb(28 24 42 / 0.3));
+}
+html[data-skin="anime"] .anime-roll-ribbon::after {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 6px; border-radius: 1px 1px 2px 2px;
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--cast-accent) 34%, #ffffff),
+    color-mix(in srgb, var(--cast-accent) 58%, #3a3348));
 }
 html[data-skin="anime"] .anime-roll-dot { flex: 0 0 auto; }
 
@@ -873,22 +934,50 @@ html[data-skin="anime"] .anime-hem {
   background-color: #e9eef6; background-image: var(--cast-art-url);
   background-repeat: no-repeat; background-position: bottom center; background-size: 100% auto;
 }
-/* 卷轴压在腿上方的一点阴影，不然两段是硬拼的 */
 html[data-skin="anime"] .anime-hem::after {
-  content: ""; position: absolute; inset: 0 0 auto 0; height: 16px;
-  background-image: linear-gradient(180deg, rgb(24 20 38 / 0.16), transparent);
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 18px;
+  background-image: linear-gradient(180deg, rgb(24 20 38 / 0.18), transparent);
   pointer-events: none;
 }
 
 /* 收起：数据全收进卷轴，只留「头 + 卷轴 + 下半身」；卡片底部不再留内边距（腿直接抵到卡边） */
 html[data-skin="anime"] .node-card[data-rolled="true"] { padding-bottom: 0; }
 html[data-skin="anime"] .node-card[data-rolled="true"] > *:not(.anime-stage):not(.anime-roll):not(.anime-hem) { display: none; }
-html[data-skin="anime"] .node-card[data-rolled="true"] .anime-stage[data-cast] { position: relative; margin-bottom: 0; aspect-ratio: 768 / var(--cast-line-y, 752); }
+html[data-skin="anime"] .node-card[data-rolled="true"] .anime-stage { margin-bottom: 0; }
 html[data-skin="anime"] .node-card[data-rolled="true"] .anime-stage[data-cast]::after {
-  content: ""; position: absolute; inset: auto 0 0 0; height: 18px; pointer-events: none;
-  background-image: linear-gradient(0deg, rgb(24 20 38 / 0.20), transparent);
+  content: ""; position: absolute; inset: auto 0 0 0; height: 16px; pointer-events: none;
+  background-image: linear-gradient(0deg, rgb(24 20 38 / 0.16), transparent);
 }
 html[data-skin="anime"] .node-card[data-rolled="true"] .anime-roll { display: flex; }
 html[data-skin="anime"] .node-card[data-rolled="true"] .anime-hem { display: block; }
 
-html[data-skin="anime"][data-theme="dark"] .anime-hem { background-color: #262b3c; filter: brightness(0.82) saturate(0.94); }
+/* 暗色：纸还是纸，只是和立绘一起压暗（所以卷轴与立绘、下半身是同一档亮度，不会有亮条） */
+html[data-skin="anime"][data-theme="dark"] .anime-roll,
+html[data-skin="anime"][data-theme="dark"] .anime-hem { filter: brightness(0.82) saturate(0.94); }
+html[data-skin="anime"][data-theme="dark"] .anime-hem { background-color: #262b3c; }
+html[data-skin="anime"][data-theme="dark"] .anime-roll-ribbon { filter: brightness(1.05) saturate(1.05); }
+
+/* 动效：呼吸 / 眨眼 / 飘带。全部关在 prefers-reduced-motion: no-preference 里——
+   系统开了「减少动态效果」时这几条根本不生效，人物就是静止的。 */
+@keyframes anime-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.6px); }
+}
+@keyframes anime-blink {
+  0%, 2.6% { opacity: 1; }
+  2.7%, 52% { opacity: 0; }
+  52.1%, 54.7% { opacity: 1; }
+  54.8%, 100% { opacity: 0; }
+}
+@keyframes anime-ribbon {
+  0%, 100% { transform: rotate(-2.2deg); }
+  50% { transform: rotate(2.6deg); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-skin="anime"] .anime-stage[data-cast] { animation: anime-breathe 5.4s ease-in-out infinite; }
+  html[data-skin="anime"] .anime-blink {
+    animation: anime-blink var(--cast-blink-dur, 5.6s) steps(1, end) infinite;
+    animation-delay: var(--cast-blink-delay, 0s);
+  }
+  html[data-skin="anime"] .anime-roll-ribbon { animation: anime-ribbon 6.6s ease-in-out infinite; }
+}

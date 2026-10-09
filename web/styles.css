@@ -485,9 +485,16 @@ h1 {
   flex-direction: column;
 }
 
-/* 二次元皮肤的线路机立绘层：由 app.js 只为「角色名单里」的节点渲染（web/anime-cast.js）。
-   其他皮肤不摆它，所以这里默认不显示；二次元皮肤在 anime.css 里把它放开。 */
-.anime-stage {
+/* 二次元皮肤的线路机「头 + 卷轴 + 下半身」三件套：由 app.js 只为「角色名单里」的节点渲染
+   （web/anime-cast.js）。anime.css 是所有皮肤共用的（index.html 无条件引入），但里面每条规则
+   都带 html[data-skin="anime"] 前缀——所以别的皮肤下这三个元素是**没有样式**的裸元素，
+   必须在这里默认藏掉：漏一个，玻璃 / 记者 / shadcn 皮肤下就会冒出一颗写着节点名的裸按钮。
+   二次元皮肤在 anime.css 里各自放开。 */
+.anime-stage,
+.anime-roll,
+.anime-hem,
+.anime-blink,
+.anime-fold-btn {
   display: none;
 }
 
