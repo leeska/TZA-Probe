@@ -846,7 +846,11 @@ function gridInner(n) {
     ? `<button class="anime-fold-btn" type="button" data-fold="${cast}" data-bleed aria-label="卷起卡片" aria-expanded="true">${FOLD_ICON}<span>卷起</span></button>` +
       `<button class="anime-roll" type="button" data-fold="${cast}" data-bleed aria-label="展开卡片" aria-expanded="true">` +
       `<span class="anime-roll-label" data-bleed><span class="node-dot anime-roll-dot ${n.online ? "" : "offline"}"></span><span class="anime-roll-name">${esc(n.name)}</span></span>` +
-      `</button>`
+      `</button>` +
+      // 收起态再叠一层「她手那一条」：卷轴压在她躯干上面（节点名才看得见），
+      // 但手要在卷轴**上面**——不然轴盖着她的手，看起来像一根贴上去的标签条而不是她拿着的卷。
+      // 图还是那一张立绘，只靠蒙版露出她手那一横条（跟闭眼层同一套做法）。
+      `<span class="anime-hands" data-bleed aria-hidden="true"></span>`
     : "";
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。

@@ -826,7 +826,8 @@ html[data-skin="anime"][data-theme="dark"] .anime-stage[data-cast="us-bwh-dc9"] 
      每秒轻刷新与 10 秒全量刷新都走补丁路径、卡壳上的属性不会被擦掉，所以卷起来之后不会自己摊开。
    - 展开：立绘层 = 头顶 → 她的手那一行（--cast-hand），下面接数据面板（面板上沿就是她手那条线）。
    - 收起：立绘层放到 --cast-figure-h 全身，**卷轴**绝对定位压在她手那条线上（一根她拿着的卷），
-     数据整块藏起来。卷轴比她的身子窄（卡宽的 62%），两端是纸卷的收口 —— 一根拿在手里的卷，
+     数据整块藏起来。卷轴的 z-index 比立绘**高**：轴心正对着她的躯干，压在下面的话节点名会被她
+     整个挡住（线上实测轴上只剩空白），「轴上印节点名」就没了。卷轴比她的身子窄（卡宽的 62%），两端是纸卷的收口 —— 一根拿在手里的卷，
      端头是看得见的，所以不再做「横穿整卡、两端被裁掉」那一版。
    - 透明度由皮肤菜单里的滑块给（--anime-roll-alpha，存 localStorage["tza-anime-roll-alpha"]）。
    - 裸眼 3D：指针在卡上时 app.js 写两个**无单位**变量 --tilt-nx / --tilt-ny（-1…1），
@@ -879,9 +880,9 @@ html[data-skin="anime"] .anime-roll { display: none; }
 
 /* 卷轴本体：她手里那根卷。绝对定位压在手线上、通铺整卡，两端被卡片裁掉。 */
 html[data-skin="anime"] .anime-roll {
-  position: absolute; left: 0; right: 0; z-index: 0;
-  top: calc(var(--cast-figure-h, 720px) * var(--cast-hand, 0.45) - 24px);
-  width: auto; height: 48px; padding: 0; border: 0;
+  position: absolute; left: 0; right: 0; z-index: 2;
+  top: calc(var(--cast-figure-h, 720px) * var(--cast-hand, 0.45) - 8px);
+  width: auto; height: 62px; padding: 0; border: 0;
   /* 通铺到卡片的边框内侧（绝对定位的包含块就是卡片的 padding box）：两端被卡片的
      overflow:hidden 裁掉——卷纸**没有端面**，所以不会出现「假盖子 / 假圆盘」那一版的问题。
      这里不能再加负 margin：越过卡片边框盒就会被 scripts/card-overflow-check.mjs 判成真被切掉。 */
@@ -890,22 +891,25 @@ html[data-skin="anime"] .anime-roll {
   cursor: pointer; color: color-mix(in srgb, var(--cast-accent) 62%, #2a2733); background: none;
 }
 html[data-skin="anime"] .anime-roll-label {
-  position: relative; flex: 1 1 auto; min-width: 0; height: 38px;
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  /* 名字压在轴的**下半条**：她的手（.anime-hands 那层）盖在轴的上半条上，
+     名字留在下面才不会被她的手挡住（居中就会被她的手整块盖掉）。 */
+  position: relative; flex: 1 1 auto; min-width: 0; height: 62px; padding-bottom: 9px;
+  display: inline-flex; align-items: flex-end; justify-content: center; gap: 8px;
   background-image:
-    repeating-linear-gradient(100deg, rgb(36 32 52 / 0.05) 0 1.3px, transparent 1.3px 21px),
-    radial-gradient(22% 200% at 0% 50%, rgb(32 28 48 / 0.42), transparent 100%),
-    radial-gradient(22% 200% at 100% 50%, rgb(32 28 48 / 0.42), transparent 100%),
+    repeating-linear-gradient(100deg, rgb(86 74 48 / 0.055) 0 1.3px, transparent 1.3px 21px),
+    radial-gradient(22% 200% at 0% 50%, rgb(74 64 44 / 0.4), transparent 100%),
+    radial-gradient(22% 200% at 100% 50%, rgb(74 64 44 / 0.4), transparent 100%),
     linear-gradient(
       180deg,
-      #c6c9d5 0%,
-      #e9ebf2 7%,
-      #fdfdfe 20%,
-      #ffffff 34%,
-      #fcfcff 52%,
-      #f0f1f7 68%,
-      #dcdfe8 86%,
-      #c2c6d3 100%
+      #c9c3b5 0%,
+      #e9e4d8 7%,
+      #fdfbf5 20%,
+      #fffefa 34%,
+      #faf7ee 52%,
+      #f3efe4 68%,
+      #e9e4d8 86%,
+      #d8d2c4 96%,
+      #c9c3b5 100%
     );
   box-shadow: inset 0 5px 7px -4px rgb(28 24 42 / 0.5), inset 0 -6px 8px -4px rgb(28 24 42 / 0.4),
     inset 0 -2px 0 -1px rgb(255 255 255 / 0.5), 0 2px 6px rgb(28 24 42 / 0.22);
@@ -932,9 +936,10 @@ html[data-skin="anime"] .anime-roll-label::after {
 }
 html[data-skin="anime"] .anime-roll-name {
   position: relative; z-index: 1;
-  font-size: 12px; font-weight: 700; letter-spacing: 0.05em;
+  font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  text-shadow: 0 1px 0 rgb(255 255 255 / 0.8), 0 2px 2px rgb(40 32 60 / 0.16);
+  text-shadow: 0 0 3px rgb(255 255 255 / 1), 0 1px 0 rgb(255 255 255 / 0.95),
+    0 2px 2px rgb(40 32 60 / 0.18);
 }
 html[data-skin="anime"] .anime-roll-dot { flex: 0 0 auto; }
 
@@ -972,9 +977,35 @@ html[data-skin="anime"] .skin-tune input[type="range"]::-moz-range-thumb {
   background: #ffffff; border: 1.5px solid var(--anime-accent, #e8457c);
 }
 
+/* 收起态专用：她手那一条压在卷轴上面（见 app.js 里 .anime-hands 的说明）。
+   盒子和闭眼层一样取整张立绘的高，蒙版的百分比才按立绘坐标算；
+   上下各留 3% 实心、再各 2% 羽化，正好盖住 48px 的卷轴。 */
+html[data-skin="anime"] .anime-hands { display: none; }
+html[data-skin="anime"] .node-card[data-rolled="true"] .anime-hands {
+  display: block;
+  position: absolute; left: 0; right: 0; top: 0; z-index: 3;
+  height: var(--cast-figure-h, 720px);
+  pointer-events: none;
+  background-image: var(--cast-art-url);
+  background-repeat: no-repeat; background-position: top center;
+  background-size: auto var(--cast-figure-h, 720px);
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    transparent 0 calc((var(--cast-hand, 0.45) - 0.065) * 100%),
+    #000 calc((var(--cast-hand, 0.45) - 0.045) * 100%) calc((var(--cast-hand, 0.45) + 0.045) * 100%),
+    transparent calc((var(--cast-hand, 0.45) + 0.065) * 100%)
+  );
+  mask-image: linear-gradient(
+    180deg,
+    transparent 0 calc((var(--cast-hand, 0.45) - 0.065) * 100%),
+    #000 calc((var(--cast-hand, 0.45) - 0.045) * 100%) calc((var(--cast-hand, 0.45) + 0.045) * 100%),
+    transparent calc((var(--cast-hand, 0.45) + 0.065) * 100%)
+  );
+}
+
 /* 收起：立绘放全身、数据全收进卷轴，卡片底部不再留内边距（脚直接抵到卡边） */
 html[data-skin="anime"] .node-card[data-rolled="true"] { padding-bottom: 0; }
-html[data-skin="anime"] .node-card[data-rolled="true"] > *:not(.anime-stage):not(.anime-roll) { display: none; }
+html[data-skin="anime"] .node-card[data-rolled="true"] > *:not(.anime-stage):not(.anime-roll):not(.anime-hands) { display: none; }
 html[data-skin="anime"] .node-card[data-rolled="true"] .anime-stage {
   height: var(--cast-figure-h, 720px);
   margin-bottom: 0;
@@ -1018,5 +1049,6 @@ html[data-skin="anime"] .anime-blink {
 @media (prefers-reduced-motion: no-preference) {
   /* 立绘和卷轴同一相位呼吸：她的手在动，卷轴要跟着她一起动 */
   html[data-skin="anime"] .anime-stage,
+  html[data-skin="anime"] .anime-hands,
   html[data-skin="anime"] .anime-roll { animation: anime-breathe 5.4s ease-in-out infinite; }
 }
