@@ -600,10 +600,8 @@ html[data-skin="anime"] .anime-stage {
   background-repeat: no-repeat;
   background-position: top center;
   background-size: auto var(--cast-figure-h, 720px);
-  /* 牌沿色带：数据面板的上沿压一条 3px 的角色色，正好接在她手那条线上。
-     只能用 border-image：写死颜色没法给 DE 做黑红金三段，渐变色值按角色给。 */
-  border-bottom: 3px solid transparent;
-  border-image: var(--cast-stripe, none) 1;
+  /* 原来这里压一条 3px 的角色色带当作「牌沿分隔线」。2026-10-09 起数据容器本身就是她手里
+     那块板（见 N+5），板面从她手上沿一直铺到卡底——这条横线会把板切成上下两段，去掉。 */
 }
 
 /* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是 web/anime/<id>.webp。
@@ -1032,8 +1030,9 @@ html[data-skin="anime"] .node-card[data-rolled="true"] .anime-plate-name { displ
 /* 节点名只保留在看板头部，不再印在立绘牌面上。 */
 html[data-skin="anime"] .node-grid:not(.node-list) .anime-plate-name { display: none; }
 
-html[data-skin="anime"] .node-card .card-body {
-  /* 看板四边闭合；宽度包含边框与内边距，不使用负外边距。 */
+/* 不在立绘名单里的节点（没有 data-cast）：数据面板维持原来的浅底小圆角，不受看板几何影响
+   （看板那套负 margin 会把它顶到卡片外——线上 12 台里有 8 台是这种卡）。 */
+html[data-skin="anime"] .node-card:not([data-cast]) .card-body {
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -1044,8 +1043,59 @@ html[data-skin="anime"] .node-card .card-body {
   border-radius: 14px;
   background: color-mix(in srgb, var(--cast-board, #fff) 62%, #ffffff);
 }
-html[data-skin="anime"][data-theme="dark"] .node-card .card-body {
+html[data-skin="anime"][data-theme="dark"] .node-card:not([data-cast]) .card-body {
   background: color-mix(in srgb, var(--cast-board, #1b1f2e) 70%, #000000);
+}
+
+/* 有立绘的卡片：「看板」= 数据容器本身（2026-10-09，规格由 gpt-6.1-sol 看图给）：
+   - 板面从她手上沿（--cast-plate-t × 立绘高）开始，一直铺到卡片底部：
+     margin-top 用「它现在的位置 - 板沿位置」算出来，正好接在她手那条线上；
+   - 左右各 1px 内缩（内边距 22 + 边框 1 = 左 23px，再让 1px），落在卡宽的 6.7% / 93.3%，
+     比画里那块牌子（15.9% ～ 84.1%）宽一大截；
+   - 白底 #fffdfb + 3px 灰褐实边框 + 小圆角，数据各行正常排在板内；
+   - z-index 2 压在立绘层（z-index 1）上面，板面才盖得住她下半身、不露出画里那块旧牌子。 */
+html[data-skin="anime"] .node-card[data-cast] .card-body {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  width: calc(100% - 2px);
+  min-width: 0;
+  max-width: 100%;
+  margin: calc((var(--cast-plate-t, 0.318) - var(--cast-cut, 0.44)) * var(--cast-figure-h, 720px) - 16px) 1px 0;
+  padding: 22px 15px 16px;
+  border: 3px solid #cdb7b4;
+  border-radius: 4px;
+  background: #fffdfb;
+}
+
+/* 她双手仍扶着板沿：只把立绘里「手指压过板沿」的那一小条（板顶往下 ~30px）用同一张图以
+   multiply 叠在板面上——白板 × 白板 ≈ 原样，只有手会透出来，等于把手指抠到新板上沿，
+   不做整套 SVG mask，也不用重画立绘。横向再遮掉最外 8%：那块旧牌子自己的细描边正好落在
+   那里，不遮会在新板里透出一个灰色「鬼框」。高度只取一小条，旧牌子的下沿横线也进不来。
+   夜版板面是深色，multiply 会把手上色压到发黑，索性不叠。 */
+html[data-skin="anime"] .node-card[data-cast] .card-body::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  height: 30px;
+  background-image: var(--cast-art-url);
+  background-repeat: no-repeat;
+  background-position: center calc(-1 * var(--cast-plate-t, 0.318) * var(--cast-figure-h, 720px));
+  background-size: auto var(--cast-figure-h, 720px);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0 8%, #000 8% 92%, transparent 92% 100%);
+  mask-image: linear-gradient(90deg, transparent 0 8%, #000 8% 92%, transparent 92% 100%);
+}
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body::before {
+  display: none;
+}
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body {
+  background: #26242a;
+  border-color: #4b434a;
 }
 /* 卡片头：绿点 + 节点名 = 一个按钮，点它折叠/展开（不再有右上角「卷起」） */
 html[data-skin="anime"] .card-top { row-gap: 4px; }
