@@ -1130,7 +1130,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "闭眼帧要和立绘同一张图同一套缩放，盒子取整张立绘的高（蒙版百分比才在展开 / 收起两种状态下都对得上）",
   );
   assert(
-    /--cast-eye-top: 6\.4%;/.test(animeCSS) && /--cast-eye-bottom: 22\.6%;/.test(animeCSS),
+    /--cast-eye-top: 10\.4%;/.test(animeCSS) && /--cast-eye-bottom: 19\.5%;/.test(animeCSS),
     "眼睛带（睁眼闭眼两帧差异的峰值，这里是 JP 实测值）要作为几何量写进每个角色",
   );
   // 注释里正好写着「不放在 prefers-reduced-motion 里」，不剥注释会被当成命中（假失败）。

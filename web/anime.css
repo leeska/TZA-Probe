@@ -693,8 +693,8 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
   --cast-plate-w: 0.967;
   --cast-plate-h: 0.122;
   --cast-cut: 0.439;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
-  --cast-eye-top: 6.4%;
-  --cast-eye-bottom: 22.6%;
+  --cast-eye-top: 10.4%;   /* 眨眼层只在这条带里淡入：= 闭眼帧相对睁眼帧真正被改动的矩形（逐台实测） */
+  --cast-eye-bottom: 19.5%;
   --cast-board: #ffe7f1;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #f6b1cc;
@@ -719,8 +719,8 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
   --cast-plate-w: 0.96;
   --cast-plate-h: 0.107;
   --cast-cut: 0.428;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
-  --cast-eye-top: 6.6%;
-  --cast-eye-bottom: 22.8%;
+  --cast-eye-top: 8.2%;
+  --cast-eye-bottom: 17.3%;
   --cast-board: #fff5e0;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e7cd90;
@@ -745,8 +745,8 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
   --cast-plate-w: 0.94;
   --cast-plate-h: 0.134;
   --cast-cut: 0.44;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
-  --cast-eye-top: 6.6%;
-  --cast-eye-bottom: 23.0%;
+  --cast-eye-top: 8.8%;
+  --cast-eye-bottom: 17.9%;
   --cast-board: #e9f2ff;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #aec9ff;
@@ -771,8 +771,8 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-plate-w: 0.967;
   --cast-plate-h: 0.112;
   --cast-cut: 0.432;   /* 摊开时立绘露到牌子的下沿，再往下就是数据面板 */
-  --cast-eye-top: 6.2%;
-  --cast-eye-bottom: 22.3%;
+  --cast-eye-top: 9.4%;
+  --cast-eye-bottom: 18.5%;
   --cast-board: #fff3dc;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e9c684;
@@ -873,8 +873,9 @@ html[data-skin="anime"] .anime-fold-btn svg { width: 11px; height: 11px; }
 
 /* 闭眼帧：和立绘同一张图、同一个缩放定位，但盒子是**整张立绘那么高**（720px）——
    这样蒙版的百分比是按立绘坐标算的，展开 / 收起两种状态下都对得上。立绘层 overflow:hidden 负责裁。
-   蒙版只留「眼睛带」（--cast-eye-top / --cast-eye-bottom，实测睁眼闭眼两帧的差异峰值 ±5%）：
-   闭眼帧除了眼睛，别处的线稿也会差一点点，露出多了眨眼就会闪。 */
+   蒙版只留「眼睛带」（--cast-eye-top / --cast-eye-bottom）。闭眼帧是「只蒙两只眼睛交给模型重画、
+   再合成回睁眼帧」来的：框外像素与睁眼帧**逐像素相同**（实测最大差值 0），所以这条带 = 闭眼帧真正
+   改动的矩形，带里除眼睛以外的部分两帧一致。带子放大只会浪费时间，放小会把眼睑切一半。 */
 html[data-skin="anime"] .anime-blink {
   /* 必须显式 display: block：底座样式表把这一层默认藏了（别的皮肤下它是裸元素），
      只写动画不放开显示的话，动画一直在跑、人却永远看不到她眨眼。 */
