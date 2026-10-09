@@ -1980,8 +1980,8 @@ await until(
     /\.card-top \.node-name \{[^}]*white-space: nowrap/.test(styles) &&
       /\.card-top \.node-identity \{[^}]*flex: 1 1 100%/.test(styles) &&
       /\.card-top \.card-actions \{[^}]*justify-content: flex-start/.test(styles) &&
-      /\.card-top \.card-actions \{[^}]*flex-wrap: nowrap/.test(styles),
-    "名字整段留在第一行、徽标组在第二行靠左且自身不再折行",
+      /\.card-top \{[^}]*flex-wrap: wrap/.test(styles),
+    "名字整段留在第一行、徽标组在第二行靠左；窄屏允许换行，不再顶出卡片边框",
   );
   // 详情页同一处也不该给空图表或「请在后台创建并绑定任务」。
   publicDOM.window.document.querySelector(`[data-detail="${longNode.id}"]`).click();
