@@ -32,9 +32,16 @@ export GOFLAGS=${GOFLAGS:--mod=mod}
 
 TMP=$(mktemp -d /tmp/tza-pipeline.XXXXXX)
 SRV_PID=""
+BUILT_AGENTS=0
 cleanup() {
   [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null
+  # 编进 agentdist 的 Agent 二进制不能留在这个检出里：生产部署
+  # （tza-probe-deploy-netcup.sh）在编译机上直接 `go build ./cmd/server`，
+  # 而这些是**未跟踪**文件，git checkout --force 不会清掉它们——留着就会让
+  # 另一个 sha 的部署把这份旧 Agent 内嵌进去。构建时用过就删掉，恢复干净检出。
+  if [ "$BUILT_AGENTS" = 1 ]; then rm -f internal/agentdist/bin/tza-agent-linux-*; fi
   rm -rf "$TMP"
+  return 0
 }
 trap cleanup EXIT
 
@@ -143,6 +150,7 @@ run_build() {
 
   # Server 内嵌两个架构的 Agent（面板「接入」的一行命令要用），所以先编 Agent 再编 Server。
   mkdir -p internal/agentdist/bin
+  BUILT_AGENTS=1
   t0=$(now)
   for arch in amd64 arm64; do
     CGO_ENABLED=0 GOOS=linux GOARCH=$arch "$GO" build -trimpath -ldflags "$LDFLAGS" \
