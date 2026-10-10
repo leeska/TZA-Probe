@@ -580,11 +580,16 @@ html[data-skin="anime"][data-theme="dark"] ::-webkit-scrollbar-thumb {
    与 <div class="anime-hands">。图片本体在 web/anime/*.webp（go:embed 进二进制），
    拆图脚本在 scripts/anime-split-layers.py。
 
-   被否定过两版：
+   被否定过三版：
      · 看板铺满整张卡（数据全见）→ 她下半身一点看不到；
-     · 看板定高 140/150px、板内竖滚 424px 才看得全（用户：「内容都没了，为啥做得这么小」）。
+     · 看板定高 140/150px、板内竖滚 424px 才看得全（用户：「内容都没了，为啥做得这么小」）；
+     · 四段叠层、展开态也把下半身接在板下（数据全见 + 下半身可见）→ 卡片被撑到 960~1015px 高
+       （用户：「不是这样！！！，展开的时候就不用显示下半身了」）。
    根因：原始立绘里那块手捧牌子只占立绘高 13.9%（上沿 30.0%、下沿 43.9%），看板只要高过立绘的
-   22% 就必然盖住她的下半身——「数据一眼看全」与「下半身可见」在**同一张立绘里**是互相排斥的。
+   22% 就必然盖住她的下半身——「数据一眼看全」与「下半身可见」在**同一个展开态里**是互相排斥的。
+   落点（2026-10-10）：**不用一张卡同时要这两样**——展开态看板从牌子上沿铺到卡片底部、下半身整段
+   被板盖住（数据一眼看全、零滚动、字不小）；收起态板只剩头部、下半身才从板下沿以下露出来。
+   两个状态用同一套四段多层，只切换「下半身层可见 / 不可见」。
 
    gpt-6.1-sol 定的画面（见 /root/work/redo/consult/pick-route.txt）：不重画立绘，改成把同一个人物
    立绘**沿牌子的上下沿切成两段**，HTML 看板插在中间：
@@ -607,8 +612,9 @@ html[data-skin="anime"] .anime-stage {
   display: block;
   position: relative;
   z-index: 1;
-  /* 卡片有 22px 内边距，立绘要通铺到卡边（圆角交给卡片裁）；下边不留白，看板紧接着它的底边。 */
-  margin: -22px -22px 0;
+  /* 有立绘的卡壳左右内边距已收成 0（见 N+4），立绘通铺到内容盒 = 卡边内 1px（圆角交给卡片裁）；
+     上边 -22px 抵消卡壳上内边距；下边不留白，看板紧接着它的底边。 */
+  margin: -22px 0 0;
   aspect-ratio: var(--cast-top-ar, 1.9);
   overflow: hidden;
   background-image: var(--cast-art-url);
@@ -703,8 +709,10 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
                               t = 牌子上沿（463/1530）；多画的 30 行是「板唇」——
                               呼吸动画会把这一层抬 2px，没有这圈压在板下的余量，
                               板顶就会闪出一条卡片底色。 */
-  --cast-lip: 0.033846;        /* 板唇 = 0.66·30/585（占卡宽的比例）：看板用这个负 margin 顶回去，
-                              把多画的 30 行盖在板下沿以内，牌子外沿仍停在第 t 行 */
+  --cast-lip: 0.042872;        /* 板唇 = 0.66·38/585（占卡宽的比例）：看板用这个负 margin 顶回去。
+                              38 行 = 30 行给呼吸动画留量（上半身抬 2px 也不露卡片底色）+ 8 行把看板
+                              上沿抬到原图牌子顶部那道 1px 描边之上（呼吸把立绘抬起来时那条残线会往上
+                              跑，留 8 行才在整段动画里都盖得住）。 */
   --cast-hands-ar: 1.69477;    /* W/(0.66·(t+60))：双手层的 aspect-ratio（含手指压过板沿那一段） */
   --cast-legs-ar: 1.03175;     /* W/(0.66·(H−b))：下半身层的 aspect-ratio */
   --cast-full-ar: 0.5793;   /* 585/(0.66·1530) = W/(0.66·H)：下半身层里那张全立绘盒子的 aspect-ratio（按 66% 卡宽缩放） */
@@ -731,8 +739,7 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
                               t = 牌子上沿（464/1521）；多画的 30 行是「板唇」——
                               呼吸动画会把这一层抬 2px，没有这圈压在板下的余量，
                               板顶就会闪出一条卡片底色。 */
-  --cast-lip: 0.037288;        /* 板唇 = 0.66·30/531（占卡宽的比例）：看板用这个负 margin 顶回去，
-                              把多画的 30 行盖在板下沿以内，牌子外沿仍停在第 t 行 */
+  --cast-lip: 0.047232;        /* 板唇 = 0.66·38/531：30 行给呼吸动画留量 + 8 行盖住原图牌子顶部 1px 描边（呼吸会把残线抬高） */
   --cast-hands-ar: 1.5354;    /* W/(0.66·(t+60))：双手层的 aspect-ratio（含手指压过板沿那一段） */
   --cast-legs-ar: 0.92158;     /* W/(0.66·(H−b))：下半身层的 aspect-ratio */
   --cast-full-ar: 0.5289;   /* 531/(0.66·1521) = W/(0.66·H)：下半身层里那张全立绘盒子的 aspect-ratio（按 66% 卡宽缩放） */
@@ -759,8 +766,7 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
                               t = 牌子上沿（447/1512）；多画的 30 行是「板唇」——
                               呼吸动画会把这一层抬 2px，没有这圈压在板下的余量，
                               板顶就会闪出一条卡片底色。 */
-  --cast-lip: 0.036197;        /* 板唇 = 0.66·30/547（占卡宽的比例）：看板用这个负 margin 顶回去，
-                              把多画的 30 行盖在板下沿以内，牌子外沿仍停在第 t 行 */
+  --cast-lip: 0.045850;        /* 板唇 = 0.66·38/547：30 行给呼吸动画留量 + 8 行盖住原图牌子顶部 1px 描边（呼吸会把残线抬高） */
   --cast-hands-ar: 1.63469;    /* W/(0.66·(t+60))：双手层的 aspect-ratio（含手指压过板沿那一段） */
   --cast-legs-ar: 0.98665;     /* W/(0.66·(H−b))：下半身层的 aspect-ratio */
   --cast-full-ar: 0.5481;   /* 547/(0.66·1512) = W/(0.66·H)：下半身层里那张全立绘盒子的 aspect-ratio（按 66% 卡宽缩放） */
@@ -787,8 +793,7 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
                               t = 牌子上沿（458/1536）；多画的 30 行是「板唇」——
                               呼吸动画会把这一层抬 2px，没有这圈压在板下的余量，
                               板顶就会闪出一条卡片底色。 */
-  --cast-lip: 0.036264;        /* 板唇 = 0.66·30/546（占卡宽的比例）：看板用这个负 margin 顶回去，
-                              把多画的 30 行盖在板下沿以内，牌子外沿仍停在第 t 行 */
+  --cast-lip: 0.045934;        /* 板唇 = 0.66·38/546：30 行给呼吸动画留量 + 8 行盖住原图牌子顶部 1px 描边（呼吸会把残线抬高） */
   --cast-hands-ar: 1.59705;    /* W/(0.66·(t+60))：双手层的 aspect-ratio（含手指压过板沿那一段） */
   --cast-legs-ar: 0.94008;     /* W/(0.66·(H−b))：下半身层的 aspect-ratio */
   --cast-full-ar: 0.5386;   /* 546/(0.66·1536) = W/(0.66·H)：下半身层里那张全立绘盒子的 aspect-ratio（按 66% 卡宽缩放） */
@@ -853,15 +858,18 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
 
    盒子的高 = 立绘宽 × (H−b)/W（aspect-ratio --cast-legs-ar），里面那张全高立绘用 translateY
    上移 b/H（--cast-seam，百分比相对自身高度 = 全高立绘高），于是第 b 行正好落在盒子顶边——也就是
-   看板的下沿。板上沿到下沿之间那段是牌子（人物层里已透明），由 HTML 看板接管，所以看起来就是
-   「她站在一块大板后面，板下沿以下露出裙摆 / 大腿 / 白袜 / 皮鞋」。
+   看板的下沿。板上沿到下沿之间那段是牌子（人物层里已透明），由 HTML 看板接管。
    负 margin-top 把接缝塞到看板边框底下（看板 z-index 2 > 本层 z-index 1），不会留一条横线。
+
+   **只有一个状态看得见它**：收起态（[data-rolled="true"]）——那时看板只剩头部，牌子下沿以下那一段
+   （裙摆 / 大腿 / 白袜 / 皮鞋）从这里露出来；展开态整层 display:none，看板从牌子上沿一直铺到卡片
+   底部、把下半身整段盖住（用户 2026-10-10 的原话：「展开的时候就不用显示下半身了」）。
    -------------------------------------------------------------------------- */
 html[data-skin="anime"] .anime-legs {
   display: block;
   position: relative;
   z-index: 1;
-  margin: -6px -22px 0;
+  margin: -6px 0 0;
   aspect-ratio: var(--cast-legs-ar, 0.68);
   overflow: hidden;
   pointer-events: none;
@@ -881,6 +889,18 @@ html[data-skin="anime"] .anime-legs::before {
   transform: translateY(calc(-100% * var(--cast-seam, 0.44)));
 }
 
+/* 展开态**不露下半身**：看板从牌子上沿一直铺到卡片底部，人物下半身整段被板面盖住。
+   下半身层直接不显示（它只想在收起态露出来），卡片也不会再为了「多塞下半身」被拉长——
+   卡高回到「上半身 + 看板（数据撑开）」的正常值。卡片下内边距同时收成 0，看板下沿就贴着
+   卡片底边（板上沿、板宽、数据位置、名字坐标全都不动）。
+   收起态那一边见下面 N+5：板只剩头部，下半身层才放出来。 */
+html[data-skin="anime"] .node-card[data-cast]:not([data-rolled="true"]) .anime-legs {
+  display: none;
+}
+html[data-skin="anime"] .node-card[data-cast]:not([data-rolled="true"]) {
+  padding-bottom: 0;
+}
+
 /* 列表视图不摆立绘：一行一台的密度下放不下人物（元素照旧渲染，只是不显示） */
 html[data-skin="anime"] .node-grid.node-list .anime-stage,
 html[data-skin="anime"] .node-grid.node-list .anime-hands,
@@ -896,6 +916,16 @@ html[data-skin="anime"] .node-grid.node-list .anime-legs {
    - 白底 + 2px 灰褐实边框 + 14px 圆角；overflow:hidden 只负责圆角把内容裁齐，不裁数据。
    - 板高 auto：数据全部排在里面，一行都不藏（用户否掉了「定高 + 板内滚动」）。
    -------------------------------------------------------------------------- */
+
+/* 有立绘的卡壳：左右内边距收成 0。立绘层（100%）与看板（94% 卡宽）都要通铺到卡边，卡壳原来那
+   22px 左右内边距会把「94% 卡宽」的看板判成越过内容盒（scripts/card-overflow-check.mjs 里看板就
+   成了越界元素，而它其实没出卡、也不会被裁）。收成 0 之后内容盒 = 卡边内 1px：立绘 margin 0、
+   看板按「(100% + 2px) = 卡宽」算，画面一像素不变，脚本也回到「板在内容盒内」的干净判据。 */
+html[data-skin="anime"] .node-card[data-cast] {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 html[data-skin="anime"] .node-card[data-cast] .card-body {
   position: relative;
   z-index: 2;
@@ -904,13 +934,13 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
   flex-direction: column;
   gap: 4px;
   flex: 0 0 auto;
-  /* 100% 是卡片的内容盒（卡宽 − 2px 边框 − 44px 内边距 = 卡宽 − 46），+46px 才是卡宽：
-     板宽 = 卡宽 × 0.94，左右各留 3%（3%·卡宽 − 23px 正好把板从内容盒推到离卡边 3% 处）。
+  /* 100% 是卡壳的内容盒 = 卡宽 − 2px 边框（左右内边距已收成 0），+2px 才是卡宽：
+     板宽 = 卡宽 × 0.94，左右各留 3%（3%·卡宽 − 1px 正好把板从内容盒推到离卡边 3% 处）。
      max-width 必须显式放开：基础样式表给了 .card-body max-width:100%，会把板卡在内容盒宽。 */
-  width: calc((100% + 46px) * 0.94);
+  width: calc((100% + 2px) * 0.94);
   min-width: 0;
   max-width: none;
-  margin: calc((100% + 46px) * -1 * var(--cast-lip, 0.036)) calc((100% + 46px) * 0.03 - 23px) 0;
+  margin: calc((100% + 2px) * -1 * var(--cast-lip, 0.036)) calc((100% + 2px) * 0.03 - 1px) 0;
   height: auto;
   padding: 10px;
   border: 2px solid #cdb7b4;
@@ -1028,8 +1058,9 @@ html[data-skin="anime"] .node-card[data-cast] .route-label { padding: 5px 2px; g
    N+5. 收起态：板压到只剩头部（名字 + 状态点 + 折叠箭头）
 
    看板上沿不动、板内名字行在板内的上偏移也没变（都是 2px 边框 + 10px 内边距），所以名字两态落在
-   同一个坐标；折叠只把数据整块 display:none，看板随之收成一行高，下半身层自动跟着上移到板下沿
-   —— 卡片变矮，人物不会被裁，裙摆/大腿/白袜/皮鞋照旧露出来。
+   同一个坐标；折叠只把数据整块 display:none，看板随之收成一行高——展开态藏起来的下半身层这时才
+   放出来（[data-rolled="true"] 不命中上面那条 display:none），下面露出裙摆 / 大腿 / 白袜 / 皮鞋。
+   展开态看板铺到卡底、收起态板只剩头部 + 下半身：两个状态就是同一套多层，只切换「谁可见」。
    -------------------------------------------------------------------------- */
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body { overflow: hidden; }
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body > [id] { display: none; }

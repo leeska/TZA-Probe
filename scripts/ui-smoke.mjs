@@ -1142,7 +1142,10 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 多图层（2026-10-10）：人物层（牌子与双手已从图里拆走）→ HTML 看板 → 双手层压在看板上沿。
   // 这几条一起锁住那套「板沿干净、手真的搭在板上」的结构；缺一条就退回旧毛病
   // （板顶/手边透出原图牌子的描边残线、手被 CSS 抠出硬边、手浮在板外）。
-  const handsRule = /html\[data-skin="anime"\] \.anime-hands \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
+  // 双手层的**主规则**：`@media (prefers-reduced-motion: no-preference)` 里的呼吸动画那条也以同一
+  // 选择器开头（缩进 2 空格），只按选择器抓会先抓到它、抓出一段只有 animation 的规则。锚在行首只取
+  // 缩进为 0 的那条主规则。
+  const handsRule = /^html\[data-skin="anime"\] \.anime-hands \{([^}]*)\}/m.exec(animeCSS)?.[1] || "";
   assert(
     /position: absolute/.test(handsRule) && /z-index: 3/.test(handsRule) &&
       /background-image: var\(--cast-hands-url\)/.test(handsRule) &&
@@ -1153,8 +1156,14 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   const boardRule = /html\[data-skin="anime"\] \.node-card\[data-cast\] \.card-body \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
   assert(
     /z-index: 2/.test(boardRule) && /border: 2px solid #cdb7b4/.test(boardRule) && /#fffdfb/.test(boardRule) &&
-      /height: auto;/.test(boardRule) && /width: calc\(\(100% \+ 46px\) \* 0\.94\)/.test(boardRule),
+      /height: auto;/.test(boardRule) && /width: calc\(\(100% \+ 2px\) \* 0\.94\)/.test(boardRule),
     "看板是 HTML 自己画的（z-index 2 压住上下半身层；白底 + 2px 灰褐板沿；板宽 94% 卡宽、板高由数据决定）",
+  );
+  // 有立绘的卡壳左右内边距收成 0：看板本来就该通铺到卡边（94% 卡宽），不收的话它会被
+  // card-overflow-check 判成越过内容盒。内容盒 = 卡宽 − 2px 边框，(100% + 2px) 才是卡宽。
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-cast\] \{[^}]*padding-left: 0;[^}]*padding-right: 0;/s.test(animeCSS),
+    "有立绘的卡壳左右内边距要收成 0：看板/立绘按卡宽比例通铺，内容盒才等于卡宽 − 2px 边框",
   );
   // 看板高度必须由数据决定：定高 + 板内滚动这一版被用户否掉了（「内容都没了，为啥做得这么小」）。
   assert(
@@ -1172,6 +1181,16 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body > \[id\] \{ display: none;/s.test(animeCSS),
     "上下半身层 z-index 1；收起态只藏数据（.card-top 留着，板沿与名字坐标都不动，名字才不会跑位置）",
   );
+  // 下半身层只属于收起态：展开态看板从牌子上沿铺到卡片底部、下半身整段被板盖住（用户 2026-10-10
+  // 「展开的时候就不用显示下半身了」）。卡片下内边距同时收成 0，看板下沿才贴着卡片底边。
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-cast\]:not\(\[data-rolled="true"\]\) \.anime-legs \{\s*display: none;/s.test(animeCSS),
+    "展开态要藏掉下半身层：展开不露下半身，看板从牌子上沿一直铺到卡片底部",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-cast\]:not\(\[data-rolled="true"\]\) \{\s*padding-bottom: 0;/s.test(animeCSS),
+    "展开态卡片下内边距收成 0：看板下沿贴着卡片底边，板才算铺到卡底",
+  );
   // 名字固定在板面正中：两态同一个盒子（居中靠 flex），状态点与折叠箭头绝对定位在两端不挤它。
   const foldNameRule = /html\[data-skin="anime"\] \.card-top \.fold-name \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
   assert(
@@ -1184,13 +1203,13 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       /html\[data-skin="anime"\] \.card-top \.fold-name \.fold-caret \{[^}]*position: absolute[^}]*right: 0/s.test(animeCSS),
     "状态点与折叠箭头要绝对定位在两端：它们不参与居中，名字的横向中心才是板面的中心",
   );
-  // 每台机都要有双手层图址 + 逐台实测的看板上沿 / 牌子下沿（少一台就退回「手是 CSS 抠的」那一版）。
+  // 每台机都要有双手层图址 + 逐台实测的看板上沿（--cast-top-ar）/ 接缝（--cast-seam）等四段几何量。
   for (const id of ["jp-nosla-gen2", "de-nosla-fra", "us-vmiss-tri", "us-bwh-dc9"]) {
     const block = new RegExp(`\\.node-card\\[data-cast="${id}"\\] \\{([^}]*)\\}`).exec(animeCSS)?.[1] || "";
     assert(
       /--cast-hands-url: url\("\/anime\//.test(block) &&
-        /--cast-board-t: 0\.\d+/.test(block) && /--cast-cut: 0\.\d+/.test(block),
-      `${id}：要有双手层图址 + 实测的看板上沿（--cast-board-t）与牌子下沿（--cast-cut）`,
+        /--cast-top-ar: \d+\.\d+/.test(block) && /--cast-seam: 0\.\d+/.test(block),
+      `${id}：要有双手层图址 + 实测的看板上沿（--cast-top-ar）与牌子下沿接缝（--cast-seam）`,
     );
   }
   assert(
@@ -1201,12 +1220,12 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     .exec(animeCSS)?.[1] || "";
   assert(
     // 逐条查、不靠顺序：这条规则里属性顺序以后会变，正则串起来写会假失败。
-    /height: var\(--cast-figure-h, 720px\)/.test(blinkRule) &&
+    /height: 100%/.test(blinkRule) &&
       /background-image: var\(--cast-blink-url\)/.test(blinkRule) &&
-      /background-size: auto var\(--cast-figure-h, 720px\)/.test(blinkRule) &&
+      /background-size: 66% auto;/.test(blinkRule) &&
       !/mask-image/.test(blinkRule) &&
       /top: 0;/.test(blinkRule),
-    "闭眼帧要和立绘同一张图同一套缩放，盒子取整张立绘的高；整图切换，不许再有蒙版裁切",
+    "闭眼帧要和立绘同一张图同一套缩放（66% 卡宽、顶对齐居中）；盒子取上半身层的高，整图切换，不许再有蒙版裁切",
   );
   assert(
     !/--cast-eye-/.test(animeCSS),
@@ -1224,15 +1243,18 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     /@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*anime-breathe[\s\S]*\}/.test(animeNoComments),
     "会晃人的位移（呼吸 / 3D 倾斜）才听系统的：prefers-reduced-motion: no-preference 外不硬播",
   );
-  // 裸眼 3D：指针在卡上时卡片转一点、人物层与双手层各自多走一点（层间差速）。
+  // 裸眼 3D：指针在卡上时卡片转一点、人物 / 双手 / 下半身三层各自多走一点（层间差速）。
   assert(
-    /\.node-card\[data-cast\]\.is-tilt \{[^}]*rotateX\(calc\(var\(--tilt-ny, 0\) \* -3deg\)\)[^}]*rotateY\(calc\(var\(--tilt-nx, 0\) \* 3\.4deg\)\)/s.test(animeCSS) &&
-      /\.node-card\[data-cast\]\.is-tilt \.anime-stage \{[^}]*translate3d\(calc\(var\(--tilt-nx, 0\) \* -9px\)/s.test(animeCSS),
-    "卡片要按指针转一点、立绘再往前多走一点——层间差速就是裸眼 3D 的来源",
+    /\.node-card\[data-cast\]\.is-tilt \{[^}]*rotateX\(calc\(var\(--tilt-ny, 0\) \* -3deg\)\)[^}]*rotateY\(calc\(var\(--tilt-nx, 0\) \* 3\.4deg\)\)/s.test(animeCSS),
+    "卡片要按指针转一点——层间差速就是裸眼 3D 的来源",
   );
+  // 三个立绘层的位移写在同一条多选择器规则里（.anime-stage, .anime-hands, .anime-legs），
+  // 选择器后面是逗号不是 `{`，所以抓这条规则整块（到第一个 `}`）再逐条查。
+  const tiltShift = /\.node-card\[data-cast\]\.is-tilt \.anime-stage,[\s\S]*?\n\}/.exec(animeCSS)?.[0] || "";
   assert(
-    /\.node-card\[data-cast\]\.is-tilt \.anime-hands \{[^}]*translate3d\(calc\(var\(--tilt-nx, 0\) \* -9px\), calc\(var\(--tilt-ny, 0\) \* -6px\), 0\)/s.test(animeCSS),
-    "3D 倾斜时双手层要和人物层走同样的位移（手连着人，位移不同就会从手腕上滑下来）",
+    /translate3d\(calc\(var\(--tilt-nx, 0\) \* -9px\), calc\(var\(--tilt-ny, 0\) \* -6px\), 0\)/.test(tiltShift) &&
+      /\.is-tilt \.anime-hands,/.test(tiltShift) && /\.is-tilt \.anime-legs \{/.test(tiltShift),
+    "3D 倾斜时人物层 / 双手层 / 下半身层要压在同一条位移规则里（手连着人、下半身连着板，位移不同就会错位）",
   );
   assert(
     /addEventListener\(\s*"pointermove"/.test(appSource) && /setProperty\("--tilt-nx"/.test(appSource) &&
