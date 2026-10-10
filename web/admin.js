@@ -364,6 +364,25 @@ function nodeForm(existing) {
   };
   Object.keys(rules).forEach((rule) => (el(rule).onchange = syncRules));
   syncRules();
+  // 重置 / 到期时间按 UTC 填写（服务端按 UTC 逐月顺延），公开面板却按访客本地时间显示。
+  // 在输入框下面实时换算一行本地时间，免得填的人自己心算时差。
+  for (const name of ["billing_at", "expires_at"]) {
+    const input = el(name);
+    const note = document.createElement("small");
+    note.className = "local-time";
+    input.after(note);
+    const update = () => {
+      let text = "";
+      try {
+        if (input.value.trim()) text = "本地时间 " + date(stampISO(input.value));
+      } catch {
+        text = "";
+      }
+      note.textContent = text;
+    };
+    input.addEventListener("input", update);
+    update();
+  }
   form.onsubmit = guard(async (e) => {
     e.preventDefault();
     const f = new FormData(e.target),

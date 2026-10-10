@@ -131,7 +131,7 @@ export async function detail(id, focus = null) {
     !focused && n.unlock?.total
       ? `<div class="unlock-block">${unlockPanel(n.unlock, catalog, { tested: true })}</div>`
       : "";
-  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)} UTC 边界</small></div><div><span>本次开机网卡累计</span><strong>↓ ${bytes(n.metrics?.net_in)} / ↑ ${bytes(n.metrics?.net_out)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(osLabel(n, "—"))} ${esc(n.metrics?.arch || "")}</small></div>${throttleTile}${bandwidthTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24)}</div>${unlockSection}`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际经过的骨干网命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG），不代表商家承诺的线路。地址已脱敏，超时或过期的结果显示为未知；TCP 连接失败率不等于 ICMP 丢包率。</p><details class="more"><summary>标签判定规则</summary><p class="hint">ASN 优先、跳地址前缀兜底。CN2 跳之后仍走 59.43.* 到目标省份记为 GIA、连续两跳及以上 202.97.*（163 骨干）才记为 GT（单个 202.97 跳是途中偶发回包的骨干路由器，不算落地），一条电信线路只给一个标签、联通轨迹里出现过 9929 就不再另记 4837、163 只在它是轨迹里第一条线路名时才记（后面再出现的 163 是落地接入，如 10099 → 9929）。</p></details>`;
+  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)}（本地时间）</small></div><div><span>本次开机网卡累计</span><strong>↑ ${bytes(n.metrics?.net_out)} / ↓ ${bytes(n.metrics?.net_in)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(osLabel(n, "—"))} ${esc(n.metrics?.arch || "")}</small></div>${throttleTile}${bandwidthTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24)}</div>${unlockSection}`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}<p class="hint">回程标签按实际经过的骨干网命名（163 / CN2GIA / CN2GT / 4837 / 9929 / 10099 / CMIN2 / CMI / CTG），不代表商家承诺的线路。地址已脱敏，超时或过期的结果显示为未知；TCP 连接失败率不等于 ICMP 丢包率。</p><details class="more"><summary>标签判定规则</summary><p class="hint">ASN 优先、跳地址前缀兜底。CN2 跳之后仍走 59.43.* 到目标省份记为 GIA、连续两跳及以上 202.97.*（163 骨干）才记为 GT（单个 202.97 跳是途中偶发回包的骨干路由器，不算落地），一条电信线路只给一个标签、联通轨迹里出现过 9929 就不再另记 4837、163 只在它是轨迹里第一条线路名时才记（后面再出现的 163 是落地接入，如 10099 → 9929）。</p></details>`;
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
@@ -229,10 +229,14 @@ function historyRange(maxHours = 720) {
 }
 
 function hostCharts(samples, hours) {
+  // 一笔样本都凑不够（新接入、从未上报，或这段时间一直离线）时四张图都会是同一句「样本不足」，
+  // 合成一条提示，不再摆四个空框。
+  if (samples.length < 2) return '<div class="chart-empty">这段时间还没有主机历史，Agent 上报后自动显示 CPU、内存与网速曲线</div>';
+  // 速率两张按全站统一的「上传在前」排列。
   return chart(samples, "cpu", "CPU 使用率", "teal", hours) +
     chart(samples, "memory", "内存使用率", "orange", hours) +
-    chart(samples, "rate_in", "下载速率", "teal", hours) +
-    chart(samples, "rate_out", "上传速率", "orange", hours);
+    chart(samples, "rate_out", "上传速率", "orange", hours) +
+    chart(samples, "rate_in", "下载速率", "teal", hours);
 }
 
 function networkOverview(series, metric, hours) {

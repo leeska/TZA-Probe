@@ -928,10 +928,9 @@ publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
 // 延迟按运营商分四格显示，与三网回程同构；地区取延迟地区，其次代表地区。
 // 数据目录跨多次运行复用，所以要按名字找到本轮创建的卡片，不能取第一张。
-const card = [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) =>
-  c.textContent.includes(name),
-);
-assert(card, "the node created in this run must appear on the public panel");
+const findPublicCard = () =>
+  [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) => c.textContent.includes(name));
+assert(findPublicCard(), "the node created in this run must appear on the public panel");
 // 探测段的格子按服务端给的「探测计划」先画好，数值要等这台机器的观测回来。等到色带里出现
 // 实心格（非 idle）再断言：否则这些断言只看结构，值那一层整段是空转的——曾经一个渲染期的
 // ReferenceError 被 refresh().catch(toast) 吞掉，测试照样全绿（真浏览器里整页报错）。
@@ -942,6 +941,9 @@ await until(
       ?.querySelector(".latency-bands .quality-bar:not(.idle)"),
   "public card values after the observations arrive",
 );
+// 等待期间 10 秒一轮的全量刷新可能整卡重建，先取的卡片元素会停在旧数据上（偶发「未检测」）；
+// 等到值之后重新取一次。
+const card = findPublicCard();
 assert.equal(
   publicDOM.window.document.querySelector("#toast").textContent,
   "",

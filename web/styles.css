@@ -720,9 +720,7 @@ button.node-name {
   flex-shrink: 0;
 }
 
-.family-tag {
-  color: var(--accent, #4fd1c5);
-}
+/* 「无探测」只是状态说明，不能点：以前用强调色（蓝）看起来像链接，现在跟系统标签同一个灰。 */
 
 .network-unavailable {
   margin: 4px 0 0;
@@ -2755,15 +2753,22 @@ pre,
     grid-template-columns: 1fr 1fr;
     gap: 12px;
   }
+  /* 手机上：搜索框独占第一行，分组下拉与「卡片 / 列表」并排在第二行（左右两端）。
+     以前切换按钮单独一行靠右、左边空一大块。filter-controls 用 display: contents 让搜索框与
+     下拉直接参与 toolbar 的换行。 */
   .toolbar {
     flex-wrap: wrap;
+    gap: 10px;
   }
   .filter-controls {
-    width: 100%;
+    display: contents;
   }
   .search {
-    flex: 1;
+    flex: 1 1 100%;
     width: auto;
+  }
+  .view-bar {
+    margin-left: auto;
   }
   .node-grid {
     grid-template-columns: 1fr;
@@ -2898,6 +2903,22 @@ pre,
     padding: 24px 0;
   }
   table.stack td.empty-cell::before {
+    content: none;
+  }
+  /* 堆叠后拖动手柄不再单独占一行「顺序 ⠿」：挪到这张卡的右上角。拖动本身是 pointer 事件，
+     触屏上照样能按住拖。 */
+  table.stack tr {
+    position: relative;
+  }
+  table.stack td.drag-cell {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+  table.stack td.drag-cell::before {
     content: none;
   }
 }
@@ -3516,4 +3537,27 @@ tr.row-dragging td {
 }
 .rule-row input:disabled {
   cursor: not-allowed;
+}
+
+/* 编辑节点里 UTC 时间输入框下方的本地时间换算（admin.js）。 */
+label .local-time {
+  font-size: 11px;
+  color: var(--muted);
+}
+label .local-time:empty {
+  display: none;
+}
+
+/* 公开页右上角的后台入口：手机上顶栏放不下「管理控制台 ↗」（实测几乎顶到右边缘、
+   绿点也贴到 PROBE 字上），480px 以下换成「后台 ↗」。 */
+.admin-link-short {
+  display: none;
+}
+@media (max-width: 480px) {
+  .admin-link-full {
+    display: none;
+  }
+  .admin-link-short {
+    display: inline;
+  }
 }

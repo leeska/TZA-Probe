@@ -513,7 +513,8 @@ h1 {
 }
 
 .os-tag,
-.arch-tag {
+.arch-tag,
+.family-tag {
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
 }
@@ -1503,9 +1504,24 @@ input[type="checkbox"]:disabled {
   .public-header nav {
     gap: 12px;
   }
+  /* 手机上三张统计卡并排成一行、数字在上标签在下：竖排三张整宽卡片要占掉半屏。 */
   .admin-stats {
-    grid-template-columns: 1fr;
-    gap: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .admin-stats > div {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 12px 14px;
+  }
+  .admin-stats strong {
+    font-size: 22px;
+  }
+  .admin-stats span {
+    font-size: 11px;
+    line-height: 1.35;
   }
   .sidebar {
     margin: 8px 12px;
