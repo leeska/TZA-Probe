@@ -1190,6 +1190,12 @@ html[data-skin="anime"] .node-grid.node-list .node-card[data-cast] {
   --cast-track: #eef0f8;
   --cast-motif: none;
   --cast-motif-size: auto;
+  /* 卡片视图给角色行铺了牌面色，才把这两枚令牌改指到牌面描边；列表里牌面已经收回白面，
+     它们必须还原成皮肤默认——`unset` = 继承，取的是 :root[data-skin=anime] 的值，
+     明暗两套天然跟着走。不还原的话，同一颗系统标签 / 地址族分段开关在有立绘的行上
+     比无立绘的行差 3~12 个色阶（实测 #e3e9f2 vs #e6e8f4 / #eff1f9）。 */
+  --glass-border: unset;
+  --glass-border-subtle: unset;
   padding: 16px 20px;
 }
 html[data-skin="anime"][data-theme="dark"] .node-grid.node-list .node-card[data-cast] {
@@ -1215,6 +1221,8 @@ html[data-skin="anime"] .node-grid.node-list .detail-open:hover {
 html[data-skin="anime"] .node-grid.node-list .detail-open {
   flex: 0 0 auto;
   white-space: nowrap;
+  /* 描边走皮肤默认（无立绘的行就是退回这枚令牌的兜底值），两类行的「详细」才同一圈边。 */
+  border-color: var(--anime-border, #e6e8f4);
 }
 
 /* 名字块吃满主机格的剩余宽度，把「详细」顶到这格右缘（与卡片视图里右对齐的「详细」一致）：
@@ -1276,7 +1284,8 @@ html[data-skin="anime"] .node-grid.node-list {
     overflow-x: visible;
   }
 
-  html[data-skin="anime"] .node-grid.node-list .node-card {
+  html[data-skin="anime"] .node-grid.node-list .node-card,
+  html[data-skin="anime"] .node-grid.node-list .node-card[data-cast] {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
     min-width: 0;
