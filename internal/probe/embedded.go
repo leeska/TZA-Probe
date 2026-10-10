@@ -104,7 +104,10 @@ func (e Embedded) Trace(ctx context.Context, ip net.IP, port int) traceOutcome {
 		BeginHop:        1,
 		DstIP:           ip,
 		DstPort:         port,
-		MaxHops:         24,
+		// Long paths exist: a Tokyo probe reached a 四川 mobile target at TTL
+		// 25, one past the old cap, so the trace never saw the destination and
+		// the panel showed 未知. 30 covers those with room to spare.
+		MaxHops:         30,
 		NumMeasurements: 1,
 		MaxAttempts:     1,
 		// More probes in flight keeps a filtered path inside the budget: with

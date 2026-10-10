@@ -117,7 +117,7 @@ func execTrace(ctx context.Context, binary string, j model.Job, ip string) trace
 	if j.Task.Family == "ipv6" {
 		family = "-6"
 	}
-	cmd := exec.CommandContext(ctx, binary, "--raw", "-n", "-C", "-M", "-q", "1", "--parallel-requests", "2", "--max-attempts", "1", "-m", "24", "--timeout", "1500", "-T", "-p", strconv.Itoa(j.Task.Port), family, ip)
+	cmd := exec.CommandContext(ctx, binary, "--raw", "-n", "-C", "-M", "-q", "1", "--parallel-requests", "2", "--max-attempts", "1", "-m", "30", "--timeout", "1500", "-T", "-p", strconv.Itoa(j.Task.Port), family, ip)
 	// Limit memory independently of command behavior. CommandContext bounds runtime.
 	output := &limitedBuffer{remaining: 128 << 10}
 	cmd.Stdout = output
