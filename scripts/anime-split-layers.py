@@ -44,6 +44,28 @@ PLATE_EDGE = 9         # 牌子左右描边的宽度：牌面（白）从这里�
 WHITE_MIN = 246        # 牌面白的判定：三通道最小值 > 它
 ALPHA_RAMP = 12        # 手层 alpha 的软边斜坡（照度差多少算全不透明）
 SHADOW_ALPHA = 0.16    # 手指压在板面上的接触阴影强度
+EDGE_PAD = 14          # 牌子下外沿以下要顺手抹掉的高度：牌子自己的下沿倒角 + 那条描边线
+
+
+def repair_plate_edge(arr, bot, x0, x1):
+    """抹掉牌子下外沿以下那条「牌子自己的下边」。
+
+    清矩形清到 bot 为止（bot = 牌子的下外沿），可牌子还带着一圈下沿倒角 + 一条描边线，
+    正好落在 bot+1 起的十来行里 —— 原图里它是牌子的一部分，展开态被看板盖住看不出来，
+    但收起态看板只剩头部，它就会横贯人物、被当成残线（gpt-6.1-sol 验收就卡在这一条）。
+    这一段在人物层里其实没有别的内容（下面是裙子/腿），所以按列做一次竖向线性插值
+    （从矩形底那一行渐变到下面那一行），倒角与线一起抹平，裙子照旧连过去。
+    人物层与闭眼帧都要做（同一张画布，不然眨眼那一帧会把线闪出来）。
+    """
+    y0, y1 = bot + 1, min(bot + EDGE_PAD, arr.shape[0] - 2)
+    if y1 <= y0:
+        return
+    top_row = arr[y0 - 1, x0:x1].astype(np.float32)
+    bot_row = arr[y1 + 1, x0:x1].astype(np.float32)
+    for y in range(y0, y1 + 1):
+        t = (y - (y0 - 1)) / ((y1 + 1) - (y0 - 1))
+        arr[y, x0:x1] = (top_row * (1 - t) + bot_row * t).round().astype(arr.dtype)
+
 
 
 def load_rgba(p):
@@ -108,11 +130,13 @@ def split(pid, src, gen, out_dir, report):
         g = load_rgba(gen_path).resize((W, H), Image.LANCZOS)
         ga = np.asarray(g)
         ca[top:bot + 1, x0:x1] = ga[top:bot + 1, x0:x1]
+    repair_plate_edge(ca, bot, x0, x1)
     Image.fromarray(ca.astype(np.uint8), "RGBA").save(f"{out_dir}/{pid}.webp", "WEBP", quality=92, method=6)
 
     # ---------- 闭眼帧：同一矩形清掉（补画不留，人物层在它下面） ----------
     ba = np.asarray(blink).copy()
     ba[top:bot + 1, x0:x1, 3] = 0
+    repair_plate_edge(ba, bot, x0, x1)
     Image.fromarray(ba.astype(np.uint8), "RGBA").save(f"{out_dir}/{pid}-blink.webp", "WEBP", quality=92, method=6)
 
     # ---------- (b) 双手层 ----------
@@ -188,8 +212,27 @@ def main():
     ap.add_argument("--gen", default="/tmp/layers")
     ap.add_argument("--out", default="/root/work/tza-probe/web/anime")
     ap.add_argument("--only", default="")
+    ap.add_argument("--repair-only", action="store_true",
+                    help="只就地补抹「牌子下沿倒角 + 描边线」那条残线（人物层 / 闭眼帧），不重跑拆层")
     args = ap.parse_args()
     report = []
+    if args.repair_only:
+        for pid in PLATE:
+            if args.only and args.only != pid and args.only != TAG[pid]:
+                continue
+            plate = PLATE[pid]
+            for suf in ("", "-blink"):
+                p = os.path.join(args.out, f"{pid}{suf}.webp")
+                if not os.path.exists(p):
+                    print("missing", p, file=sys.stderr)
+                    continue
+                im = Image.open(p).convert("RGBA")
+                a = np.asarray(im).copy()
+                x0, x1 = max(0, plate["l"] - CLEAR_PAD), min(im.size[0], plate["r"] + CLEAR_PAD + 1)
+                repair_plate_edge(a, plate["bot"], x0, x1)
+                Image.fromarray(a.astype(np.uint8), "RGBA").save(p, "WEBP", quality=92, method=6)
+                print("repaired", os.path.basename(p))
+        return
     for pid in PLATE:
         if args.only and args.only != pid and args.only != TAG[pid]:
             continue

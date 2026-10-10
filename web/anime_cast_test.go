@@ -89,8 +89,11 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 			}
 		}
 	}
-	// 段首的「立绘层」规则必须按高度放全身像、并且裁在她手里那块牌子的下沿：background-size 用 auto + --cast-figure-h，
-	// 高度用 figure-h × --cast-cut。改回「按宽度铺满」= 她会被拉成满宽，两侧留白和牌面落点全错。
+	// 段首的「立绘层」规则必须按高度放**整身**立绘：background-size 用 auto + --cast-figure-h，
+	// 高度就是 figure-h（头顶 → 脚）。看板只盖住「牌子」那一段，牌子以下的裙 / 腿 / 袜 / 鞋
+	// 由这一层画出来、在看板下沿以下露出来（用户反馈过「下半身没了」）。
+	// 改回「按宽度铺满」= 她会被拉成满宽，两侧留白和牌面落点全错；
+	// 反过来再按 --cast-cut 裁到牌子的下沿 = 又把下半身裁掉。
 	stage := regexp.MustCompile(`(?s)html\[data-skin="anime"\] \.anime-stage \{(.*?)\n\}`).FindStringSubmatch(string(css))
 	if stage == nil {
 		t.Fatal("anime.css 里找不到 .anime-stage 的规则")
@@ -98,13 +101,28 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		body := stage[1]
 		for _, want := range []string{
 			"background-size: auto var(--cast-figure-h, 720px);",
-			"height: calc(var(--cast-figure-h, 720px) * var(--cast-cut, 0.44));",
+			"height: var(--cast-figure-h, 720px);",
 			"overflow: hidden;",
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("anime.css 的 .anime-stage 少了 %q", want)
 			}
 		}
+	}
+	// 看板定高 + 板内数据滚动：板下沿以下留给立绘下半身（板高 --cast-board-h 决定露出多少），
+	// 板面装不下的数据在板内竖滚，不许挂到板外（上一版板外的数据就是靠这条拦住的）。
+	if !strings.Contains(string(css), "height: var(--cast-board-h, 140px);") {
+		t.Error("anime.css 的 .card-body（看板）要用 --cast-board-h 定高：板下沿以下要留给立绘下半身")
+	}
+	if !strings.Contains(string(css), ".card-body > [id] {") ||
+		!regexp.MustCompile(`(?s)\.card-body > \[id\] \{[^}]*overflow-y: auto`).MatchString(string(css)) {
+		t.Error("anime.css 的板内数据区（.card-body > [id]）要 overflow-y: auto：板装不下的数据在板内滚")
+	}
+	// 卡壳必须是定位元素：双手层（absolute, top:0）要相对这张卡放。少了 position: relative，
+	// 四台卡的双手层会一起锚到更高的定位祖先（body），几只手就飘到页面顶上的概览区
+	//（用户发现「悬空的手指」）。
+	if !regexp.MustCompile(`(?s)html\[data-skin="anime"\] \.node-card \{[^}]*position: relative`).MatchString(string(css)) {
+		t.Error("anime.css 的 .node-card 要 position: relative：双手层是绝对定位，得相对这张卡放")
 	}
 	// 眨眼要用同一个人的闭眼帧：图不在、或样式里没引用，那台机就不会眨眼（其它三台照眨，更难发现）。
 	for _, m := range ids {

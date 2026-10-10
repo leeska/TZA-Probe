@@ -854,7 +854,7 @@ function gridInner(n) {
   // 其余皮肤下 .anime-stage / .anime-hands 都是 display:none（见 styles.css）。
   //
   // 三层顺序就是这个函数返回的顺序 = DOM 顺序 = 看到的先后：
-  //   ① 人物层 .anime-stage（图里已经没有了那块牌子与双手，牌子那块矩形是透明的）
+  //   ① 人物层 .anime-stage（图里已经没有了那块牌子与双手，牌子那块矩形是透明的；现在画满整身高）
   //   ② HTML 看板 .card-body（板面、板沿、节点数据都是 HTML 自己画的）
   //   ③ 双手层 .anime-hands（带 alpha 的手，z-index 压在看板上沿）
   // 于是看板上沿是 HTML 的边框，原图那块牌子的描边再也透不出来；手仍然是从板上面搭下来的。
@@ -864,7 +864,12 @@ function gridInner(n) {
   const stage = cast
     ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
     : "";
-  const hands = cast ? `<div class="anime-hands" aria-hidden="true"></div>` : "";
+  // 下半身占位层：人物层画满整身高，看板只盖住「牌子」那一段，牌子以下的裙 / 腿 / 袜 / 鞋
+  // 由人物层自己画出来；但看板有负 margin、把流程往上拉，卡片会在看板下沿处收口。
+  // 这一层透明、只负责把卡片撑到整身高（高度 = 看板下沿 → 立绘脚底），下半身才不会被裁掉。
+  // 只在有立绘的节点上渲染。
+  const legs = cast ? `<div class="anime-legs" data-bleed aria-hidden="true"></div>` : "";
+  const hands = cast ? `<div class="anime-hands" data-bleed aria-hidden="true"></div>` : "";
   // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心
   // 不被它们挤动——收起 / 展开时名字落在同一坐标（折叠只影响板面上其余的内容/数据）。
   const cardTop =
@@ -877,7 +882,7 @@ function gridInner(n) {
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
   // 「详细」是内容里唯一能进详情页的控件（卡片空白、数据行都不再导航）。
-  return `${stage}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="detail-row"><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}`;
+  return `${stage}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="detail-row"><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${legs}${hands}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

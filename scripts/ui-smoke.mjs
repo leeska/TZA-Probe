@@ -1107,10 +1107,10 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "双手层默认也不显示：它只在二次元皮肤里放开（别的皮肤下它是一张没样式的裸图）",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-stage \{[^}]*display: block[^}]*height: calc\(var\(--cast-figure-h, 720px\) \* var\(--cast-cut, 0\.44\)\)/s.test(animeCSS) &&
+    /html\[data-skin="anime"\] \.anime-stage \{[^}]*display: block[^}]*height: var\(--cast-figure-h, 720px\)/s.test(animeCSS) &&
       /background-size: auto var\(--cast-figure-h, 720px\)/.test(animeCSS) &&
       /overflow: hidden/.test(animeCSS),
-    "立绘是透明底全身像：按高度缩放（不是按宽度铺满），只露到她手里那块牌子的下沿",
+    "立绘是透明底全身像：按高度缩放（不是按宽度铺满），整身高都画出来（看板下沿以下露下半身）",
   );
   assert(
     /html\[data-skin="anime"\] \.anime-stage\[data-cast="jp-nosla-gen2"\],[\s\S]*?\.anime-stage\[data-cast="us-bwh-dc9"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
@@ -1143,17 +1143,23 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   );
   const boardRule = /html\[data-skin="anime"\] \.node-card\[data-cast\] \.card-body \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
   assert(
-    /z-index: 2/.test(boardRule) && /border: 3px solid #cdb7b4/.test(boardRule) && /#fffdfb/.test(boardRule),
-    "看板是 HTML 自己画的（z-index 2 压住人物层；白底 + 3px 灰褐板沿）：板沿以上不许再有原图描边",
+    /z-index: 2/.test(boardRule) && /border: 2px solid #cdb7b4/.test(boardRule) && /#fffdfb/.test(boardRule) &&
+      /height: var\(--cast-board-h, 140px\)/.test(boardRule),
+    "看板是 HTML 自己画的（z-index 2 压住人物层；白底 + 2px 灰褐板沿 + 定高）：板沿以上不许再有原图描边，板下沿以下留给立绘下半身",
   );
   assert(
-    /margin: calc\(\(var\(--cast-board-t, 0\.30\) - var\(--cast-cut, 0\.44\)\) \* var\(--cast-figure-h, 720px\) - 16px\) 1px 0/.test(boardRule),
-    "看板上沿要落在画里那块牌子的上外沿（--cast-board-t）；负 margin 抵消立绘层的高 + 它的下外边距",
+    /margin: calc\(\(var\(--cast-board-t, 0\.30\) - 1\) \* var\(--cast-figure-h, 720px\) - 16px\) 1px 0/.test(boardRule),
+    "看板上沿要落在画里那块牌子的上外沿（--cast-board-t）：立绘层现在画满整身高 + 下外边距 16，负 margin 要把板顶拉回去",
+  );
+  const castScrollRule = /html\[data-skin="anime"\] \.node-card\[data-cast\] \.card-body > \[id\] \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
+  assert(
+    /overflow-y: auto/.test(castScrollRule) && /min-height: 0/.test(castScrollRule),
+    "板装不下的数据要在板内竖滚（.card-body > [id] 的 overflow-y: auto）：数据不许挂到板外",
   );
   assert(
     /html\[data-skin="anime"\] \.anime-stage \{[^}]*position: relative[^}]*z-index: 1/s.test(animeCSS) &&
-      /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body \{[^}]*height: calc\(var\(--cast-figure-h, 720px\) \* \(var\(--cast-cut, 0\.44\) - var\(--cast-board-t, 0\.30\)\)[^}]*overflow: hidden/s.test(animeCSS),
-    "人物层 z-index 1；收起态只把看板压到牌子那么高（板沿与坐标都不动，名字才不会跑位置）",
+      /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body \{[^}]*height: var\(--cast-board-h-roll, 48px\)[^}]*overflow: hidden/s.test(animeCSS),
+    "人物层 z-index 1；收起态看板只留头部（板沿与名字坐标都不动，名字才不会跑位置）",
   );
   // 名字固定在板面正中：两态同一个盒子（居中靠 flex），状态点与折叠箭头绝对定位在两端不挤它。
   const foldNameRule = /html\[data-skin="anime"\] \.card-top \.fold-name \{([^}]*)\}/.exec(animeCSS)?.[1] || "";

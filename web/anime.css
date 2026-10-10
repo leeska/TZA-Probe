@@ -601,14 +601,15 @@ html[data-skin="anime"][data-theme="dark"] ::-webkit-scrollbar-thumb {
 html[data-skin="anime"] .anime-stage {
   display: block;
   /* 相对定位 + z-index:1：HTML 看板（z-index 2）与双手层（z-index 3）都压在它上面。
-     层级只在这张卡自己的层叠上下文里比（卡壳是 position: relative），不越过卡片。 */
+     层级只在这张卡自己的层叠上下文里比（卡壳现在是 position: relative，见下面 .node-card 那条），不越过卡片。 */
   position: relative;
   z-index: 1;
   /* 卡片自己有 22px 内边距，立绘层要通铺到卡片边（圆角交给卡片的 overflow:hidden 裁） */
   margin: -22px -22px 16px;
-  /* 摊开时只露「头顶 → 她手里那块牌子的下沿」（--cast-cut）：牌面以下交给 HTML 看板 */
-  height: calc(var(--cast-figure-h, 720px) * var(--cast-cut, 0.44));
-  overflow: hidden;   /* 牌子以下那半身裁掉；眨眼层也是靠这个裁（它是全高） */
+  /* 画满整身高（头顶 → 脚）：看板只盖住「牌子」那一段，牌子以下的裙/腿/袜/鞋仍然画出来、
+     在看板下沿以下露出来（用户反馈过「下半身没了」）。 */
+  height: var(--cast-figure-h, 720px);
+  overflow: hidden;   /* 眨眼层也在这层里（它是全高），圆角靠卡片裁 */
   background-image: var(--cast-art-url);
   background-repeat: no-repeat;
   background-position: top center;
@@ -652,6 +653,11 @@ html[data-skin="anime"] .node-card {
   background: var(--anime-sign);
   border: 1px solid var(--anime-sign-line);
   box-shadow: var(--anime-shadow-sm);
+  /* 卡壳必须是**定位元素**：双手层 .anime-hands 是绝对定位（top:0），要相对这张卡来放。
+     基础样式表里的 .node-card 其实没有 position（anime.css 上面那句老注释写错了）；
+     漏了它，四台卡的双手层会一起去找更高的定位祖先（body），几只手就飘到页面顶上、
+     落在概览那一排卡片里（用户发现「悬空的手指」）。牌子上的手一直没真正贴上去，就是这个。 */
+  position: relative;
 }
 
 html[data-skin="anime"] .node-card:hover {
@@ -689,6 +695,15 @@ html[data-skin="anime"] .node-card[data-cast] {
   background-image: var(--cast-motif);
   background-size: var(--cast-motif-size);
   border-color: var(--cast-line);
+}
+
+/* 看板高度：板定高、板内数据滚动（见上面 .card-body 与滚动区两条），板下沿以下留给立绘下半身。
+   板下沿越低、露出的下半身越多；实测（四台构图一致）：板底取到裙摆下沿稍上，才能同时看到
+   裙摆 + 腿 + 袜 + 鞋，且不切断裙褶。手机（立绘 620）板 140、桌面（立绘 720）板 150。
+   收起态板只剩头部：2px 边框 + 8px 内边距 + 28px 名字行 + 8px + 2px = 48px。 */
+html[data-skin="anime"] .node-card[data-cast] {
+  --cast-board-h: 140px;
+  --cast-board-h-roll: 48px;
 }
 
 /* JP-NoSla-Gen2 · 家人云 × 日本：樱花粉牌面 + 极淡花瓣点 */
@@ -854,6 +869,29 @@ html[data-skin="anime"] .node-grid.node-list .anime-stage {
 html[data-skin="anime"] .node-grid.node-list .anime-hands {
   display: none;
 }
+html[data-skin="anime"] .node-grid.node-list .anime-legs {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   N+3b. ④ 下半身占位层（.anime-legs）
+
+   人物层（.anime-stage）现在画满整身高，看板（.card-body）只盖住「牌子」那一段；
+   牌子以下的裙 / 腿 / 袜 / 鞋由人物层自己画出来、在看板下沿以下露出来——不需要再叠一层图。
+   这一层只干一件事：**把卡片撑到整身高**。卡片是 flex 纵向排布，看板有负 margin、把流程
+   往上拉，所以「看板底边」就在流程的末端；没有这一层，卡片会在看板下沿处收口，把她的下半身裁掉。
+   高度 = figure-h × (1 − board-t) − 看板高 = 看板下沿 → 立绘脚底那一段。
+   pointer-events: none：不抢板面 / 数据行 / 「详细」按钮的点击。
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] .anime-legs {
+  display: block;
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  margin: 0 -22px;
+  height: calc(var(--cast-figure-h, 720px) * (1 - var(--cast-board-t, 0.30)) - var(--cast-board-h, 140px));
+  pointer-events: none;
+}
 
 /* --------------------------------------------------------------------------
    N+4. ② HTML 看板：板面上排节点数据
@@ -872,22 +910,59 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
   position: relative;
   z-index: 2;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
   width: calc(100% - 2px);
   min-width: 0;
   max-width: 100%;
-  margin: calc((var(--cast-board-t, 0.30) - var(--cast-cut, 0.44)) * var(--cast-figure-h, 720px) - 16px) 1px 0;
-  /* 上内边距 27px 让名字行的中心落在板外上沿下方 44px（3px 边框 + 27 + 28/2）——
-     收起 / 展开同一坐标，折叠只影响下面的数据。 */
-  padding: 27px 15px 16px;
-  border: 3px solid #cdb7b4;
+  /* 看板上沿 = 立绘高度的 --cast-board-t（画里那块牌子的上外沿，她双手搭在那儿）。
+     人物层现在画满整身高、下外边距 16，所以负 margin = −(1 − board-t) × figure-h − 16。 */
+  margin: calc((var(--cast-board-t, 0.30) - 1) * var(--cast-figure-h, 720px) - 16px) 1px 0;
+  /* 板高固定（--cast-board-h）：板以上的数据在板内滚动（见 N+4b），板以下露出她的下半身。
+     定高才能保证「板下沿」是一个可算的量，人物下半身露在哪一段就由它决定。 */
+  height: var(--cast-board-h, 140px);
+  padding: 8px;
+  border: 2px solid #cdb7b4;
   /* 圆角交给皮肤的统一尺度（html[data-skin="anime"] * 的 --anime-radius，14px）：这块板和其他面
      一样是「二次元的大圆角」，也接近 gpt 方案里的 12px。 */
+  border-radius: 14px;
   background: #fffdfb;
+  overflow: hidden;
 }
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body {
   background: #26242a;
   border-color: #4b434a;
 }
+
+/* 板内滚动区：板高定死之后，剩下的数据（地区 / 资源 / 流量 / 到期 / 延迟 / 三网回程）在这块里
+   竖着滚（gpt-6.1-sol 定的方案：宁可板内滚动，也要把立绘下半身让出来）。细滚动条当提示，
+   不遮住内容；滚到哪一屏都还在板面以内，数据不会挂到板外。 */
+html[data-skin="anime"] .node-card[data-cast] .card-body > [id] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(0 0 0 / 0.22) transparent;
+}
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body > [id] {
+  scrollbar-color: rgb(255 255 255 / 0.24) transparent;
+}
+html[data-skin="anime"] .node-card[data-cast] .card-body > [id]::-webkit-scrollbar { width: 4px; }
+html[data-skin="anime"] .node-card[data-cast] .card-body > [id]::-webkit-scrollbar-track { background: transparent; }
+html[data-skin="anime"] .node-card[data-cast] .card-body > [id]::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 0.22);
+  border-radius: 3px;
+}
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body > [id]::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.24);
+}
+
+/* 头部（状态点 + 名字 + 折叠箭头 + 标签）固定在板顶，不跟着数据滚：名字两态落在同一个坐标。
+   卡片头在板内的上偏移 = 2px 边框 + 8px 内边距，展开 / 收起都一样。 */
+html[data-skin="anime"] .node-card[data-cast] .card-top { margin-bottom: 0; flex: 0 0 auto; }
 
 /* 名字固定在板面正中：水平居中、两态同一坐标。状态点与折叠箭头都绝对定位在两端，
    不参与居中，所以名字的横向中心就是板面的中心。 */
@@ -954,14 +1029,19 @@ html[data-skin="anime"] .detail-open {
 html[data-skin="anime"] .detail-open:hover { border-color: var(--cast-accent, #e8457c); }
 
 /* --------------------------------------------------------------------------
-   N+5. 收起态：只把板压到「画里那块牌子」那么高，别的都不动
+   N+5. 收起态：板压到只剩头部（名字 + 状态点 + 折叠箭头）
 
-   名字在板面正中的同一坐标（板沿、板高、内边距都没变），双手层还压在板沿上，
-   人物层还是露到牌子下沿 —— 折叠影响的只有板面上其余的内容/数据。
+   看板上沿不动（--cast-board-t 的坐标没变）、板内名字行在板内的上偏移也没变
+   （都是 2px 边框 + 8px 内边距），所以名字两态落在同一个坐标；
+   折叠影响的是板高与板内的数据（数据整块 display:none），以及下半身占位层跟着补足高差
+   —— 卡片总高恒等于整身高，立绘不会被压低、也不会在板沿处被裁。
    -------------------------------------------------------------------------- */
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body {
-  height: calc(var(--cast-figure-h, 720px) * (var(--cast-cut, 0.44) - var(--cast-board-t, 0.30)));
+  height: var(--cast-board-h-roll, 48px);
   overflow: hidden;
+}
+html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .anime-legs {
+  height: calc(var(--cast-figure-h, 720px) * (1 - var(--cast-board-t, 0.30)) - var(--cast-board-h-roll, 48px));
 }
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body > [id] { display: none; }
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-top .card-actions { display: none; }
@@ -1046,5 +1126,13 @@ html[data-skin="anime"][data-theme="dark"] .node-card:not([data-cast]) .card-bod
 @media (max-width: 380px) {
   html[data-skin="anime"] .node-card[data-cast] {
     --cast-figure-h: 620px;
+  }
+}
+
+/* 桌面（视口 >380px）：立绘 720、看板 150（`--cast-board-h` 的默认是手机的 140）。
+   板高只影响「板下沿落在立绘的哪一行」，即下半身露出多少；两档都是「露到裙摆、还能看到腿」。 */
+@media (min-width: 381px) {
+  html[data-skin="anime"] .node-card[data-cast] {
+    --cast-board-h: 150px;
   }
 }
