@@ -169,7 +169,7 @@ html[data-skin="shadcn"] :is(.button, button.primary, button.danger, .form-foote
   border-radius: var(--shadcn-r-md) !important;
 }
 
-html[data-skin="shadcn"] :is(.select-pop, .skin-menu, details[open], .unlock-pop, .select-opt, .skin-option, #toast) {
+html[data-skin="shadcn"] :is(.select-pop, .skin-menu, details[open]:not(.more), .unlock-pop, .select-opt, .skin-option, #toast) {
   border-radius: var(--shadcn-r-lg) !important;
 }
 
@@ -512,7 +512,7 @@ html[data-skin="shadcn"] :is(.select-shell.open .select-trigger, .select-trigger
   box-shadow: none;
 }
 
-html[data-skin="shadcn"] :is(.select-pop, .skin-menu, details[open], .unlock-pop) {
+html[data-skin="shadcn"] :is(.select-pop, .skin-menu, details[open]:not(.more), .unlock-pop) {
   border: 1px solid var(--glass-border);
   background: var(--glass-bg-elevated);
   box-shadow: var(--shadcn-shadow-md);

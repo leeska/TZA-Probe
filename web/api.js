@@ -40,6 +40,15 @@ export function modal(title, body) {
   delete d.dataset.nodeId;
   d.innerHTML = `<div class="modal-head"><h2 id="dialog-title">${esc(title)}</h2><button type="button" class="icon close" aria-label="关闭">×</button></div>${body}`;
   d.querySelector(".close").onclick = () => d.close();
+  // 每个表单底栏左侧补一枚「取消」：长表单（编辑节点要滚三四屏）里不必再回到顶部找 ×。
+  for (const footer of d.querySelectorAll(".form-footer")) {
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "cancel";
+    cancel.textContent = "取消";
+    cancel.onclick = () => d.close();
+    footer.prepend(cancel);
+  }
   d.onclick = (e) => {
     const rect = d.getBoundingClientRect();
     const isInDialog =

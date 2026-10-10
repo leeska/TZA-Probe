@@ -808,6 +808,10 @@ await until(() => $("#configure-webhook"), "alert page");
 $("#configure-webhook").click();
 assert($('#dialog input[name="webhook"]'));
 $(".close").click();
+// 面板显示项（延迟色带 / 默认外观）在单独的「面板设置」页，不再挂在告警页里。
+assert(!$("#latency-window"), "告警页不该再出现面板显示项");
+$('[data-tab="settings"]').click();
+await until(() => $("#latency-window"), "settings page");
 // 面板显示：延迟色带的时间窗后台可控（默认 60 分钟）。改完读回来确认落库，再改回默认，
 // 免得后面那批色带断言跑在更窄的窗口上。
 const windowField = $("#latency-window");

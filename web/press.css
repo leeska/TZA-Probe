@@ -528,7 +528,7 @@ html[data-skin="press"] .route-label {
 
 html[data-skin="press"] .select-pop,
 html[data-skin="press"] .skin-menu,
-html[data-skin="press"] details[open],
+html[data-skin="press"] details[open]:not(.more),
 html[data-skin="press"] .unlock-pop {
   border: 2px solid var(--glass-border);
   background: var(--glass-bg-elevated);

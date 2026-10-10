@@ -559,10 +559,15 @@ h1 {
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.node-card .detail-row {
-  display: flex;
-  justify-content: flex-end;
-  margin: 2px 0 8px;
+/* 「详细」挂在名字下面那排徽标的右端（以前单独占一行、只放这一枚按钮，白占 ~30px）。
+   徽标排拉满整行，按钮靠 margin-left: auto 顶到右缘；名字收起时它仍在，照样能进详情。 */
+.node-card .card-top .card-actions {
+  flex: 1 1 100%;
+}
+.node-card .card-top .detail-open {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
 }
 .node-card .card-body > [id][hidden],
 .node-card .card-top .card-actions[hidden] {
@@ -589,7 +594,7 @@ h1 {
   .node-card .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .node-card .card-body :is(.card-top, .card-actions, .node-sub, .detail-row) {
+  .node-card .card-body :is(.card-top, .card-actions, .node-sub) {
     min-width: 0;
     max-width: 100%;
     flex-wrap: wrap;
@@ -1742,6 +1747,24 @@ label.checkbox {
   margin-top: 22px;
 }
 
+/* 弹窗里的底栏贴住弹窗底边：编辑节点要滚三四屏才到「保存」，现在随时都在。
+   弹窗本身是滚动容器且带内边距，所以底栏用负外边距铺满整宽、bottom 抵掉底部内边距，
+   背景沿用弹窗同一枚 --glass-bg（四套皮肤都靠它给面上色），再加一层模糊挡住滚过去的内容。 */
+dialog {
+  --dialog-pad: 28px;
+}
+dialog .form-footer {
+  position: sticky;
+  bottom: calc(-1 * var(--dialog-pad));
+  z-index: 2;
+  margin: 22px calc(-1 * var(--dialog-pad)) calc(-1 * var(--dialog-pad));
+  padding: 14px var(--dialog-pad) var(--dialog-pad);
+  border-top: 1px solid var(--line);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
 .hint {
   font-size: 11px !important;
   color: var(--muted) !important;
@@ -1993,6 +2016,26 @@ details summary {
 
 details[open] summary {
   margin-bottom: 14px;
+}
+
+/* 说明文字里的「展开看细则」：只是一行小链接，不画成卡片。正文只留一两句结论，
+   判定细则收在这里（节点详情的回程标签、编辑节点的降速规则）。 */
+details.more {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin: 6px 0 0;
+  background: none;
+}
+details.more summary {
+  font-size: 11px;
+  font-weight: 500;
+}
+details.more[open] summary {
+  margin-bottom: 0;
+}
+details.more .hint {
+  margin-top: 6px;
 }
 
 pre,
@@ -2685,14 +2728,16 @@ pre,
   .public-main {
     padding: 0 16px;
   }
+  /* 手机上首屏留给节点：标语那一块（英文眉题 + 两行大标题 + 说明）在 375px 宽上占掉约半屏，
+     节点要往下滑才看得到。这里整块藏掉，只留「最近同步」压成一条细栏。 */
   .hero {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-    padding: 24px 0 20px;
+    align-items: stretch;
+    gap: 0;
+    padding: 14px 0 14px;
   }
-  .hero h1 {
-    font-size: 28px;
+  .hero > div:first-child {
+    display: none;
   }
   .hero-meta {
     width: 100%;
@@ -2701,6 +2746,10 @@ pre,
     justify-content: space-between;
     text-align: left;
     gap: 10px;
+    padding: 9px 16px;
+  }
+  .hero-meta strong {
+    font-size: 16px;
   }
   .overview {
     grid-template-columns: 1fr 1fr;
@@ -2741,17 +2790,19 @@ pre,
   .sidebar-bottom small {
     display: none;
   }
+  /* 四个入口排成 2 × 2：一行排四个时每格只剩 ~80px，「告警与通知」会被拆成一字一行。 */
   .sidebar nav {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
     gap: 4px;
   }
   .sidebar nav button {
-    flex: 1;
     justify-content: center;
     gap: 8px;
     padding: 9px 8px;
     font-size: 13px;
+    white-space: nowrap;
   }
   .sidebar-bottom {
     width: 100%;
@@ -2776,6 +2827,7 @@ pre,
   }
   dialog {
     padding: 20px;
+    --dialog-pad: 20px;
   }
 }
 

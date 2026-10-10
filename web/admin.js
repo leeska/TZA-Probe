@@ -80,7 +80,7 @@ function login() {
   });
 }
 function shell() {
-  container.innerHTML = `<div class="admin-layout"><aside class="sidebar">${brandHTML}<div class="sidebar-caption">WORKSPACE</div><nav><button data-tab="nodes"><svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg><span>节点管理</span></button><button data-tab="tasks"><svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3"/><circle cx="10" cy="10" r="0.8" fill="currentColor"/></svg><span>网络探测</span></button><button data-tab="alerts"><svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><polyline points="10 6 10 10 13 12"/></svg><span>告警与通知</span></button></nav><div class="sidebar-bottom"><a href="/">公开面板 ↗</a>${skinButton("sidebar-skin")}${themeButton("sidebar-theme")}<button id="logout">退出登录</button><small>独立运行 · TZA PROBE V2</small></div></aside><main class="admin-main"><header class="admin-top"><span>控制台 <span class="muted">/</span> <b id="breadcrumb"></b></span><span class="pill">● 系统运行中</span></header><div id="admin-content"></div></main></div>`;
+  container.innerHTML = `<div class="admin-layout"><aside class="sidebar">${brandHTML}<div class="sidebar-caption">WORKSPACE</div><nav><button data-tab="nodes"><svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg><span>节点管理</span></button><button data-tab="tasks"><svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3"/><circle cx="10" cy="10" r="0.8" fill="currentColor"/></svg><span>网络探测</span></button><button data-tab="alerts"><svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><polyline points="10 6 10 10 13 12"/></svg><span>告警与通知</span></button><button data-tab="settings"><svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="16" y2="6"/><line x1="4" y1="14" x2="16" y2="14"/><circle cx="8" cy="6" r="2" fill="currentColor"/><circle cx="12" cy="14" r="2" fill="currentColor"/></svg><span>面板设置</span></button></nav><div class="sidebar-bottom"><a href="/">公开面板 ↗</a>${skinButton("sidebar-skin")}${themeButton("sidebar-theme")}<button id="logout">退出登录</button><small>独立运行 · TZA PROBE V2</small></div></aside><main class="admin-main"><header class="admin-top"><span>控制台 <span class="muted">/</span> <b id="breadcrumb"></b></span><span class="pill">● 系统运行中</span></header><div id="admin-content"></div></main></div>`;
   container.querySelectorAll("[data-tab]").forEach(
     (b) =>
       (b.onclick = guard(async () => {
@@ -101,6 +101,7 @@ async function render() {
     nodes: "节点管理",
     tasks: "网络探测",
     alerts: "告警与通知",
+    settings: "面板设置",
   }[tab];
   nodes = await api("/admin/nodes");
   if (tab === "nodes") {
@@ -112,6 +113,7 @@ async function render() {
     renderTasks();
   }
   if (tab === "alerts") await renderAlerts();
+  if (tab === "settings") await renderSettings();
 }
 const content = () => container.querySelector("#admin-content");
 function renderNodes() {
@@ -344,7 +346,7 @@ function nodeForm(existing) {
         ["out", "仅上传"],
       ],
       n.traffic_mode,
-    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.currency), n.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), n.price_period), n.price_period || "")}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line_mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间只取这一时刻的「日 + 时分秒」，逐月顺延；当月没有该日时取当月最后一天。到期时间同样精确到秒，续费提醒按它计算。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。达量降速按线路自己的规则判：<b>窗口平均带宽</b>用 Agent 上报的网卡计数按小时累计取平均（德国商家常见口径：近 24 小时平均超过 100 Mbit/s 降速到 100 Mbit/s），平均口径与本节点的流量统计方式一致；<b>额度用满后限速</b>用本周期用量比额度，用满即视为已降速（DMIT T1 这类「1000 GB 取高值 @ 4 Gbps 突发，用满后不计量但限速到 50/100 Mbit/s」——这时「线路带宽」填突发峰值）。填 0 表示这条线路没有这种规则，面板与告警都不显示。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数（默认 60）", "offline_seconds", ruleValue("offline", "offline_seconds"), "number", 'min="0" max="86400" placeholder="默认 60"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费（默认 7）", "renewal_days", ruleValue("renewal", "renewal_days"), "number", 'min="0" max="365" placeholder="默认 7"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比（默认 80）", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100" placeholder="默认 80"')}</div><div class="rule-row">${check("达量降速警告", "throttle", a.throttle)}<small class="hint">按上面的规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（需先填速率）。</small></div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %（默认 90）", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("内存阈值 %（默认 90）", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("负载持续秒数（默认 300）", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400" placeholder="默认 300"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次；默认 0）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"')}<p class="hint">新建节点的默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU/内存 90%、负载持续 300 秒、重复间隔 0（只提醒一次）；未勾选的规则不生效。45 秒未上报判定离线，再按设置等待后通知；恢复通知一次。重复间隔至少 5 分钟。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.currency), n.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), n.price_period), n.price_period || "")}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line_mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间按「日 + 时分秒」逐月顺延，当月没有该日时取最后一天；到期时间用于续费提醒。首次接入时建立流量基线，不补算历史用量。降速阈值填 0 表示这条线路没有降速规则。</p><details class="more"><summary>降速规则说明</summary><p class="hint"><b>窗口平均带宽</b>：按 Agent 上报的网卡计数，取统计窗口内的平均速率，达到阈值即视为降速（常见口径：近 24 小时平均超过 100 Mbit/s 降到 100 Mbit/s），口径与本节点的流量计费方式一致。<b>额度用满后限速</b>：本周期用量达到额度即视为已降速，适合「用满后不计量但限速」的套餐，这时「线路带宽」填突发峰值。主机重启或网卡变化时会自动重建流量基线。</p></details></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数（默认 60）", "offline_seconds", ruleValue("offline", "offline_seconds"), "number", 'min="0" max="86400" placeholder="默认 60"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费（默认 7）", "renewal_days", ruleValue("renewal", "renewal_days"), "number", 'min="0" max="365" placeholder="默认 7"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比（默认 80）", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100" placeholder="默认 80"')}</div><div class="rule-row">${check("达量降速警告", "throttle", a.throttle)}<small class="hint">按上面的规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（需先填速率）。</small></div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %（默认 90）", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("内存阈值 %（默认 90）", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("负载持续秒数（默认 300）", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400" placeholder="默认 300"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次；默认 0）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"')}<p class="hint">新建节点的默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU/内存 90%、负载持续 300 秒、重复间隔 0（只提醒一次）。未勾选的规则不生效；节点 45 秒未上报即判定离线，恢复时通知一次；重复间隔至少 5 分钟。通知出口在“告警与通知”页配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
   // 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
   const form = d.querySelector("form"),
@@ -485,42 +487,8 @@ async function renderAlerts() {
     : settings.webhook_configured
       ? "Webhook"
       : "尚未配置";
-  // 时间范围给几个常用档位（分钟是接口单位，档位只是界面）：
-  // 探测结果保留 7 天，所以更长的一律取到保留上限，不另设选项。
-  const windows = [
-    [60, "1 小时"],
-    [360, "6 小时"],
-    [1440, "24 小时"],
-    [4320, "3 天"],
-    [10080, "7 天（上限）"],
-  ];
-  const windowNow = Number(settings.latency_window_minutes ?? 60);
-  const windowOptions = (windows.some(([m]) => m === windowNow) ? windows : [...windows, [windowNow, `${windowNow} 分钟`]])
-    .sort((a, b) => a[0] - b[0])
-    .map(([m, label]) => `<option value="${m}"${m === windowNow ? " selected" : ""}>${label}</option>`)
-    .join("");
-  // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
-  const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
-  const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : "glass";
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>按节点配置提醒阈值，在这里管理统一通知出口和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section><section class="panel webhook-panel"><div><h3>面板显示</h3><p>公开面板的延迟色带每格代表一次探测，这里决定往回取多长的历史。</p><small>探测结果保留 7 天，所以一个月、三个月与「全部」目前都取到 7 天。窗口越大取数越慢：本机 17 台实测 1 小时 0.01 秒、24 小时 0.4 秒、7 天 1.2 秒（色带每组最多 20 格，密采目标 1 小时就满，选大只对稀疏目标有意义）。</small></div><div class="webhook-actions"><label class="window-field">延迟色带时间范围<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>前台默认外观</h3><p>访客第一次打开面板时按这里的明暗与风格渲染；他自己点过右上角的切换之后，就按他选的那份来。</p><small>默认值在样式表之前就已落到 &lt;html&gt; 上，所以首屏不会先闪一下内置默认再跳到这套。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${s.id}"${s.id === skinNow ? " selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section><section class="panel"><div class="panel-head"><h3>最近事件</h3><span class="muted">最多 100 条 · 保存 90 天</span></div><div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody>${events.map((e) => `<tr><td data-label="时间">${date(e.at)}</td><td data-label="节点">${esc(e.node_name)}</td><td data-label="类型">${esc(kindName[e.kind] || e.kind)}</td><td data-label="状态"><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td data-label="内容">${esc(e.message)}</td><td data-label="通知">${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : Date.now() / 1000 - e.at > 86400 ? "超过 24 小时，不再发送" : configured ? "待发送 / 重试" : "未配置出口"}<small>${e.attempts} 次尝试</small>${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">暂无事件。提醒规则可在节点编辑页单独开启。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>按节点配置提醒阈值，在这里管理统一通知出口和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section><section class="panel"><div class="panel-head"><h3>最近事件</h3><span class="muted">最多 100 条 · 保存 90 天</span></div><div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody>${events.map((e) => `<tr><td data-label="时间">${date(e.at)}</td><td data-label="节点">${esc(e.node_name)}</td><td data-label="类型">${esc(kindName[e.kind] || e.kind)}</td><td data-label="状态"><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td data-label="内容">${esc(e.message)}</td><td data-label="通知">${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : Date.now() / 1000 - e.at > 86400 ? "超过 24 小时，不再发送" : configured ? "待发送 / 重试" : "未配置出口"}<small>${e.attempts} 次尝试</small>${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">暂无事件。提醒规则可在节点编辑页单独开启。</td></tr>'}</tbody></table></div></section>`;
   content().querySelector("#refresh-events").onclick = guard(renderAlerts);
-  // 面板显示项走 /admin/panel：通知那个出口的语义是「空值即清空」，
-  // 用同一个 PUT 保存显示项会顺手把 webhook 或 Bot Token 清掉。
-  content().querySelector("#save-window").onclick = guard(async () => {
-    const minutes = Number(content().querySelector("#latency-window").value);
-    await send("/admin/panel", "PUT", { latency_window_minutes: minutes });
-    await renderAlerts();
-    toast(`延迟色带时间窗已设为 ${minutes} 分钟`);
-  });
-  // 前台默认外观：访客还没自己选过时的第一屏。保存后即写进 /theme-default.js，
-  // 下一次打开（包括别的访客）就是新值；当前这份重渲染一遍让人当场看到。
-  content().querySelector("#save-look").onclick = guard(async () => {
-    const theme = content().querySelector("#default-theme").value;
-    const skin = content().querySelector("#default-skin").value;
-    await send("/admin/panel", "PUT", { default_theme: theme, default_skin: skin });
-    await renderAlerts();
-    toast(`前台默认外观：${THEMES.find((t) => t.id === theme).name} · ${SKINS.find((s) => s.id === skin).name}`);
-  });
   content().querySelector("#test-webhook").onclick = guard(async () => {
     await send("/admin/settings/test", "POST");
     toast("测试通知已送达");
@@ -566,4 +534,45 @@ async function renderAlerts() {
       toast("通知配置已保存");
     });
   };
+}
+
+// 面板设置：公开面板的全站显示项（延迟色带时间窗、访客首屏外观）。以前挂在「告警与通知」页里，
+// 但它们跟告警无关，单独一页。两项都走 /admin/panel 保存（见下方注释）。
+async function renderSettings() {
+  const settings = await api("/admin/settings");
+  // 时间范围给几个常用档位（分钟是接口单位，档位只是界面）：
+  // 探测结果保留 7 天，所以更长的一律取到保留上限，不另设选项。
+  const windows = [
+    [60, "1 小时"],
+    [360, "6 小时"],
+    [1440, "24 小时"],
+    [4320, "3 天"],
+    [10080, "7 天（上限）"],
+  ];
+  const windowNow = Number(settings.latency_window_minutes ?? 60);
+  const windowOptions = (windows.some(([m]) => m === windowNow) ? windows : [...windows, [windowNow, `${windowNow} 分钟`]])
+    .sort((a, b) => a[0] - b[0])
+    .map(([m, label]) => `<option value="${m}"${m === windowNow ? " selected" : ""}>${label}</option>`)
+    .join("");
+  // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
+  const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
+  const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : "glass";
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>公开面板对所有访客生效的显示选项。</p></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片上延迟色带回看的时间范围，每格代表一次探测。</p><small>探测结果保留 7 天；范围越大，面板加载越慢。</small></div><div class="webhook-actions"><label class="window-field">时间范围<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以他自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${s.id}"${s.id === skinNow ? " selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section>`;
+  // 面板显示项走 /admin/panel：通知那个出口的语义是「空值即清空」，
+  // 用同一个 PUT 保存显示项会顺手把 webhook 或 Bot Token 清掉。
+  content().querySelector("#save-window").onclick = guard(async () => {
+    const minutes = Number(content().querySelector("#latency-window").value);
+    await send("/admin/panel", "PUT", { latency_window_minutes: minutes });
+    await renderSettings();
+    toast(`延迟色带时间窗已设为 ${minutes} 分钟`);
+  });
+  // 前台默认外观：访客还没自己选过时的第一屏。保存后即写进 /theme-default.js，
+  // 下一次打开（包括别的访客）就是新值；当前这份重渲染一遍让人当场看到。
+  content().querySelector("#save-look").onclick = guard(async () => {
+    const theme = content().querySelector("#default-theme").value;
+    const skin = content().querySelector("#default-skin").value;
+    await send("/admin/panel", "PUT", { default_theme: theme, default_skin: skin });
+    await renderSettings();
+    toast(`前台默认外观：${THEMES.find((t) => t.id === theme).name} · ${SKINS.find((s) => s.id === skin).name}`);
+  });
 }

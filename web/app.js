@@ -948,12 +948,12 @@ function gridInner(n) {
     `<span class="node-dot ${n.online ? "" : "offline"}"></span>` +
     `<span class="fold-name-text">${esc(n.name)}</span>` +
     `<span class="fold-caret" aria-hidden="true">${FOLD_ICON}</span>` +
-    `</button><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div>`;
+    `</button><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div>`;
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
   // 「详细」是内容里唯一能进详情页的控件（卡片空白、数据行都不再导航）。
-  return `${figure}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="detail-row"><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}`;
+  return `${figure}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

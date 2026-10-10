@@ -181,7 +181,7 @@ html[data-skin="anime"] :is(.button, button.primary, button.danger, .form-footer
   border-radius: var(--anime-r-md) !important;
 }
 
-html[data-skin="anime"] :is(.select-pop, .skin-menu, details[open], .unlock-pop, .select-opt, .skin-option, #toast) {
+html[data-skin="anime"] :is(.select-pop, .skin-menu, details[open]:not(.more), .unlock-pop, .select-opt, .skin-option, #toast) {
   border-radius: var(--anime-r-lg) !important;
 }
 
@@ -524,7 +524,7 @@ html[data-skin="anime"] :is(.select-shell.open .select-trigger, .select-trigger)
   box-shadow: none;
 }
 
-html[data-skin="anime"] :is(.select-pop, .skin-menu, details[open], .unlock-pop) {
+html[data-skin="anime"] :is(.select-pop, .skin-menu, details[open]:not(.more), .unlock-pop) {
   border: 1px solid var(--glass-border);
   background: var(--glass-bg-elevated);
   box-shadow: var(--anime-shadow-md);
@@ -1016,8 +1016,6 @@ html[data-skin="anime"] .card-top .fold-name .fold-caret svg { width: 13px; heig
 /* 收起态箭头翻个身（往下 = 还能展开） */
 html[data-skin="anime"] .node-card[data-rolled="true"] .fold-caret svg { transform: rotate(180deg); }
 
-html[data-skin="anime"] .node-card .detail-row { display: flex; justify-content: flex-end; margin: 0 0 4px; }
-html[data-skin="anime"] .node-card .detail-row:empty { display: none; }
 html[data-skin="anime"] .detail-open {
   height: 22px;
   padding: 0 9px;
