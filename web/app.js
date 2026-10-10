@@ -196,7 +196,9 @@ function metricsInner(n) {
             : `${
                 n.covered_hours > 0
                   ? `近 ${Math.min(n.covered_hours, n.window_hours || 24)} 小时均值 ${mbps(n.avg_bps)}`
-                  : "近 " + (n.window_hours || 24) + " 小时均值统计中"
+                  : n.last_seen
+                    ? "近 " + (n.window_hours || 24) + " 小时均值统计中"
+                    : "接入后开始统计均值"
               } · 阈值 ${n.throttle_mbps} Mbit/s`
         }</small>`
       : "";
@@ -923,8 +925,18 @@ function routeLines(n, f) {
     .join("");
 }
 
+// 管理员登录后，公开页也会列出私有节点（接口按会话放行，方便预览）。不标出来的话，管理员看到
+// 「私有」的机器出现在公开页上，会以为泄露了；访客那边接口根本不返回这些节点，不会看到这枚标签。
+function privateTag(n) {
+  return n.public === false
+    ? '<span class="private-tag" title="这台是私有节点，只有登录后台的管理员能在公开页看到">仅管理员可见</span>'
+    : "";
+}
+
 function gridInner(n) {
   const f = nodeFacts(n);
+  // 卡片上没有可用地址族时不再挂「无探测」标签：卡底那行（「仅主机指标」或「未检测到可用的
+  // 公网 IP 地址」）已经说明了同一件事，两处同时出现只是重复。详情页与列表仍保留固定标签。
   // 二次元皮肤（data-skin="anime"）的线路机立绘：只有名单里的节点才渲染这一层，
   // 其余皮肤下 .anime-cast / .anime-hands 都是 display:none（见 styles.css）。
   //
@@ -949,12 +961,12 @@ function gridInner(n) {
     `<span class="node-dot ${n.online ? "" : "offline"}"></span>` +
     `<span class="fold-name-text">${esc(n.name)}</span>` +
     `<span class="fold-caret" aria-hidden="true">${FOLD_ICON}</span>` +
-    `</button><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div>`;
+    `</button><div class="card-actions">${privateTag(n)}${unlockBadge(n)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div>`;
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
   // 「详细」是内容里唯一能进详情页的控件（卡片空白、数据行都不再导航）。
-  return `${figure}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}`;
+  return `${figure}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${f.hasIPv4 || f.hasIPv6 ? familySwitch(n, f) : ""}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。
@@ -985,7 +997,7 @@ function listInner(n) {
   // 里补一枚「详细」——不然列表里就没有任何进详情的入口了，卡片视图那边也是同一枚按钮。
   // 按钮放在名字下面那排徽标的右端，不跟名字抢同一行：主机格只有 190px，同一行时名字只剩 ~108px，
   // 「HK-BGP-01 · 香港直连」这种常见长度也要折行。
-  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
+  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${privateTag(n)}${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 展示方式只在这里分叉：两个视图取数完全相同，liveTick 那一层找的也是同一批类名。

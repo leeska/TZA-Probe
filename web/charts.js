@@ -24,9 +24,17 @@ export function axisLabels(first, last, count = 5) {
     stamp(Math.round(first + (span * i) / (count - 1))),
   );
 }
+// 日期只在第一格和跨天的那一格写（每格都写「10/11」是噪声）；时间范围只有几分钟时相邻刻度
+// 会落在同一分钟（实测「01:07 01:07」），重复的那格留空。空格仍占位（&nbsp;），刻度不挪。
 export function axisRow(first, last, count = 5) {
-  return `<div class="chart-axis">${axisLabels(first, last, count)
-    .map((label) => `<span><b>${label.date}</b><i>${label.time}</i></span>`)
+  const labels = axisLabels(first, last, count);
+  return `<div class="chart-axis">${labels
+    .map((label, i) => {
+      const prev = labels[i - 1];
+      const showDate = !prev || prev.date !== label.date;
+      const showTime = showDate || prev.time !== label.time;
+      return `<span><b>${showDate ? label.date : "&nbsp;"}</b><i>${showTime ? label.time : "&nbsp;"}</i></span>`;
+    })
     .join("")}</div>`;
 }
 

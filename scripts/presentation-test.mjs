@@ -66,7 +66,13 @@ const ticks = axisLabels(0, 4 * 3600, 5);
 assert.equal(ticks.length, 5, "the axis must subdivide into five ticks");
 assert(ticks.every((t) => t.date && t.time), "every tick carries a date line and a time line");
 assert.notEqual(ticks[0].time, ticks[4].time, "ticks must advance across the range");
-assert.equal((rateHTML.match(/<b>\d+\/\d+<\/b><i>\d\d:\d\d<\/i>/g) || []).length, 5, "labels must split date and time onto two lines");
+assert.equal((rateHTML.match(/<span><b>[^<]*<\/b><i>[^<]*<\/i><\/span>/g) || []).length, 5, "labels must split date and time onto two lines");
+// 同一天只在第一格写日期；几分钟的范围里落在同一分钟的相邻刻度不重复写时间。
+const axisTimes = [...rateHTML.matchAll(/<span><b>([^<]*)<\/b><i>([^<]*)<\/i><\/span>/g)].map((m) => [m[1], m[2]]);
+assert(/^\d+\/\d+$/.test(axisTimes[0][0]), "the first tick carries the date");
+assert(axisTimes.slice(1).every(([d]) => d === "&nbsp;"), "same-day ticks must not repeat the date");
+const shownTimes = axisTimes.map(([, t]) => t).filter((t) => t !== "&nbsp;");
+assert(shownTimes.every((t, i) => i === 0 || t !== shownTimes[i - 1]), "adjacent ticks must not repeat the same minute");
 assert(rateHTML.includes("data-series=") && rateHTML.includes("data-range=") && rateHTML.includes("data-ceiling="), "charts must carry the hover payload");
 // 窄屏下盒子宽度远小于 viewBox 的 680：默认的 preserveAspectRatio="meet" 会把绘图区
 // 等比缩小后垂直居中，折线和网格线就落不到 8/59/110 三条刻度线上。

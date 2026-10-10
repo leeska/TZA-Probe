@@ -1182,6 +1182,11 @@ button.node-name {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+/* 只写「1 Gbit/s」挂在价格下面，看不出是什么（说明只在 title 里）。前面补「线路」二字；
+   用伪元素加，元素文本仍是纯速率（读屏 / 断言取的都是它）。 */
+.line-pill::before {
+  content: "线路 ";
+}
 
 /* Footer */
 .public-main footer {
@@ -3646,5 +3651,50 @@ td .due.soon + small {
 }
 td .due.expired,
 td .due.expired + small {
+  color: var(--red);
+}
+
+/* 私有节点（仅管理员在公开页能看到）的标记：虚线框 + 强调色，与系统标签区分开。 */
+.private-tag {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border: 1px dashed currentColor;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* 需要注意的提醒块（节点接入弹窗的面板地址警告）：与 .notice 同结构，按严重程度换色。 */
+.callout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.callout strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.callout span {
+  color: var(--muted);
+}
+.callout.warn {
+  border: 1px solid color-mix(in srgb, var(--orange) 45%, transparent);
+  background: color-mix(in srgb, var(--orange) 10%, transparent);
+}
+.callout.warn strong {
+  color: var(--orange);
+}
+.callout.danger {
+  border: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+.callout.danger strong {
   color: var(--red);
 }
