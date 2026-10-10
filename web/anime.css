@@ -897,7 +897,9 @@ html[data-skin="anime"] .anime-legs::before {
 html[data-skin="anime"] .node-card[data-cast]:not([data-rolled="true"]) .anime-legs {
   display: none;
 }
-html[data-skin="anime"] .node-card[data-cast]:not([data-rolled="true"]) {
+/* 展开态与收起态都收掉卡片下内边距：看板下沿 / 下半身层下沿都直接贴到卡片底边。
+   （收起态卡高必须与展开态恒等，多一个下内边距会让收起态凭空高 20px。） */
+html[data-skin="anime"] .node-card[data-cast] {
   padding-bottom: 0;
 }
 
@@ -1068,9 +1070,56 @@ html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast]
    放出来（[data-rolled="true"] 不命中上面那条 display:none），下面露出裙摆 / 大腿 / 白袜 / 皮鞋。
    展开态看板铺到卡底、收起态板只剩头部 + 下半身：两个状态就是同一套多层，只切换「谁可见」。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body { overflow: hidden; }
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body > [id] { display: none; }
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-top .card-actions { display: none; }
+/* 收起态：卡高与展开态**恒等**——板内数据只占位不可见（板盒高度不变，卡片高度因此不变），
+   「详细」按钮藏掉；板面本体不再由 .card-body 自己画（保持整高、透明），改由一个伪元素
+   按 --cast-plate-h 画一块矮板：板下沿正好接住下半身层顶边。--cast-plate-h 由 app.js 量出
+   「展开态板高 − 下半身层高」（下限 52px = 一行头 + 内边距 + 边框）。 */
+html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body { overflow: hidden; background: none; border-color: transparent; }
+html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body > [id] { visibility: hidden; }
+html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-top .card-actions { visibility: hidden; }
+
+/* 收起态的板面：与 .card-body 同一圈边框 / 圆角，高度 = --cast-plate-h（默认一行高）。
+   贴到 .card-body 的边框盒（left/right/top 各 −2px 把 2px 边框也算进来），上沿、板宽、
+   名字坐标与展开态完全一致。
+   手机宽度下这块板会被撑到 100~147px 高（展开态板高 − 原比例下半身高），名字在顶部、
+   下方一片空。gpt 6.1-sol 只挑了这一处（「字被冷落在顶部而下方大片空」），做法按它的建议：
+   外框 / 名字坐标 / 下半身尺寸都不动，只把牌面自己的纹理（--cast-motif，就是卡壳那层）
+   铺到板面上，让那块空看起来是「同一种材质的面板」而不是没画完的空白。 */
+html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: -2px;
+  height: var(--cast-plate-h, 52px);
+  box-sizing: border-box;
+  border: 2px solid #cdb7b4;
+  border-radius: 14px;
+  background-color: #fffdfb;
+  background-image: var(--cast-motif, none);
+  background-size: var(--cast-motif-size, auto);
+  z-index: 0;
+}
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast][data-rolled="true"] .card-body::before {
+  background-color: #26242a;
+  border-color: #4b434a;
+}
+
+/* 收起态的下半身层：绝对定位到卡片底部（贴底），高度仍是原比例（接缝行落在盒子顶边），
+   z-index 1 < 看板 z-index 2，所以板面下沿压在她腰上那一段是设计意图。
+   --cast-legs-k 只在「板面被压到 52px 下限、下半身塞不下」时被 app.js 设成略小于 1 的等比缩放值。 */
+html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .anime-legs {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  z-index: 1;
+  transform: scale(var(--cast-legs-k, 1));
+  transform-origin: bottom center;
+  transform-box: border-box;
+}
 
 /* 裸眼 3D：指针在卡上时转一点，人物 / 双手 / 下半身各自多走一点（层间差速）——三者必须走同样的
    位移，手才不会从手腕上滑下来、下半身才不会跟看板下沿错开。 */

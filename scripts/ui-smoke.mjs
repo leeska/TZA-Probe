@@ -1178,18 +1178,24 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert(
     /html\[data-skin="anime"\] \.anime-stage \{[^}]*position: relative[^}]*z-index: 1/s.test(animeCSS) &&
       /html\[data-skin="anime"\] \.anime-legs \{[^}]*position: relative[^}]*z-index: 1/s.test(animeCSS) &&
-      /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body > \[id\] \{ display: none;/s.test(animeCSS),
-    "上下半身层 z-index 1；收起态只藏数据（.card-top 留着，板沿与名字坐标都不动，名字才不会跑位置）",
+      /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body > \[id\] \{ visibility: hidden;/s.test(animeCSS),
+    "上下半身层 z-index 1；收起态只藏数据（visibility: hidden 仍占位，板盒高度 = 展开态板高 → 卡高恒定；.card-top 留着，板沿与名字坐标都不动，名字才不会跑位置）",
   );
   // 下半身层只属于收起态：展开态看板从牌子上沿铺到卡片底部、下半身整段被板盖住（用户 2026-10-10
-  // 「展开的时候就不用显示下半身了」）。卡片下内边距同时收成 0，看板下沿才贴着卡片底边。
+  // 「展开的时候就不用显示下半身了」）。两态卡片下内边距都收成 0，看板 / 下半身层下沿才贴着卡片底边；
+  // 收起态更不能靠 20px 下内边距把卡撑高（那会让两态卡高差 20px）。收起态下半身层绝对定位贴底、
+  // 不参与卡片高度，卡高才与展开态恒等。
   assert(
     /html\[data-skin="anime"\] \.node-card\[data-cast\]:not\(\[data-rolled="true"\]\) \.anime-legs \{\s*display: none;/s.test(animeCSS),
     "展开态要藏掉下半身层：展开不露下半身，看板从牌子上沿一直铺到卡片底部",
   );
   assert(
-    /html\[data-skin="anime"\] \.node-card\[data-cast\]:not\(\[data-rolled="true"\]\) \{\s*padding-bottom: 0;/s.test(animeCSS),
-    "展开态卡片下内边距收成 0：看板下沿贴着卡片底边，板才算铺到卡底",
+    /html\[data-skin="anime"\] \.node-card\[data-cast\] \{\s*padding-bottom: 0;/s.test(animeCSS),
+    "两态卡片下内边距都收成 0：看板 / 下半身层下沿贴着卡片底边，收起态卡高才与展开态恒等",
+  );
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.anime-legs \{[\s\S]*?position: absolute[\s\S]*?bottom: 0;/s.test(animeCSS),
+    "收起态下半身层要绝对定位贴卡片底部（bottom: 0）：它不参与卡片高度，卡高才与展开态恒等",
   );
   // 名字固定在板面正中：两态同一个盒子（居中靠 flex），状态点与折叠箭头绝对定位在两端不挤它。
   const foldNameRule = /html\[data-skin="anime"\] \.card-top \.fold-name \{([^}]*)\}/.exec(animeCSS)?.[1] || "";

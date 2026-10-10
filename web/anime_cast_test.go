@@ -128,12 +128,27 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	}
 	// 下半身层只属于收起态：展开态看板从牌子上沿铺到卡片底部、把下半身整段盖住，不能再把这一层
 	// 接在板下（那就是被用户否掉的「卡片被撑到 960~1015px」那一版）。收起态才放它出来。
-	// 展开态卡片下内边距还要收成 0，看板下沿才贴着卡片底边，不留一条卡片底色。
 	if !regexp.MustCompile(`\.node-card\[data-cast\]:not\(\[data-rolled="true"\]\) \.anime-legs\s*\{[^}]*display: none`).MatchString(string(css)) {
 		t.Error("anime.css 要在展开态（:not([data-rolled=\"true\"])）藏掉 .anime-legs：展开不露下半身，看板铺到卡底")
 	}
-	if !regexp.MustCompile(`\.node-card\[data-cast\]:not\(\[data-rolled="true"\]\)\s*\{[^}]*padding-bottom: 0`).MatchString(string(css)) {
-		t.Error("anime.css 展开态卡片要 padding-bottom: 0：看板下沿贴着卡片底边（板才铺到卡底）")
+	// 两态卡高必须**恒等**（2026-10-10 用户：「收起卡片卡片尺寸会有变化，要保证各个卡片尺寸固定」）。
+	// 高度靠 CSS 保：收起态板内数据只 visibility:hidden（仍占位 → 板盒高度 = 展开态板高），
+	// 下半身层绝对定位贴底（不参与高度）。展开/收起都收掉卡片下内边距（多一个 20px 会让收起态凭空高 20px）。
+	if !regexp.MustCompile(`\.node-card\[data-cast\]:not\(\[data-rolled="true"\]\)\s*\{[^}]*padding-bottom: 0`).MatchString(string(css)) &&
+		!regexp.MustCompile(`\.node-card\[data-cast\]\s*\{[^}]*padding-bottom: 0`).MatchString(string(css)) {
+		t.Error("anime.css 卡片要 padding-bottom: 0（两态都要）：看板下沿 / 下半身层下沿贴着卡片底边，收起态才不凭空高 20px")
+	}
+	if !regexp.MustCompile(`\.node-card\[data-cast\]\[data-rolled="true"\] \.card-body > \[id\]\s*\{[^}]*visibility: hidden`).MatchString(string(css)) {
+		t.Error("anime.css 收起态板内数据要 visibility: hidden（不能 display: none）：数据仍占位，板盒高度 = 展开态板高，卡片高度才恒定")
+	}
+	if !regexp.MustCompile(`\.node-card\[data-cast\]\[data-rolled="true"\] \.card-body::before\s*\{[^}]*height: var\(--cast-plate-h`).MatchString(string(css)) {
+		t.Error("anime.css 收起态的板面要由 .card-body::before 按 --cast-plate-h 画（板盒保持整高，板面只画到下半身层顶边）")
+	}
+	if !regexp.MustCompile(`\.node-card\[data-cast\]\[data-rolled="true"\] \.anime-legs\s*\{[^}]*position: absolute[^}]*bottom: 0`).MatchString(string(css)) {
+		t.Error("anime.css 收起态下半身层要绝对定位贴卡片底部（bottom: 0）：它不参与卡片高度，卡高才与展开态恒等")
+	}
+	if !strings.Contains(string(app), "--cast-plate-h") || !strings.Contains(string(app), "function layoutCastPlates") {
+		t.Error("app.js 要用 layoutCastPlates() 量出 --cast-plate-h（展开态板高 − 下半身层高，下限 52px）")
 	}
 	// 看板高度必须**由内容决定**、板内不许滚动：用户逐个否掉了「定高 + 板内竖滚」（数据要滚才看得全，
 	// 原话「内容都没了，为啥做得这么小」）和「铺满整卡」（下半身看不到）两版。

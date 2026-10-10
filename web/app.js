@@ -262,10 +262,19 @@ async function liveTick() {
       setHTML(el.querySelector(".speeds"), speedsInner(n));
     }
     setText(document.querySelector("#updated"), new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+    // 指标数字变化可能把板高顶高一两像素（换行），收起态板下沿要跟着重新量一次。
+    layoutCastPlates();
   } finally {
     liveBusy = false;
   }
 }
+
+// 视口宽度变化会同时改板高与下半身层高（两者都按卡宽走），收起态那块板的量值要重算。
+let plateResizeTimer = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(plateResizeTimer);
+  plateResizeTimer = setTimeout(layoutCastPlates, 120);
+});
 
 // 每张卡片上一次渲染出来的 HTML：下次比对用，内容没变就不碰 DOM。
 const renderedHTML = new WeakMap();
@@ -470,6 +479,38 @@ function applyFolded() {
     else delete card.dataset.rolled;
     for (const btn of card.querySelectorAll("[data-fold]"))
       btn.setAttribute("aria-expanded", String(!rolled));
+  }
+  layoutCastPlates();
+}
+
+// 收起态卡高必须与展开态**恒等**，否则一收整个网格就重排、邻卡跟着跳。
+// 高度靠 CSS 保：收起态板内数据只 visibility:hidden（仍占位，板盒高度 = 展开态板高），
+// 下半身层绝对定位贴底（不参与高度）。这里只负责量出那块「矮板」的高度：
+//   --cast-plate-h = 展开态板高 − 下半身层高（下限 52px = 一行头 + 内边距 + 边框 + 2px 余量），
+// 板下沿正好接住下半身层顶边，人物躯干到腿之间不会露空白带。
+// 下半身塞不下（板高 − 下半身 < 52）时板固定 52px，下半身等比缩到 boardH−52（最多几 %，
+// 下限保证名字那行永远压得住）；scale 以底边为原点，鞋仍落在卡底。
+function layoutCastPlates() {
+  const MIN_PLATE = 52;
+  for (const card of document.querySelectorAll(".node-card[data-cast]")) {
+    if (card.dataset.rolled !== "true") {
+      card.style.removeProperty("--cast-plate-h");
+      card.style.removeProperty("--cast-legs-k");
+      continue;
+    }
+    const body = card.querySelector(".card-body");
+    const legs = card.querySelector(".anime-legs");
+    if (!body || !legs) continue;
+    const boardH = body.offsetHeight; // 数据 visibility:hidden 仍占位 → 等于展开态板高
+    const legsH = legs.offsetHeight;
+    if (!boardH || !legsH) continue;
+    if (boardH - legsH >= MIN_PLATE) {
+      card.style.setProperty("--cast-plate-h", (boardH - legsH).toFixed(2) + "px");
+      card.style.removeProperty("--cast-legs-k");
+    } else {
+      card.style.setProperty("--cast-plate-h", MIN_PLATE + "px");
+      card.style.setProperty("--cast-legs-k", (Math.max(1, boardH - MIN_PLATE) / legsH).toFixed(4));
+    }
   }
 }
 function toggleFolded(cast) {
