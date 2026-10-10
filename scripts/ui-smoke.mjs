@@ -1456,6 +1456,11 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "数据行（回程 / 延迟那一排）不再是 data-detail 按钮：点数据行不该弹详情页",
   );
   assert(
+    /querySelectorAll\("\[data-focus-kind\]"\)/.test(appSource) &&
+      /kind: cell\.dataset\.focusKind/.test(appSource),
+    "延迟 / 回程格子要接回点击 → 只看那一格的聚焦视图（2026-10-10 曾整段丢掉，用户当场发现）",
+  );
+  assert(
     /class="node-name"/.test(appSource) && !/button class="node-name"[^>]*data-detail/.test(appSource),
     "列表视图的节点名不再导航（进详情只走「详细」按钮）",
   );
@@ -1606,6 +1611,32 @@ assert(latencyCell.dataset.focusCarrier, "延迟块要带上运营商");
 const routeCell = findCard().querySelector(".route-grid .route-label");
 assert.equal(routeCell.dataset.focusKind, "route", "回程胶囊要带上聚焦类型");
 assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
+// 点这两类格子要弹出「只看那一格」的聚焦视图：2026-10-10 撤掉整卡 onclick 时把它们一起弄哑了
+// （用户点名「怎么点回程和延迟也不弹出来了」）。注意弹的是聚焦视图，不是含主机历史的综合详情。
+{
+  const dialog = () => publicDOM.window.document.querySelector("#dialog");
+  latencyCell.click();
+  await until(
+    () => dialog()?.open && dialog().textContent.includes(`${latencyCell.dataset.focusCarrier} · TCP 延迟`),
+    "点延迟格子弹出该运营商的聚焦视图",
+  );
+  assert(!dialog().querySelector("#charts"), "聚焦视图不该带主机历史（主机历史只在综合详情里）");
+  dialog().close();
+  routeCell.click();
+  await until(
+    () => dialog()?.open && dialog().textContent.includes(`${routeCell.dataset.focusCarrier} · 三网回程`),
+    "点回程格子弹出该运营商的三网回程",
+  );
+  assert(!dialog().querySelector(".detail-stats"), "聚焦视图不摆综合详情那几格统计");
+  dialog().close();
+  // 用户点名的三条不变：点卡片空白处什么也不弹。
+  findCard().querySelector(".card-body").click();
+  assert(!dialog()?.open, "点卡片空白处不该弹详情");
+  // 「详细」按钮照旧进综合详情（含主机历史）。
+  findCard().querySelector("[data-detail]").click();
+  await until(() => dialog()?.open && dialog().querySelector(".detail-stats"), "「详细」按钮进综合详情");
+  dialog().close();
+}
 // 紧凑排版（用户点名「卡片太长了」，照参考图压）：实时速率 + 到期 + 价格收进一条信息带，
 // 不再有独立的两块速率方块与卡底计费页脚；头部也只留名字 + 系统标签，地区 / 分组与地址族
 // 开关落到第二行（否则窄卡片里的名字会被挤成三行）。

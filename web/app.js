@@ -429,9 +429,24 @@ function renderCards() {
   // 卷轴状态每次渲染后刷一遍：卡壳上的 data-rolled 决定了数据区是摊开还是卷起，
   // 局部补丁不会动它，但整块重绘换了新卡壳，所以在这里统一补上（含 aria-expanded）。
   applyFolded();
+  // 单个延迟 / 回程格子是带 aria-label 的按钮：点它只看那一格（该运营商 + 该地址族）的聚焦视图。
+  // 这与「点卡片空白处 / 立绘空白处不弹详情」不冲突——2026-10-10 撤掉整卡 onclick 时把这些格子的
+  // 点击一起弄哑了（用户随后点名「怎么点回程和延迟也不弹出来了」），这里单独接回来：格子本身仍不是
+  // data-detail 按钮，弹的是只看那一格的聚焦视图，不是含主机历史的综合详情。
+  for (const cell of document.querySelectorAll("[data-focus-kind]"))
+    cell.onclick = guard((e) => {
+      e.stopPropagation();
+      const owner = cell.closest("[data-node]");
+      if (owner)
+        detail(owner.dataset.node, {
+          kind: cell.dataset.focusKind,
+          carrier: cell.dataset.focusCarrier,
+          family: cell.dataset.focusFamily,
+        });
+    });
   // 卡片空白处不再打开综合信息：只有内容里那枚「详细」按钮进详情页（用户 2026-10-10 点名的
   // 三条：点卡片空白区、点数据行、点立绘空白处都不许弹详情）。所以这里不挂整卡 onclick，
-  // 数据行（回程 / 延迟那一排）也不再是 data-detail 按钮。
+  // 数据行（回程 / 延迟那一排）也不再是 data-detail 按钮——但每一格自己的聚焦视图照旧（见上）。
   for (const b of document.querySelectorAll("[data-card-family]"))
     b.onclick = () => { cardFamilies.set(b.dataset.cardNode, b.dataset.cardFamily); renderCards(); };
   // 解锁徽标：桌面悬停展开，手机上点一下展开 / 收起（都是同一个单例浮层）。

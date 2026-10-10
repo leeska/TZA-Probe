@@ -2592,3 +2592,32 @@ gpt-6.1-sol 看图确认（手机/桌面 × 明暗 × 四台）：方案确认�
     在 390px 下折行 0 / 非居中 0、卡片与列表在 320/344/360/375/390/414px 六档越界 0 个。
 
 待确认：无。
+
+## 2026-10-10 修：卡片里点延迟格 / 回程格不再弹聚焦视图（整卡 onclick 撤掉时被一起弄哑）
+
+用户报：「前台虽然我说了点卡片不要弹出详细，但是怎么点回程和延迟也不弹出来了」。
+
+原因：上一条（点卡片空白处 / 数据行 / 立绘空白处都不许弹详情）是把**整卡**的 onclick 撤掉的，
+顺手把每格上的聚焦接线也一起摘了——延迟块 / 回程胶囊上的 `data-focus-kind` / `data-focus-carrier` /
+`data-focus-family` 三个属性还在（ui-smoke 只断言了属性在），但没有任何地方读它们，点上去就是死的。
+两个概念被混成了一个：**聚焦视图**（只看那一格：某运营商 + 某地址族的延迟或回程）不是**综合详情**
+（含主机历史 / 解锁 / 全部网络面板），用户要去掉的是后者。
+
+改法：`web/app.js` 在渲染后单独给 `[data-focus-kind]` 接线——`cell.onclick` 里取
+`cell.closest("[data-node]").dataset.node` 与三个 `data-focus-*`，调 `detail(id, {kind, carrier, family})`，
+并 `stopPropagation()`。整卡仍不挂 onclick，格子本身仍不是 `data-detail` 按钮，所以「点空白处不弹详情」
+不变；列表视图的 `.net-band` / `.net-line` / `.route-line` 走的是同一段接线（同一个属性集）。
+
+验证：
+- `scripts/ui-smoke.mjs` 新增四段断言（jsdom）：点延迟格 → 弹窗里出现「<运营商> · TCP 延迟」且**没有**
+  `#charts`；点回程格 → 「<运营商> · 三网回程」且没有 `.detail-stats`；点卡片 `.card-body` 空白处 →
+  `#dialog` 不 open；点 `[data-detail]` → 出现 `.detail-stats` 与 `#charts`（综合详情照旧）。另加一条源码守卫：
+  app.js 里必须有 `querySelectorAll("[data-focus-kind]")` 与 `kind: cell.dataset.focusKind` 这段接线，
+  免得下次再被整段摘掉而测试全绿。
+- `bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` + `UI_SMOKE_OK`。
+- **真浏览器**（headless chromium，本地面板 7 台）实测：点延迟格 → 聚焦视图标题「联通 · TCP 延迟」
+  （`#charts`=false、`.detail-stats`=false）；点回程格 → 「电信 · 三网回程」；点卡片空白处 → 什么都没弹；
+  点「详细」→ 综合详情（含 `#charts` 主机历史）。
+- 线上：见同日的部署记录（`tza-feature-check.mjs` 打 probe.tza.cc，同一组断言）。
+
+待确认：无。
