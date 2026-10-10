@@ -1081,10 +1081,11 @@ html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-top .car
 /* 收起态的板面：与 .card-body 同一圈边框 / 圆角，高度 = --cast-plate-h（默认一行高）。
    贴到 .card-body 的边框盒（left/right/top 各 −2px 把 2px 边框也算进来），上沿、板宽、
    名字坐标与展开态完全一致。
-   手机宽度下这块板会被撑到 100~147px 高（展开态板高 − 原比例下半身高），名字在顶部、
-   下方一片空。gpt 6.1-sol 只挑了这一处（「字被冷落在顶部而下方大片空」），做法按它的建议：
-   外框 / 名字坐标 / 下半身尺寸都不动，只把牌面自己的纹理（--cast-motif，就是卡壳那层）
-   铺到板面上，让那块空看起来是「同一种材质的面板」而不是没画完的空白。 */
+   手机宽度下这块板会被撑到 100~160px 高（展开态板高 − 原比例下半身高），名字在顶部、
+   下方一大片空——gpt 6.1-sol 连着两轮只挑这一处（「字被冷落在顶部而下方大片空」/「点阵纹理
+   不足以消除」），要「低对比度的装饰信息带」。做法：外框 / 名字坐标 / 下半身尺寸一律不动，
+   只把牌面填成有材质的面板——牌面自己的纹样（--cast-motif）+ 一层同色系的低对比斜纹
+   （把留白读成「同一种面料」而不是没画完的空白）。 */
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body::before {
   content: "";
   position: absolute;
@@ -1096,8 +1097,10 @@ html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body::be
   border: 2px solid #cdb7b4;
   border-radius: 14px;
   background-color: #fffdfb;
-  background-image: var(--cast-motif, none);
-  background-size: var(--cast-motif-size, auto);
+  background-image:
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--cast-accent) 7%, transparent) 0 5px, transparent 5px 17px),
+    var(--cast-motif, none);
+  background-size: auto, var(--cast-motif-size, auto);
   z-index: 0;
 }
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast][data-rolled="true"] .card-body::before {
