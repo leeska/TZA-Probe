@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -235,4 +236,20 @@ func TestAgentRunsWholeLeaseAndKeepsPolling(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+// A failed connection keeps its cause for the log, and never the token.
+func TestTransportErrorKeepsCauseWithoutToken(t *testing.T) {
+	token := model.Secret()
+	transport, err := NewTransport("http://127.0.0.1:1", token, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = transport.Jobs(context.Background())
+	if err == nil {
+		t.Fatal("expected a connection error")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "127.0.0.1:1") || strings.Contains(msg, token) {
+		t.Fatalf("error %q", msg)
+	}
 }

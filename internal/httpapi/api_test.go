@@ -539,3 +539,49 @@ func TestSaveNodeOrderRewritesOnlyOrder(t *testing.T) {
 		}
 	}
 }
+
+// Junk logins cannot lock the administrator out: only wrong keys count toward
+// the limit, the right key always gets in, and a full session table makes room
+// instead of refusing.
+func TestLoginLimitCannotLockOutTheAdministrator(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "login.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	token := model.Secret()
+	handler := (&API{Store: s, AdminToken: token, Assets: web.Handler()}).Handler()
+	login := func(key string) (int, []*http.Cookie) {
+		r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"token":"`+key+`"}`))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w.Code, w.Result().Cookies()
+	}
+	wrong := model.Secret()
+	codes := map[int]int{}
+	for i := 0; i < 40; i++ {
+		code, _ := login(wrong)
+		codes[code]++
+	}
+	if codes[401] != 30 || codes[429] != 10 {
+		t.Fatalf("wrong-key responses: %v", codes)
+	}
+	var first []*http.Cookie
+	for i := 0; i <= maxSessions; i++ {
+		code, cookies := login(token)
+		if code != 204 {
+			t.Fatalf("login %d with the right key: %d", i, code)
+		}
+		if i == 0 {
+			first = cookies
+		}
+	}
+	r := httptest.NewRequest("GET", "https://probe.example/api/v1/session", nil)
+	r.AddCookie(first[0])
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	if w.Code != 401 {
+		t.Fatalf("oldest session should have been evicted: %d", w.Code)
+	}
+}

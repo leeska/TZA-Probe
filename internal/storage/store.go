@@ -168,6 +168,7 @@ func Open(path string) (*Store, error) {
 			db.Close()
 			return nil, err
 		}
+		version = 1
 	}
 	if version < 2 {
 		if _, err = db.Exec("BEGIN; ALTER TABLE events ADD COLUMN last_error TEXT NOT NULL DEFAULT ''; CREATE INDEX events_rule_time ON events(node_id,kind,at); PRAGMA user_version=2; COMMIT;"); err != nil {
@@ -341,13 +342,15 @@ func anchorFromDay(day int, now time.Time) time.Time {
 	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
+// schema is the version 1 baseline. A fresh database runs it and then every
+// migration in Open, exactly like an upgraded one, so the migrations are the
+// single description of each later table and column and user_version always
+// says what is really there.
 const schema = `BEGIN;
 CREATE TABLE nodes(id TEXT PRIMARY KEY, config TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, last_seen INTEGER NOT NULL DEFAULT 0, metrics TEXT);
 CREATE TABLE samples(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, at INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(node_id,at));
 CREATE INDEX samples_age ON samples(at);
 CREATE TABLE traffic(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, day INTEGER NOT NULL, incoming INTEGER NOT NULL, outgoing INTEGER NOT NULL, PRIMARY KEY(node_id,day));
-CREATE TABLE traffic_hour(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, hour INTEGER NOT NULL, incoming INTEGER NOT NULL, outgoing INTEGER NOT NULL, PRIMARY KEY(node_id,hour));
-CREATE INDEX traffic_hour_age ON traffic_hour(hour);
 CREATE TABLE tasks(id TEXT PRIMARY KEY, config TEXT NOT NULL);
 CREATE TABLE bindings(task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, due INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(task_id,node_id));
 CREATE TABLE jobs(id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, task TEXT NOT NULL, issued INTEGER NOT NULL, finished INTEGER, result TEXT);
@@ -355,12 +358,8 @@ CREATE INDEX jobs_node ON jobs(node_id,issued);
 CREATE INDEX jobs_age ON jobs(issued);
 CREATE TABLE alert_state(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, kind TEXT NOT NULL, since INTEGER NOT NULL, active INTEGER NOT NULL, PRIMARY KEY(node_id,kind));
 CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, node_name TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, active INTEGER NOT NULL, at INTEGER NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE unlocks(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, service TEXT NOT NULL, status TEXT NOT NULL, region TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', tested_at INTEGER NOT NULL, PRIMARY KEY(node_id,service));
-CREATE INDEX unlocks_age ON unlocks(tested_at);
-CREATE TABLE retries(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, probe_key TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(node_id,probe_key));
-CREATE INDEX retries_at ON retries(at);
 CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-PRAGMA user_version=7;
+PRAGMA user_version=1;
 COMMIT;`
 
 func (s *Store) Close() error {

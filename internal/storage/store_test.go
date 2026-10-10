@@ -483,3 +483,25 @@ func TestPendingEventsExpire(t *testing.T) {
 		t.Fatalf("history must keep expired events: %+v %v", all, err)
 	}
 }
+
+// A fresh database runs the version 1 baseline and then every migration, so it
+// must end at the newest version with every later table, index and column.
+func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
+	s := openTest(t)
+	var version int
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 7 {
+		t.Fatalf("user_version=%d %v", version, err)
+	}
+	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "events_rule_time", "jobs_latest_insert"} {
+		var n int
+		if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name=?", name).Scan(&n); err != nil || n != 1 {
+			t.Fatalf("%s missing (%d, %v)", name, n, err)
+		}
+	}
+	for table, column := range map[string]string{"events": "last_error", "jobs": "probe_key"} {
+		var n int
+		if err := s.db.QueryRow("SELECT count(*) FROM pragma_table_info(?) WHERE name=?", table, column).Scan(&n); err != nil || n != 1 {
+			t.Fatalf("%s.%s missing (%d, %v)", table, column, n, err)
+		}
+	}
+}

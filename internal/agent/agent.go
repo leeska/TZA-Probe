@@ -151,7 +151,9 @@ func (t *HTTPTransport) request(ctx context.Context, method, path string, body, 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return errors.New("server connection failed")
+		// The cause (DNS, TLS, refused, timeout) is what an operator needs; the
+		// error names the endpoint and path only, the token rides in a header.
+		return fmt.Errorf("server connection failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

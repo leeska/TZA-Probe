@@ -419,22 +419,13 @@ func (a *API) agent(next func(http.ResponseWriter, *http.Request, string)) http.
 		next(w, r, id)
 	}
 }
+
+// maxSessions bounds the in-memory browser sessions.
+const maxSessions = 100
+
 func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	if !sameOrigin(r) {
 		write(w, 403, map[string]string{"error": "origin rejected"})
-		return
-	}
-	a.mu.Lock()
-	now := time.Now()
-	if now.Sub(a.loginWindow) > time.Minute {
-		a.loginAttempts = 0
-		a.loginWindow = now
-	}
-	a.loginAttempts++
-	limited := a.loginAttempts > 30
-	a.mu.Unlock()
-	if limited {
-		write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 		return
 	}
 	var v struct {
@@ -443,7 +434,24 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &v) {
 		return
 	}
+	now := time.Now()
+	// Only wrong keys count toward the limit and the right key always gets in:
+	// counting every attempt let anyone hold the administrator out of the panel
+	// with 30 junk requests a minute. The key is 256 bits, so the limit is a
+	// brake on noise, not what stops guessing.
 	if len(v.Token) != len(a.AdminToken) || subtle.ConstantTimeCompare([]byte(v.Token), []byte(a.AdminToken)) != 1 {
+		a.mu.Lock()
+		if now.Sub(a.loginWindow) > time.Minute {
+			a.loginAttempts = 0
+			a.loginWindow = now
+		}
+		a.loginAttempts++
+		limited := a.loginAttempts > 30
+		a.mu.Unlock()
+		if limited {
+			write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
+			return
+		}
 		write(w, 401, map[string]string{"error": "管理密钥错误"})
 		return
 	}
@@ -454,10 +462,16 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 			delete(a.sessions, key)
 		}
 	}
-	if len(a.sessions) >= 100 {
-		a.mu.Unlock()
-		write(w, 429, map[string]string{"error": "会话过多"})
-		return
+	// At the cap the session closest to expiry gives way, so logging in never
+	// fails because older browsers are still signed in.
+	for len(a.sessions) >= maxSessions {
+		oldest, first := "", time.Time{}
+		for key, expiry := range a.sessions {
+			if oldest == "" || expiry.Before(first) {
+				oldest, first = key, expiry
+			}
+		}
+		delete(a.sessions, oldest)
 	}
 	a.sessions[model.Hash(token)] = now.Add(12 * time.Hour)
 	a.mu.Unlock()

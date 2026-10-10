@@ -47,6 +47,12 @@ done
 
 fail() { echo "错误: $*" >&2; exit 1; }
 
+# endpoint 会原样拼进 sudo 重新执行的命令和 agent.json，只收 URL 里正常会出现的字符，
+# 引号、空白和 shell 元字符一律拒绝。
+case "$ENDPOINT" in
+  *[!A-Za-z0-9.:/_~%\[\]-]*) fail "endpoint 含有不允许的字符：$ENDPOINT" ;;
+esac
+
 if [ "$(id -u)" -ne 0 ]; then
   # 通过管道执行时脚本正文已被 sh 读走，无法直接提权重跑；用 sudo 重新拉取一次。
   command -v sudo >/dev/null 2>&1 || fail "需要 root 权限：请切换到 root 后再执行"
@@ -140,6 +146,8 @@ NAME="tza-agent-linux-$ARCH"
 echo "下载 $ENDPOINT/dl/$NAME ..."
 fetch "$ENDPOINT/dl/$NAME" "$TMP/tza-agent" || fail "下载失败：请确认 Server 地址可达，且该 Server 提供了 $ARCH 架构的 Agent"
 fetch "$ENDPOINT/dl/$NAME.sha256" "$TMP/sum" || fail "无法获取校验和"
+# 校验和与程序来自同一台 Server：它能发现下载截断或中途损坏，但证明不了 Server
+# 本身可信。对 Server 的信任来自 HTTPS 与你自己核对过的地址。
 EXPECTED=$(cut -d' ' -f1 "$TMP/sum")
 if command -v sha256sum >/dev/null 2>&1; then
   ACTUAL=$(sha256sum "$TMP/tza-agent" | cut -d' ' -f1)
@@ -149,7 +157,7 @@ else
   ACTUAL="$EXPECTED"
   echo "警告: 系统没有 sha256sum，跳过完整性校验" >&2
 fi
-[ "$ACTUAL" = "$EXPECTED" ] || fail "校验和不匹配，下载可能被截断或篡改"
+[ "$ACTUAL" = "$EXPECTED" ] || fail "校验和不匹配，下载不完整，请重试"
 chmod 0755 "$TMP/tza-agent"
 "$TMP/tza-agent" --version >/dev/null 2>&1 || fail "下载的程序无法运行"
 
