@@ -77,31 +77,29 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 			t.Errorf("双手层图 web/anime/%s-hands.webp 不存在（拆层脚本 scripts/anime-split-layers.py）: %v", id, err)
 		}
 	}
-	// 拆层后每台机有三样几何量，少一样那张卡的构图就会崩：
-	// --cast-figure-h 人物层在卡上的高、--cast-art-w 它在卡上的宽、
-	// --cast-board-t HTML 看板的**上外沿**（= 画里那块牌子的上外沿，板面盖住旧描边）、
-	// --cast-cut 牌子的下外沿（摊开时露到这里，收起时看板就留这么高）。
-	for _, m := range ids {
-		id := m[1]
-		for _, v := range []string{"--cast-figure-h:", "--cast-art-w:", "--cast-board-t:", "--cast-cut:"} {
-			if !strings.Contains(string(css), v) {
-				t.Errorf("anime.css 里角色 %q 缺 %s（人物层 / 看板的几何量）", id, v)
-			}
+	// 四段几何（2026-10-10 看板重做后的契约）：每台机五个比例量，少一样那张卡的构图就会崩。
+	//   --cast-top-ar   上半身层（牌子上沿以上）的 aspect-ratio = W/(0.66·t)
+	//   --cast-hands-ar 双手层的 aspect-ratio = W/(0.66·(t+60))，含手指压过板沿那一段
+	//   --cast-legs-ar  下半身层（牌子下沿以下）的 aspect-ratio = W/(0.66·(H−b))
+	//   --cast-full-ar  下半身层里那张全立绘盒子的 aspect-ratio = W/(0.66·H)
+	//   --cast-seam     translateY 的位移 = b/H（牌子下外沿占立绘高的比例）
+	for _, v := range []string{"--cast-top-ar:", "--cast-hands-ar:", "--cast-legs-ar:", "--cast-full-ar:", "--cast-seam:"} {
+		if got, want := strings.Count(string(css), v), len(ids); got != want {
+			t.Errorf("%s 要 %d 条（每台一条：牌子上/下外沿逐台实测），现在是 %d 条", v, want, got)
 		}
 	}
-	// 段首的「立绘层」规则必须按高度放**整身**立绘：background-size 用 auto + --cast-figure-h，
-	// 高度就是 figure-h（头顶 → 脚）。看板只盖住「牌子」那一段，牌子以下的裙 / 腿 / 袜 / 鞋
-	// 由这一层画出来、在看板下沿以下露出来（用户反馈过「下半身没了」）。
-	// 改回「按宽度铺满」= 她会被拉成满宽，两侧留白和牌面落点全错；
-	// 反过来再按 --cast-cut 裁到牌子的下沿 = 又把下半身裁掉。
+	// 上半身层只画「牌子上沿以上」那一段：按 66% 卡宽缩放（background-size: 66% auto），
+	// 高度由 aspect-ratio 推出来，盒子底边正好落在立绘第 t 行（牌子上沿），看板压在那儿。
+	// 改回「按定高缩放」= 看板高度就不再只由数据决定（就是用户否掉的那一版）；改回
+	// 「按宽度铺满整身」= 下半身又被看板盖住。
 	stage := regexp.MustCompile(`(?s)html\[data-skin="anime"\] \.anime-stage \{(.*?)\n\}`).FindStringSubmatch(string(css))
 	if stage == nil {
 		t.Fatal("anime.css 里找不到 .anime-stage 的规则")
 	} else {
 		body := stage[1]
 		for _, want := range []string{
-			"background-size: auto var(--cast-figure-h, 720px);",
-			"height: var(--cast-figure-h, 720px);",
+			"aspect-ratio: var(--cast-top-ar,",
+			"background-size: 66% auto;",
 			"overflow: hidden;",
 		} {
 			if !strings.Contains(body, want) {
@@ -109,14 +107,39 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 			}
 		}
 	}
-	// 看板定高 + 板内数据滚动：板下沿以下留给立绘下半身（板高 --cast-board-h 决定露出多少），
-	// 板面装不下的数据在板内竖滚，不许挂到板外（上一版板外的数据就是靠这条拦住的）。
-	if !strings.Contains(string(css), "height: var(--cast-board-h, 140px);") {
-		t.Error("anime.css 的 .card-body（看板）要用 --cast-board-h 定高：板下沿以下要留给立绘下半身")
+	// 下半身层 = 牌子下沿 → 画布底那一段：盒子里放一张全立绘，用 translateY(--cast-seam) 把它
+	// 上移到第 b 行正好落在盒子顶边（也就是看板的下沿）。少了任何一半，裙/腿/袜/鞋就露不出来。
+	legs := regexp.MustCompile(`(?s)html\[data-skin="anime"\] \.anime-legs::before \{(.*?)\n\}`).FindStringSubmatch(string(css))
+	if legs == nil {
+		t.Fatal("anime.css 里找不到 .anime-legs::before（下半身层：牌子下沿以下那一段立绘）")
+	} else {
+		for _, want := range []string{
+			"aspect-ratio: var(--cast-full-ar,",
+			"transform: translateY(calc(-100% * var(--cast-seam,",
+			"background-size: 66% auto;",
+		} {
+			if !strings.Contains(legs[1], want) {
+				t.Errorf("anime.css 的 .anime-legs::before 少了 %q", want)
+			}
+		}
 	}
-	if !strings.Contains(string(css), ".card-body > [id] {") ||
-		!regexp.MustCompile(`(?s)\.card-body > \[id\] \{[^}]*overflow-y: auto`).MatchString(string(css)) {
-		t.Error("anime.css 的板内数据区（.card-body > [id]）要 overflow-y: auto：板装不下的数据在板内滚")
+	if !strings.Contains(string(app), `class="anime-legs"`) {
+		t.Error("app.js 要渲染 .anime-legs 下半身层（裙摆 / 大腿 / 白袜 / 皮鞋）")
+	}
+	// 看板高度必须**由内容决定**、板内不许滚动：用户逐个否掉了「定高 + 板内竖滚」（数据要滚才看得全，
+	// 原话「内容都没了，为啥做得这么小」）和「铺满整卡」（下半身看不到）两版。
+	// 板高 auto + 板内 overflow: visible，数据才既一眼看全、又不滚动。
+	if !regexp.MustCompile(`(?s)\.node-card\[data-cast\] \.card-body \{[^}]*height: auto;`).MatchString(string(css)) {
+		t.Error("anime.css 的 .card-body（看板）要 height: auto：板高由数据决定，不许定高")
+	}
+	if regexp.MustCompile(`\.card-body[^{]*\{[^}]*overflow-y: auto`).MatchString(string(css)) {
+		t.Error("anime.css 的看板不许再有 overflow-y: auto：板内滚动被用户否掉了（数据要一眼看全）")
+	}
+	idBody := regexp.MustCompile(`(?s)html\[data-skin="anime"\] \.node-card\[data-cast\] \.card-body > \[id\] \{(.*?)\n\}`).FindStringSubmatch(string(css))
+	if idBody == nil {
+		t.Fatal("anime.css 里找不到看板内数据区（.card-body > [id]）的规则")
+	} else if !strings.Contains(idBody[1], "overflow: visible;") {
+		t.Error("anime.css 的板内数据区要 overflow: visible：数据全部排在板内，不裁不滚")
 	}
 	// 卡壳必须是定位元素：双手层（absolute, top:0）要相对这张卡放。少了 position: relative，
 	// 四台卡的双手层会一起锚到更高的定位祖先（body），几只手就飘到页面顶上的概览区
@@ -137,8 +160,8 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	if got, want := strings.Count(string(css), "--cast-blink-dur:"), len(ids); got != want {
 		t.Errorf("--cast-blink-dur 要 %d 条（四个人得错开眨眼，不然四张卡同时眨），现在是 %d 条", want, got)
 	}
-	// 看板几何 / 双手层：每台一条，少一台那张卡的板沿或手就会落错位置。
-	for _, v := range []string{"--cast-board-t:", "--cast-hands-url:", "--cast-cut:"} {
+	// 双手层：每台一条，少一台那张卡的手就会落错位置。
+	for _, v := range []string{"--cast-hands-url:"} {
 		if got, want := strings.Count(string(css), v), len(ids); got != want {
 			t.Errorf("%s 要 %d 条（每台一条：牌面逐台实测），现在是 %d 条", v, want, got)
 		}

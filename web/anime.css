@@ -4,10 +4,11 @@
    第五张样式表，只在 <html data-skin="anime"> 时生效（选择器一律带 data-skin 前缀，
    默认的液态玻璃皮肤一个字节都不受影响）。视觉语言：白面 + 樱花粉主色 + 浅蓝灰底纸，
    平涂、无模糊、无渐变，圆角比「现代极简」大一档（面级 18px）。
-   它比别的皮肤多一层结构：线路机的卡片里是**三层叠起来**的——
-   ① 人物层（少女上半身，牌子与双手已从图里拆走）、② HTML 看板（板沿 + 板面上的数据，
-   全是 HTML 自己画的）、③ 双手层（带 alpha 的手，压在看板上沿）。于是看板上沿是干净的
-   HTML 边框，不会有原图牌子的描边残线透出来，手又是真的搭在板上。
+   它比别的皮肤多一层结构：线路机的卡片里是**四段叠起来**的——
+   ① 上半身层（少女头/肩/双臂/手，牌子上沿以上）、② HTML 看板（板沿 + 板面上的全部数据，
+   全是 HTML 自己画的）、③ 下半身层（裙摆/大腿/白袜/皮鞋，牌子下沿以下）、
+   ④ 双手层（带 alpha 的手，压在看板上沿）。于是看板上沿是干净的 HTML 边框，不会有原图
+   牌子的描边残线透出来，手又是真的搭在板上，而看板可以比原牌子高得多、数据一眼看全。
    立绘由 app.js 按 web/anime-cast.js 的名单渲染 .anime-stage 与 .anime-hands，
    图片本体在 web/anime/*.webp（go:embed 进二进制），拆图脚本 scripts/anime-split-layers.py。
 
@@ -573,51 +574,50 @@ html[data-skin="anime"][data-theme="dark"] ::-webkit-scrollbar-thumb {
 }
 
 /* --------------------------------------------------------------------------
-   N. 角色立绘 / HTML 看板 / 双手层：三层叠起来（2026-10-10）
+   N. 角色立绘 / HTML 看板 / 双手层：四段叠起来（2026-10-10 看板重做）
 
-   app.js 只为「有 cast 的节点」渲染 <div class="anime-stage" data-cast="…">，其余皮肤下
-   .anime-stage / .anime-hands 都是 display:none（styles.css 里默认藏掉）。图片本体在
-   web/anime/*.webp（go:embed 进二进制），拆图脚本在 scripts/anime-split-layers.py。
+   app.js 只为「有 cast 的节点」渲染 <div class="anime-stage">、<div class="anime-legs">
+   与 <div class="anime-hands">。图片本体在 web/anime/*.webp（go:embed 进二进制），
+   拆图脚本在 scripts/anime-split-layers.py。
 
-   上一版是「一整张立绘（她自己双手捧着白牌子）+ 一层 CSS 抠手伪元素」：那层抠手把原图里
-   那块牌子的上沿描边一起重画到新板面上，所以白板上沿、手指旁边永远留一条旧描边的残线。
-   裁切（切手）、把板沿抬高（盖不住抗锯齿）、去掉抠手层（手就没了）三种遮法都被否了。
-   现在改成把立绘**拆成两层**，页面里的顺序就是这三层：
+   被否定过两版：
+     · 看板铺满整张卡（数据全见）→ 她下半身一点看不到；
+     · 看板定高 140/150px、板内竖滚 424px 才看得全（用户：「内容都没了，为啥做得这么小」）。
+   根因：原始立绘里那块手捧牌子只占立绘高 13.9%（上沿 30.0%、下沿 43.9%），看板只要高过立绘的
+   22% 就必然盖住她的下半身——「数据一眼看全」与「下半身可见」在**同一张立绘里**是互相排斥的。
 
-     ① 人物层  .anime-stage   web/anime/<id>.webp        去掉牌子与双手的上半身
-     ② HTML 看板 .card-body   板面、板沿、板面上的数据全是 HTML 自己画的（z-index 2）
-     ③ 双手层  .anime-hands   web/anime/<id>-hands.webp  带 alpha 的手，压在看板上沿（z-index 3）
+   gpt-6.1-sol 定的画面（见 /root/work/redo/consult/pick-route.txt）：不重画立绘，改成把同一个人物
+   立绘**沿牌子的上下沿切成两段**，HTML 看板插在中间：
+     ① 上半身层 .anime-stage   <id>.webp 的 0 → 牌子上沿那一段（头 / 肩 / 双臂 / 手）
+     ② HTML 看板  .card-body    板面 + 板面上的全部节点数据（z-index 2）；**高由内容决定，板内不滚动**
+     ③ 下半身层 .anime-legs    <id>.webp 的 牌子下沿 → 画布底（裙摆 / 大腿 / 白袜 / 皮鞋）
+     ④ 双手层   .anime-hands   <id>-hands.webp，压在看板上沿（z-index 3）
+   她原本被牌子挡住的躯干在立绘里本来就是空白，所以「看板把躯干拉长」看不出断裂：看板上沿落在
+   牌子上沿（双手搭在那儿），板下沿正好压在裙摆起点；上下两段按同一比例、同一水平中心对齐。
 
-   于是：看板上沿是 HTML 的边框，原图那块牌子的描边再也透不出来；手指压过板沿那一段与
-   接触阴影都在手层里，手是真的从板上面搭下来的。人物层与双手层是同一张画布、同一套缩放
-   参数（background-size: auto figure-h、顶部对齐居中），所以手永远落在她原来的手腕上。
-
-   几何全部由每台实测的牌面推出来（立绘 px ÷ 立绘高度 = 比例）：
-     --cast-board-t  看板上沿 = 画里那块牌子的上外沿再上 3 个立绘像素：板面从这里铺到卡底，
-                     3px 的板沿正好把原图牌子留在人物层里那道 1px 上沿描边整个盖住
-     --cast-cut      牌子的**下外沿**：摊开时立绘只露到这里；收起时看板就留这么高
-   名字印在板面正中，收起 / 展开落在同一坐标；卡片头那颗按钮就是折叠开关。
+   几何全部是「卡宽的百分比」，所以从 288px 的手机卡到 568px 的宽屏单列卡都自动成比例：
+     · 立绘宽 = 卡宽的 66%（--cast 的 --cast-*-ar 就是它的 aspect-ratio），不按定高缩放——
+       看板高度只由数据决定，人物再小也不会把看板压扁；
+     · 看板占卡宽的 94%（左右各 3%）。
    -------------------------------------------------------------------------- */
+
+/* 立绘层：只露出「牌子上沿以上」那一段。aspect-ratio = W /(0.66·t)，背景按 66% 卡宽缩放，
+   于是盒子底边恰好落在立绘的第 t 行（牌子上沿）——看板上沿就压在那儿。 */
 html[data-skin="anime"] .anime-stage {
   display: block;
-  /* 相对定位 + z-index:1：HTML 看板（z-index 2）与双手层（z-index 3）都压在它上面。
-     层级只在这张卡自己的层叠上下文里比（卡壳现在是 position: relative，见下面 .node-card 那条），不越过卡片。 */
   position: relative;
   z-index: 1;
-  /* 卡片自己有 22px 内边距，立绘层要通铺到卡片边（圆角交给卡片的 overflow:hidden 裁） */
-  margin: -22px -22px 16px;
-  /* 画满整身高（头顶 → 脚）：看板只盖住「牌子」那一段，牌子以下的裙/腿/袜/鞋仍然画出来、
-     在看板下沿以下露出来（用户反馈过「下半身没了」）。 */
-  height: var(--cast-figure-h, 720px);
-  overflow: hidden;   /* 眨眼层也在这层里（它是全高），圆角靠卡片裁 */
+  /* 卡片有 22px 内边距，立绘要通铺到卡边（圆角交给卡片裁）；下边不留白，看板紧接着它的底边。 */
+  margin: -22px -22px 0;
+  aspect-ratio: var(--cast-top-ar, 1.9);
+  overflow: hidden;
   background-image: var(--cast-art-url);
   background-repeat: no-repeat;
   background-position: top center;
-  background-size: auto var(--cast-figure-h, 720px);
+  background-size: 66% auto;
 }
 
-/* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是 web/anime/<id>.webp。
-   走样式表而不是行内 style —— 页面 CSP 是 style-src 'self'，行内的 background-image 会被丢掉。 */
+/* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是 web/anime/<id>.webp。 */
 html[data-skin="anime"] .anime-stage[data-cast="jp-nosla-gen2"],
 html[data-skin="anime"] .anime-stage[data-cast="de-nosla-fra"],
 html[data-skin="anime"] .anime-stage[data-cast="us-vmiss-tri"],
@@ -626,16 +626,14 @@ html[data-skin="anime"] .anime-stage[data-cast="us-bwh-dc9"] {
 }
 
 /* 夜版：人物压一档亮度，免得浅色人物在深色卡上发光（底是透明的不受影响）。
-   双手层必须跟人物同一套处理：只给手压暗会让肤色、手根和胳膊断色（gpt 验收也点了这条）。 */
-html[data-skin="anime"][data-theme="dark"] .anime-stage {
-  filter: brightness(0.86) saturate(0.94);
-}
-html[data-skin="anime"][data-theme="dark"] .anime-hands {
+   双手层与下半身层必须跟人物同一套处理：只压一层会让肤色、手根和胳膊断色。 */
+html[data-skin="anime"][data-theme="dark"] .anime-stage,
+html[data-skin="anime"][data-theme="dark"] .anime-hands,
+html[data-skin="anime"][data-theme="dark"] .anime-legs {
   filter: brightness(0.86) saturate(0.94);
 }
 
-/* 卡片 = 她站着的那张牌面。浅色下牌子是白面深字，夜版里牌子跟着夜色变深
-   （立在 --anime-sign / --anime-sign-line 上），
+/* 卡片 = 她站着的那张牌面。浅色下牌子是白面深字，夜版里牌子跟着夜色变深，
    所以卡片子树里那几个令牌只在浅色下就地覆盖成浅色那套。 */
 html[data-skin="anime"]:not([data-theme="dark"]) .node-card {
   --ink: #232838;
@@ -654,9 +652,7 @@ html[data-skin="anime"] .node-card {
   border: 1px solid var(--anime-sign-line);
   box-shadow: var(--anime-shadow-sm);
   /* 卡壳必须是**定位元素**：双手层 .anime-hands 是绝对定位（top:0），要相对这张卡来放。
-     基础样式表里的 .node-card 其实没有 position（anime.css 上面那句老注释写错了）；
-     漏了它，四台卡的双手层会一起去找更高的定位祖先（body），几只手就飘到页面顶上、
-     落在概览那一排卡片里（用户发现「悬空的手指」）。牌子上的手一直没真正贴上去，就是这个。 */
+     漏了它，四台卡的双手层会一起去找更高的定位祖先（body），几只手就飘到页面顶上。 */
   position: relative;
 }
 
@@ -675,7 +671,7 @@ html[data-skin="anime"] .node-card[data-cast] {
 }
 
 /* --------------------------------------------------------------------------
-   N+2. 牌面配色：立绘之外，卡片本体也跟着角色的风格走（2026-10-08）
+   N+2. 牌面配色：立绘之外，卡片本体也跟着角色的风格走
    - app.js 在卡壳上挂 data-cast（立绘层在卡片**内部**，父级读不到它的 data-cast，
      所以卡壳上再挂一份；两处都出自 castId()，不会漂）。
    - 只改「材质」——牌面底色、格子底色、描边、进度轨、强调色；正文令牌（--ink/--muted）、
@@ -697,23 +693,22 @@ html[data-skin="anime"] .node-card[data-cast] {
   border-color: var(--cast-line);
 }
 
-/* 看板高度：板定高、板内数据滚动（见上面 .card-body 与滚动区两条），板下沿以下留给立绘下半身。
-   板下沿越低、露出的下半身越多；实测（四台构图一致）：板底取到裙摆下沿稍上，才能同时看到
-   裙摆 + 腿 + 袜 + 鞋，且不切断裙褶。手机（立绘 620）板 140、桌面（立绘 720）板 150。
-   收起态板只剩头部：2px 边框 + 8px 内边距 + 28px 名字行 + 8px + 2px = 48px。 */
-html[data-skin="anime"] .node-card[data-cast] {
-  --cast-board-h: 140px;
-  --cast-board-h-roll: 48px;
-}
-
-/* JP-NoSla-Gen2 · 家人云 × 日本：樱花粉牌面 + 极淡花瓣点 */
+/* JP-NoSla-Gen2 · 家人云 × 日本：樱花粉牌面 + 极淡花瓣点
+   --cast-top-ar / --cast-hands-ar / --cast-legs-ar / --cast-full-ar / --cast-seam / --cast-lip
+   全是实测比例，见 scripts/anime-split-layers.py 的 PLATE。 */
 html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
-  --cast-art-url: url("/anime/jp-nosla-gen2.webp");           /* 人物层：去掉牌子与双手（拆层脚本） */
+  --cast-art-url: url("/anime/jp-nosla-gen2.webp");           /* 人物层：牌子与双手已拆走（拆层脚本） */
   --cast-hands-url: url("/anime/jp-nosla-gen2-hands.webp");   /* 双手层：压在看板上沿的那双手 */
-  --cast-figure-h: 720px;   /* 全身立绘按高度缩放：她的头到脚 = 720px，卡片宽 358，所以两侧留白是她自己「漂」在卡上的 */
-  --cast-art-w: calc(var(--cast-figure-h, 720px) * 0.3824);   /* 立绘在卡上的宽度 = 高度 × 图宽高比 */
-  --cast-board-t: 0.3007;   /* 看板上沿：牌子上外沿再往上 3 个立绘像素（460/1530），这样 3px 板沿正好把原图牌子留在人物层里的那道 1px 上沿描边整个盖住 */
-  --cast-cut: 0.4386;       /* 牌子的下外沿（实测 671/1530）：摊开时露到这里，收起时看板就留这么高 */
+  --cast-top-ar: 1.7979;      /* W/(0.66·(t+30))：上半身层的 aspect-ratio。
+                              t = 牌子上沿（463/1530）；多画的 30 行是「板唇」——
+                              呼吸动画会把这一层抬 2px，没有这圈压在板下的余量，
+                              板顶就会闪出一条卡片底色。 */
+  --cast-lip: 0.033846;        /* 板唇 = 0.66·30/585（占卡宽的比例）：看板用这个负 margin 顶回去，
+                              把多画的 30 行盖在板下沿以内，牌子外沿仍停在第 t 行 */
+  --cast-hands-ar: 1.69477;    /* W/(0.66·(t+60))：双手层的 aspect-ratio（含手指压过板沿那一段） */
+  --cast-legs-ar: 1.03175;     /* W/(0.66·(H−b))：下半身层的 aspect-ratio */
+  --cast-full-ar: 0.5793;   /* 585/(0.66·1530) = W/(0.66·H)：下半身层里那张全立绘盒子的 aspect-ratio（按 66% 卡宽缩放） */
+  --cast-seam: 0.43856;       /* b/H：translateY 的百分比（牌子的下外沿） */
   --cast-board: #ffe7f1;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #f6b1cc;
@@ -723,19 +718,25 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
   --cast-stripe: linear-gradient(90deg, #ffd9e8, #ff7aa2 50%, #ffd9e8);
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(232 69 124 / 0.18) 1.3px, transparent 1.6px);
   --cast-motif-size: 15px 15px;
-  --cast-blink-url: url("/anime/jp-nosla-gen2-blink.webp");   /* 同一个人的闭眼帧（人物层同一个盒子） */
+  --cast-blink-url: url("/anime/jp-nosla-gen2-blink.webp");   /* 同一个人的闭眼帧 */
   --cast-blink-dur: 5.4s;
   --cast-blink-delay: 0.4s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
 }
 
 /* DE-NoSla-FRA · 家人云 × 德国：暖白牌面 + 黑红金细竖纹 */
 html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
-  --cast-art-url: url("/anime/de-nosla-fra.webp");           /* 人物层：去掉牌子与双手（拆层脚本） */
-  --cast-hands-url: url("/anime/de-nosla-fra-hands.webp");   /* 双手层：压在看板上沿的那双手 */
-  --cast-figure-h: 720px;   /* 全身立绘按高度缩放：她的头到脚 = 720px，卡片宽 358，所以两侧留白是她自己「漂」在卡上的 */
-  --cast-art-w: calc(var(--cast-figure-h, 720px) * 0.3491);   /* 立绘在卡上的宽度 = 高度 × 图宽高比 */
-  --cast-board-t: 0.3031;   /* 看板上沿 = 牌子上外沿再上 3 个立绘像素（461/1521）：3px 板沿盖住原图那道 1px 上沿描边 */
-  --cast-cut: 0.4260;       /* 牌子的下外沿（实测 648/1521）：摊开时露到这里，收起时看板就留这么高 */
+  --cast-art-url: url("/anime/de-nosla-fra.webp");
+  --cast-hands-url: url("/anime/de-nosla-fra-hands.webp");
+  --cast-top-ar: 1.62864;      /* W/(0.66·(t+30))：上半身层的 aspect-ratio。
+                              t = 牌子上沿（464/1521）；多画的 30 行是「板唇」——
+                              呼吸动画会把这一层抬 2px，没有这圈压在板下的余量，
+                              板顶就会闪出一条卡片底色。 */
+  --cast-lip: 0.037288;        /* 板唇 = 0.66·30/531（占卡宽的比例）：看板用这个负 margin 顶回去，
+                              把多画的 30 行盖在板下沿以内，牌子外沿仍停在第 t 行 */
+  --cast-hands-ar: 1.5354;    /* W/(0.66·(t+60))：双手层的 aspect-ratio（含手指压过板沿那一段） */
+  --cast-legs-ar: 0.92158;     /* W/(0.66·(H−b))：下半身层的 aspect-ratio */
+  --cast-full-ar: 0.5289;   /* 531/(0.66·1521) = W/(0.66·H)：下半身层里那张全立绘盒子的 aspect-ratio（按 66% 卡宽缩放） */
+  --cast-seam: 0.42603;       /* b/H：translateY 的百分比（牌子的下外沿） */
   --cast-board: #fff5e0;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e7cd90;
@@ -745,19 +746,25 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
   --cast-stripe: linear-gradient(90deg, #262626 0 33.4%, #c41e3a 33.4% 66.7%, #f0be3c 66.7% 100%);
   --cast-motif: repeating-linear-gradient(90deg, rgb(24 24 24 / 0.07) 0 7px, rgb(196 30 58 / 0.08) 7px 14px, rgb(240 190 60 / 0.13) 14px 21px);
   --cast-motif-size: auto;
-  --cast-blink-url: url("/anime/de-nosla-fra-blink.webp");   /* 同一个人的闭眼帧（人物层同一个盒子） */
+  --cast-blink-url: url("/anime/de-nosla-fra-blink.webp");
   --cast-blink-dur: 6.4s;
-  --cast-blink-delay: 2.1s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
+  --cast-blink-delay: 2.1s;
 }
 
 /* US-VMISS-TRI · VMISS × 美国：极淡天蓝牌面 + 蓝色小点（官网的蓝点涂鸦） */
 html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
-  --cast-art-url: url("/anime/us-vmiss-tri.webp");           /* 人物层：去掉牌子与双手（拆层脚本） */
-  --cast-hands-url: url("/anime/us-vmiss-tri-hands.webp");   /* 双手层：压在看板上沿的那双手 */
-  --cast-figure-h: 720px;   /* 全身立绘按高度缩放：她的头到脚 = 720px，卡片宽 358，所以两侧留白是她自己「漂」在卡上的 */
-  --cast-art-w: calc(var(--cast-figure-h, 720px) * 0.3618);   /* 立绘在卡上的宽度 = 高度 × 图宽高比 */
-  --cast-board-t: 0.2937;   /* 看板上沿 = 牌子上外沿再上 3 个立绘像素（444/1512）：3px 板沿盖住原图那道 1px 上沿描边 */
-  --cast-cut: 0.4444;       /* 牌子的下外沿（实测 672/1512）：摊开时露到这里，收起时看板就留这么高 */
+  --cast-art-url: url("/anime/us-vmiss-tri.webp");
+  --cast-hands-url: url("/anime/us-vmiss-tri-hands.webp");
+  --cast-top-ar: 1.7375;      /* W/(0.66·(t+30))：上半身层的 aspect-ratio。
+                              t = 牌子上沿（447/1512）；多画的 30 行是「板唇」——
+                              呼吸动画会把这一层抬 2px，没有这圈压在板下的余量，
+                              板顶就会闪出一条卡片底色。 */
+  --cast-lip: 0.036197;        /* 板唇 = 0.66·30/547（占卡宽的比例）：看板用这个负 margin 顶回去，
+                              把多画的 30 行盖在板下沿以内，牌子外沿仍停在第 t 行 */
+  --cast-hands-ar: 1.63469;    /* W/(0.66·(t+60))：双手层的 aspect-ratio（含手指压过板沿那一段） */
+  --cast-legs-ar: 0.98665;     /* W/(0.66·(H−b))：下半身层的 aspect-ratio */
+  --cast-full-ar: 0.5481;   /* 547/(0.66·1512) = W/(0.66·H)：下半身层里那张全立绘盒子的 aspect-ratio（按 66% 卡宽缩放） */
+  --cast-seam: 0.44444;       /* b/H：translateY 的百分比（牌子的下外沿） */
   --cast-board: #e9f2ff;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #aec9ff;
@@ -767,19 +774,25 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
   --cast-stripe: linear-gradient(90deg, #7ba4ff, #2d65ee 55%, #f2c21b);
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(29 85 224 / 0.16) 1.3px, transparent 1.6px);
   --cast-motif-size: 15px 15px;
-  --cast-blink-url: url("/anime/us-vmiss-tri-blink.webp");   /* 同一个人的闭眼帧（人物层同一个盒子） */
+  --cast-blink-url: url("/anime/us-vmiss-tri-blink.webp");
   --cast-blink-dur: 4.6s;
-  --cast-blink-delay: 3.3s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
+  --cast-blink-delay: 3.3s;
 }
 
 /* US-BWH-DC9 · 搬瓦工 × 美国：暖琥珀牌面 + 斜向金线 */
 html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
-  --cast-art-url: url("/anime/us-bwh-dc9.webp");           /* 人物层：去掉牌子与双手（拆层脚本） */
-  --cast-hands-url: url("/anime/us-bwh-dc9-hands.webp");   /* 双手层：压在看板上沿的那双手 */
-  --cast-figure-h: 720px;   /* 全身立绘按高度缩放：她的头到脚 = 720px，卡片宽 358，所以两侧留白是她自己「漂」在卡上的 */
-  --cast-art-w: calc(var(--cast-figure-h, 720px) * 0.3554);   /* 立绘在卡上的宽度 = 高度 × 图宽高比 */
-  --cast-board-t: 0.2962;   /* 看板上沿 = 牌子上外沿再上 3 个立绘像素（455/1536）：3px 板沿盖住原图那道 1px 上沿描边 */
-  --cast-cut: 0.4271;       /* 牌子的下外沿（实测 656/1536）：摊开时露到这里，收起时看板就留这么高 */
+  --cast-art-url: url("/anime/us-bwh-dc9.webp");
+  --cast-hands-url: url("/anime/us-bwh-dc9-hands.webp");
+  --cast-top-ar: 1.69523;      /* W/(0.66·(t+30))：上半身层的 aspect-ratio。
+                              t = 牌子上沿（458/1536）；多画的 30 行是「板唇」——
+                              呼吸动画会把这一层抬 2px，没有这圈压在板下的余量，
+                              板顶就会闪出一条卡片底色。 */
+  --cast-lip: 0.036264;        /* 板唇 = 0.66·30/546（占卡宽的比例）：看板用这个负 margin 顶回去，
+                              把多画的 30 行盖在板下沿以内，牌子外沿仍停在第 t 行 */
+  --cast-hands-ar: 1.59705;    /* W/(0.66·(t+60))：双手层的 aspect-ratio（含手指压过板沿那一段） */
+  --cast-legs-ar: 0.94008;     /* W/(0.66·(H−b))：下半身层的 aspect-ratio */
+  --cast-full-ar: 0.5386;   /* 546/(0.66·1536) = W/(0.66·H)：下半身层里那张全立绘盒子的 aspect-ratio（按 66% 卡宽缩放） */
+  --cast-seam: 0.42708;       /* b/H：translateY 的百分比（牌子的下外沿） */
   --cast-board: #fff3dc;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e9c684;
@@ -789,14 +802,13 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-stripe: linear-gradient(90deg, #ffc107, #f57c00);
   --cast-motif: repeating-linear-gradient(135deg, rgb(200 128 20 / 0.14) 0 5px, transparent 5px 15px);
   --cast-motif-size: auto;
-  --cast-blink-url: url("/anime/us-bwh-dc9-blink.webp");   /* 同一个人的闭眼帧（人物层同一个盒子） */
+  --cast-blink-url: url("/anime/us-bwh-dc9-blink.webp");
   --cast-blink-dur: 5.9s;
-  --cast-blink-delay: 1.2s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
+  --cast-blink-delay: 1.2s;
 }
 
 /* 夜版：牌面各自的暗色，纹样用同色系提亮一点；强调色提亮保证在深底上够亮 */
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="jp-nosla-gen2"] {
-  --cast-stripe: linear-gradient(90deg, #ffd9e8, #ff7aa2 50%, #ffd9e8);
   --cast-board: #201b22;
   --cast-cell: #282029;
   --cast-line: #3a2c38;
@@ -807,7 +819,6 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="jp-nosla-gen2"]
 }
 
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="de-nosla-fra"] {
-  --cast-stripe: linear-gradient(90deg, #262626 0 33.4%, #c41e3a 33.4% 66.7%, #f0be3c 66.7% 100%);
   --cast-board: #1f1e1a;
   --cast-cell: #26241e;
   --cast-line: #3a352a;
@@ -818,7 +829,6 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="de-nosla-fra"] 
 }
 
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-vmiss-tri"] {
-  --cast-stripe: linear-gradient(90deg, #7ba4ff, #2d65ee 55%, #f2c21b);
   --cast-board: #171d2b;
   --cast-cell: #1d2536;
   --cast-line: #2b3a5c;
@@ -829,7 +839,6 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-vmiss-tri"] 
 }
 
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
-  --cast-stripe: linear-gradient(90deg, #ffc107, #f57c00);
   --cast-board: #221c13;
   --cast-cell: #2a2216;
   --cast-line: #3c2f1c;
@@ -840,71 +849,52 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
 }
 
 /* --------------------------------------------------------------------------
-   N+3. ③ 双手层：压在看板上沿
+   N+3. ③ 下半身层：<id>.webp 里「牌子下沿 → 画布底」那一段
 
-   和人物层同一张画布、同一套缩放/对齐（background-size: auto figure-h、top center），
-   只是它是卡片的最后一个孩子、z-index 3，所以画在看板上面。盒子只到牌子的下外沿
-   （--cast-cut）——再往下没必要，也不会画到板面以下。
-   pointer-events:none：它压着的板面上还有数据与按钮，别让这层把点击吃掉。
-   -------------------------------------------------------------------------- */
-html[data-skin="anime"] .anime-hands {
-  display: block;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  z-index: 3;
-  height: calc(var(--cast-figure-h, 720px) * var(--cast-cut, 0.44));
-  background-image: var(--cast-hands-url);
-  background-repeat: no-repeat;
-  background-position: top center;
-  background-size: auto var(--cast-figure-h, 720px);
-  pointer-events: none;
-}
-
-/* 列表视图不摆立绘：一行一台的密度下放不下人物（元素照旧渲染，只是不显示） */
-html[data-skin="anime"] .node-grid.node-list .anime-stage {
-  display: none;
-}
-html[data-skin="anime"] .node-grid.node-list .anime-hands {
-  display: none;
-}
-html[data-skin="anime"] .node-grid.node-list .anime-legs {
-  display: none;
-}
-
-/* --------------------------------------------------------------------------
-   N+3b. ④ 下半身占位层（.anime-legs）
-
-   人物层（.anime-stage）现在画满整身高，看板（.card-body）只盖住「牌子」那一段；
-   牌子以下的裙 / 腿 / 袜 / 鞋由人物层自己画出来、在看板下沿以下露出来——不需要再叠一层图。
-   这一层只干一件事：**把卡片撑到整身高**。卡片是 flex 纵向排布，看板有负 margin、把流程
-   往上拉，所以「看板底边」就在流程的末端；没有这一层，卡片会在看板下沿处收口，把她的下半身裁掉。
-   高度 = figure-h × (1 − board-t) − 看板高 = 看板下沿 → 立绘脚底那一段。
-   pointer-events: none：不抢板面 / 数据行 / 「详细」按钮的点击。
+   盒子的高 = 立绘宽 × (H−b)/W（aspect-ratio --cast-legs-ar），里面那张全高立绘用 translateY
+   上移 b/H（--cast-seam，百分比相对自身高度 = 全高立绘高），于是第 b 行正好落在盒子顶边——也就是
+   看板的下沿。板上沿到下沿之间那段是牌子（人物层里已透明），由 HTML 看板接管，所以看起来就是
+   「她站在一块大板后面，板下沿以下露出裙摆 / 大腿 / 白袜 / 皮鞋」。
+   负 margin-top 把接缝塞到看板边框底下（看板 z-index 2 > 本层 z-index 1），不会留一条横线。
    -------------------------------------------------------------------------- */
 html[data-skin="anime"] .anime-legs {
   display: block;
   position: relative;
   z-index: 1;
-  flex: 0 0 auto;
-  margin: 0 -22px;
-  height: calc(var(--cast-figure-h, 720px) * (1 - var(--cast-board-t, 0.30)) - var(--cast-board-h, 140px));
+  margin: -6px -22px 0;
+  aspect-ratio: var(--cast-legs-ar, 0.68);
+  overflow: hidden;
   pointer-events: none;
 }
 
-/* --------------------------------------------------------------------------
-   N+4. ② HTML 看板：板面上排节点数据
+html[data-skin="anime"] .anime-legs::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  aspect-ratio: var(--cast-full-ar, 0.579);
+  background-image: var(--cast-art-url);
+  background-repeat: no-repeat;
+  background-position: top center;
+  background-size: 66% auto;
+  transform: translateY(calc(-100% * var(--cast-seam, 0.44)));
+}
 
-   - 板沿落在画里那块牌子的上外沿**再上 3 个立绘像素**（--cast-board-t，逐台实测 ≈0.294~0.303）：
-     人物层是模型重绘的，牌子上沿那道 1px 旧描边洗不干净，板沿压上去正好把它整条盖掉；
-     板面从这里一直铺到卡片底部。人物层里那块牌子已经整块透明了，板沿以上只剩她的
-     上半身与手腕，所以上沿是一条干净的 HTML 边框，不会再透出旧描边。
-   - 与立绘层同一套坐标：立绘层高 figure-h × cast-cut、外面还有 16px 下外边距，
-     所以负 margin-top =（board-t − cut）× figure-h − 16。
-   - 左右各 1px 内缩（内边距 22 + 边框 1 + 1），落在卡宽的 6.7% / 93.3%——比画里那块牌子
-     （12.5% ~ 87.4%）宽一大截，牌子的左右外缘整个压在板子底下。
-   - 白底 #fffdfb + 3px 灰褐实边框 + 小圆角，数据各行正常排在板内；z-index 2 压住人物层。
+/* 列表视图不摆立绘：一行一台的密度下放不下人物（元素照旧渲染，只是不显示） */
+html[data-skin="anime"] .node-grid.node-list .anime-stage,
+html[data-skin="anime"] .node-grid.node-list .anime-hands,
+html[data-skin="anime"] .node-grid.node-list .anime-legs {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   N+4. ② HTML 看板：板面上排节点数据（**板高由内容决定，板内不滚动**）
+
+   - 板沿落在立绘里那块牌子的上外沿：上半身层的底边就是立绘第 t 行，看板紧接着它。
+   - 板宽 = 卡宽的 94%（左右各 3%）：宽卡窄卡一个比例，与 gpt 方案一致。
+   - 白底 + 2px 灰褐实边框 + 14px 圆角；overflow:hidden 只负责圆角把内容裁齐，不裁数据。
+   - 板高 auto：数据全部排在里面，一行都不藏（用户否掉了「定高 + 板内滚动」）。
    -------------------------------------------------------------------------- */
 html[data-skin="anime"] .node-card[data-cast] .card-body {
   position: relative;
@@ -912,21 +902,18 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   flex: 0 0 auto;
-  width: calc(100% - 2px);
+  /* 100% 是卡片的内容盒（卡宽 − 2px 边框 − 44px 内边距 = 卡宽 − 46），+46px 才是卡宽：
+     板宽 = 卡宽 × 0.94，左右各留 3%（3%·卡宽 − 23px 正好把板从内容盒推到离卡边 3% 处）。
+     max-width 必须显式放开：基础样式表给了 .card-body max-width:100%，会把板卡在内容盒宽。 */
+  width: calc((100% + 46px) * 0.94);
   min-width: 0;
-  max-width: 100%;
-  /* 看板上沿 = 立绘高度的 --cast-board-t（画里那块牌子的上外沿，她双手搭在那儿）。
-     人物层现在画满整身高、下外边距 16，所以负 margin = −(1 − board-t) × figure-h − 16。 */
-  margin: calc((var(--cast-board-t, 0.30) - 1) * var(--cast-figure-h, 720px) - 16px) 1px 0;
-  /* 板高固定（--cast-board-h）：板以上的数据在板内滚动（见 N+4b），板以下露出她的下半身。
-     定高才能保证「板下沿」是一个可算的量，人物下半身露在哪一段就由它决定。 */
-  height: var(--cast-board-h, 140px);
-  padding: 8px;
+  max-width: none;
+  margin: calc((100% + 46px) * -1 * var(--cast-lip, 0.036)) calc((100% + 46px) * 0.03 - 23px) 0;
+  height: auto;
+  padding: 10px;
   border: 2px solid #cdb7b4;
-  /* 圆角交给皮肤的统一尺度（html[data-skin="anime"] * 的 --anime-radius，14px）：这块板和其他面
-     一样是「二次元的大圆角」，也接近 gpt 方案里的 12px。 */
   border-radius: 14px;
   background: #fffdfb;
   overflow: hidden;
@@ -936,32 +923,15 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body {
   border-color: #4b434a;
 }
 
-/* 板内滚动区：板高定死之后，剩下的数据（地区 / 资源 / 流量 / 到期 / 延迟 / 三网回程）在这块里
-   竖着滚（gpt-6.1-sol 定的方案：宁可板内滚动，也要把立绘下半身让出来）。细滚动条当提示，
-   不遮住内容；滚到哪一屏都还在板面以内，数据不会挂到板外。 */
+/* 板内数据区：正常流、不滚动、不裁切。 */
 html[data-skin="anime"] .node-card[data-cast] .card-body > [id] {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgb(0 0 0 / 0.22) transparent;
-}
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body > [id] {
-  scrollbar-color: rgb(255 255 255 / 0.24) transparent;
-}
-html[data-skin="anime"] .node-card[data-cast] .card-body > [id]::-webkit-scrollbar { width: 4px; }
-html[data-skin="anime"] .node-card[data-cast] .card-body > [id]::-webkit-scrollbar-track { background: transparent; }
-html[data-skin="anime"] .node-card[data-cast] .card-body > [id]::-webkit-scrollbar-thumb {
-  background: rgb(0 0 0 / 0.22);
-  border-radius: 3px;
-}
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body > [id]::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 0.24);
+  overflow: visible;
 }
 
-/* 头部（状态点 + 名字 + 折叠箭头 + 标签）固定在板顶，不跟着数据滚：名字两态落在同一个坐标。
-   卡片头在板内的上偏移 = 2px 边框 + 8px 内边距，展开 / 收起都一样。 */
+/* 头部（状态点 + 名字 + 折叠箭头 + 标签）固定在板顶：名字两态落在同一个坐标。
+   卡片头在板内的上偏移 = 2px 边框 + 10px 内边距，展开 / 收起都一样。 */
 html[data-skin="anime"] .node-card[data-cast] .card-top { margin-bottom: 0; flex: 0 0 auto; }
 
 /* 名字固定在板面正中：水平居中、两态同一坐标。状态点与折叠箭头都绝对定位在两端，
@@ -1013,7 +983,7 @@ html[data-skin="anime"] .card-top .fold-name .fold-caret svg { width: 13px; heig
 /* 收起态箭头翻个身（往下 = 还能展开） */
 html[data-skin="anime"] .node-card[data-rolled="true"] .fold-caret svg { transform: rotate(180deg); }
 
-html[data-skin="anime"] .node-card .detail-row { display: flex; justify-content: flex-end; margin: 2px 0 8px; }
+html[data-skin="anime"] .node-card .detail-row { display: flex; justify-content: flex-end; margin: 0 0 4px; }
 html[data-skin="anime"] .node-card .detail-row:empty { display: none; }
 html[data-skin="anime"] .detail-open {
   height: 22px;
@@ -1029,35 +999,52 @@ html[data-skin="anime"] .detail-open {
 html[data-skin="anime"] .detail-open:hover { border-color: var(--cast-accent, #e8457c); }
 
 /* --------------------------------------------------------------------------
+   N+4b. 板内排版压紧（只作用于「有立绘的卡」）
+
+   这块板要一次装下：标题 / 地区·系统 / CPU·内存·磁盘·周期 / 流量 / 到期·续费 / 延迟三网 / 三网回程。
+   按 gpt 的分组把这七段逐段收边距与行高（原来是 482px，现在 ~380px 一眼看全），
+   字号不缩到看不清（正文 11–12px、标签 10–11px），**不设 overflow 裁切、不设滚动容器**。
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] .node-card[data-cast] .node-sub { margin-bottom: 6px; gap: 8px; }
+html[data-skin="anime"] .node-card[data-cast] .node-sub p { font-size: 11px; }
+html[data-skin="anime"] .node-card[data-cast] .metrics-grid { gap: 7px 12px; }
+html[data-skin="anime"] .node-card[data-cast] .metric { gap: 3px; }
+html[data-skin="anime"] .node-card[data-cast] .metric > div { font-size: 12px; }
+html[data-skin="anime"] .node-card[data-cast] .metric > div span { font-size: 11px; }
+html[data-skin="anime"] .node-card[data-cast] .metric progress { height: 5px; }
+html[data-skin="anime"] .node-card[data-cast] .metric small { font-size: 10px; }
+html[data-skin="anime"] .node-card[data-cast] .card-stats { padding-top: 6px; margin-bottom: 6px; gap: 6px; }
+html[data-skin="anime"] .node-card[data-cast] .route-heading { margin-bottom: 3px; font-size: 10px; }
+html[data-skin="anime"] .node-card[data-cast] .route-heading b { font-size: 10px; padding: 1px 5px; }
+html[data-skin="anime"] .node-card[data-cast] .latency-bands { gap: 4px; margin-bottom: 6px; }
+html[data-skin="anime"] .node-card[data-cast] .net-band { padding: 3px 6px; gap: 3px; }
+html[data-skin="anime"] .node-card[data-cast] .net-band .band-metric strong { font-size: 11.5px; }
+html[data-skin="anime"] .node-card[data-cast] .net-band .band-bars .quality-bars,
+html[data-skin="anime"] .node-card[data-cast] .net-band .band-bars .quality-bar { height: 6px !important; min-height: 6px; }
+html[data-skin="anime"] .node-card[data-cast] .route-grid { gap: 6px; }
+html[data-skin="anime"] .node-card[data-cast] .route-label { padding: 5px 2px; gap: 2px 4px; }
+
+/* --------------------------------------------------------------------------
    N+5. 收起态：板压到只剩头部（名字 + 状态点 + 折叠箭头）
 
-   看板上沿不动（--cast-board-t 的坐标没变）、板内名字行在板内的上偏移也没变
-   （都是 2px 边框 + 8px 内边距），所以名字两态落在同一个坐标；
-   折叠影响的是板高与板内的数据（数据整块 display:none），以及下半身占位层跟着补足高差
-   —— 卡片总高恒等于整身高，立绘不会被压低、也不会在板沿处被裁。
+   看板上沿不动、板内名字行在板内的上偏移也没变（都是 2px 边框 + 10px 内边距），所以名字两态落在
+   同一个坐标；折叠只把数据整块 display:none，看板随之收成一行高，下半身层自动跟着上移到板下沿
+   —— 卡片变矮，人物不会被裁，裙摆/大腿/白袜/皮鞋照旧露出来。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body {
-  height: var(--cast-board-h-roll, 48px);
-  overflow: hidden;
-}
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .anime-legs {
-  height: calc(var(--cast-figure-h, 720px) * (1 - var(--cast-board-t, 0.30)) - var(--cast-board-h-roll, 48px));
-}
+html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body { overflow: hidden; }
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body > [id] { display: none; }
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-top .card-actions { display: none; }
 
-/* 裸眼 3D：指针在卡上时转一点，人物与双手各自多走一点（层间差速）——两者必须走同样的位移，
-   手才不会从手腕上滑下来。 */
+/* 裸眼 3D：指针在卡上时转一点，人物 / 双手 / 下半身各自多走一点（层间差速）——三者必须走同样的
+   位移，手才不会从手腕上滑下来、下半身才不会跟看板下沿错开。 */
 html[data-skin="anime"] .node-card[data-cast].is-tilt {
   transform: perspective(1100px) rotateX(calc(var(--tilt-ny, 0) * -3deg))
     rotateY(calc(var(--tilt-nx, 0) * 3.4deg));
   transition: transform 0.3s ease-out;
 }
-html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-stage {
-  transform: translate3d(calc(var(--tilt-nx, 0) * -9px), calc(var(--tilt-ny, 0) * -6px), 0);
-  transition: transform 0.3s ease-out;
-}
-html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-hands {
+html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-stage,
+html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-hands,
+html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-legs {
   transform: translate3d(calc(var(--tilt-nx, 0) * -9px), calc(var(--tilt-ny, 0) * -6px), 0);
   transition: transform 0.3s ease-out;
 }
@@ -1076,22 +1063,18 @@ html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-hands {
   58.6%, 100% { opacity: 0; }
 }
 
-/* 闭眼帧：整张人物层的另一个版本（眼睛闭上），和人物层同一张图、同一缩放定位，盒子取整张立绘那么高。
-   **整图切换**，不做任何蒙版裁切：帧是按「只改眼睛」出的、且做过亚像素对齐；裁切（通铺整卡宽的横带、
-   烤 alpha 的椭圆）反而会在脸上留下方形 / 椭圆补丁 —— 用户判「穿模」「都变形了」。
-   它画在人物层之上、看板之下（stage 里），牌子那块矩形在帧里也是透明的，板面不会被打回去。 */
+/* 闭眼帧：整张人物层的另一个版本（眼睛闭上），和人物层同一张图、同一缩放定位，盒子取上半身那么高。
+   **整图切换**，不做任何蒙版裁切：帧是按「只改眼睛」出的、且做过亚像素对齐；裁切反而会在脸上留下
+   方形 / 椭圆补丁 —— 用户判「穿模」「都变形了」。 */
 html[data-skin="anime"] .anime-blink {
-  /* 必须显式 display: block：底座样式表把这一层默认藏了（别的皮肤下它是裸元素），
-     只写动画不放开显示的话，动画一直在跑、人却永远看不到她眨眼。 */
   display: block;
   position: absolute; left: 0; top: 0; width: 100%;
-  height: var(--cast-figure-h, 720px);
+  height: 100%;
   opacity: 0; pointer-events: none;
   background-image: var(--cast-blink-url);
   background-repeat: no-repeat; background-position: top center;
-  background-size: auto var(--cast-figure-h, 720px);
+  background-size: 66% auto;
 }
-
 html[data-skin="anime"] .anime-blink {
   animation: anime-blink var(--cast-blink-dur, 5s) steps(1, end) infinite;
   animation-delay: var(--cast-blink-delay, 0s);
@@ -1102,8 +1085,33 @@ html[data-skin="anime"] .anime-blink {
   html[data-skin="anime"] .anime-hands { animation: anime-breathe 5.4s ease-in-out infinite; }
 }
 
-/* 不在立绘名单里的节点（没有 data-cast）：数据面板维持原来的浅底小圆角，不受看板几何影响
-   （看板那套负 margin 会把它顶到卡片外——线上 12 台里有 8 台是这种卡）。 */
+/* --------------------------------------------------------------------------
+   N+3c. ④ 双手层：压在看板上沿
+
+   和上半身层同一套缩放/对齐（background-size: 66% auto、top center），所以手永远落在她原来的
+   手腕上、手指压在看板上沿；它是卡片的最后一个孩子、z-index 3，画在看板上面。
+   高度取到「牌子上沿 + 一点」，再往下没必要（手指以下本来就是板面）。
+   pointer-events:none：它压着的板面上还有数据与按钮，别让这层把点击吃掉。
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] .anime-hands {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 3;
+  aspect-ratio: var(--cast-hands-ar, 1.7);
+  background-image: var(--cast-hands-url);
+  background-repeat: no-repeat;
+  background-position: top center;
+  background-size: 66% auto;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   N+6. 不在立绘名单里的节点（没有 data-cast）：数据面板维持原来的浅底小圆角，不受看板几何影响
+   （看板那套宽度/负边距会把它顶到卡片外——线上 12 台里有 8 台是这种卡）。
+   -------------------------------------------------------------------------- */
 html[data-skin="anime"] .node-card:not([data-cast]) .card-body {
   width: 100%;
   min-width: 0;
@@ -1117,22 +1125,4 @@ html[data-skin="anime"] .node-card:not([data-cast]) .card-body {
 }
 html[data-skin="anime"][data-theme="dark"] .node-card:not([data-cast]) .card-body {
   background: color-mix(in srgb, var(--cast-board, #1b1f2e) 70%, #000000);
-}
-
-/* 窄卡片（视口 ≤380px，卡片 ≈≤348px）：立绘是按高度缩放的定值，而看板最宽也只到卡片两边
-   各留 24px。画里那块牌子（立绘宽的 97%）比看板还宽时，牌子的左右外沿线会从看板外面露出来
-   （板外那块区域在人物层里已经是透明的了）。所以窄屏把她整体缩小一档，让牌子始终比板窄。
-   这个媒体查询放在所有 [data-cast] 规则之后：同特异度时后写的赢，逐台的 --cast-figure-h 会被它覆盖。 */
-@media (max-width: 380px) {
-  html[data-skin="anime"] .node-card[data-cast] {
-    --cast-figure-h: 620px;
-  }
-}
-
-/* 桌面（视口 >380px）：立绘 720、看板 150（`--cast-board-h` 的默认是手机的 140）。
-   板高只影响「板下沿落在立绘的哪一行」，即下半身露出多少；两档都是「露到裙摆、还能看到腿」。 */
-@media (min-width: 381px) {
-  html[data-skin="anime"] .node-card[data-cast] {
-    --cast-board-h: 150px;
-  }
 }
