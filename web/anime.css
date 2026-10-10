@@ -626,14 +626,30 @@ html[data-skin="anime"] .anime-cast {
 html[data-skin="anime"] .anime-cast[data-cast="jp-nosla-gen2"],
 html[data-skin="anime"] .anime-cast[data-cast="de-nosla-fra"],
 html[data-skin="anime"] .anime-cast[data-cast="us-vmiss-tri"],
-html[data-skin="anime"] .anime-cast[data-cast="us-bwh-dc9"] {
+html[data-skin="anime"] .anime-cast[data-cast="us-bwh-dc9"],
+html[data-skin="anime"] .anime-cast[data-cast="generic"] {
   background-image: var(--cast-art-url);
 }
 
 /* 夜版：人物与双手一起压一档亮度（同一张图、同一套处理，手才不会与手腕断色）。 */
 html[data-skin="anime"][data-theme="dark"] .anime-cast,
 html[data-skin="anime"][data-theme="dark"] .anime-hands {
-  filter: brightness(0.86) saturate(0.94);
+  /* 夜版只轻微压一档：压太狠时深色的鞋 / 裤和夜色糊在一起（gpt 提的对比度问题）。 */
+  filter: brightness(0.93) saturate(0.97);
+}
+
+/* 夜版在她脚下垫一层很淡的冷光：深色鞋 / 裤与夜色之间留出轮廓，不再糊成一片。 */
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] {
+  background-image:
+    radial-gradient(58% 42% at 50% 26%, color-mix(in srgb, var(--cast-accent) 18%, transparent), transparent 72%),
+    radial-gradient(74% 34% at 50% 100%, color-mix(in srgb, var(--cast-accent) 16%, transparent), transparent 72%),
+    radial-gradient(92% 36% at 50% 101%, rgb(255 255 255 / 0.28), transparent 78%);
+}
+
+/* 夜版板面上的辅助文字（副标 / 说明）提一档亮度：深板面上灰字对比度偏低。 */
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] {
+  --muted: #c2c9dd;
+  --subtle: #9aa3bd;
 }
 
 /* 卡片 = 她站着的那张牌面。浅色下牌子是白面深字，夜版里牌子跟着夜色变深，
@@ -705,9 +721,10 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
   --cast-hands-url: url("/anime/jp-nosla-gen2-hands.webp");   /* 双手层：压在看板上沿的那双手 */
   --cast-top-frac: 0.302614;   /* 牌子上外沿 = 463/1530（立绘高 1530） */
   --cast-bot-frac: 0.438562;   /* 牌子下外沿 = 671/1530 */
-  --cast-figure-h: 636.66px;   /* 图高 = (461 − 3 − 14) / (1 − 0.302614) */
-  --cast-board-top: 201.66px;  /* 板顶 = 12 + 图高 × 0.302614 − 3（板唇） */
-  --cast-plate-h: 92.55px;     /* 板条高 = 图高 × (0.438562 − 0.302614) + 2 × 3 */
+  --cast-figure-h: 626.63px;   /* 图高 = (461 − 3 − 14) / (1 − 0.302614) */
+  --cast-board-top: 195.65px;  /* 板顶 = 12 + 图高 × 0.302614 − 3（板唇） */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
+  --cast-plate-h: 108.00px;     /* 板条高 = 图高 × (0.438562 − 0.302614) + 2 × 3 */
   --cast-board: #ffe7f1;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #f6b1cc;
@@ -727,9 +744,10 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
   --cast-hands-url: url("/anime/de-nosla-fra-hands.webp");
   --cast-top-frac: 0.305062;   /* 牌子上外沿 = 464/1521 */
   --cast-bot-frac: 0.426035;   /* 牌子下外沿 = 648/1521 */
-  --cast-figure-h: 639.05px;   /* 图高 = (461 − 3 − 14) / (1 − 0.305062) */
-  --cast-board-top: 203.94px;  /* 板顶 = 12 + 图高 × 0.305062 − 3 */
-  --cast-plate-h: 83.31px;     /* 板条高 = 图高 × (0.426035 − 0.305062) + 2 × 3 */
+  --cast-figure-h: 628.83px;   /* 图高 = (461 − 3 − 14) / (1 − 0.305062) */
+  --cast-board-top: 197.82px;  /* 板顶 = 12 + 图高 × 0.305062 − 3 */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
+  --cast-plate-h: 108.00px;     /* 板条高 = 图高 × (0.426035 − 0.305062) + 2 × 3 */
   --cast-board: #fff5e0;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e7cd90;
@@ -749,9 +767,10 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
   --cast-hands-url: url("/anime/us-vmiss-tri-hands.webp");
   --cast-top-frac: 0.295635;   /* 牌子上外沿 = 447/1512 */
   --cast-bot-frac: 0.444444;   /* 牌子下外沿 = 672/1512 */
-  --cast-figure-h: 630.35px;   /* 图高 = (461 − 3 − 14) / (1 − 0.295635) */
-  --cast-board-top: 195.35px;  /* 板顶 = 12 + 图高 × 0.295635 − 3 */
-  --cast-plate-h: 99.80px;     /* 板条高 = 图高 × (0.444444 − 0.295635) + 2 × 3 */
+  --cast-figure-h: 620.42px;   /* 图高 = (461 − 3 − 14) / (1 − 0.295635) */
+  --cast-board-top: 189.43px;  /* 板顶 = 12 + 图高 × 0.295635 − 3 */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
+  --cast-plate-h: 108.00px;     /* 板条高 = 图高 × (0.444444 − 0.295635) + 2 × 3 */
   --cast-board: #e9f2ff;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #aec9ff;
@@ -771,9 +790,10 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-hands-url: url("/anime/us-bwh-dc9-hands.webp");
   --cast-top-frac: 0.298177;   /* 牌子上外沿 = 458/1536 */
   --cast-bot-frac: 0.427083;   /* 牌子下外沿 = 656/1536 */
-  --cast-figure-h: 632.64px;   /* 图高 = (461 − 3 − 14) / (1 − 0.298177) */
-  --cast-board-top: 197.63px;  /* 板顶 = 12 + 图高 × 0.298177 − 3 */
-  --cast-plate-h: 87.55px;     /* 板条高 = 图高 × (0.427083 − 0.298177) + 2 × 3 */
+  --cast-figure-h: 622.65px;   /* 图高 = (461 − 3 − 14) / (1 − 0.298177) */
+  --cast-board-top: 191.66px;  /* 板顶 = 12 + 图高 × 0.298177 − 3 */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
+  --cast-plate-h: 108.00px;     /* 板条高 = 图高 × (0.427083 − 0.298177) + 2 × 3 */
   --cast-board: #fff3dc;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e9c684;
@@ -785,6 +805,30 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-blink-url: url("/anime/us-bwh-dc9-blink.webp");
   --cast-blink-dur: 5.9s;
   --cast-blink-delay: 1.2s;
+}
+
+/* GENERIC · 通用人物：名单以外的线路机共用这一张中性立绘（无任何国家 / 商家元素）。
+   冷灰蓝牌面 + 极淡圆点；几何与那四台同一套约定，只是上下沿比例按这张画布实测。 */
+html[data-skin="anime"] .node-card[data-cast="generic"] {
+  --cast-art-url: url("/anime/generic.webp");
+  --cast-hands-url: url("/anime/generic-hands.webp");
+  --cast-top-frac: 0.284314;   /* 牌子上外沿 = 435/1530（画布 585×1530） */
+  --cast-bot-frac: 0.421569;   /* 牌子下外沿 = 645/1530 */
+  --cast-figure-h: 610.60px;   /* 图高 = (461 − 6 − 14) / (1 − 0.284314) */
+  --cast-board-top: 179.60px;  /* 板顶 = 12 + 图高 × 0.284314 − 6（板唇） */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
+  --cast-plate-h: 108.00px;     /* 收起态板条高（兜底常量；真浏览器里由 layoutCastCards() 写同一值） */
+  --cast-board: #eef1f6;
+  --cast-cell: rgb(255 255 255 / 0.58);
+  --cast-line: #c9d2e2;
+  --cast-track: #dde4ef;
+  --cast-accent: #4a6ea8;
+  --cast-accent-rgb: 74, 110, 168;
+  --cast-motif: radial-gradient(circle at 50% 50%, rgb(74 110 168 / 0.14) 1.3px, transparent 1.6px);
+  --cast-motif-size: 15px 15px;
+  --cast-blink-url: url("/anime/generic-blink.webp");
+  --cast-blink-dur: 6.1s;
+  --cast-blink-delay: 4.0s;
 }
 
 /* 夜版：牌面各自的暗色，纹样用同色系提亮一点；强调色提亮保证在深底上够亮 */
@@ -828,6 +872,16 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-motif: repeating-linear-gradient(135deg, rgb(224 166 60 / 0.10) 0 5px, transparent 5px 15px);
 }
 
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="generic"] {
+  --cast-board: #1a1f2b;
+  --cast-cell: #202636;
+  --cast-line: #2c3448;
+  --cast-track: #242b3c;
+  --cast-accent: #8fb0e8;
+  --cast-accent-rgb: 143, 176, 232;
+  --cast-motif: radial-gradient(circle at 50% 50%, rgb(143 176 232 / 0.10) 1.1px, transparent 1.4px);
+}
+
 /* --------------------------------------------------------------------------
    N+4. ② HTML 看板：板面上排节点数据（**板高由内容决定，板内不滚动**）
 
@@ -850,6 +904,17 @@ html[data-skin="anime"] .node-card[data-cast] {
   padding-bottom: 0;
 }
 
+/* 卡片视图里看板要一路铺到卡片底边：内容少的卡原先比同行最高的卡矮，网格拉伸出来的那十几像素
+   留在卡底（gpt-6.1-sol 看图点名「板没到卡底、GENERIC 底部留白更大」）。把卡壳做成竖向 flex、
+   看板 flex: 1 0 auto，多出来的高度就都给板面。两态结构相同 → 卡外尺寸仍然 Δ0。 */
+html[data-skin="anime"] .node-grid:not(.node-list) .node-card[data-cast] {
+  display: flex;
+  flex-direction: column;
+}
+html[data-skin="anime"] .node-grid:not(.node-list) .node-card[data-cast] .card-body {
+  flex: 1 0 auto;
+}
+
 html[data-skin="anime"] .node-card[data-cast] .card-body {
   position: relative;
   z-index: 2;
@@ -866,15 +931,29 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
   max-width: none;
   margin: calc(var(--cast-board-top, 201.66px) - 22px) calc((100% + 2px) * 0.03 - 1px) 0;
   height: auto;
+  /* 板面**至少**和基准板高一样高：内容少的线路机板面不会被数据行撑矮，人物缩放才有统一基准
+     （--cast-board-min 与 app.js 的 BOARD_H 必须同值）。内容真的更多时板面照旧往下长。 */
+  min-height: var(--cast-board-min, 457px);
   padding: 10px;
-  border: 2px solid #cdb7b4;
-  border-radius: 14px;
-  background: #fffdfb;
+  /* 板上不再画任何实线边框：手指压在板上沿时，2px 实线会横穿指节（用户 2026-10-10 原话
+     「边框去掉，因为手指会被边框截断」）。板面与卡面靠底色 + 极轻阴影区分；
+     阴影只用 y 偏移 ≥ 模糊半径的一半，上沿以上不会出现任何色带。 */
+  border: 0;
+  border-radius: 15px;
+  background-color: #fffdfb;
+  background-image: linear-gradient(90deg,
+    rgb(74 40 60 / 0.05) 0, rgb(74 40 60 / 0.001) 16px,
+    rgb(74 40 60 / 0.001) calc(100% - 16px), rgb(74 40 60 / 0.05) 100%);
+  box-shadow: 0 18px 22px -16px rgb(64 34 54 / 0.32);
   overflow: hidden;
 }
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body {
-  background: #26242a;
-  border-color: #4b434a;
+  background-color: #2c2933;
+  background-image: linear-gradient(90deg,
+    rgb(255 255 255 / 0.035) 0, rgb(255 255 255 / 0) 16px,
+    rgb(255 255 255 / 0) calc(100% - 16px), rgb(255 255 255 / 0.035) 100%);
+  border: 0;
+  box-shadow: 0 18px 22px -16px rgb(0 0 0 / 0.6);
 }
 
 /* 板内数据区：正常流、不滚动、不裁切。 */
@@ -1017,19 +1096,26 @@ html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-top .car
 html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body::before {
   content: "";
   position: absolute;
-  left: -2px;
-  right: -2px;
-  top: -2px;
-  height: var(--cast-plate-h, 92.55px);
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--cast-plate-h, 108px);
   box-sizing: border-box;
-  border: 2px solid #cdb7b4;
-  border-radius: 14px;
-  background: #fffdfb;
+  border: 0;
+  border-radius: 15px;
+  background-color: #fffdfb;
+  background-image: linear-gradient(90deg,
+    rgb(74 40 60 / 0.05) 0, rgb(74 40 60 / 0.001) 16px,
+    rgb(74 40 60 / 0.001) calc(100% - 16px), rgb(74 40 60 / 0.05) 100%);
+  box-shadow: 0 18px 22px -16px rgb(64 34 54 / 0.32);
   z-index: 0;
 }
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast][data-rolled="true"] .card-body::before {
-  background: #26242a;
-  border-color: #4b434a;
+  background-color: #2c2933;
+  background-image: linear-gradient(90deg,
+    rgb(255 255 255 / 0.035) 0, rgb(255 255 255 / 0) 16px,
+    rgb(255 255 255 / 0) calc(100% - 16px), rgb(255 255 255 / 0.035) 100%);
+  border: 0;
 }
 
 /* 裸眼 3D：指针在卡上时转一点，人物 / 双手各自多走一点（层间差速）——两层必须走同样的位移，

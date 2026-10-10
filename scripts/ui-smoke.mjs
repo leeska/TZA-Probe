@@ -933,11 +933,12 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert.equal(pubDoc.documentElement.dataset.skin, "anime", "选「二次元」要落到 <html data-skin>");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "anime", "偏好要存进 localStorage");
   assert(/二次元/.test(skinBtn.textContent), "按钮文字跟着换");
-  // 立绘层只给角色名单里的节点：这台测试节点不在名单里，所以一张卡都不该有 .anime-cast。
-  assert.equal(
-    pubDoc.querySelectorAll(".anime-cast").length,
-    0,
-    "角色名单外的节点不摆立绘（web/anime-cast.js）",
+  // 名单外的节点也摆立绘：落到「通用人物」generic（所有线路机在二次元皮肤下都有人物、观感统一）。
+  const genericCasts = [...pubDoc.querySelectorAll(".anime-cast")];
+  assert(genericCasts.length > 0, "名单外的节点也要摆立绘：落到通用人物 generic（web/anime-cast.js）");
+  assert(
+    genericCasts.every((el) => el.dataset.cast === "generic"),
+    "名单外的节点都用通用人物 generic 那一张立绘",
   );
   // 折叠开关：点卡片头那颗名字按钮 → 卡壳挂上 data-rolled、状态落 localStorage；再点一下 → 摊开、
   // 本地那份也清掉。本地库里没有名字正好等于角色名单的节点，所以这里塞一张合成卡——走的仍是页面里
@@ -1127,8 +1128,8 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "人物层：绝对定位、固定像素高（--cast-figure-h）、整张图按图高缩放（auto 100%）、顶对齐居中、不吃指针事件",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-cast\[data-cast="jp-nosla-gen2"\],[\s\S]*?\.anime-cast\[data-cast="us-bwh-dc9"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
-    "四个角色的立绘层都要挂上自己的图（同一条逗号选择器，四个 data-cast 都得在里面）",
+    /html\[data-skin="anime"\] \.anime-cast\[data-cast="jp-nosla-gen2"\],[\s\S]*?\.anime-cast\[data-cast="generic"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
+    "五个角色（四台专属 + 通用人物）的立绘层都要挂上自己的图（同一条逗号选择器，五个 data-cast 都得在里面）",
   );
   // 夜版：牌子的底色/描边要有暗色那一份，卡片子树的浅色令牌只能作用在浅色下，
   // 立绘在夜版里只裁到牌沿——不然深色的牌面上会露一条白牌面。
@@ -1141,8 +1142,8 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "浅色那套令牌只能作用在浅色下，夜版要让暗色令牌落进卡片",
   );
   assert(
-    /html\[data-skin="anime"\]\[data-theme="dark"\] \.anime-cast,[\s\S]*?\.anime-hands \{[\s\S]*?filter: brightness\(0\.86\)/s.test(animeCSS),
-    "夜版把人物（整张图）与双手两层一起压一档亮度（两层同一张图、同一套处理，手才不会从手腕上断色）",
+    /html\[data-skin="anime"\]\[data-theme="dark"\] \.anime-cast,[\s\S]*?\.anime-hands \{[\s\S]*?filter: brightness\(0\.93\)/s.test(animeCSS),
+    "夜版把人物（整张图）与双手两层一起压一档亮度（两层同一张图、同一套处理，手才不会从手腕上断色；只轻压一档，深色鞋/裤不和夜色糊在一起）",
   );
   // 一张完整人物图（2026-10-10 v2）：① 完整人物图 .anime-cast（看板下沿以下是同一张图的裙/腿/鞋）
   // → ② HTML 看板 .card-body（直接盖在人物图上）→ ③ 双手层 .anime-hands 压在看板上沿。
@@ -1161,9 +1162,9 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   );
   const boardRule = /html\[data-skin="anime"\] \.node-card\[data-cast\] \.card-body \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
   assert(
-    /z-index: 2/.test(boardRule) && /border: 2px solid #cdb7b4/.test(boardRule) && /#fffdfb/.test(boardRule) &&
+    /z-index: 2/.test(boardRule) && /border: 0/.test(boardRule) && /#fffdfb/.test(boardRule) &&
       /height: auto;/.test(boardRule) && /width: calc\(\(100% \+ 2px\) \* 0\.94\)/.test(boardRule),
-    "看板是 HTML 自己画的（z-index 2 压住上下半身层；白底 + 2px 灰褐板沿；板宽 94% 卡宽、板高由数据决定）",
+    "看板是 HTML 自己画的（z-index 2 压住人物层；白底、无实线边框——2px 实线会横穿压在板沿上的手指；板宽 94% 卡宽、板高由数据决定）",
   );
   // 有立绘的卡壳左右内边距收成 0：看板本来就该通铺到卡边（94% 卡宽），不收的话它会被
   // card-overflow-check 判成越过内容盒。内容盒 = 卡宽 − 2px 边框，(100% + 2px) 才是卡宽。
@@ -1172,9 +1173,12 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "有立绘的卡壳左右内边距要收成 0：看板/立绘按卡宽比例通铺，内容盒才等于卡宽 − 2px 边框",
   );
   // 看板高度必须由数据决定：定高 + 板内滚动这一版被用户否掉了（「内容都没了，为啥做得这么小」）。
+  // 只额外允许一条 min-height 兜底（--cast-board-min）：12 台里内容少的（8 台通用人物里就有）
+  // 板面不会被数据撑矮 —— 立绘按常量缩放，板位与人物大小 12 台一致；内容更多时板面照旧往下长。
   assert(
-    !/--cast-board-h/.test(animeCSS) && !/overflow-y: auto/.test(animeCSS),
-    "看板不许再定高、不许板内竖滚（定高 + 板内滚动就是被用户否掉的那版）：板高跟着数据走，全部数据一眼看全",
+    !/--cast-board-h/.test(animeCSS) && !/overflow-y: auto/.test(animeCSS) &&
+      /min-height: var\(--cast-board-min, 457px\)/.test(boardRule) && /height: auto;/.test(boardRule),
+    "看板不许定高、不许板内竖滚（板高跟数据走，全部数据一眼看全）；只留一条 min-height 兜底，保证 12 台板面等高、立绘缩放有统一基准",
   );
   const castBodyRule = /html\[data-skin="anime"\] \.node-card\[data-cast\] \.card-body > \[id\] \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
   assert(
@@ -1214,7 +1218,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   );
   // 每台机都要有双手层图址 + 逐台实测的牌子上/下沿占图高比例（--cast-top-frac / --cast-bot-frac）
   // 与兜底几何（--cast-figure-h / --cast-board-top / --cast-plate-h）。
-  for (const id of ["jp-nosla-gen2", "de-nosla-fra", "us-vmiss-tri", "us-bwh-dc9"]) {
+  for (const id of ["jp-nosla-gen2", "de-nosla-fra", "us-vmiss-tri", "us-bwh-dc9", "generic"]) {
     const block = new RegExp(`\\.node-card\\[data-cast="${id}"\\] \\{([^}]*)\\}`).exec(animeCSS)?.[1] || "";
     assert(
       /--cast-hands-url: url\("\/anime\//.test(block) &&

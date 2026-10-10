@@ -7,7 +7,7 @@ import { applySkin, skinButton } from "./skins.js";
 import { searchMatch } from "./search.js";
 import { carrierMark } from "./carrier-logos.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
-import { castId } from "./anime-cast.js";
+import { castId, foldKey } from "./anime-cast.js";
 import "./ui-select.js";
 
 const app = document.querySelector("#app");
@@ -474,7 +474,7 @@ function saveFolded() {
 // 卡壳上的状态 + 名字那颗按钮的 aria-expanded：折叠开关就是卡片头那颗「绿点 + 名字」按钮。
 function applyFolded() {
   for (const card of document.querySelectorAll(".node-card[data-cast]")) {
-    const rolled = foldedCasts.has(card.dataset.cast);
+    const rolled = foldedCasts.has(card.dataset.foldKey || card.dataset.cast);
     if (rolled) card.dataset.rolled = "true";
     else delete card.dataset.rolled;
     for (const btn of card.querySelectorAll("[data-fold]"))
@@ -492,43 +492,34 @@ function applyFolded() {
 // （这里量不到时——比如 jsdom——就用它）。
 // 收起态板内数据只 visibility:hidden（仍占位），板盒高度恒等于展开态板高，所以两态量出同一个板高。
 const FIG_TOP = 12; // 人物图顶距卡顶的留白（让开卡片上圆角）
-const LIP = 3; // 板唇：板顶压到牌子上外沿之上 3px，吃掉牌子那道 1px 描边与呼吸位移
+const LIP = 6; // 板唇：板顶压到牌子上沿之上 6px（吃掉补画区顶边 + 呼吸位移，板上沿不露线）
+const STRIP_H = 108; // 收起态板条高度：不但要放得下「名字 + 一行 地区·分组」，还必须整块盖住
+// 人物图里被补画过的矩形（原图那块牌子的位置 + 上下留白）—— 补画的像素只要露出来一点就会
+// 在裙摆 / 头发上留下一道直边接缝（gpt-6.1-sol 看图点名）。108px 对所有五台都够（最深的 vmiss 需 105）。
 const GROUND = 14; // 收起态脚下留白（不切鞋）
+const BOARD_H = 457; // 展开态板面**基准**高度（px，与 CSS 的 --cast-board-h 同值）。
+// 立绘缩放必须挂在一个常量上：早先按「板面实测高」算，板高又是内容撑的 —— 内容少的线路机
+// （8 台通用人物里就有）板面只有 330 出头，整张立绘跟着缩到 436px，人变小、板也铺不到卡底。
+// 现在板面有 min-height 兜底，立绘按常量缩放，12 张卡的人物大小与板位完全一致。
 function layoutCastCards() {
   for (const card of document.querySelectorAll(".node-card[data-cast]")) {
     const body = card.querySelector(".card-body");
     if (!body) continue;
-    const boardH = body.offsetHeight; // 数据 visibility:hidden 仍占位 → 等于展开态板高
-    if (!boardH) continue;
     const cs = getComputedStyle(card);
     const topFrac = parseFloat(cs.getPropertyValue("--cast-top-frac")) || 0.3;
-    const botFrac = parseFloat(cs.getPropertyValue("--cast-bot-frac")) || 0.44;
-    const figureH = (boardH - LIP - GROUND) / (1 - topFrac);
+    const figureH = (BOARD_H - LIP - GROUND) / (1 - topFrac);
     const boardTop = FIG_TOP + figureH * topFrac - LIP;
-    const plateH = figureH * (botFrac - topFrac) + 2 * LIP;
+    const plateH = STRIP_H;
     card.style.setProperty("--cast-figure-h", figureH.toFixed(2) + "px");
     card.style.setProperty("--cast-board-top", boardTop.toFixed(2) + "px");
     card.style.setProperty("--cast-plate-h", plateH.toFixed(2) + "px");
   }
 }
-function toggleFolded(cast) {
-  // 非立绘卡片沿用同一名字按钮及事件入口，不进入立绘卷轴逻辑。
-  if (String(cast).startsWith("node-id:")) {
-    for (const btn of document.querySelectorAll(".node-card .fold-name[data-fold]")) {
-      if (btn.dataset.fold !== cast) continue;
-      const card = btn.closest(".node-card");
-      const body = card?.querySelector(".card-body > [id]");
-      if (!body || body.id !== btn.getAttribute("aria-controls")) continue;
-      const folded = !body.hidden;
-      body.hidden = folded;
-      const actions = card.querySelector(".card-top .card-actions");
-      if (actions) actions.hidden = folded;
-      btn.setAttribute("aria-expanded", String(!folded));
-    }
-    return;
-  }
-  if (!cast) return;
-  foldedCasts.has(cast) ? foldedCasts.delete(cast) : foldedCasts.add(cast);
+function toggleFolded(key) {
+  // 所有卡都有人物了（名单外的落到通用人物 "generic"），收起 / 展开走同一套：只翻那把钥匙。
+  // 通用人物的多张卡各用各的节点 id（见 anime-cast.js 的 foldKey），折叠互不牵连。
+  if (!key) return;
+  foldedCasts.has(key) ? foldedCasts.delete(key) : foldedCasts.add(key);
   saveFolded();
   applyFolded();
 }
@@ -590,7 +581,7 @@ const cardShell = (n, inner) => {
   // 卡片自己读不到它的 data-cast，而皮肤样式表要按角色给整张牌面上色
   // （`.node-card[data-cast="…"]`），所以这里再挂一份——两处都由 castId() 出，不会漂。
   const cast = castId(n);
-  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}"${cast ? ` data-cast="${cast}"` : ""}>${inner}</article>`;
+  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}" data-cast="${cast}" data-fold-key="${foldKey(n)}">${inner}</article>`;
 };
 
 function card(n) {
@@ -901,6 +892,7 @@ function gridInner(n) {
   // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
   // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这个标记区分。
   const cast = castId(n);
+  const fkey = foldKey(n);
   const figure = cast
     ? `<div class="anime-cast" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
     : "";
@@ -908,7 +900,7 @@ function gridInner(n) {
   // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心
   // 不被它们挤动——收起 / 展开时名字落在同一坐标（折叠只影响板面上其余的内容/数据）。
   const cardTop =
-    `<div class="card-top"><button class="fold-name" type="button" data-fold="${cast || `node-id:${n.id}`}" aria-expanded="true" aria-controls="body-${n.id}">` +
+    `<div class="card-top"><button class="fold-name" type="button" data-fold="${fkey}" aria-expanded="true" aria-controls="body-${n.id}">` +
     `<span class="node-dot ${n.online ? "" : "offline"}"></span>` +
     `<span class="fold-name-text">${esc(n.name)}</span>` +
     `<span class="fold-caret" aria-hidden="true">${FOLD_ICON}</span>` +

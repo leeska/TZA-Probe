@@ -35,6 +35,16 @@ export const CAST = {
     crew: "搬瓦工",
     note: "洛杉矶 DC9：CN2GIA + 9929 + CMIN2（159–167ms）。卖家搬瓦工（BandwagonHost）官网是金黄→琥珀渐变 #FFC107→#F57C00 配深棕/黑与银灰 HOST、黑机架 + 金色灯；人物 = 琥珀棕高马尾 + 银灰挑染 + 金瞳 + 咧嘴露虎牙（唯一的高马尾、唯一工装背带裤、唯一趴在牌上的姿势），深棕背带裤 + 大篷车轮发夹 + 星条缎带 + 金星别针，胸口铭牌写 Bandwagon",
   },
+  // 通用人物：线路身份 × 商家气质都定不出形象的节点（名单以外）统一落到这一张中性立绘，
+  // 于是二次元皮肤下所有机器都有人物、观感统一。中性设计、不带任何国家/商家元素，
+  // 画布 / 缩放 / 手位与那四台同一套约定（共用同一份 CSS 几何变量）。由 castId() 兜底。
+  "generic": {
+    id: "generic",
+    line: "",
+    vendor: "",
+    crew: "",
+    note: "通用默认人物：深棕长直发 + 白衬衫 + 藏青百褶裙，中性日常、无任何国家 / 商家元素；整身立绘 + 手蒙版 + 闭眼帧同一套约定。",
+  },
 };
 
 // 有立绘的节点才画人物：名字（大小写不敏感、去首尾空格）在名单里即可。
@@ -43,6 +53,15 @@ export function castOf(node) {
   return CAST[key] || null;
 }
 
+// 画哪张立绘：名单里的用自己的，名单以外的统一落到通用人物 "generic"。
+// 名字里有独立形象的四台仍返回自己的 id，别处的判断（折叠键、牌面配色）都不受影响。
 export function castId(node) {
-  return castOf(node)?.id || "";
+  return castOf(node)?.id || "generic";
+}
+
+// 折叠状态用哪把钥匙：四台专属立绘仍用自己的 id（沿用既有 localStorage 记录），
+// 通用人物的多张卡各用各的节点 id —— 否则点一张会连带收起其它所有通用卡。
+export function foldKey(node) {
+  const c = castOf(node);
+  return c ? c.id : "node-id:" + (node?.id ?? "");
 }
