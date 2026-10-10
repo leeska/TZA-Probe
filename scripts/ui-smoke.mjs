@@ -1995,7 +1995,7 @@ assert(
 );
 // 手机端：一行仍是六格表格，放不下就整块横向滚动，不能竖排成卡片（那就与卡片视图没区别了）。
 assert(
-  /@media \(max-width: 1296px\)[\s\S]*?\.node-grid\.node-list \{[^}]*overflow-x: auto/.test(styles),
+  /@media \(max-width: 1336px\)[\s\S]*?\.node-grid\.node-list \{[^}]*overflow-x: auto/.test(styles),
   "窄屏下列表要横向滚动",
 );
 assert(

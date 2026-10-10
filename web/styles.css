@@ -284,6 +284,21 @@ input[type="checkbox"] {
   display: inline-block;
 }
 
+/* 连续几拍取数失败（app.js markLive）：绿点换红、停掉脉冲环，「最近同步」的说明行一起变红。 */
+.live-label.stale {
+  color: var(--red);
+}
+.live-label.stale i {
+  background: var(--red);
+  box-shadow: none;
+}
+.live-label.stale i::after {
+  display: none;
+}
+.hero-meta.stale small {
+  color: var(--red);
+}
+
 .public-main {
   max-width: 1400px;
   margin: 0 auto;
@@ -2762,7 +2777,21 @@ pre,
   dialog {
     padding: 20px;
   }
-  /* 窄屏下把表格行堆叠成“标签 : 值”卡片，避免横向滚动 */
+}
+
+/* 后台表格：七列（节点）/ 六列（任务）在侧栏旁边放不下时，「操作」列会被挤出可视区，
+   编辑 / 接入 / 删除要横向滚动才找得到。所以堆叠成“标签 : 值”卡片的阈值不再跟手机（760）走，
+   而是按表格实际放得下的宽度：1100px 以下（侧栏 200 + 内容区不足 ~850px）就堆叠；
+   1101~1360 之间收窄单元格内边距（24 → 14px，七列省下 140px），整张表仍在一屏内。 */
+@media (max-width: 1360px) {
+  .table-scroll th,
+  .table-scroll td {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+@media (max-width: 1100px) {
   table.stack thead {
     display: none;
   }
@@ -2849,7 +2878,7 @@ pre,
   /* 六格宽度：主机 / 指标 / 网速 / 延迟 / 回程 / 计费。
      --row-min 是这六个 min 的和；窄到放不下时整块横向滚动（见文件末尾的媒体查询），
      所以改下面的 min 时要把 --row-min 一起改（ui-smoke 会断言两者相等）。 */
-  --row-min: 1076px;
+  --row-min: 1116px;
   --row-gap: 18px;
   /* 网速那格是**定宽**的 96px（写成 minmax(96px, 96px)，不是 fr）。两个数都是量出来的：
      格子得装得下 bytes() 能出的最长速率串（8 位数字 + 10px 的 /s，实测「12.3 MB/s」53.7px），
@@ -2861,7 +2890,7 @@ pre,
      不会比别的列突兀。
      改 min 要同时改 --row-min 与下面的媒体查询阈值（ui-smoke 断言 --row-min == 六格 min 之和）。 */
   --row-cols:
-    minmax(150px, 0.8fr) minmax(280px, 1.35fr) minmax(96px, 96px)
+    minmax(190px, 0.9fr) minmax(280px, 1.35fr) minmax(96px, 96px)
     minmax(300px, 1.3fr) minmax(145px, 0.6fr) minmax(105px, 0.5fr);
 }
 
@@ -2899,6 +2928,19 @@ pre,
 
 .node-grid.node-list .node-name {
   font-size: 15px;
+}
+
+/* 主机格原来只有 150px，「详细」又和名字挤在同一行：名字只剩 ~78px，「HK-BGP-01 · 香港直连」
+   会折成两行，「详细」也被挤成竖排的「详 / 细」。现在主机格 190px（--row-min 随之 1076 → 1116，
+   窄屏阈值 1296 → 1336），「详细」挪到名字下面那排徽标的右端（app.js listInner），锁 nowrap
+   不参与收缩；徽标排拉满整格，按钮靠 margin-left: auto 顶到右缘，各行的「详细」才对得齐。 */
+.node-grid.node-list .row-identity .card-actions {
+  align-self: stretch;
+}
+.node-grid.node-list .detail-open {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .node-grid.node-list .card-actions {
@@ -3085,7 +3127,7 @@ pre,
 
 /* 放不下六格时（窗口窄、手机）整块横向滚动：一行照样是主机 / 指标 / 网速 / 延迟 / 回程 / 计费，
    与卡片视图的区别才留得住。行撑到六格的最小宽度，滚动容器是 #nodes 本身。 */
-@media (max-width: 1296px) {
+@media (max-width: 1336px) {
   .node-grid.node-list {
     display: block;
     overflow-x: auto;
@@ -3094,7 +3136,7 @@ pre,
 
   .node-grid.node-list .node-card {
     /* +40px = 左右内边距（2 × 20px）；再 +2px 是卡片左右各 1px 描边（border-box 下描边也占宽度）。
-       少了那 2px，六格轨道（--row-min 1076 + 5 × gap 18 = 1166）就比内容盒宽 2px，最后一格
+       少了那 2px，六格轨道（--row-min 1116 + 5 × gap 18 = 1206）就比内容盒宽 2px，最后一格
        （计费）会顶出内容盒、被 .node-card 的 overflow: hidden 切掉。 */
     min-width: calc(var(--row-min) + 5 * var(--row-gap) + 40px + 2px);
     margin-bottom: 12px;
@@ -3413,4 +3455,13 @@ tr.row-dragging {
 
 tr.row-dragging td {
   opacity: 0.7;
+}
+
+/* 编辑节点 · 提醒规则：没勾选的规则，它的阈值输入已由 admin.js 设为 disabled，
+   这里把整格调暗，一眼看出「当前不生效」，不再像可编辑的普通输入框。 */
+.rule-row > label:not(.checkbox):has(input:disabled) {
+  opacity: 0.45;
+}
+.rule-row input:disabled {
+  cursor: not-allowed;
 }

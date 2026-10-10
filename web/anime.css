@@ -1269,28 +1269,10 @@ html[data-skin="anime"] .node-grid.node-list .detail-open:hover {
   border-color: var(--anime-primary);
 }
 
-/* 「详细」是固定两字的按钮：主机格扣掉状态点与两个间距后只剩 ~110px，不锁 nowrap 时
-   按钮的内容盒（两倍 9px 内边距之后只剩 20px）放不下「详细」两个字，会被挤成竖排的
-   「详 / 细」——实测字形盒 12×34px（宽 12 = 单字宽），正是用户点名的孤字换行。
-   锁成 nowrap 后按钮按两字宽（44px）撑开、不再参与横向收缩。 */
+/* 「详细」的 nowrap 与名字块拉满已移到 styles.css 共用；这里只管描边：
+   走皮肤默认（无立绘的行就是退回这枚令牌的兜底值），两类行的「详细」才同一圈边。 */
 html[data-skin="anime"] .node-grid.node-list .detail-open {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  /* 描边走皮肤默认（无立绘的行就是退回这枚令牌的兜底值），两类行的「详细」才同一圈边。 */
   border-color: var(--anime-border, #e6e8f4);
-}
-
-/* 名字块吃满主机格的剩余宽度，把「详细」顶到这格右缘（与卡片视图里右对齐的「详细」一致）：
-   名字块若按内容宽（flex: 0 1 auto），按钮就会跟着名字长度逐行左右飘（实测 detailX 174~199），
-   12 行对不齐。.row-identity 是 align-items: flex-start，.node-identity 默认收缩到内容宽，
-   所以先把这一层拉满整格，再让名字块 flex:1——短名字那几行多余的宽度落在名字与按钮之间。 */
-html[data-skin="anime"] .node-grid.node-list .node-identity {
-  align-self: stretch;
-  width: 100%;
-}
-html[data-skin="anime"] .node-grid.node-list .node-identity > div {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 /* 行圆角与卡片视图的「面」同一档：卡片是 --anime-r-xl（18px），列表原来挂的是容器档 14px。 */
@@ -1298,41 +1280,12 @@ html[data-skin="anime"] .node-grid.node-list .node-card {
   border-radius: var(--anime-r-xl) !important;
 }
 
-/* 主机格放得下节点名：共享的六格预算里第一格只有 150px，扣掉状态点、「详细」按钮与两个
-   间距后名字只剩 ~78px，像 US-干杯Cloud-Frontier 这种会长成三行（第一行只到「US-干杯」）。
-   anime 的列表行本来就更宽（圆角更大、内边距更足），这里把第一格抬到 190px、行宽随之
-   1208 → 1248px；其余五格一格不动（指标 / 延迟 / 回程的计算宽度都没变），所以不是「重排列」，
-   只是把名字这一格补足。--row-min 与六格 min 之和同步（190+280+96+300+145+105 = 1116），
-   窄屏横向滚动的 min-width 公式读的就是这个变量。 */
-html[data-skin="anime"] .node-grid.node-list {
-  --row-min: 1116px;
-  --row-cols:
-    minmax(190px, 0.9fr) minmax(280px, 1.35fr) minmax(96px, 96px)
-    minmax(300px, 1.3fr) minmax(145px, 0.6fr) minmax(105px, 0.5fr);
-}
-
-/* 阈值要跟 --row-min 一起走：共享那条 `@media (max-width: 1296px)` 是按 --row-min 1076 配的
-   （1208 + 88 余量），主机格抬到 190px 后行宽是 1248px。不补这一段的话，1297~1336 这段窗口里
-   共享默认（display:grid、无 min-width）会把卡压到 1248 以下，六格轨道最小和却有
-   1116 + 5×18 = 1206px，最后一格（计费）会被 overflow:hidden 裁掉几个像素。 */
-@media (max-width: 1336px) {
-  html[data-skin="anime"] .node-grid.node-list {
-    display: block;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-  }
-
-  html[data-skin="anime"] .node-grid.node-list .node-card {
-    min-width: calc(var(--row-min) + 5 * var(--row-gap) + 40px + 2px);
-  }
-}
-
 /* 窄窗口（手机 358 / 桌面 431）：anime 的列表行不再整块横向滚动，改成「一行之内竖向分组」——
    主机格 → 指标 2×2 → 网速 → 延迟 → 回程 → 计费，每块满宽接在下面，一屏读完不用滑。
    共享皮肤在窄屏是「六格照排 + 横向滚动」（行还是那一行、只是要滑），可那样默认只看得到半截
    指标列（gpt 验收点名「以半截文字作为默认展示」）。anime 的列表行本来就圆角更大、内边距更足，
    竖向分组更贴它的设计语言；卡片视图与其它皮肤的列表都不受影响。
-   必须写在上面那条 1336 之后：同权重，靠后者覆盖。 */
+   主机格 190px / 1336 阈值已并入 styles.css 共用；本段在其后加载，同权重靠后者覆盖。 */
 @media (max-width: 640px) {
   html[data-skin="anime"] .node-grid.node-list {
     display: block;

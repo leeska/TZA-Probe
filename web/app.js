@@ -260,11 +260,32 @@ async function liveTick() {
       setHTML(el.querySelector(".speeds"), speedsInner(n));
     }
     setText(document.querySelector("#updated"), new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+    markLive(true);
     // 指标数字变化可能把板高顶高一两像素（换行），人物图 / 板顶 / 收起态板条要跟着重新量一次。
     layoutCastCards();
+  } catch (e) {
+    markLive(false);
+    throw e;
   } finally {
     liveBusy = false;
   }
+}
+
+// 连接状态：以前请求失败时 LIVE 绿点照亮、「最近同步」停在最后一次成功的时刻却没有任何提示，
+// 看起来像数据一切正常。连续失败 STALE_AFTER 拍（约 3 秒，躲开单次抖动）就把绿点换成红点、
+// 文字改成「连接中断」；「最近同步」保留最后一次成功的时刻，正好说明数据停在了哪一刻。
+const STALE_AFTER = 3;
+let liveFailures = 0;
+function markLive(ok) {
+  liveFailures = ok ? 0 : liveFailures + 1;
+  const stale = liveFailures >= STALE_AFTER;
+  const label = document.querySelector(".live-label");
+  if (!label || label.classList.contains("stale") === stale) return;
+  label.classList.toggle("stale", stale);
+  setText(label.querySelector(".live-text"), stale ? "连接中断" : "LIVE STATUS");
+  const meta = document.querySelector(".hero-meta");
+  meta?.classList.toggle("stale", stale);
+  setText(meta?.querySelector("small"), stale ? "连接中断 · 正在重试" : "每秒刷新");
 }
 
 // 视口宽度变化会改板高（内容换行），人物图 / 板顶 / 收起态板条的量值要重算。
@@ -961,7 +982,9 @@ function listInner(n) {
       : "";
   // 名字不再是导航按钮（用户 2026-10-10：点数据行 / 点空白处都不许进详情页）。列表视图这一格
   // 里补一枚「详细」——不然列表里就没有任何进详情的入口了，卡片视图那边也是同一枚按钮。
-  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}</div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
+  // 按钮放在名字下面那排徽标的右端，不跟名字抢同一行：主机格只有 190px，同一行时名字只剩 ~108px，
+  // 「HK-BGP-01 · 香港直连」这种常见长度也要折行。
+  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 展示方式只在这里分叉：两个视图取数完全相同，liveTick 那一层找的也是同一批类名。
