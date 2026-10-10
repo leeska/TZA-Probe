@@ -262,18 +262,18 @@ async function liveTick() {
       setHTML(el.querySelector(".speeds"), speedsInner(n));
     }
     setText(document.querySelector("#updated"), new Date().toLocaleTimeString("zh-CN", { hour12: false }));
-    // 指标数字变化可能把板高顶高一两像素（换行），收起态板下沿要跟着重新量一次。
-    layoutCastPlates();
+    // 指标数字变化可能把板高顶高一两像素（换行），人物图 / 板顶 / 收起态板条要跟着重新量一次。
+    layoutCastCards();
   } finally {
     liveBusy = false;
   }
 }
 
-// 视口宽度变化会同时改板高与下半身层高（两者都按卡宽走），收起态那块板的量值要重算。
+// 视口宽度变化会改板高（内容换行），人物图 / 板顶 / 收起态板条的量值要重算。
 let plateResizeTimer = 0;
 window.addEventListener("resize", () => {
   clearTimeout(plateResizeTimer);
-  plateResizeTimer = setTimeout(layoutCastPlates, 120);
+  plateResizeTimer = setTimeout(layoutCastCards, 120);
 });
 
 // 每张卡片上一次渲染出来的 HTML：下次比对用，内容没变就不碰 DOM。
@@ -480,47 +480,35 @@ function applyFolded() {
     for (const btn of card.querySelectorAll("[data-fold]"))
       btn.setAttribute("aria-expanded", String(!rolled));
   }
-  layoutCastPlates();
+  layoutCastCards();
 }
 
-// 收起态卡高必须与展开态**恒等**，否则一收整个网格就重排、邻卡跟着跳。
-// 高度靠 CSS 保：收起态板内数据只 visibility:hidden（仍占位，板盒高度 = 展开态板高），
-// 下半身层绝对定位贴底（不参与高度）。这里只负责量出那块「矮板」的高度：
-//   --cast-plate-h = 展开态板高 − 下半身层高（下限 52px = 一行头 + 内边距 + 边框 + 2px 余量），
-// 板下沿正好接住下半身层顶边，人物躯干到腿之间不会露空白带。
-// 下半身塞不下（板高 − 下半身 < 52）时板固定 52px，下半身等比缩到 boardH−52（最多几 %，
-// 下限保证名字那行永远压得住）；scale 以底边为原点，鞋仍落在卡底。
-function layoutCastPlates() {
-  const MIN_PLATE = 52;
-  // 手机宽度下矮板会被撑到 100~160px（展开态板高 − 原比例下半身高），名字在顶、下方大片空。
-  // 板高 > 96px 时挂 data-plate-tall，CSS 才在「名字以下、板面中央」画一枚同色系低对比徽记把
-  // 留白读成有意的装饰区（外框 / 名字坐标 / 下半身尺寸一律不动）。桌面矮板不画，保持原样。
-  const TALL_PLATE = 96;
+// 人物图 / 看板顶 / 收起态板条的几何全按**实测板高**反推（推导见 anime.css 的 N 段注释）：
+//   图高 = (板高 − 板唇 LIP − 脚下留白 GROUND) / (1 − 牌子上沿占图高的比例)
+//   板顶 = 图顶偏移 FIG_TOP + 图高 × 牌子上沿比例 − 板唇 LIP
+//   板条高 = 图高 × (牌子下沿比例 − 牌子上沿比例) + 2 × 板唇 LIP
+// 牌子上下沿比例每台机一条，写在 anime.css 的 --cast-top-frac / --cast-bot-frac 里（逐台实测，
+// 见 scripts/anime-split-layers.py 的 PLATE）。CSS 里还有一组按板高 461px 算的近似常量兜底
+// （这里量不到时——比如 jsdom——就用它）。
+// 收起态板内数据只 visibility:hidden（仍占位），板盒高度恒等于展开态板高，所以两态量出同一个板高。
+const FIG_TOP = 12; // 人物图顶距卡顶的留白（让开卡片上圆角）
+const LIP = 3; // 板唇：板顶压到牌子上外沿之上 3px，吃掉牌子那道 1px 描边与呼吸位移
+const GROUND = 14; // 收起态脚下留白（不切鞋）
+function layoutCastCards() {
   for (const card of document.querySelectorAll(".node-card[data-cast]")) {
-    if (card.dataset.rolled !== "true") {
-      card.style.removeProperty("--cast-plate-h");
-      card.style.removeProperty("--cast-legs-k");
-      delete card.dataset.plateTall;
-      continue;
-    }
     const body = card.querySelector(".card-body");
-    const legs = card.querySelector(".anime-legs");
-    if (!body || !legs) continue;
+    if (!body) continue;
     const boardH = body.offsetHeight; // 数据 visibility:hidden 仍占位 → 等于展开态板高
-    const legsH = legs.offsetHeight;
-    if (!boardH || !legsH) continue;
-    let plateH;
-    if (boardH - legsH >= MIN_PLATE) {
-      plateH = boardH - legsH;
-      card.style.removeProperty("--cast-legs-k");
-    } else {
-      plateH = MIN_PLATE;
-      card.style.setProperty("--cast-plate-h", MIN_PLATE + "px");
-      card.style.setProperty("--cast-legs-k", (Math.max(1, boardH - MIN_PLATE) / legsH).toFixed(4));
-    }
+    if (!boardH) continue;
+    const cs = getComputedStyle(card);
+    const topFrac = parseFloat(cs.getPropertyValue("--cast-top-frac")) || 0.3;
+    const botFrac = parseFloat(cs.getPropertyValue("--cast-bot-frac")) || 0.44;
+    const figureH = (boardH - LIP - GROUND) / (1 - topFrac);
+    const boardTop = FIG_TOP + figureH * topFrac - LIP;
+    const plateH = figureH * (botFrac - topFrac) + 2 * LIP;
+    card.style.setProperty("--cast-figure-h", figureH.toFixed(2) + "px");
+    card.style.setProperty("--cast-board-top", boardTop.toFixed(2) + "px");
     card.style.setProperty("--cast-plate-h", plateH.toFixed(2) + "px");
-    if (plateH > TALL_PLATE) card.dataset.plateTall = "true";
-    else delete card.dataset.plateTall;
   }
 }
 function toggleFolded(cast) {
@@ -598,7 +586,7 @@ document.addEventListener(
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
 // 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
 const cardShell = (n, inner) => {
-  // 二次元皮肤：卡壳上也挂一份角色 id。人物层 `.anime-stage` 是卡片**内部**的元素，
+  // 二次元皮肤：卡壳上也挂一份角色 id。人物层 `.anime-cast` 是卡片**内部**的元素，
   // 卡片自己读不到它的 data-cast，而皮肤样式表要按角色给整张牌面上色
   // （`.node-card[data-cast="…"]`），所以这里再挂一份——两处都由 castId() 出，不会漂。
   const cast = castId(n);
@@ -902,24 +890,20 @@ function routeLines(n, f) {
 function gridInner(n) {
   const f = nodeFacts(n);
   // 二次元皮肤（data-skin="anime"）的线路机立绘：只有名单里的节点才渲染这一层，
-  // 其余皮肤下 .anime-stage / .anime-hands 都是 display:none（见 styles.css）。
+  // 其余皮肤下 .anime-cast / .anime-hands 都是 display:none（见 styles.css）。
   //
   // 三层顺序就是这个函数返回的顺序 = DOM 顺序 = 看到的先后：
-  //   ① 人物层 .anime-stage（图里已经没有了那块牌子与双手，牌子那块矩形是透明的；现在画满整身高）
-  //   ② HTML 看板 .card-body（板面、板沿、节点数据都是 HTML 自己画的）
-  //   ③ 双手层 .anime-hands（带 alpha 的手，z-index 压在看板上沿）
-  // 于是看板上沿是 HTML 的边框，原图那块牌子的描边再也透不出来；手仍然是从板上面搭下来的。
+  //   ① 完整人物图 .anime-cast（**整张立绘，一张连续的图**：头/肩/双臂/双手在牌子上沿以上，
+  //      牌子下沿以下紧接裙摆/大腿/白袜/皮鞋。不再上下切两段——用户 2026-10-10 否掉了那版）
+  //   ② HTML 看板 .card-body（板面、板沿、节点数据都是 HTML 自己画的，直接盖在人物图上）
+  //   ③ 双手层 .anime-hands（带 alpha 的双手，z-index 3 压在看板上沿，修补被板沿吃掉的指尖）
+  // 展开态看板从牌子上沿铺到卡片底部（下半身被盖住）；收起态板缩成一条、上下露出同一张图的身体。
   // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
   // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这个标记区分。
   const cast = castId(n);
-  const stage = cast
-    ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
+  const figure = cast
+    ? `<div class="anime-cast" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
     : "";
-  // 下半身占位层：人物层画满整身高，看板只盖住「牌子」那一段，牌子以下的裙 / 腿 / 袜 / 鞋
-  // 由人物层自己画出来；但看板有负 margin、把流程往上拉，卡片会在看板下沿处收口。
-  // 这一层透明、只负责把卡片撑到整身高（高度 = 看板下沿 → 立绘脚底），下半身才不会被裁掉。
-  // 只在有立绘的节点上渲染。
-  const legs = cast ? `<div class="anime-legs" data-bleed aria-hidden="true"></div>` : "";
   const hands = cast ? `<div class="anime-hands" data-bleed aria-hidden="true"></div>` : "";
   // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心
   // 不被它们挤动——收起 / 展开时名字落在同一坐标（折叠只影响板面上其余的内容/数据）。
@@ -933,7 +917,7 @@ function gridInner(n) {
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
   // 「详细」是内容里唯一能进详情页的控件（卡片空白、数据行都不再导航）。
-  return `${stage}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="detail-row"><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${legs}${hands}`;
+  return `${figure}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="detail-row"><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

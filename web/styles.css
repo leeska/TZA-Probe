@@ -490,15 +490,14 @@ h1 {
    规则都带 html[data-skin="anime"] 前缀——所以别的皮肤下这些都是**没有样式**的裸元素，
    必须在这里默认藏掉：漏一个，玻璃 / 记者 / shadcn 皮肤下就会冒出一颗裸按钮或一张裸图。
    二次元皮肤在 anime.css 里各自放开。 */
-.anime-stage,
+.anime-cast,
 .anime-blink,
 .anime-fold-btn {
   display: none;
 }
 
-/* 双手层（多图层里压在看板上沿那一层）与下半身层（牌子下沿以下那段立绘）同样只属于二次元皮肤。 */
-.anime-hands,
-.anime-legs {
+/* 双手层（多图层里压在看板上沿那一层）同样只属于二次元皮肤。 */
+.anime-hands {
   display: none;
 }
 
