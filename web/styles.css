@@ -2836,6 +2836,16 @@ pre,
   }
 }
 
+/* 后台表格里内容长短不定的几列（节点名、任务名、地区清单、事件内容）允许折行并限宽：
+   单元格默认 nowrap（glass.css），一条「US-LAX-CN2GIA-Premium-01 · 洛杉矶 CN2 GIA 精品线路」
+   就能把主机列撑到 399px，1440 宽下「删除」被挤出表格可视区。 */
+.table-scroll td:is([data-label="主机"], [data-label="任务"], [data-label="地区 / 运营商"], [data-label="节点"], [data-label="内容"]) {
+  white-space: normal;
+  min-width: 140px;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+
 /* 后台表格：七列（节点）/ 六列（任务）在侧栏旁边放不下时，「操作」列会被挤出可视区，
    编辑 / 接入 / 删除要横向滚动才找得到。所以堆叠成“标签 : 值”卡片的阈值不再跟手机（760）走，
    而是按表格实际放得下的宽度：1100px 以下（侧栏 200 + 内容区不足 ~850px）就堆叠；
@@ -2904,6 +2914,11 @@ pre,
   }
   table.stack td.empty-cell::before {
     content: none;
+  }
+  /* 堆叠成卡片后每格占满整行，上面给长内容列加的宽度上下限不再适用。 */
+  .table-scroll table.stack td {
+    min-width: 0;
+    max-width: none;
   }
   /* 堆叠后拖动手柄不再单独占一行「顺序 ⠿」：挪到这张卡的右上角。拖动本身是 pointer 事件，
      触屏上照样能按住拖。 */
@@ -3614,4 +3629,22 @@ label .local-time:empty {
 }
 .login-story-foot small {
   flex-shrink: 0;
+}
+
+/* 已过期：红色，与「7 天内到期」的橙色分开（以前两者同一个 warning 橙）。选择器带上
+   data-skin / data-theme 两个属性，压过各皮肤里 .expiry-pill 的绿底规则。 */
+html[data-skin][data-theme] .expiry-pill.expired {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+}
+
+/* 后台节点表的到期时间列（admin.js dueCell）。 */
+td .due.soon,
+td .due.soon + small {
+  color: var(--orange);
+}
+td .due.expired,
+td .due.expired + small {
+  color: var(--red);
 }

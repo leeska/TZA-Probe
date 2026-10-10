@@ -794,7 +794,7 @@ function expiryPill(n, expiry) {
   return expiry == null
     ? `<span class="expiry-pill">未设到期</span>`
     : expiry < 0
-      ? `<span class="expiry-pill warning">已过期 ${Math.abs(expiry)} 天</span>`
+      ? `<span class="expiry-pill expired">已过期 ${Math.abs(expiry)} 天</span>`
       : expiry > LONG_TERM_DAYS
         ? `<span class="expiry-pill" title="到期 ${esc(String(n.expires_at || "").slice(0, 10))}">长期</span>`
         : `<span class="expiry-pill${expiry <= 7 ? " warning" : ""}">剩余 ${expiry} 天</span>`;

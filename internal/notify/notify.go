@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"time"
@@ -30,6 +31,32 @@ type Sender interface {
 
 // throttleMessage 是降速告警文案。两种规则读的不是同一个事实：窗口平均带宽的线路
 // 报的是「近 N 小时均值」，按额度降速的线路报的是「本周期用量顶到额度、之后限速多少」。
+// 离线提醒对「添加后从没上报过」的节点同样会触发（按创建时间算宽限），那种情况说「已离线」
+// 会让人以为机器掉线了，实际是 Agent 还没装好或连不上面板。
+func offlineMessage(n model.NodeView) string {
+	if n.LastSeen == 0 {
+		return "节点添加后一直未接入（Agent 从未上报），请检查安装与面板地址"
+	}
+	return "节点已离线"
+}
+
+// 续费提醒写清楚还剩几天、哪天到期（按 UTC 日期，与后台填写口径一致），而不是一句笼统的
+// 「即将到期或已经到期」——这句话会原样发到 Telegram / Webhook。天数取整方式与公开面板的
+// 到期胶囊一致（向上取整）。
+func renewalMessage(expiry, now time.Time) string {
+	days := int(math.Ceil(expiry.Sub(now).Hours() / 24))
+	// 带上时分：天数是向上取整的（与面板一致），只写日期时「3 天后到期（10-12）」会和本地日历对不上。
+	date := expiry.UTC().Format("2006-01-02 15:04")
+	switch {
+	case days > 0:
+		return fmt.Sprintf("节点将在 %d 天后到期（%s UTC），请检查续费", days, date)
+	case days == 0:
+		return fmt.Sprintf("节点今天到期（%s UTC），请检查续费", date)
+	default:
+		return fmt.Sprintf("节点已过期 %d 天（%s UTC 到期），请检查续费", -days, date)
+	}
+}
+
 func throttleMessage(n model.NodeView) string {
 	if n.ThrottlesOnQuota() {
 		return fmt.Sprintf("本周期用量已达 %s 额度，线路按商家规则降速到 %d Mbit/s", model.HumanBytes(n.TrafficLimit), n.ThrottleMbps)
@@ -54,8 +81,9 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 			load = n.Metrics.CPU >= a.CPUPercent || float64(n.Metrics.MemoryUsed)/float64(n.Metrics.MemoryTotal)*100 >= a.MemoryPercent
 		}
 		renewal := false
+		var expiry time.Time
 		if n.ExpiresAt != "" {
-			expiry, _ := time.Parse(time.RFC3339, n.ExpiresAt)
+			expiry, _ = time.Parse(time.RFC3339, n.ExpiresAt)
 			renewal = !now.Add(time.Duration(a.RenewalDays) * 24 * time.Hour).Before(expiry)
 		}
 		rules := []struct {
@@ -63,8 +91,8 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 			condition     bool
 			hold          int
 		}{
-			{"offline", "节点已离线", a.Offline && !n.Online && now.Unix()-n.CreatedAt > int64(model.OfflineAfter.Seconds()), a.OfflineSeconds},
-			{"renewal", "节点即将到期或已经到期，请检查续费", a.Renewal && renewal, 0},
+			{"offline", offlineMessage(n), a.Offline && !n.Online && now.Unix()-n.CreatedAt > int64(model.OfflineAfter.Seconds()), a.OfflineSeconds},
+			{"renewal", renewalMessage(expiry, now), a.Renewal && renewal, 0},
 			{"traffic", fmt.Sprintf("本计费周期用量达到 %.0f%% 阈值", a.TrafficPercent), a.Traffic && n.TrafficLimit > 0 && float64(n.TrafficUsed)/float64(n.TrafficLimit)*100 >= a.TrafficPercent, 0},
 			{"throttle", throttleMessage(n), a.Throttle && n.Throttled, 0},
 			{"load", "CPU 或内存持续超过设定阈值", a.Load && load, a.HoldSeconds},
