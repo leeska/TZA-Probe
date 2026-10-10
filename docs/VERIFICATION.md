@@ -2580,4 +2580,15 @@ gpt-6.1-sol 看图确认（手机/桌面 × 明暗 × 四台）：方案确认�
   - 前台带宽：卡片 7 台依次 `1 Gbit/s / 2 Gbit/s / （无）/ 500 Mbit/s / 100 Mbit/s / （无）/ 500 Mbit/s`，
     列表计费格逐台相同；`hk-isvoro-nat`（0）与免费的 `us-bwh-dc9` 整项不出现。
 
+- **线上（57c4601 部署后，probe.tza.cc，12 台真实数据）实测**：
+  - 拖动：末行 `US-干杯Cloud-Frontier` 拖到首位 → 服务端 `order` 由 0…11 变成
+    `0:US-干杯Cloud-Frontier 1:DE-NoSla-FRA … 11:US-干杯Cloud-AT&T.5`；拖回末位后
+    `GET /api/v1/admin/nodes` 读回的顺序与拖动前逐台一致（0…11 连续、名字序列完全相同）。
+  - 地区检索：与本地同口径（`xg` 2 条、`hongkong`/`香港`/`hk` 各 1 条香港、`火星地区` 0 条）。
+  - 前台带宽：卡片与列表逐台 `500 Mbit/s / 300 Mbit/s / 5 Mbit/s / 1.5 Gbit/s / 200 Mbit/s /
+    1 Gbit/s / 80 Mbit/s / 200 Mbit/s`，`HK-Hytron-BGP`、`US-Hostodo-Tampa`、`SZ-Aliyun-ECS`、
+    `US-MeowVPS-Free` 四台 `line_mbps=0`，整项不出现（DOM 里没有 `.line-pill`）。
+  - 线上验收（部署脚本）：源站与经 CF 的 healthz 均 200、匿名 MCP 401、12 台全在线、回程格 12 个
+    在 390px 下折行 0 / 非居中 0、卡片与列表在 320/344/360/375/390/414px 六档越界 0 个。
+
 待确认：无。
