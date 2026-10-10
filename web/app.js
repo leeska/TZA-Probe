@@ -118,6 +118,8 @@ function applyView() {
 
 async function refresh() {
   const ticket = ++generation;
+  // 解锁目录与节点列表互不依赖，一起发，省掉首屏一次往返（目录取过一次就缓存）。
+  const catalogTicket = unlockCatalog();
   const next = await api("/nodes");
   if (ticket !== generation) return;
   nodes = next;
@@ -135,7 +137,7 @@ async function refresh() {
 
   // 解锁目录是全站固定的一份（名称 / 分类 / 是否只报地区），先取到再画卡片：徽标上的分数
   // 来自节点自己的 unlock 字段，分类浮层还要目录才认得出每一项的名字与分类。
-  catalog = await unlockCatalog();
+  catalog = await catalogTicket;
 
   renderCards();
 
@@ -143,21 +145,17 @@ async function refresh() {
   const sampleTicket = api("/latency-samples?limit=20")
     .then((data) => { if (ticket === generation) latencySamples = data.samples || []; })
     .catch(() => { if (ticket === generation) latencySamples = []; });
-  let index = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(4, nodes.length) }, async () => {
-      while (index < nodes.length) {
-        const n = nodes[index++];
-        try {
-          // slim：卡片只画回程标签，不需要跳表（那部分占了九成体积）。
-          const data = await api(`/nodes/${n.id}/observations?slim=1`);
-          if (ticket === generation) observations.set(n.id, data);
-        } catch {
-          observations.delete(n.id);
-        }
-      }
-    }),
-  );
+  // 所有节点的观测一次取回：以前每台节点一个请求，慢的是一轮轮往返而不是服务端。
+  // 卡片只画回程标签，批量接口本身就不带跳表（那部分占了九成体积）。
+  try {
+    const all = await api("/observations");
+    if (ticket === generation) {
+      observations.clear();
+      for (const n of nodes) if (all[n.id]) observations.set(n.id, all[n.id]);
+    }
+  } catch {
+    if (ticket === generation) observations.clear();
+  }
   await sampleTicket;
   if (ticket === generation) renderCards();
 }

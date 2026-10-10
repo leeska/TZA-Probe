@@ -20,6 +20,26 @@
     <link rel="stylesheet" href="/shadcn.css" />
     <link rel="stylesheet" href="/anime.css" />
     <script type="module" src="/app.js"></script>
+    <!-- app.js 的依赖要等它下载解析完才被发现，search.js → pinyin.js 还要再等一层；
+         这里一次性声明，所有模块并行下载，不再一层层串行等往返。 -->
+    <link rel="modulepreload" href="/api.js" />
+    <link rel="modulepreload" href="/format.js" />
+    <link rel="modulepreload" href="/detail.js" />
+    <link rel="modulepreload" href="/charts.js" />
+    <link rel="modulepreload" href="/unlock.js" />
+    <link rel="modulepreload" href="/admin.js" />
+    <link rel="modulepreload" href="/task-controls.js" />
+    <link rel="modulepreload" href="/task-editor.js" />
+    <link rel="modulepreload" href="/agent-setup.js" />
+    <link rel="modulepreload" href="/regions.js" />
+    <link rel="modulepreload" href="/region-picker.js" />
+    <link rel="modulepreload" href="/theme.js" />
+    <link rel="modulepreload" href="/skins.js" />
+    <link rel="modulepreload" href="/search.js" />
+    <link rel="modulepreload" href="/pinyin.js" />
+    <link rel="modulepreload" href="/carrier-logos.js" />
+    <link rel="modulepreload" href="/anime-cast.js" />
+    <link rel="modulepreload" href="/ui-select.js" />
   </head>
   <body>
     <div id="app"><div class="loading">正在连接 TZA Probe…</div></div>

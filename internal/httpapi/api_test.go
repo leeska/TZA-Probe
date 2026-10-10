@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -136,6 +138,36 @@ func TestObservationsSlimDropsHopTables(t *testing.T) {
 	}
 	if len(slim) >= len(full)/2 {
 		t.Fatalf("slim 没有变瘦: %d -> %d", len(full), len(slim))
+	}
+
+	// 批量接口：首页一次取回所有节点，内容与逐台 slim 一致；不公开的节点匿名看不到。
+	hidden, _, err := s.SaveNode(ctx, model.Node{Name: "hidden", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, batch := get("/api/v1/observations")
+	var all map[string]json.RawMessage
+	if code != 200 || json.Unmarshal(batch, &all) != nil {
+		t.Fatalf("批量观测: %d %s", code, batch)
+	}
+	if _, ok := all[hidden]; ok || len(all) != 1 || strings.TrimSpace(string(all[id])) != strings.TrimSpace(string(slim)) {
+		t.Fatalf("批量观测应只含公开节点且等于 slim: %s", batch)
+	}
+
+	// 主机历史 slim 只留图表要的五个字段。
+	if err = s.Report(ctx, id, model.Metrics{CPU: 12.5, MemoryUsed: 1, MemoryTotal: 4, RateIn: 3, RateOut: 4, OS: "linux", Arch: "amd64", Distro: "Debian 13", Version: "2.0.0", IPFamilies: []string{"ipv4"}}, now); err != nil {
+		t.Fatal(err)
+	}
+	code, history := get("/api/v1/nodes/" + id + "/history?slim=1")
+	var samples []struct {
+		At      int64          `json:"at"`
+		Metrics map[string]any `json:"metrics"`
+	}
+	if code != 200 || json.Unmarshal(history, &samples) != nil || len(samples) != 1 || samples[0].At == 0 {
+		t.Fatalf("history slim: %d %s", code, history)
+	}
+	if m := samples[0].Metrics; len(m) != 5 || m["cpu"] != 12.5 || m["memory_total"] != 4.0 || m["rate_out"] != 4.0 {
+		t.Fatalf("history slim 字段不对: %v", m)
 	}
 }
 
@@ -583,5 +615,73 @@ func TestLoginLimitCannotLockOutTheAdministrator(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != 401 {
 		t.Fatalf("oldest session should have been evicted: %d", w.Code)
+	}
+}
+
+// countingRepo 数 Store.Nodes 被调了几次，其余方法原样转给真实存储。
+type countingRepo struct {
+	Repository
+	calls atomic.Int32
+}
+
+func (c *countingRepo) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, error) {
+	c.calls.Add(1)
+	return c.Repository.Nodes(ctx, now)
+}
+
+// 首页每秒一拍：多个匿名访客同一秒内的 /nodes、/observations、/latency-samples 只算一次节点视图；
+// 管理员每次都现算，后台改完立刻看得到。
+func TestAnonymousPanelSharesNodeSnapshot(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "snapshot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, _, err = s.SaveNode(context.Background(), model.Node{Name: "pub", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true); err != nil {
+		t.Fatal(err)
+	}
+	repo := &countingRepo{Repository: s}
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: repo, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	get := func(path, token string) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", server.URL+path, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s: %d", path, resp.StatusCode)
+		}
+	}
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, p := range []string{"/api/v1/nodes", "/api/v1/observations", "/api/v1/latency-samples"} {
+				get(p, "")
+			}
+		}()
+	}
+	wg.Wait()
+	if n := repo.calls.Load(); n != 1 {
+		t.Fatalf("20 个匿名访客应共用一次计算，实际 %d 次", n)
+	}
+	get("/api/v1/admin/nodes", admin)
+	get("/api/v1/nodes", admin)
+	if n := repo.calls.Load(); n != 3 {
+		t.Fatalf("管理员请求必须现算，实际累计 %d 次", n)
+	}
+	time.Sleep(nodesTTL + 50*time.Millisecond)
+	get("/api/v1/nodes", "")
+	if n := repo.calls.Load(); n != 4 {
+		t.Fatalf("快照过期后应重算，实际累计 %d 次", n)
 	}
 }

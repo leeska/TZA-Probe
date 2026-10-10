@@ -5,7 +5,8 @@
 | 方法与路径（均以 /api/v1 开头） | 用途 |
 | --- | --- |
 | GET /nodes | 公开节点；登录管理员可见全部 |
-| GET /nodes/{id}/history?hours=24 | 1–720 小时，最多约 240 桶的主机曲线 |
+| GET /nodes/{id}/history?hours=24 | 1–720 小时，最多约 240 桶的主机曲线 ；`slim=1` 只带 cpu / memory_used / memory_total / rate_in / rate_out |
+| GET /observations | 所有可见节点的最新观测，按节点 id 分组，不带跳表（首页卡片用） |
 | GET /nodes/{id}/observations | 每个检测项最新网络结果，带 stale 状态 |
 | GET /latency-samples?limit=20 | 卡片延迟格用：每个「节点 / 运营商 / 协议 / 地区」最近 N 次逐次 TCP 结果（范围 1–60），只含调用者可见的节点 |
 | POST /login、POST /logout、GET /session | 管理会话 |

@@ -61,6 +61,36 @@ type API struct {
 	sessions      map[string]time.Time
 	loginWindow   time.Time
 	loginAttempts int
+	// 匿名面板共用的节点快照，见 panelNodes。
+	nodesMu  sync.Mutex
+	nodesAt  time.Time
+	nodesFor []model.NodeView
+}
+
+// nodesTTL 是匿名访客共用节点快照的有效期。Agent 本来就约 1 秒报一次，面板也是 1 秒一拍，
+// 再新也没有新数据可看。
+const nodesTTL = time.Second
+
+// panelNodes 返回节点视图。首页每秒拉一次 /nodes，而一次 Store.Nodes 要读全部任务、逐台查
+// 流量与降速窗口（13 台约 30 条查询）：以前每个开着面板的访客都各算一遍，访客越多 1 核机越吃力。
+// 匿名请求改为共用一份 1 秒内的快照，同时到达的请求排队等同一次计算，再多访客每秒也只算一次。
+// 管理员不走快照：后台改完节点马上要看到结果。
+func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) {
+	if admin {
+		return a.Store.Nodes(r.Context(), time.Now())
+	}
+	a.nodesMu.Lock()
+	defer a.nodesMu.Unlock()
+	if a.nodesFor != nil && time.Since(a.nodesAt) < nodesTTL {
+		return a.nodesFor, nil
+	}
+	// 排在后面的请求等的是这次计算，发起者断开不该让它们一起失败。
+	nodes, err := a.Store.Nodes(context.WithoutCancel(r.Context()), time.Now())
+	if err != nil {
+		return nil, err
+	}
+	a.nodesAt, a.nodesFor = time.Now(), nodes
+	return nodes, nil
 }
 
 func (a *API) Handler() http.Handler {
@@ -84,6 +114,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/nodes/{id}/history", a.history)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/network-history", a.networkHistory)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/observations", a.observations)
+	mux.HandleFunc("GET /api/v1/observations", a.allObservations)
 	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
 	mux.HandleFunc("GET /api/v1/unlock-catalog", a.unlockCatalog)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/unlocks", a.unlocks)
@@ -483,12 +514,12 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (a *API) nodes(w http.ResponseWriter, r *http.Request) {
-	nodes, err := a.Store.Nodes(r.Context(), time.Now())
+	admin := a.isAdmin(r)
+	nodes, err := a.panelNodes(r, admin)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	admin := a.isAdmin(r)
 	out := []model.NodeView{}
 	for _, n := range nodes {
 		if n.Public || admin {
@@ -525,6 +556,28 @@ func (a *API) history(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	if r.URL.Query().Get("slim") != "" {
+		// 详情图表只画 CPU / 内存 / 上下行速率：系统、版本、IP 族这些每条样本都一样的字段
+		// 占了样本体积的大半，slim 时不发。外形仍是 {at, metrics:{…}}，前端不用改读法。
+		type chartMetrics struct {
+			CPU         float64 `json:"cpu"`
+			MemoryUsed  uint64  `json:"memory_used"`
+			MemoryTotal uint64  `json:"memory_total"`
+			RateIn      float64 `json:"rate_in"`
+			RateOut     float64 `json:"rate_out"`
+		}
+		type chartSample struct {
+			At      int64        `json:"at"`
+			Metrics chartMetrics `json:"metrics"`
+		}
+		out := make([]chartSample, len(history))
+		for i, x := range history {
+			m := x.Metrics
+			out[i] = chartSample{x.At, chartMetrics{m.CPU, m.MemoryUsed, m.MemoryTotal, m.RateIn, m.RateOut}}
+		}
+		write(w, 200, out)
+		return
+	}
 	write(w, 200, history)
 }
 
@@ -548,6 +601,36 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 		if slim {
 			out[i].Result.Hops = nil
 		}
+	}
+	write(w, 200, out)
+}
+
+// allObservations is the slim observation list of every node the caller may see,
+// keyed by node id. The public panel used to ask once per node; with a dozen
+// nodes that was a dozen round trips for rows the server reads in well under 1ms.
+func (a *API) allObservations(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	admin := a.isAdmin(r)
+	nodes, err := a.panelNodes(r, admin)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	out := map[string][]model.Observation{}
+	for _, n := range nodes {
+		if !n.Public && !admin {
+			continue
+		}
+		list, err := a.Store.Observations(r.Context(), n.ID, now)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		for i := range list {
+			list[i] = list[i].Redact()
+			list[i].Result.Hops = nil
+		}
+		out[n.ID] = list
 	}
 	write(w, 200, out)
 }
@@ -618,12 +701,12 @@ func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	nodes, err := a.Store.Nodes(r.Context(), time.Now())
+	admin := a.isAdmin(r)
+	nodes, err := a.panelNodes(r, admin)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	admin := a.isAdmin(r)
 	ids := []string{}
 	for _, n := range nodes {
 		if n.Public || admin {

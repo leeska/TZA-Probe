@@ -45,6 +45,16 @@ function showFailure(dialog, id, focus, error) {
 // focus 为空时展示整台机器的综合信息；带 {kind, carrier} 时只展示那一格的详情：
 // 延迟格看该运营商的 TCP 延迟，回程格看该运营商的回程路径。
 export async function detail(id, focus = null) {
+  // 明细请求不必等节点列表回来再发：和列表同时出发，弹窗打开时数据多半已经在路上了。
+  const loads = Promise.all([
+    api(`/nodes/${id}/history?hours=24&slim=1`),
+    api(`/nodes/${id}/observations`),
+    api(`/nodes/${id}/network-history?hours=24`),
+    // 解锁目录（名称 / 分类）全站一份，取一次就缓存，用来画「解锁检测」那一块。
+    unlockCatalog(),
+  ]);
+  // 节点不在列表里时下面直接返回，这批请求的失败不该变成未处理的拒绝。
+  loads.catch(() => {});
   const list = await api("/nodes");
   const n = list.find((x) => x.id === id);
   if (!n) {
@@ -57,15 +67,7 @@ export async function detail(id, focus = null) {
   d.dataset.nodeId = id;
   let history, obs, network, catalog;
   try {
-    [history, obs, network, catalog] = await withDeadline(() =>
-      Promise.all([
-        api(`/nodes/${id}/history?hours=24`),
-        api(`/nodes/${id}/observations`),
-        api(`/nodes/${id}/network-history?hours=24`),
-        // 解锁目录（名称 / 分类）全站一份，取一次就缓存，用来画「解锁检测」那一块。
-        unlockCatalog(),
-      ]),
-    );
+    [history, obs, network, catalog] = await withDeadline(() => loads);
   } catch (error) {
     if (!d.open || d.dataset.nodeId !== id) return;
     console.error("节点详情加载失败", `/api/v1/nodes/${id}`, error);
@@ -189,7 +191,7 @@ export async function detail(id, focus = null) {
     const hours = Number(e.target.value);
     const [samples, net] = await withDeadline(() =>
       Promise.all([
-        api(`/nodes/${id}/history?hours=${hours}`),
+        api(`/nodes/${id}/history?hours=${hours}&slim=1`),
         api(`/nodes/${id}/network-history?hours=${Math.min(hours, 168)}`),
       ]),
     );
