@@ -21,7 +21,7 @@
 | POST /admin/settings/test | 显式测试已配置 Webhook |
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |
-| GET /agent/jobs | 获取最多两个有限租约任务 |
+| GET /agent/jobs | 获取有限租约任务：报了 `parallel_jobs` 能力的 Agent 最多 8 个 TCP + 1 个回程 + 1 个解锁，其余最多两个 |
 | POST /agent/results | 上传与租约绑定的结果 |
 
 准确字段由 `internal/model` 中的 JSON 标签定义。未知 JSON 字段、超大请求、额外 JSON 值会被拒绝。非公开节点对未登录请求返回 404。任务为空绑定不执行，不表示所有节点。

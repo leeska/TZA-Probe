@@ -989,12 +989,32 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 	if err != nil {
 		return nil, err
 	}
-	// At most one route and one TCP lease at once per node, including other agents using its token.
-	var active int
-	if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM jobs WHERE node_id=? AND finished IS NULL AND issued>?", node, now.Add(-90*time.Second).Unix()).Scan(&active); err != nil {
+	// A kind with a job still in flight gets nothing new, including for other
+	// agents using this node's token. An Agent that runs its jobs side by side is
+	// judged per kind, so a minutes-long unlock round no longer holds up the
+	// latency probes; an older Agent waits for its whole lease, so any open job
+	// blocks it. An unlock job stays in flight for as long as it may still report.
+	parallel := capabilities.AllowsParallelJobs()
+	busy := map[string]bool{}
+	inflight, err := tx.QueryContext(ctx, "SELECT DISTINCT json_extract(task,'$.kind') FROM jobs WHERE node_id=? AND finished IS NULL AND (issued>? OR (json_extract(task,'$.kind')=? AND issued>?))",
+		node, now.Add(-90*time.Second).Unix(), model.UnlockKind, now.Add(-unlockFinishWindow).Unix())
+	if err != nil {
 		return nil, err
 	}
-	if active > 0 {
+	for inflight.Next() {
+		var kind sql.NullString
+		if err = inflight.Scan(&kind); err != nil {
+			inflight.Close()
+			return nil, err
+		}
+		busy[kind.String] = true
+	}
+	err = inflight.Err()
+	inflight.Close()
+	if err != nil {
+		return nil, err
+	}
+	if len(busy) > 0 && !parallel {
 		return []model.Job{}, nil
 	}
 	// Read scheduling history once. Retention exceeds the maximum task interval.
@@ -1061,12 +1081,15 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return due(candidates[i]) < due(candidates[j]) })
 	out := []model.Job{}
-	kinds := map[string]bool{}
+	issued := map[string]int{}
 	for _, t := range candidates {
-		if kinds[t.Kind] || due(t) > now.Unix() {
+		if busy[t.Kind] || issued[t.Kind] >= leaseLimit(t.Kind, parallel) || due(t) > now.Unix() {
 			continue
 		}
-		kinds[t.Kind] = true
+		if !parallel && len(out) >= legacyLeaseJobs {
+			break
+		}
+		issued[t.Kind]++
 		j := model.Job{ID: model.Secret()[:24], Task: t}
 		if _, err = tx.ExecContext(ctx, "INSERT INTO jobs(id,task_id,node_id,task,issued,probe_key) VALUES(?,?,?,?,?,?)", j.ID, t.ID, node, encode(t), now.Unix(), t.ProbeKey()); err != nil {
 			return nil, err
@@ -1081,6 +1104,26 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 	}
 	return out, tx.Commit()
 }
+
+// tcpLeaseJobs is how many latency probes one lease hands an Agent that runs
+// jobs side by side. With one per lease and a 10s poll a node managed six
+// probes a minute, so a task with a dozen targets at 30s quietly ran every
+// two minutes instead. Each probe is three handshakes; eight at once stays far
+// from disturbing the measurements.
+const tcpLeaseJobs = 8
+
+// legacyLeaseJobs caps a lease for an Agent without CapabilityParallelJobs: it
+// runs only the first two jobs it receives and drops the rest.
+const legacyLeaseJobs = 2
+
+// leaseLimit is how many jobs of one kind a single lease may carry.
+func leaseLimit(kind string, parallel bool) int {
+	if parallel && kind == "tcp" {
+		return tcpLeaseJobs
+	}
+	return 1
+}
+
 func (s *Store) Finish(ctx context.Context, node string, r model.Result, now time.Time) error {
 	if err := r.Validate(); err != nil {
 		return err

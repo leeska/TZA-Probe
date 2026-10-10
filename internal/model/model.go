@@ -260,7 +260,13 @@ func (m Metrics) Validate() error {
 // CapabilityUnlock is reported by an Agent that can run the unlock checks.
 const CapabilityUnlock = "unlock"
 
-var AllCapabilities = []string{CapabilityUnlock}
+// CapabilityParallelJobs is reported by an Agent that runs every job it leases,
+// each on its own, and keeps polling while they run. Older Agents run at most
+// two jobs of a lease and wait for both before polling again, so the Server
+// leases them the old way (see AllowsParallelJobs).
+const CapabilityParallelJobs = "parallel_jobs"
+
+var AllCapabilities = []string{CapabilityUnlock, CapabilityParallelJobs}
 
 func KnownCapability(capability string) bool {
 	for _, known := range AllCapabilities {
@@ -279,6 +285,19 @@ func KnownCapability(capability string) bool {
 func (m Metrics) AllowsUnlock() bool {
 	for _, capability := range m.Capabilities {
 		if capability == CapabilityUnlock {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsParallelJobs reports whether the host's Agent runs a whole lease at
+// once (CapabilityParallelJobs). An unreported capability means "no": such an
+// Agent drops every job past the second, and the dropped ones would sit in the
+// panel as timeouts.
+func (m Metrics) AllowsParallelJobs() bool {
+	for _, capability := range m.Capabilities {
+		if capability == CapabilityParallelJobs {
 			return true
 		}
 	}

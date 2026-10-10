@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
 )
@@ -143,4 +145,94 @@ func sameFamilies(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+type fakeTransport struct {
+	mu       sync.Mutex
+	polls    int
+	lease    []model.Job
+	finished map[string]bool
+}
+
+func (f *fakeTransport) Report(context.Context, model.Metrics) error { return nil }
+func (f *fakeTransport) Jobs(context.Context) ([]model.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.polls++
+	jobs := f.lease
+	f.lease = nil
+	return jobs, nil
+}
+func (f *fakeTransport) Finish(_ context.Context, r model.Result) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.finished[r.JobID] = true
+	return nil
+}
+func (f *fakeTransport) snapshot() (int, int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.polls, len(f.finished)
+}
+
+// blockingProber holds unlock jobs until release is closed and answers the
+// rest at once.
+type blockingProber struct{ release chan struct{} }
+
+func (p blockingProber) Run(ctx context.Context, j model.Job) model.Result {
+	if j.Task.Kind == model.UnlockKind {
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+		}
+	}
+	return model.Result{JobID: j.ID, Status: "failed"}
+}
+
+type nopCollector struct{}
+
+func (nopCollector) Collect(context.Context) (model.Metrics, error) { return model.Metrics{}, nil }
+
+// TestAgentRunsWholeLeaseAndKeepsPolling pins the job loop: every leased job
+// runs (an older Agent dropped all but two), and a long unlock round does not
+// stop the loop from polling for latency probes.
+func TestAgentRunsWholeLeaseAndKeepsPolling(t *testing.T) {
+	defer func(original time.Duration) { pollInterval = original }(pollInterval)
+	pollInterval = 10 * time.Millisecond
+	transport := &fakeTransport{finished: map[string]bool{}, lease: []model.Job{
+		{ID: "tcp-1", Task: model.Task{Kind: "tcp"}},
+		{ID: "tcp-2", Task: model.Task{Kind: "tcp"}},
+		{ID: "route", Task: model.Task{Kind: "route"}},
+		{ID: "unlock", Task: model.Task{Kind: model.UnlockKind}},
+	}}
+	release := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		Agent{Collector: nopCollector{}, Prober: blockingProber{release}, Transport: transport}.Run(ctx)
+		close(done)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		polls, finished := transport.snapshot()
+		if polls >= 5 && finished == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("polls=%d finished=%d while the unlock job runs", polls, finished)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	close(release)
+	for {
+		if _, finished := transport.snapshot(); finished == 4 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("unlock job never reported")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
 }

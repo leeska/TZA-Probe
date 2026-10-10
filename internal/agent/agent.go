@@ -60,37 +60,26 @@ func (a Agent) Run(ctx context.Context) {
 	}()
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(10 * time.Second)
+		// Every leased job runs on its own and the loop keeps polling meanwhile:
+		// a minutes-long unlock round or a minute-long trace must not stall the
+		// latency probes. The Server bounds what is in flight (one lease per kind
+		// at a time), so the Agent runs whatever it is handed.
+		var workers sync.WaitGroup
+		defer workers.Wait()
+		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 		for {
 			jobs, err := a.Transport.Jobs(ctx)
 			if err != nil && ctx.Err() == nil {
 				slog.Warn("job polling failed", "error", err)
 			}
-			var workers sync.WaitGroup
-			for _, j := range jobs[:min(len(jobs), 2)] {
+			for _, j := range jobs {
 				workers.Add(1)
 				go func(job model.Job) {
 					defer workers.Done()
-					result := a.Prober.Run(ctx, job)
-					for attempt := 0; attempt < 3; attempt++ {
-						if err := a.Transport.Finish(ctx, result); err == nil {
-							return
-						}
-						timer := time.NewTimer(time.Duration(attempt+1) * time.Second)
-						select {
-						case <-ctx.Done():
-							timer.Stop()
-							return
-						case <-timer.C:
-						}
-					}
-					if ctx.Err() == nil {
-						slog.Warn("result upload failed", "job", job.ID)
-					}
+					a.runJob(ctx, job)
 				}(j)
 			}
-			workers.Wait()
 			select {
 			case <-ctx.Done():
 				return
@@ -99,6 +88,30 @@ func (a Agent) Run(ctx context.Context) {
 		}
 	}()
 	wg.Wait()
+}
+
+// pollInterval is how often the Agent asks for jobs.
+var pollInterval = 10 * time.Second
+
+// runJob executes one job and uploads its result, retrying the upload up to
+// three times.
+func (a Agent) runJob(ctx context.Context, job model.Job) {
+	result := a.Prober.Run(ctx, job)
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := a.Transport.Finish(ctx, result); err == nil {
+			return
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+	if ctx.Err() == nil {
+		slog.Warn("result upload failed", "job", job.ID)
+	}
 }
 
 type HTTPTransport struct {

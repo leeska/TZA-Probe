@@ -78,7 +78,7 @@ chmod 600 agent.json
 
 ## 三网探测
 
-后台创建任务，可从内置目录选择地区、运营商和 IP 协议，再明确选择节点。空绑定不执行。回程最短 15 分钟、默认 1 小时；TCP 最短 30 秒。单个节点最多同时执行一个 TCP 和一个回程任务。
+后台创建任务，可从内置目录选择地区、运营商和 IP 协议，再明确选择节点。空绑定不执行。回程最短 15 分钟、默认 1 小时；TCP 最短 30 秒。单个节点每次最多领 8 个 TCP、1 个回程和 1 个解锁任务，各自并行执行，解锁或回程不会卡住延迟探测。
 
 回程由 Agent 内置的 **NTrace-core**（NextTrace 的同一个追踪核心）在进程内执行，无需在节点上安装任何外部工具；固定 24 跳、单次测量、1500 毫秒超时和 45 秒预算，显式关闭路径地图生成，避免上传完整路径制作分享地图。`nexttrace` 留空即用内置实现；填写绝对路径则改为调用该外部二进制（仅作运维兜底）。`trace_method` 是探测方式，默认 `icmp`（与 NextTrace CLI 一致），可改 `tcp` 或 `udp`。`geo_provider` 选择跳数 ASN/地区数据源，留空用默认的 `IPAPI.com`（上游默认 `NextTrace-API` 的 v3 通道依赖 NextTrace CLI 自己开的 WebSocket 连接，在常驻进程里查询必然失败、整条路径拿不到 ASN，所以不作为默认），也可填 `NextTrace-API`、`disable-geoip` 等；`disable-geoip` 时标签完全依赖本地地址前缀表。权限不足、目标不响应或数据源不可用时不会编造线路。运行原始套接字探测时，使用具备所需权限的服务账户或由运维为工具配置对应能力。
 
@@ -102,7 +102,7 @@ TCP 指标是连接耗时和连接失败比例，**不声称是 ICMP 丢包率**
 - **地区类服务只给地区**：Bing Region / Apple Region / Google Play / Steam Currency / OneTrust Region 显示的是地区或币种（`JP`、`USD`、`Japan`、`US [California]`），不画锁图标，也不参与「未解锁」的判断。
 - **命令与依赖**：检测全部在 Go 标准库里做（一次 HTTPS 请求一项），Agent 不起 shell、不下载可执行文件，也不需要节点上装任何东西。
 - **只看得到出口的真相**：检测从 Agent 所在主机发出，走默认路由。机器上开着代理 / Fake-IP、或者业务分流把某些域名导去别的落地时，答案反映的是那条出口，不是机房本身（与回程探测同一个道理）。
-- **升级顺序：先 Server 再升机队**。节点上报里带 `capabilities: ["unlock"]`，运维只把解锁任务派给报了这个能力的 Agent；没升级的节点领不到该任务，面板上也不会出现一整片红色的 `failed`（判据是「未知能力 = 不能」）。而新 Agent 报给旧 Server 会因为 `DisallowUnknownFields` 直接 400 掉线，所以顺序不能反。
+- **升级顺序：先 Server 再升机队**。节点上报里带 `capabilities: ["unlock", "parallel_jobs"]`，运维只把解锁任务派给报了这个能力的 Agent；没升级的节点领不到该任务，面板上也不会出现一整片红色的 `failed`（判据是「未知能力 = 不能」）。而新 Agent 报给旧 Server 会因为 `DisallowUnknownFields` 直接 400 掉线，所以顺序不能反。
 - 落库与接口：结论按 `(节点, 服务)` 一行存在 `unlocks` 表里，与该次上报同一事务写入；改任务、删任务、删节点都会连带清掉旧结论，面板上不会留下没有任务在跑的解锁面板。读接口 `GET /api/v1/unlock-catalog`（公开，给面板分组用）与 `GET /api/v1/nodes/{id}/unlocks`（公开节点匿名可读，返回 `{services, score, total, tested_at}`；没跑过时是空摘要而不是 404），`GET /api/v1/nodes` 的每个节点带 `unlock` 摘要，卡片据此决定画不画锁图标——没有检测数据的节点不渲染任何占位。MCP 侧的 `create_task` 也支持 `kind=unlock`。
 
 ## 计费与提醒
