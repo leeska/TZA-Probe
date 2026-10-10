@@ -1,5 +1,5 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
-import { bytes, date, days, gib, mbps, osLabel, percent, statusName } from "./format.js";
+import { bytes, bandwidth, date, days, gib, mbps, osLabel, percent, statusName } from "./format.js";
 import { detail } from "./detail.js";
 import { mountAdmin } from "./admin.js";
 import { applyTheme, themeButton } from "./theme.js";
@@ -774,8 +774,18 @@ function priceLabel(n) {
   return `<span class="price-label">${price}</span>`;
 }
 
+// 线路带宽（后台填的 Mbit/s，0 = 商家没写 / 不标注）：前台的「这台机器的线路规格」
+// 与到期、价格同在计费那一组，卡片与列表共用这一份，两处口径不会走岔。没填就整块
+// 不渲染——不摆「未标注」这类占位（用户点名过）。
+function bandwidthPill(n) {
+  const text = bandwidth(n.line_mbps);
+  return text
+    ? `<span class="line-pill" title="线路带宽（商家标称的端口 / 峰值速率）">${text}</span>`
+    : "";
+}
+
 function billingInner(n, expiry) {
-  return `${expiryPill(n, expiry)}${priceLabel(n)}`;
+  return `${expiryPill(n, expiry)}${priceLabel(n)}${bandwidthPill(n)}`;
 }
 
 // 卡片底部的信息带：三列两行——左列实时速率（↓/↑）、中列本次开机网卡累计（↓/↑），
@@ -793,7 +803,7 @@ function statsBand(n, f) {
   const totals = m
     ? `<div class="stat-totals" title="本次开机网卡累计（↑ 上传 / ↓ 下载）；换网卡或重装会重置"><span class="stat-item">累计 <b>${withUnit(bytes(m.net_out))}</b></span><span class="stat-item">累计 <b>${withUnit(bytes(m.net_in))}</b></span></div>`
     : "";
-  return `<div class="card-stats"><div class="speeds">${speedsInner(n)}</div>${totals}<div class="stat-facts">${expiryPill(n, f.expiry)}${priceLabel(n)}</div></div>`;
+  return `<div class="card-stats"><div class="speeds">${speedsInner(n)}</div>${totals}<div class="stat-facts">${billingInner(n, f.expiry)}</div></div>`;
 }
 
 // 没有探测任务（按设计不挂三网任务，例如国际线路的机器）：两段都不画，只留一行说明。

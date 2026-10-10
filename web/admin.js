@@ -7,6 +7,7 @@ import { api, send, esc, toast, modal, guard } from "./api.js";
 import { bytes, date, days, kindName, stamp, stampISO } from "./format.js";
 import { detail } from "./detail.js";
 import { regionOptions } from "./regions.js";
+import { regionCombobox, wireComboboxes } from "./region-picker.js";
 let container,
   brandHTML,
   tab = "nodes",
@@ -114,7 +115,7 @@ async function render() {
 }
 const content = () => container.querySelector("#admin-content");
 function renderNodes() {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${nodes.filter((n) => n.expires_at && days(n.expires_at) <= 7).length}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table class="stack"><thead><tr><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${nodes.map((n) => `<tr><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 代表地区 ${esc(n.representative || "未设置")}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><small>Agent ${n.metrics ? esc(n.metrics.version) + " · " + esc(n.metrics.arch || "") : "未接入"}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.traffic_limit ? "/ " + bytes(n.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${n.expires_at ? esc(n.expires_at.slice(0, 10)) : "—"}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}">接入</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${nodes.filter((n) => n.expires_at && days(n.expires_at) <= 7).length}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${nodes.map((n) => `<tr data-node="${n.id}"><td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 代表地区 ${esc(n.representative || "未设置")}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${n.online ? "在线" : "离线"}</span><small>Agent ${n.metrics ? esc(n.metrics.version) + " · " + esc(n.metrics.arch || "") : "未接入"}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.traffic_limit ? "/ " + bytes(n.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${n.expires_at ? esc(n.expires_at.slice(0, 10)) : "—"}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}">接入</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
   content().querySelectorAll("[data-billing]").forEach((b) => {
     b.onclick = () => {
       const n = nodes.find((x) => x.id === b.dataset.billing);
@@ -169,6 +170,79 @@ function renderNodes() {
             },
           )),
     );
+  wireReorder();
+}
+// 拖动排序：这张表就是服务端按 order 排出来的（storage.Nodes → 先 order 后 name），拖动
+// 只改这个顺序：松手时把整份可见 id 列表交给 POST /admin/nodes/order，由服务端按 0,1,2…
+// 重写 order——前端不自己算号（算错会和分组次序打架），更不逐台 PUT 整份配置（那会把没
+// 回填的字段清掉）。
+//
+// 用 pointer 事件而不是 HTML5 drag：后者在手机上根本不触发，而这套面板是会在手机上开的。
+// 手柄 setPointerCapture 之后 pointermove / pointerup 都回到手柄，落点用 elementFromPoint
+// 认（它是命中测试，不受指针捕获影响）。
+function wireReorder() {
+  const body = content().querySelector("table.stack tbody");
+  if (!body) return;
+  const rows = () => [...body.querySelectorAll("tr[data-node]")];
+  body.querySelectorAll("[data-drag]").forEach((handle) => {
+    const row = handle.closest("tr[data-node]");
+    let moved = false;
+    const move = (e) => {
+      const over = document
+        .elementFromPoint(e.clientX, e.clientY)
+        ?.closest("tr[data-node]");
+      if (over && over !== row) {
+        const rect = over.getBoundingClientRect();
+        moved = true;
+        // 落在下半行就插到它后面，落在上半行就插到它前面。
+        body.insertBefore(
+          row,
+          e.clientY > rect.top + rect.height / 2 ? over.nextSibling : over,
+        );
+      }
+      // 拖到视口上下边缘时跟着滚一点，长一点的列表才拖得到头。用滚动元素的 scrollTop
+      // 而不是 window.scrollBy：jsdom 没实现 scrollBy，会往控制台扔 "Not implemented"，
+      // 而 ui-smoke 断言管理端控制台零报错（滚动元素在浏览器里就是 <html>）。
+      const edge = 80;
+      const scroller = document.scrollingElement || document.documentElement;
+      if (e.clientY < edge) scroller.scrollTop -= 12;
+      else if (e.clientY > window.innerHeight - edge) scroller.scrollTop += 12;
+    };
+    const drop = guard(async () => {
+      stop();
+      if (!moved) return;
+      await send("/admin/nodes/order", "POST", {
+        ids: rows().map((r) => r.dataset.node),
+      });
+      await render();
+      toast("顺序已保存");
+    });
+    const cancel = () => {
+      moved = false;
+      stop();
+    };
+    // 监听挂在 document 上，不用 setPointerCapture：真浏览器里捕获会在拖动途中被隐式
+    // 释放（lostpointercapture，26px 的手柄走出几十像素就丢了），之后 pointermove 直接
+    // 落到别的元素上，手柄再也收不到事件——整段拖动白做，且完全没有报错。挂在 document
+    // 上则无论指针在哪、中途有没有重排 DOM，事件都还在。
+    const stop = () => {
+      row.classList.remove("row-dragging");
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", drop);
+      document.removeEventListener("pointercancel", cancel);
+    };
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button) return;
+      // 按住手柄不顺带选中文字或起原生拖拽；触摸设备上的滚动由样式的 touch-action 关掉。
+      e.preventDefault();
+      moved = false;
+      row.classList.add("row-dragging");
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", drop);
+      document.addEventListener("pointercancel", cancel);
+    });
+    handle.addEventListener("lostpointercapture", cancel);
+  });
 }
 function field(label, name, value, type = "text", extra = "") {
   return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
@@ -209,24 +283,44 @@ async function knownRegions() {
 function nodeRegions(values) {
   return regionOptions(regions, values);
 }
-function regionSelect(label, name, value, options, emptyLabel) {
-  const html = [
-    `<option value="">${esc(emptyLabel)}</option>`,
-    ...options.map(
-      (region) =>
-        `<option value="${esc(region)}" ${region === value ? "selected" : ""}>${esc(region)}</option>`,
-    ),
-  ].join("");
-  return `<label>${label}<select name="${name}">${html}</select></label>`;
+// 价格周期与货币都固定成选项（2026-10-10 用户要求：周期固定「周、月、季、半年、年、
+// 两年、三年」，货币固定成常见几种）。落库的仍是原来那个自由文本字段（服务端只限长度），
+// 既有数据不必迁移；选项表里没有的现值——例如免费机的「免费」、没填过货币的空值——会作为
+// 一条额外选项追加在末尾，编辑不会被静默改掉（「免费」也直接列进周期表，新建免费机时可选）。
+const PRICE_PERIODS = ["周", "月", "季", "半年", "年", "两年", "三年", "免费"];
+// 货币的显示一直是 ISO 代码（卡片写「CNY 179.25 / 年」），所以选项的 value 也保持代码，
+// 只有标签是中文名——换中文当 value 会把既有节点的显示从 CNY 改成人民币，那是另一件事。
+const CURRENCIES = [
+  ["CNY", "人民币（CNY）"],
+  ["USD", "美元（USD）"],
+  ["EUR", "欧元（EUR）"],
+  ["GBP", "英镑（GBP）"],
+  ["JPY", "日元（JPY）"],
+  ["CAD", "加拿大币（CAD）"],
+  ["HKD", "港币（HKD）"],
+  ["SGD", "新加坡币（SGD）"],
+  ["TWD", "新台币（TWD）"],
+  ["AUD", "澳元（AUD）"],
+  ["KRW", "韩元（KRW）"],
+  ["RUB", "卢布（RUB）"],
+  ["CHF", "瑞士法郎（CHF）"],
+];
+
+// 现值不在选项表里就追加一条（标签写现值本身，空值写「未设置」），保证打开表单保存一遍
+// 不会把老值换掉。
+function withCurrent(options, current, emptyLabel = "未设置") {
+  const list = options.map(([value, label]) => [value, label]);
+  const value = String(current ?? "");
+  if (!list.some(([known]) => known === value)) list.push([value, value || emptyLabel]);
+  return list;
 }
-// 节点所在地区只用于展示，允许目录外的城市，所以给建议列表而不是强制下拉。
-function regionInput(label, name, value) {
-  return `<label>${label}<input name="${name}" value="${esc(value)}" list="region-options" placeholder="选择或输入地区" autocomplete="off"></label>`;
-}
-function regionDatalist(regions) {
-  return `<datalist id="region-options">${regions
-    .map((region) => `<option value="${esc(region)}"></option>`)
-    .join("")}</datalist>`;
+
+// 拖动排序的手柄：六点图标。用 pointer 事件拖动（HTML5 drag 在手机上根本不触发），
+// 所以按住手柄时靠样式里的 touch-action: none 把页面滚动让开。
+const DRAG_ICON =
+  '<svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="9" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="9" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="9" cy="13" r="1.4"/></svg>';
+function dragHandle(n) {
+  return `<button type="button" class="drag-handle" data-drag="${n.id}" title="按住拖动调整顺序" aria-label="拖动排序 ${esc(n.name)}">${DRAG_ICON}</button>`;
 }
 function nodeForm(existing) {
   const n = existing || structuredClone(defaults),
@@ -237,7 +331,7 @@ function nodeForm(existing) {
   const options = nodeRegions([n.region, n.representative, n.latency_region]);
   const d = modal(
     existing ? "编辑节点" : "添加节点",
-    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionInput("节点所在地区", "region", n.region)}${regionSelect("卡片代表地区（与回程任务一致）", "representative", n.representative, options, "不指定（按任务地区匹配）")}${regionSelect("卡片延迟地区（留空沿用代表地区）", "latency_region", n.latency_region, options, "沿用代表地区")}${regionDatalist(options)}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.latency_carriers?.length || n.latency_carriers.includes(carrier))).join("")}</div><small class="hint">空配置会显示全部延迟分组。</small></div>${field("排序（小的在前）", "order", n.order, "number")}${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
+    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionCombobox("节点所在地区", "region", n.region, options)}${regionCombobox("卡片代表地区（与回程任务一致）", "representative", n.representative, options, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("卡片延迟地区（留空沿用代表地区）", "latency_region", n.latency_region, options, { placeholder: "沿用代表地区" })}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.latency_carriers?.length || n.latency_carriers.includes(carrier))).join("")}</div><small class="hint">空配置会显示全部延迟分组。</small></div>${field("排序（小的在前）", "order", n.order, "number")}${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
       "流量计费方式",
       "traffic_mode",
       [
@@ -247,11 +341,12 @@ function nodeForm(existing) {
         ["out", "仅上传"],
       ],
       n.traffic_mode,
-    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${field("货币", "currency", n.currency, "text", 'maxlength="12"')}${field("价格周期", "price_period", n.price_period, "text", 'maxlength="30"')}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line_mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间只取这一时刻的「日 + 时分秒」，逐月顺延；当月没有该日时取当月最后一天。到期时间同样精确到秒，续费提醒按它计算。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。达量降速按线路自己的规则判：<b>窗口平均带宽</b>用 Agent 上报的网卡计数按小时累计取平均（德国商家常见口径：近 24 小时平均超过 100 Mbit/s 降速到 100 Mbit/s），平均口径与本节点的流量统计方式一致；<b>额度用满后限速</b>用本周期用量比额度，用满即视为已降速（DMIT T1 这类「1000 GB 取高值 @ 4 Gbps 突发，用满后不计量但限速到 50/100 Mbit/s」——这时「线路带宽」填突发峰值）。填 0 表示这条线路没有这种规则，面板与告警都不显示。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数（默认 60）", "offline_seconds", a.offline_seconds || 0, "number", 'min="0" max="86400" placeholder="默认 60"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费（默认 7）", "renewal_days", a.renewal_days, "number", 'min="0" max="365" placeholder="默认 7"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比（默认 80）", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100" placeholder="默认 80"')}</div><div class="rule-row">${check("达量降速警告", "throttle", a.throttle)}<small class="hint">按上面的规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（需先填速率）。</small></div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %（默认 90）", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("内存阈值 %（默认 90）", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("负载持续秒数（默认 300）", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400" placeholder="默认 300"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次；默认 0）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"')}<p class="hint">新建节点的默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU/内存 90%、负载持续 300 秒、重复间隔 0（只提醒一次）；未勾选的规则不生效。45 秒未上报判定离线，再按设置等待后通知；恢复通知一次。重复间隔至少 5 分钟。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.currency), n.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), n.price_period), n.price_period || "")}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line_mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间只取这一时刻的「日 + 时分秒」，逐月顺延；当月没有该日时取当月最后一天。到期时间同样精确到秒，续费提醒按它计算。首次接入建立流量基线，不补算历史用量；主机重启或网卡集合变化时自动重建基线。达量降速按线路自己的规则判：<b>窗口平均带宽</b>用 Agent 上报的网卡计数按小时累计取平均（德国商家常见口径：近 24 小时平均超过 100 Mbit/s 降速到 100 Mbit/s），平均口径与本节点的流量统计方式一致；<b>额度用满后限速</b>用本周期用量比额度，用满即视为已降速（DMIT T1 这类「1000 GB 取高值 @ 4 Gbps 突发，用满后不计量但限速到 50/100 Mbit/s」——这时「线路带宽」填突发峰值）。填 0 表示这条线路没有这种规则，面板与告警都不显示。</p></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数（默认 60）", "offline_seconds", a.offline_seconds || 0, "number", 'min="0" max="86400" placeholder="默认 60"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费（默认 7）", "renewal_days", a.renewal_days, "number", 'min="0" max="365" placeholder="默认 7"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比（默认 80）", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100" placeholder="默认 80"')}</div><div class="rule-row">${check("达量降速警告", "throttle", a.throttle)}<small class="hint">按上面的规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（需先填速率）。</small></div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %（默认 90）", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("内存阈值 %（默认 90）", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("负载持续秒数（默认 300）", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400" placeholder="默认 300"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次；默认 0）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"')}<p class="hint">新建节点的默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU/内存 90%、负载持续 300 秒、重复间隔 0（只提醒一次）；未勾选的规则不生效。45 秒未上报判定离线，再按设置等待后通知；恢复通知一次。重复间隔至少 5 分钟。通知出口在“告警与通知”配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
   // 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
   const form = d.querySelector("form"),
     el = (name) => form.elements.namedItem(name);
+  wireComboboxes(form);
   const rules = {
     offline: ["offline_seconds"],
     renewal: ["renewal_days"],

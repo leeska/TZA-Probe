@@ -79,6 +79,18 @@ export function mbps(bits) {
   if (bits >= 1e3) return `${(bits / 1e3).toFixed(0)} kbit/s`;
   return `${bits.toFixed(0)} bit/s`;
 }
+// 线路带宽（后台填的 Mbit/s）：整千写 Gbit/s、其余原样 Mbit/s——商家页面写「1 Gbps / 1000 Mbit/s」
+// 两种写法都有，整千的用 Gbit/s 更好读，非整千的（1536 / 200）别硬凑成小数 Gbit/s。
+// 0 或没填返回空串，调用方据此整块不渲染（面板里不放「未标注」这类占位）。
+export function bandwidth(lineMbps) {
+  const value = Number(lineMbps);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value >= 1000) {
+    const gbit = value / 1000;
+    return `${Number.isInteger(gbit) ? gbit : gbit.toFixed(1)} Gbit/s`;
+  }
+  return `${value} Mbit/s`;
+}
 export const statusName = {
   ok: "正常",
   pending: "检测中",

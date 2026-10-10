@@ -1123,6 +1123,7 @@ button.node-name {
 .card-stats .unit,
 .card-stats .speed-line .unit-none,
 .card-stats .stat-item,
+.card-stats .line-pill,
 .card-stats .price-label {
   font-size: 10px;
   font-weight: 500;
@@ -1154,6 +1155,14 @@ button.node-name {
 .price-label {
   color: var(--muted);
   font-weight: 500;
+}
+
+/* 线路带宽与价格同一档（10px 灰字）：卡片里由 .card-stats 那条规则定字号，
+   列表的计费格直接用这一条。 */
+.line-pill {
+  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Footer */
@@ -3286,4 +3295,122 @@ pre,
 
 .unlock-block .unlock-panel {
   font-size: 13px;
+}
+
+/* ==========================================================================
+   后台：可检索的地区选择器（web/region-picker.js）与节点表的拖动排序
+   地区控件是真正的 <input>（不再是原生下拉 / datalist），外壳沿用
+   .select-shell / .select-pop / .select-opt，四套皮肤各有一份样式，所以这里只补
+   输入框与清除键。规则必须写在文件末尾并用双类选择器：glass.css 在 styles.css 之后
+   加载，同权重它赢——.select-shell 是 inline-flex，输入框会缩成内容宽。
+   ========================================================================== */
+.select-shell.combo {
+  display: block;
+  position: relative;
+}
+
+.select-shell.combo .combo-input {
+  display: block;
+  width: 100%;
+  cursor: text;
+  text-overflow: clip;
+  padding-right: 32px;
+}
+
+.select-shell.combo.open .combo-input {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.22);
+}
+
+.combo-clear {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.combo-clear[hidden] {
+  display: none;
+}
+
+.combo-clear:hover {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--ink);
+}
+
+.select-shell.combo .select-pop {
+  max-height: 240px;
+}
+
+/* 隐藏没命中的建议：必须带上 .select-pop 这一层，光写 .combo-opt[hidden]（0,2,0）会被
+   glass.css 的 .select-opt{display:flex}（同权重、后加载）以及 anime / shadcn 的
+   html[data-skin=…] :is(…)（0,2,1）盖掉，结果是「筛过的项仍然全都显示」。 */
+.select-pop .combo-opt[hidden] {
+  display: none;
+}
+
+.combo-opt.active {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.combo-empty {
+  margin: 0;
+  padding: 9px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 节点表的拖动排序手柄：按住拖动改顺序（pointer 事件，手机上也拖得动），所以按住
+   手柄时不许页面跟着滚——touch-action: none 让浏览器把这次手势完全交给脚本。 */
+.drag-col {
+  width: 46px;
+}
+
+.drag-cell {
+  width: 46px;
+}
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--subtle);
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-handle:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+tr.row-dragging {
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+tr.row-dragging td {
+  opacity: 0.7;
 }

@@ -1,6 +1,7 @@
 import { esc, modal, guard, toast, send } from "./api.js";
 import { searchMatch } from "./search.js";
 import { regionOptions } from "./regions.js";
+import { regionCombobox, wireComboboxes } from "./region-picker.js";
 
 const carriers = ["电信", "联通", "移动", "其他"];
 const checkbox = (label, name, checked) =>
@@ -148,13 +149,12 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         <p class="hint">同一地区和运营商只需选一次。每组默认按下方勾选的 IP 协议检测，可在“已选目标”上单独改成只测 IPv4、只测 IPv6 或两者都测。</p>
         <details><summary>添加自定义目标（含海外运营商）</summary>
           <div class="form-grid">
-            <label>地区<input name="custom-region" list="task-region-options" placeholder="选择或输入地区" autocomplete="off"></label>
+            ${regionCombobox("地区", "custom-region", "", regionSuggestions(catalog, existing))}
             <label>运营商<select name="custom-carrier">${options(["其他", "电信", "联通", "移动"])}</select></label>
             <label>IPv4 地址或域名<input name="custom-ipv4" placeholder="IPv4 或支持 A 记录的域名"></label>
             <label>IPv6 地址或域名<input name="custom-ipv6" placeholder="IPv6 或支持 AAAA 记录的域名"></label>
             <label>端口<input name="custom-port" type="number" min="1" max="65535" value="443"></label>
           </div><button type="button" id="add-custom">添加目标</button>
-          <datalist id="task-region-options">${options(regionSuggestions(catalog, existing))}</datalist>
         </details>
         <div id="selected-targets" class="selected-targets"></div>
       </section>
@@ -190,6 +190,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
   );
   const form = d.querySelector("form");
   const el = (name) => form.elements.namedItem(name);
+  wireComboboxes(form);
   let visible = [];
   const activeTargets = () =>
     [...selected.values()].flatMap((e) =>

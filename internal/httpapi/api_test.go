@@ -433,3 +433,109 @@ func TestAgentDistributionRoutes(t *testing.T) {
 		}
 	}
 }
+
+// 后台拖动排序走 POST /admin/nodes/order：请求体是整份 id 列表，服务端按 0,1,2…
+// 重写 order。它必须只动 order——拖一次不能把节点的名字、计费锚点或流量校正清掉
+// （真正危险的做法是前端按新顺序逐台 PUT 整份配置）。未知 id 要整批回滚。
+func TestSaveNodeOrderRewritesOnlyOrder(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "order.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	request := func(method, path, token string, body any) (int, []byte) {
+		t.Helper()
+		var data []byte
+		if body != nil {
+			data, _ = json.Marshal(body)
+		}
+		req, _ := http.NewRequest(method, server.URL+path, bytes.NewReader(data))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
+	names := []string{"甲", "乙", "丙"}
+	ids := []string{}
+	for _, name := range names {
+		id, _, err := s.SaveNode(ctx, model.Node{
+			Name: name, Region: "香港", Public: true,
+			BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum",
+			Price: 12.5, Currency: "USD", PricePeriod: "年", ExpiresAt: "2027-09-01T00:00:00Z",
+		}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	orderOf := func() []string {
+		t.Helper()
+		code, data := request("GET", "/api/v1/admin/nodes", admin, nil)
+		if code != 200 {
+			t.Fatalf("list: %d %s", code, data)
+		}
+		var list []model.NodeView
+		if err := json.Unmarshal(data, &list); err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(list))
+		for i, n := range list {
+			if n.Order != i {
+				t.Fatalf("order 必须是 0,1,2…（列表位置 %d，实际 %d）", i, n.Order)
+			}
+			out = append(out, n.Name)
+		}
+		return out
+	}
+	if code, _ := request("POST", "/api/v1/admin/nodes/order", "", map[string]any{"ids": ids}); code != 401 {
+		t.Fatalf("匿名不该能改顺序: %d", code)
+	}
+	if code, _ := request("POST", "/api/v1/admin/nodes/order", admin, map[string]any{"ids": []string{ids[0], ids[0]}}); code != 400 {
+		t.Fatalf("重复 id 应为 400: %d", code)
+	}
+	if code, _ := request("POST", "/api/v1/admin/nodes/order", admin, map[string]any{"ids": []string{}}); code != 400 {
+		t.Fatalf("空列表应为 400: %d", code)
+	}
+	want := []string{names[2], names[0], names[1]}
+	if code, body := request("POST", "/api/v1/admin/nodes/order", admin, map[string]any{"ids": ids}); code != 204 {
+		t.Fatalf("保存顺序: %d %s", code, body)
+	}
+	if got := orderOf(); got[0] != names[0] || got[1] != names[1] || got[2] != names[2] {
+		t.Fatalf("未拖动时顺序不该变: %v", got)
+	}
+	if code, _ := request("POST", "/api/v1/admin/nodes/order", admin, map[string]any{"ids": []string{ids[2], ids[0], ids[1]}}); code != 204 {
+		t.Fatalf("保存顺序: %d", code)
+	}
+	if got := orderOf(); got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("拖动后的顺序: %v，期望 %v", got, want)
+	}
+	// 未知 id：整批不生效（事务回滚），列表仍是拖动后的那份。
+	if code, _ := request("POST", "/api/v1/admin/nodes/order", admin, map[string]any{"ids": []string{ids[1], "ghost"}}); code != 404 {
+		t.Fatalf("未知 id 应为 404: %d", code)
+	}
+	if got := orderOf(); got[2] != want[2] {
+		t.Fatalf("失败的请求不该改顺序: %v", got)
+	}
+	// 计费字段一个都没被拖动碰到。
+	_, data := request("GET", "/api/v1/admin/nodes", admin, nil)
+	var list []model.NodeView
+	if err := json.Unmarshal(data, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range list {
+		if n.Price != 12.5 || n.Currency != "USD" || n.PricePeriod != "年" || n.BillingAt != "2026-09-01T00:00:00Z" || n.Region != "香港" {
+			t.Fatalf("拖动不该改别的字段: %+v", n.Node)
+		}
+	}
+}

@@ -2528,3 +2528,56 @@ gpt-6.1-sol 看图确认（手机/桌面 × 明暗 × 四台）：方案确认�
 - 12 台里 8 台无立绘的卡不渲染这三层，卡高与观感不变。
 
 待确认：无。
+
+## 2026-10-10 后台四项：拖动排序、计费固定选项、地区拼音检索、前台线路带宽
+
+用户原话：「1、TZA后台节点管理，要加上拖动排序功能 2、后台节点计费和续费里，价格周期要固定几个，
+周、月、季、半年、年、两年、三年；货币也要固定成选项，人民币、欧元、美元、英镑、日元、加拿大币、
+港币、新加坡币等 3、后台节点地区都要做出可以用拼音、中午、英文检索的 4、前台要能显示线路带宽」
+
+改动：
+1. **拖动排序**：节点表第一列加「顺序」列与拖动手柄（`.drag-handle`，六点 SVG，`touch-action: none`）。
+   松手时把整份可见 id 列表 `POST /api/v1/admin/nodes/order`，服务端 `SaveNodeOrder` 按 0,1,2… 只重写
+   `config.order` 一个字段（前端不自己算号，也不逐台 PUT 整份配置把别的字段清掉）。列表按 `order` 再按
+   名字排（与既有 `storage.Nodes` 一致），拖动只改变顺序，不动其他字段。`tza-nodes-normalize.py` 同步改成
+   「分组次序仍按 GROUP_ORDER，组内沿用面板上的顺序」——否则下次 `--apply` 会把用户拖出来的顺序按名字重排回去。
+2. **价格周期 / 货币固定成选项**：周期 周、月、季、半年、年、两年、三年（另加「免费」）；货币
+   人民币 CNY / 美元 USD / 欧元 EUR / 英镑 GBP / 日元 JPY / 加拿大币 CAD / 港币 HKD / 新加坡币 SGD /
+   新台币 TWD / 澳元 AUD / 韩元 KRW / 卢布 RUB / 瑞士法郎 CHF。落库字段不变（仍是自由文本），
+   选项表里没有的现值补成一条额外选项（空值写「未设置」），编辑不会把老值悄悄换掉。
+3. **地区可检索**：新增 `web/region-picker.js`，控件仍是真正的 `<input name=…>`（目录外可自由填写），
+   外面套一份可检索弹层，规则直接复用 `web/search.js`（中文 / 全拼 / 首字母 / 英文代号）。节点表单三个
+   地区字段与任务里的「自定义目标地区」都换成它，原来的 `<input list=…> + <datalist>` 与 `#region-options` /
+   `#task-region-options` 两个 datalist 删除。
+4. **前台线路带宽**：节点已有的 `line_mbps` 现在真的显示出来——卡片信息带与列表计费格共用 `billingInner`，
+   写 `1 Gbit/s` / `500 Mbit/s` 这种口径（≥1000 走 Gbit/s），没填的机器整项不渲染（不留「未标注」占位）；
+   详情里另给一格「线路带宽」。
+
+踩过的坑（都已在代码注释里留下原因）：
+- **指针捕获不能用来做拖动**：`handle.setPointerCapture()` 在真浏览器里拖动途中会被隐式释放
+  （`lostpointercapture`，26px 的手柄走出约 40px 就丢），之后 `pointermove` 落到指针下面的元素上，手柄再收不到
+  事件——拖动全程无报错、无反应。改成把 `pointermove` / `pointerup` / `pointercancel` 挂在 `document` 上。
+- **`.combo-opt[hidden]` 的选择器权重不够**：glass.css 的 `.select-opt{display:flex}`（同权重、后加载）与
+  anime / shadcn 的 `html[data-skin=…] :is(…)`（0,2,1）会盖掉它，表现为「筛过了但选项全都显示」。
+  改成 `.select-pop .combo-opt[hidden]`。
+- jsdom 没有 `window.scrollBy`，拖动时的边缘自动滚动改成写 `document.scrollingElement.scrollTop`
+  （否则 ui-smoke 的「控制台零报错」断言会挂）。
+
+验证：
+- `gofmt -l` 无输出；`go vet ./...` 干净；`go test ./...` 全绿（`internal/httpapi` 新增
+  `TestSaveNodeOrder`：未登录 401、重复 id 400、含未知 id 404 且整批回滚、成功时 order 恰好是 0,1,2 且
+  名字 / 计费锚点等字段一字未动）；`bash /root/work/tza-ui-regression.sh` → `PRESENTATION_OK` + `UI_SMOKE_OK`
+  （ui-smoke 里新增：周期 / 货币选项表、「免费」与空货币的兜底选项、组合框四种检索、拖动排序的 DOM 顺序 +
+  请求体 + 服务端落库 + 只动被拖那一行、卡片与列表的线路带宽）。CSS 那两条字号守卫同步改成包含 `.line-pill`。
+- **真浏览器**（headless chromium 1280×1500，本地面板 7 台节点）实测：
+  - 拖动：末行 `us-hostodo-tampa` 拖到第一位 → DOM 顺序变成 `us-hostodo-tampa → de-netcup-1o → …`，
+    服务端 `order` 由 7 个 0 变成 `0:us-hostodo-tampa 1:de-netcup-1o 2:hk-hytron-bgp 3:hk-isvoro-nat
+    4:jp-nosla-gen2 5:sg-greencloud 6:us-bwh-dc9`；再拖回末位，顺序与服务端 order 完全还原。
+  - 地区检索（节点表单，建议表 71 条）：`xg` → 2 条（墨西哥、香港；首字母是子串匹配）、`hongkong` → 香港、
+    `香港` → 香港、`hk` → 香港、`xinjiapo` → 新加坡、`德国` → 德国、`火星地区` → 0 条；每次 `hidden` 计数
+    同步（筛出 1 条时 hidden=70）。
+  - 计费选项：真浏览器读到「周、月、季、半年、年、两年、三年、免费」与 13 种货币（含中文名）。
+  - 前台带宽：卡片 7 台依次 `1 Gbit/s / 2 Gbit/s / （无）/ 500 Mbit/s / 100 Mbit/s / （无）/ 500 Mbit/s`，
+    列表计费格逐台相同；`hk-isvoro-nat`（0）与免费的 `us-bwh-dc9` 整项不出现。
+
+待确认：无。

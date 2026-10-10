@@ -99,6 +99,7 @@ set(form, "representative", "上海");
 set(form, "region", "香港");
 set(form, "quota", 2000);
 set(form, "price", 12.8);
+set(form, "line_mbps", 1000);
 set(form, "expires_at", "2027-09-18 03:04:05");
 // 重置时间与到期时间都精确到秒：重置时间默认落在当月 1 日 00:00:00（UTC），
 // 旧的「每月重置日」数字框与步进箭头整体取消。
@@ -107,6 +108,27 @@ assert.equal(form.elements.billing_at.type, "text");
 assert.match(form.elements.billing_at.value, /^\d{4}-\d{2}-01 00:00:00$/, "重置时间默认值: " + form.elements.billing_at.value);
 assert.match(form.elements.billing_at.placeholder, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/, "输入框要给出带秒的格式示例");
 assert.match(form.elements.expires_at.placeholder, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+// 价格周期与货币固定成下拉（2026-10-10 用户要求）：周期「周、月、季、半年、年、两年、三年」，
+// 货币固定成常见几种。货币的 value 仍是 ISO 代码（卡片一直写 CNY / USD），中文名只做标签，
+// 免得把既有节点的显示改成「人民币」。
+assert.equal(form.elements.price_period.tagName, "SELECT", "价格周期要固定成选项");
+assert.equal(form.elements.currency.tagName, "SELECT", "货币要固定成选项");
+{
+  const periods = [...form.elements.price_period.options].map((o) => o.value);
+  for (const period of ["周", "月", "季", "半年", "年", "两年", "三年"])
+    assert(periods.includes(period), `价格周期缺少 ${period}（共 ${periods.join("、")}）`);
+  assert.equal(form.elements.price_period.value, "月", "新节点默认月付");
+  const currencies = [...form.elements.currency.options].map((o) => o.value);
+  for (const code of ["CNY", "USD", "EUR", "GBP", "JPY", "CAD", "HKD", "SGD"])
+    assert(currencies.includes(code), `货币缺少 ${code}（共 ${currencies.join("、")}）`);
+  assert(
+    [...form.elements.currency.options].some(
+      (o) => o.value === "USD" && o.textContent.includes("美元"),
+    ),
+    "货币选项要带上中文名（美元（USD））",
+  );
+  assert.equal(form.elements.currency.value, "CNY", "新节点默认人民币");
+}
 // 滚动不再误改数值：滚到数字框上时先失焦（jsdom 自身不会按滚轮改值，只验证这个约定）。
 const quota = form.elements.quota;
 quota.focus();
@@ -120,11 +142,54 @@ for (const d of ["（默认 60）", "（默认 7）", "（默认 80）", "（默
 assert(rules.includes("新建节点的默认值：离线等待 60 秒"), "提示行要列出各项默认值");
 assert.equal(form.elements.repeat_minutes.placeholder, "默认 0（只提醒一次）");
 // 内置目录只有国内三网，而节点多半在海外：建议列表必须补上常用海外地区，且仍可自由填写。
-const nodeRegionOptions = [...w.document.querySelectorAll("#region-options option")].map((o) => o.value);
+// 2026-10-10 起地区控件是可检索的组合框（web/region-picker.js）：建议表在弹层里，真正的
+// 表单字段仍然是那个输入框，所以目录外的值照样能手打进去，只是多了一份可搜的建议。
+const regionPool = new Set(
+  [...w.document.querySelectorAll("[data-combo] [data-region-option]")].map(
+    (b) => b.dataset.regionOption,
+  ),
+);
 for (const region of ["香港", "美国", "日本", "新加坡"])
-  assert(nodeRegionOptions.includes(region), `节点地区建议列表缺少 ${region}（共 ${nodeRegionOptions.length} 项）`);
-assert(form.elements.region.getAttribute("list") === "region-options", "节点地区仍要允许输入目录外的值");
-assert(nodeRegionOptions.length > 30, "建议列表不能只剩目录里的省份");
+  assert(regionPool.has(region), `节点地区建议列表缺少 ${region}（共 ${regionPool.size} 项）`);
+assert(regionPool.size > 30, "建议列表不能只剩目录里的省份");
+assert.equal(form.elements.region.tagName, "INPUT", "地区控件仍是输入框：目录外的值要能直接打");
+assert.equal(
+  w.document.querySelectorAll("#node-form [data-combo]").length,
+  3,
+  "节点表单的三个地区字段（所在地区 / 代表地区 / 延迟地区）都要可检索",
+);
+// 检索走的是 web/search.js 那一套：中文、全拼、拼音首字母、英文代号命中同一条建议。
+const matchesFor = (name, query) => {
+  const box = w.document
+    .querySelector(`[data-combo] input[name="${name}"]`)
+    .closest("[data-combo]");
+  const input = box.querySelector(".combo-input");
+  input.value = query;
+  input.dispatchEvent(new w.Event("input", { bubbles: true }));
+  return [...box.querySelectorAll("[data-region-option]")]
+    .filter((b) => !b.hidden)
+    .map((b) => b.dataset.regionOption);
+};
+const pinyinHit = matchesFor("region", "xg");
+assert(pinyinHit.includes("香港"), `首字母 xg 要命中香港，实际 ${JSON.stringify(pinyinHit)}`);
+// 全拼与中文必须同结果（首字母是子串匹配，像「墨西哥 moxige」里也含 xg，所以只要求命中不要求相等）。
+assert.deepEqual(matchesFor("region", "xianggang"), matchesFor("region", "香港"), "全拼与中文必须同结果");
+assert(matchesFor("region", "hongkong").includes("香港"), "英文代号 hongkong 要命中香港");
+assert(matchesFor("region", "hk").includes("香港"), "代号 hk 要命中香港");
+assert.equal(matchesFor("region", "火星地区").length, 0, "没有匹配的地区时一条建议都不给");
+assert(
+  matchesFor("region", "火星地区").length === 0 &&
+    !w.document.querySelector("[data-combo] .combo-empty").hidden,
+  "没有匹配时要给一行说明（并且不影响直接输入）",
+);
+// 点一条建议：写进输入框（表单字段）并关掉弹层。
+const regionBox = w.document
+  .querySelector('[data-combo] input[name="region"]')
+  .closest("[data-combo]");
+regionBox.querySelector('[data-region-option="日本"]').click();
+assert.equal(form.elements.region.value, "日本", "点建议要把它写进表单字段");
+assert(!regionBox.classList.contains("open"), "选完要关掉弹层");
+set(form, "region", "香港");
 form.elements.offline.checked = true;
 form.elements.renewal.checked = true;
 form.elements.traffic.checked = true;
@@ -142,6 +207,10 @@ let list = await (
 const created = list.find((n) => n.name === name);
 assert(created?.alerts.load);
 assert.equal(created.traffic_limit, 2e12);
+assert.equal(created.region, "香港", "地区输入框里的值要原样落库（控件换组合框不改取值）");
+assert.equal(created.currency, "CNY", "默认人民币");
+assert.equal(created.price_period, "月", "默认月付");
+assert.equal(created.line_mbps, 1000, "线路带宽要落库（前台要显示它）");
 assert.equal(created.expires_at, "2027-09-18T03:04:05Z", "到期时间要带上输入框里的秒");
 assert.match(created.billing_at, /^\d{4}-\d{2}-01T00:00:00Z$/, "重置时间 = " + created.billing_at);
 // 还没上报地址族的节点：不给出无从探测的 IPv4/IPv6 切换，网络区块整体隐藏。
@@ -252,7 +321,7 @@ $(".close").click();
 const zeroAlerts = {
   name: "UI 零阈值 " + Date.now(), group: "", region: "", order: 0, public: false,
   representative: "", traffic_limit: 0, traffic_mode: "sum", billing_at: "2026-09-01T00:00:00Z", price: 0,
-  currency: "CNY", price_period: "月", expires_at: "",
+  currency: "", price_period: "免费", expires_at: "",
   alerts: { offline: false, offline_seconds: 0, repeat_seconds: 0, renewal: false, renewal_days: 0, traffic: false, traffic_percent: 0, load: false, cpu_percent: 0, memory_percent: 0, hold_seconds: 0 },
 };
 const zeroResponse = await fetch(base + "/api/v1/admin/nodes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json" }, body: JSON.stringify(zeroAlerts) });
@@ -269,8 +338,82 @@ for (const field of ["traffic_percent", "cpu_percent", "memory_percent", "hold_s
   assert(Number(el.value) >= Number(el.min), `${field}=${el.value} is below min=${el.min}: the node could never be saved`);
 }
 assert.equal(form.elements.traffic_percent.value, "80");
+// 选项表里没有的现值要补成一条额外选项：这台机器没填过货币、周期写着「免费」，打开表单
+// 保存一遍不能把它悄悄换成「人民币 / 月」（现值必须原样出现在下拉里）。
+assert.equal(form.elements.price_period.value, "免费", "「免费」要作为一条选项保留");
+assert(
+  [...form.elements.price_period.options].some((o) => o.value === "免费"),
+  "免费机的周期要能在下拉里再选到",
+);
+assert.equal(form.elements.currency.value, "", "没填货币的节点不能被改成人民币");
+assert(
+  [...form.elements.currency.options].some((o) => o.value === "" && /未设置/.test(o.textContent)),
+  "空货币要有一条「未设置」选项",
+);
 $(".close").click();
 await fetch(base + "/api/v1/admin/nodes/" + zeroNode.id, { method: "DELETE", headers: adminHeaders });
+// 拖动排序：松手时把整份可见 id 列表交给 POST /api/v1/admin/nodes/order，服务端按 0,1,2…
+// 重写 order（前端不自己算号，也不逐台 PUT 整份配置）。jsdom 没有 PointerEvent，elementFromPoint
+// 也不做命中测试（没有布局），所以这里按 clientY 当行号直接喂给 elementFromPoint：验的是手柄
+// 接线、落点判断后的 DOM 顺序、请求体与服务端落库。真浏览器里的实际拖动另外单独验收过。
+{
+  const dragName = "拖动验收 " + Date.now();
+  const madeIDs = [];
+  for (const suffix of ["甲", "乙"]) {
+    const resp = await fetch(base + "/api/v1/admin/nodes", {
+      method: "POST",
+      headers: { ...adminHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: `${dragName}${suffix}`,
+        region: "香港",
+        billing_at: "2026-09-01T00:00:00Z",
+        traffic_mode: "sum",
+        public: false,
+      }),
+    });
+    assert.equal(resp.status, 200, "拖动验收的节点要能创建");
+    madeIDs.push((await resp.json()).id);
+  }
+  $("#refresh-nodes").click();
+  await until(() => $(`[data-drag="${madeIDs[1]}"]`), "拖动排序的手柄");
+  const rows = () => [...w.document.querySelectorAll("table.stack tbody tr[data-node]")];
+  const before = rows().map((r) => r.dataset.node);
+  assert(before.length >= 3, `拖动验收至少要有三台节点，实际 ${before.length}`);
+  const target = before[before.length - 1];
+  const realElementFromPoint = w.document.elementFromPoint;
+  w.document.elementFromPoint = (x, y) => rows()[y] || null;
+  const pointer = (type, y) => {
+    const event = new w.Event(type, { bubbles: true });
+    event.clientX = 0;
+    event.clientY = y;
+    event.button = 0;
+    event.pointerId = 1;
+    return event;
+  };
+  const handle = $(`[data-drag="${target}"]`);
+  handle.dispatchEvent(pointer("pointerdown", before.length - 1));
+  assert(
+    handle.closest("tr").classList.contains("row-dragging"),
+    "按住手柄要给出拖动中的标记",
+  );
+  handle.dispatchEvent(pointer("pointermove", 0));
+  assert.equal(rows()[0].dataset.node, target, "拖到第一行就插在第一位");
+  handle.dispatchEvent(pointer("pointerup", 0));
+  w.document.elementFromPoint = realElementFromPoint;
+  await until(async () => {
+    const list = await (
+      await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })
+    ).json();
+    return list[0]?.id === target && list.every((n, i) => n.order === i);
+  }, "拖动后的顺序要落库（服务端按 0,1,2… 重写 order）");
+  await until(() => rows()[0]?.dataset.node === target, "拖动后列表按服务端顺序重排");
+  const after = rows().map((r) => r.dataset.node);
+  assert.equal(after[0], target, "原来最后一行要排到第一");
+  assert.deepEqual(after.slice(1), before.slice(0, -1), "只动被拖的那一行");
+  assert(!rows()[0].classList.contains("row-dragging"), "松手要清掉拖动中标记");
+  for (const id of madeIDs)
+    await fetch(base + "/api/v1/admin/nodes/" + id, { method: "DELETE", headers: adminHeaders });
+}
 $('[data-tab="tasks"]').click();
 await until(() => $("#add-task"), "task list");
 $("#add-task").click();
@@ -503,10 +646,26 @@ assert.equal(createdTask.interval, 60);
 $('[data-edit-task="' + createdTask.id + '"]').click();
 await until(() => $("#task-form"), "edit combined task");
 assert.equal(w.document.querySelectorAll("[data-remove]").length, 3);
-// 自定义目标的地区候选同样要带上常用海外地区。
-const taskRegionOptions = [...w.document.querySelectorAll("#task-region-options option")].map((o) => o.value);
+// 自定义目标的地区候选同样要带上常用海外地区，并且是同一个可检索控件（节点表单那套
+// region-picker）：打 xg 就命中香港，中文 / 全拼 / 代号都走 web/search.js。
+const taskRegionBox = w.document
+  .querySelector('[data-combo] input[name="custom-region"]')
+  .closest("[data-combo]");
+const taskRegionHits = (query) => {
+  const input = taskRegionBox.querySelector(".combo-input");
+  input.value = query;
+  input.dispatchEvent(new w.Event("input", { bubbles: true }));
+  return [...taskRegionBox.querySelectorAll("[data-region-option]")]
+    .filter((b) => !b.hidden)
+    .map((b) => b.dataset.regionOption);
+};
+const taskRegionOptions = new Set(
+  [...taskRegionBox.querySelectorAll("[data-region-option]")].map((b) => b.dataset.regionOption),
+);
 for (const region of ["香港", "美国"])
-  assert(taskRegionOptions.includes(region), `自定义目标地区候选缺少 ${region}（共 ${taskRegionOptions.length} 项）`);
+  assert(taskRegionOptions.has(region), `自定义目标地区候选缺少 ${region}（共 ${taskRegionOptions.size} 项）`);
+assert(taskRegionHits("xg").includes("香港"), "自定义目标地区也要能按拼音检索");
+taskRegionHits("");
 assert($("#task-form").elements.ipv6.checked);
 assert.equal(chipFamilies("电信").length, 1, "per-group families must round-trip through save and reopen");
 assert.equal(chipFamilies("联通").length, 2);
@@ -1467,6 +1626,17 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     `信息带要有到期胶囊，实际「${pill?.textContent}」`,
   );
   assert(band.querySelector(".price-label"), "信息带要有价格");
+  // 线路带宽（2026-10-10 用户要求「前台要能显示线路带宽」）：后台填了才画，1000 Mbit/s 写
+  // 「1 Gbit/s」；没填的机器整块不出现（不留「未标注」这类占位）。
+  assert.equal(
+    band.querySelector(".line-pill")?.textContent.trim(),
+    "1 Gbit/s",
+    `信息带要显示线路带宽（1000 Mbit/s → 1 Gbit/s），实际「${band.querySelector(".line-pill")?.textContent}」`,
+  );
+  assert(
+    /线路带宽/.test(band.querySelector(".line-pill")?.getAttribute("title") || ""),
+    "线路带宽的说明放在 title 里",
+  );
   // 中列是这张机器开机以来的网卡计数（↑ / ↓ 各一张，顺序跟速率一致：上行在上），
   // 照参考图补上「单独的上下行流量」。取值来自公开接口，所以按接口的值断言，
   // 顺带证明取的是 metrics.net_in/out。
@@ -1524,7 +1694,7 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     "信息带里的数值（速率与累计）要同一档字号——速率的 12px 写在全局 .speed-line strong 上，列表也一并跟上",
   );
   assert(
-    /\.card-stats \.unit,\s*\n\.card-stats \.speed-line \.unit-none,\s*\n\.card-stats \.stat-item,\s*\n\.card-stats \.price-label \{[^}]*font-size: 10px[^}]*color: var\(--muted\)/.test(styles),
+    /\.card-stats \.unit,\s*\n\.card-stats \.speed-line \.unit-none,\s*\n\.card-stats \.stat-item,\s*\n\.card-stats \.line-pill,\s*\n\.card-stats \.price-label \{[^}]*font-size: 10px[^}]*color: var\(--muted\)/.test(styles),
     "信息带里的说明文字（单位、累计、价格）要同一档字号与颜色",
   );
   assert(
@@ -1631,6 +1801,12 @@ assert.deepEqual(
   [...listRow.children].map((c) => c.className.split(" ")[0]),
   ["row-identity", "metrics-grid", "speeds-cell", "net-cell", "route-cell", "billing-cell"],
   "列表行固定六格：主机 / 指标 / 网速 / 延迟 / 回程 / 计费",
+);
+// 计费格里也要写线路带宽（与卡片共用 billingInner 这一份渲染）。
+assert.equal(
+  listRow.querySelector(".billing-cell .line-pill")?.textContent.trim(),
+  "1 Gbit/s",
+  `列表的计费格同样要显示线路带宽，实际「${listRow.querySelector(".billing-cell .line-pill")?.textContent}」`,
 );
 // 状态不单独占一列：绿点就在名字前面的 .node-identity 里。
 const identityCell = listRow.querySelector(".row-identity .node-identity");
@@ -2030,6 +2206,8 @@ await until(
     "免费",
     "0 价且周期写着免费就是「免费」",
   );
+  // 这台机器没填线路带宽：信息带里不许出现这一项（也不许留一个空占位）。
+  assert(!long.querySelector(".line-pill"), "没填线路带宽的机器不显示这一项");
   // 这台机器没有绑定任何探测任务（按设计不挂任务，例如国际线路的机器）：探测段整段不画——
   // 不摆空格子、不摆灰色空条，只留一行说明。以前固定画满四组延迟 + 三组回程，
   // 整块是「未检测 / 未知 + 160 个灰格」的骨架，看着像没加载完。

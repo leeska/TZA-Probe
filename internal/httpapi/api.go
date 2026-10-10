@@ -33,6 +33,7 @@ type Repository interface {
 	IsPublic(context.Context, string) (bool, error)
 	Nodes(context.Context, time.Time) ([]model.NodeView, error)
 	SaveNode(context.Context, model.Node, bool) (string, string, error)
+	SaveNodeOrder(context.Context, []string) error
 	DeleteNode(context.Context, string) error
 	Rotate(context.Context, string) (string, error)
 	Authenticate(context.Context, string) (string, error)
@@ -88,6 +89,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/nodes/{id}/unlocks", a.unlocks)
 	mux.HandleFunc("GET /api/v1/admin/nodes", a.admin(a.nodes))
 	mux.HandleFunc("POST /api/v1/admin/nodes", a.admin(a.saveNode))
+	mux.HandleFunc("POST /api/v1/admin/nodes/order", a.admin(a.saveNodeOrder))
 	mux.HandleFunc("PUT /api/v1/admin/nodes/{id}", a.admin(a.saveNode))
 	mux.HandleFunc("DELETE /api/v1/admin/nodes/{id}", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		respond(w, a.Store.DeleteNode(r.Context(), r.PathValue("id")))
@@ -638,6 +640,32 @@ func (a *API) saveNode(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, map[string]string{"id": id, "token": token})
 }
+
+// saveNodeOrder 保存后台拖动排序后的顺序。请求体是**当前可见的整份节点 id 列表**
+// （拖动只改这个列表的顺序），服务端按 0,1,2… 重写 order 一个字段——由服务端
+// 定号，前端不必自己算，也不会因为逐台 PUT 整份配置而把别的字段顺手清掉。
+func (a *API) saveNodeOrder(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if len(body.IDs) == 0 || len(body.IDs) > 500 {
+		write(w, 400, map[string]string{"error": "节点数量须在 1—500 之间"})
+		return
+	}
+	seen := map[string]bool{}
+	for _, id := range body.IDs {
+		if id == "" || seen[id] {
+			write(w, 400, map[string]string{"error": "节点 id 不能为空或重复"})
+			return
+		}
+		seen[id] = true
+	}
+	respond(w, a.Store.SaveNodeOrder(r.Context(), body.IDs))
+}
+
 func (a *API) saveTask(w http.ResponseWriter, r *http.Request) {
 	var t model.Task
 	if !decode(w, r, &t) {

@@ -590,6 +590,40 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 	_, err := s.db.ExecContext(ctx, "UPDATE nodes SET config=? WHERE id=?", encode(n), n.ID)
 	return n.ID, "", err
 }
+
+// SaveNodeOrder rewrites only the order field of the listed nodes, in the given
+// sequence (the first id becomes 0). The panel's drag sends the whole visible
+// list, so the caller never computes the numbers; because the stored config is
+// read back and only Order is replaced, a drag cannot blank a name, a billing
+// anchor or a traffic correction the way a partially filled SaveNode would.
+func (s *Store) SaveNodeOrder(ctx context.Context, ids []string) error {
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, id := range ids {
+		var config string
+		if err := tx.QueryRowContext(ctx, "SELECT config FROM nodes WHERE id=?", id).Scan(&config); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		var n model.Node
+		if err := json.Unmarshal([]byte(config), &n); err != nil {
+			return err
+		}
+		n.Order = i
+		if _, err := tx.ExecContext(ctx, "UPDATE nodes SET config=? WHERE id=?", encode(n), id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) DeleteNode(ctx context.Context, id string) error { return s.delete(ctx, "nodes", id) }
 
 // DeleteTask removes a task and, for an unlock task, the verdicts it produced:
