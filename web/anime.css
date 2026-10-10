@@ -1107,6 +1107,31 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast][data-rolled="tr
   background-color: #26242a;
   border-color: #4b434a;
 }
+/* 手机宽度下矮板偏高（100~160px），名字在顶、下方一大片空。板高 > 96px 时（app.js 挂
+   data-plate-tall）在「名字行以下、板面中下」画一枚该角色专属的低对比徽记——同一圈
+   --cast-accent 细环 + 该角色的 --cast-stripe 横条，颜色深浅全取自角色自己的色板。
+   外框 / 名字坐标 / 板面边界 / 下半身尺寸一律不动，只是把留白读成有意的装饰区。
+   桌面矮板（≤96px）不画，保持原样。 */
+html[data-skin="anime"] .node-card[data-cast][data-rolled="true"][data-plate-tall="true"] .card-body::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(var(--cast-plate-h, 52px) / 2 + 24px);
+  transform: translate(-50%, -50%);
+  width: 46px;
+  height: 46px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--cast-accent) 28%, transparent);
+  background-color: color-mix(in srgb, var(--cast-accent) 5%, transparent);
+  background-image: var(--cast-stripe, none);
+  background-repeat: no-repeat;
+  background-position: 50% 50%;
+  background-size: 24px 6px;
+  opacity: 0.9;
+  z-index: 0;
+  pointer-events: none;
+}
 
 /* 收起态的下半身层：绝对定位到卡片底部（贴底），高度仍是原比例（接缝行落在盒子顶边），
    z-index 1 < 看板 z-index 2，所以板面下沿压在她腰上那一段是设计意图。

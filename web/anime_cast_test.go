@@ -150,6 +150,18 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	if !strings.Contains(string(app), "--cast-plate-h") || !strings.Contains(string(app), "function layoutCastPlates") {
 		t.Error("app.js 要用 layoutCastPlates() 量出 --cast-plate-h（展开态板高 − 下半身层高，下限 52px）")
 	}
+	// 手机宽度下矮板偏高，板面大片空（gpt 6.1-sol 连挑三轮）。做法是在板面加低对比装饰，但外框 / 名字坐标 /
+	// 板面边界 / 下半身尺寸一律不动——所以徽记只在板高 > 96px（app.js 挂 data-plate-tall）时由 CSS 画，
+	// 且必须是 pointer-events: none（不吃点击，否则点板面空白会命中它、可能弹详情）。
+	if !strings.Contains(string(app), "data-plate-tall") && !strings.Contains(string(app), "plateTall") {
+		t.Error("app.js 的 layoutCastPlates() 要在板高 > 96px 时挂 data-plate-tall（手机收起态的板面才画徽记，桌面矮板保持原样）")
+	}
+	emblem := regexp.MustCompile(`\.node-card\[data-cast\]\[data-rolled="true"\]\[data-plate-tall="true"\] \.card-body::after\s*\{([^}]*)\}`).FindStringSubmatch(string(css))
+	if emblem == nil {
+		t.Error("anime.css 要有 [data-plate-tall=\"true\"] 的板面徽记规则（.card-body::after）")
+	} else if !strings.Contains(emblem[1], "pointer-events: none") {
+		t.Error("板面徽记要 pointer-events: none：它只是装饰，不能吃点击（点板面空白不该弹详情）")
+	}
 	// 看板高度必须**由内容决定**、板内不许滚动：用户逐个否掉了「定高 + 板内竖滚」（数据要滚才看得全，
 	// 原话「内容都没了，为啥做得这么小」）和「铺满整卡」（下半身看不到）两版。
 	// 板高 auto + 板内 overflow: visible，数据才既一眼看全、又不滚动。

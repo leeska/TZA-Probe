@@ -492,10 +492,15 @@ function applyFolded() {
 // 下限保证名字那行永远压得住）；scale 以底边为原点，鞋仍落在卡底。
 function layoutCastPlates() {
   const MIN_PLATE = 52;
+  // 手机宽度下矮板会被撑到 100~160px（展开态板高 − 原比例下半身高），名字在顶、下方大片空。
+  // 板高 > 96px 时挂 data-plate-tall，CSS 才在「名字以下、板面中央」画一枚同色系低对比徽记把
+  // 留白读成有意的装饰区（外框 / 名字坐标 / 下半身尺寸一律不动）。桌面矮板不画，保持原样。
+  const TALL_PLATE = 96;
   for (const card of document.querySelectorAll(".node-card[data-cast]")) {
     if (card.dataset.rolled !== "true") {
       card.style.removeProperty("--cast-plate-h");
       card.style.removeProperty("--cast-legs-k");
+      delete card.dataset.plateTall;
       continue;
     }
     const body = card.querySelector(".card-body");
@@ -504,13 +509,18 @@ function layoutCastPlates() {
     const boardH = body.offsetHeight; // 数据 visibility:hidden 仍占位 → 等于展开态板高
     const legsH = legs.offsetHeight;
     if (!boardH || !legsH) continue;
+    let plateH;
     if (boardH - legsH >= MIN_PLATE) {
-      card.style.setProperty("--cast-plate-h", (boardH - legsH).toFixed(2) + "px");
+      plateH = boardH - legsH;
       card.style.removeProperty("--cast-legs-k");
     } else {
+      plateH = MIN_PLATE;
       card.style.setProperty("--cast-plate-h", MIN_PLATE + "px");
       card.style.setProperty("--cast-legs-k", (Math.max(1, boardH - MIN_PLATE) / legsH).toFixed(4));
     }
+    card.style.setProperty("--cast-plate-h", plateH.toFixed(2) + "px");
+    if (plateH > TALL_PLATE) card.dataset.plateTall = "true";
+    else delete card.dataset.plateTall;
   }
 }
 function toggleFolded(cast) {
