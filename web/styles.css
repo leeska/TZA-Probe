@@ -485,20 +485,25 @@ h1 {
   flex-direction: column;
 }
 
-/* 二次元皮肤的线路机「头 + 卷轴 + 下半身」三件套：由 app.js 只为「角色名单里」的节点渲染
-   （web/anime-cast.js）。anime.css 是所有皮肤共用的（index.html 无条件引入），但里面每条规则
-   都带 html[data-skin="anime"] 前缀——所以别的皮肤下这三个元素是**没有样式**的裸元素，
-   必须在这里默认藏掉：漏一个，玻璃 / 记者 / shadcn 皮肤下就会冒出一颗写着节点名的裸按钮。
+/* 二次元皮肤的线路机专属元素：人物层 / 双手层 / 闭眼层 / 卷起按钮，由 app.js 只为「角色名单里」
+   的节点渲染（web/anime-cast.js）。anime.css 是所有皮肤共用的（index.html 无条件引入），但里面每条
+   规则都带 html[data-skin="anime"] 前缀——所以别的皮肤下这些都是**没有样式**的裸元素，
+   必须在这里默认藏掉：漏一个，玻璃 / 记者 / shadcn 皮肤下就会冒出一颗裸按钮或一张裸图。
    二次元皮肤在 anime.css 里各自放开。 */
 .anime-stage,
-.anime-roll,
 .anime-blink,
 .anime-fold-btn {
   display: none;
 }
 
-/* 整张卡片可点：打开综合信息；卡片内的格子有自己的聚焦详情。 */
-.node-card { cursor: pointer; }
+/* 双手层（多图层里压在看板上沿那一层）同样只属于二次元皮肤。 */
+.anime-hands {
+  display: none;
+}
+
+/* 卡片本身不再可点：进节点详情只走内容里那枚「详细」按钮（用户点名：点卡片空白区、点数据行、
+   点立绘空白处都不该弹详情页）。 */
+.node-card { cursor: default; }
 
 /* 卡片头部两行：第一行只有状态点 + 名字（右侧是发行版 / 架构胶囊），第二行才是地区·分组与
    地址族开关。三样都挤在第一行时，窄卡片里的名字会被压成三行（手机上一张卡光头部就 104px）。 */
@@ -639,17 +644,9 @@ button.node-name {
   min-width: 0;
   word-break: break-word;
   color: var(--ink);
-  cursor: pointer;
+  /* 列表视图的节点名不再是导航按钮（进详情只走「详细」那枚按钮），所以不给手型光标 */
+  cursor: default;
   letter-spacing: -0.02em;
-  transition: color 0.16s ease;
-}
-
-.node-name:hover,
-button.node-name:hover {
-  color: var(--accent);
-  background: none !important;
-  box-shadow: none !important;
-  transform: none !important;
 }
 
 .node-identity p {

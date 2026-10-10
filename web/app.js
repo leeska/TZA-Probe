@@ -420,12 +420,9 @@ function renderCards() {
   // 卷轴状态每次渲染后刷一遍：卡壳上的 data-rolled 决定了数据区是摊开还是卷起，
   // 局部补丁不会动它，但整块重绘换了新卡壳，所以在这里统一补上（含 aria-expanded）。
   applyFolded();
-  for (const c of document.querySelectorAll(".node-card"))
-    c.onclick = guard((e) => {
-      // 卡片里已有自己行为的控件（协议开关、格子、节点名）不触发整卡的综合信息
-      if (e.target.closest("button, a, select, input, [data-detail]")) return;
-      detail(c.dataset.node);
-    });
+  // 卡片空白处不再打开综合信息：只有内容里那枚「详细」按钮进详情页（用户 2026-10-10 点名的
+  // 三条：点卡片空白区、点数据行、点立绘空白处都不许弹详情）。所以这里不挂整卡 onclick，
+  // 数据行（回程 / 延迟那一排）也不再是 data-detail 按钮。
   for (const b of document.querySelectorAll("[data-card-family]"))
     b.onclick = () => { cardFamilies.set(b.dataset.cardNode, b.dataset.cardFamily); renderCards(); };
   // 解锁徽标：桌面悬停展开，手机上点一下展开 / 收起（都是同一个单例浮层）。
@@ -440,7 +437,8 @@ function renderCards() {
   }
 }
 
-// 二次元皮肤的「卷轴」：把卡片卷起来——数据收进卷轴，露出她举牌时挡住的下半身。
+// 二次元皮肤的折叠：把看板压到「她手里那块牌子」那么高，数据收起来——名字、板沿、双手都不动
+// （名字固定在板面正中，收起 / 展开同一坐标，见 anime.css 的 .fold-name / [data-rolled] 规则）。
 // 收起状态挂在**卡壳**上（`.node-card[data-rolled="true"]`），不是重绘出来的内容：
 // 每秒轻刷新与 10 秒全量刷新都走补丁路径（只改文本/属性、不换元素），卡壳上的属性不会被它们擦掉；
 // 每次渲染后再统一 applyFolded() 刷一遍，落库的是角色 id（节点名小写），刷新页面也还卷着。
@@ -464,7 +462,7 @@ function saveFolded() {
     /* 隐私模式写不进去，忽略：这一轮的状态仍在内存里 */
   }
 }
-// 卡壳上的状态 + 两个控制件的 aria-expanded：卷起后由卷轴本身展开，展开时由立绘右上角的胶囊卷起。
+// 卡壳上的状态 + 名字那颗按钮的 aria-expanded：折叠开关就是卡片头那颗「绿点 + 名字」按钮。
 function applyFolded() {
   for (const card of document.querySelectorAll(".node-card[data-cast]")) {
     const rolled = foldedCasts.has(card.dataset.cast);
@@ -505,7 +503,7 @@ document.addEventListener("click", (e) => {
 });
 
 // 裸眼 3D：指针在卡上移动时，把指针相对卡心的位置写成两个**无单位**变量（-1…1）挂到卡壳上，
-// anime.css 用一个量同时算「卡片转几度」和「立绘 / 卷轴多走几像素」——层间差速就是立体感的来源。
+// anime.css 用一个量同时算「卡片转几度」和「人物层 / 双手层多走几像素」——层间差速就是立体感的来源。
 // 只在这张卡上写、离场就删，所以不 tilt 的卡片一点合成开销都没有；系统开了「减少动态效果」就不做。
 // jsdom（scripts/ui-smoke.mjs 里 eval 这份脚本）没有 matchMedia，取不到就当没开「减少动态效果」。
 const TILT_OFF = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
@@ -544,12 +542,12 @@ document.addEventListener(
   { passive: true },
 );
 
-// 折叠只由节点名（卡片头那个「绿点+名字」按钮）和收起态的卷轴触发，见 [data-fold] 的处理。
+// 折叠只由节点名（卡片头那个「绿点+名字」按钮）触发，见 [data-fold] 的处理。
 
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
 // 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
 const cardShell = (n, inner) => {
-  // 二次元皮肤：卡壳上也挂一份角色 id。立绘层 `.anime-stage` 是卡片**内部**的元素，
+  // 二次元皮肤：卡壳上也挂一份角色 id。人物层 `.anime-stage` 是卡片**内部**的元素，
   // 卡片自己读不到它的 data-cast，而皮肤样式表要按角色给整张牌面上色
   // （`.node-card[data-cast="…"]`），所以这里再挂一份——两处都由 castId() 出，不会漂。
   const cast = castId(n);
@@ -799,7 +797,7 @@ function routeCells(n, f) {
   return f.routes
     .map((r) => {
       const label = esc(r.label).replace(/ → /g, " →&nbsp;");
-      return `<button class="route-label ${r.known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}" aria-label="${esc(`${r.carrier} ${r.label}`)}">${carrierMark(r.carrier)}<strong class="${r.known ? "" : "muted"}">${label}</strong></button>`;
+      return `<button class="route-label ${r.known ? "known" : "unknown"}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}" aria-label="${esc(`${r.carrier} ${r.label}`)}">${carrierMark(r.carrier)}<strong class="${r.known ? "" : "muted"}">${label}</strong></button>`;
     })
     .join("");
 }
@@ -814,7 +812,7 @@ function latencyLines(n, f) {
   return f.latencies
     .map(
       (l) =>
-        `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.carrier} ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="carrier-name">${carrierMark(l.carrier)}</span><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span></button>`,
+        `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.carrier} ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="carrier-name">${carrierMark(l.carrier)}</span><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span></button>`,
     )
     .join("");
 }
@@ -833,7 +831,7 @@ function latencyBands(n, f) {
   return f.latencies
     .map(
       (l) =>
-        `<button class="net-band ${l.value == null ? "unknown" : "known"}" data-detail="${n.id}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.carrier} 延迟 ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="band-head"><span class="carrier-name">${carrierMark(l.carrier)}</span><span class="band-metric"><i>延迟</i><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="band-metric"><i>丢包</i><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span></span><span class="band-bars"><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span><span class="quality-bars loss-bars" title="最近 ${BAR_COUNT} 次丢包">${sampleBars(l.history, lossPercent, 20, BAR_COUNT)}</span></span></button>`,
+        `<button class="net-band ${l.value == null ? "unknown" : "known"}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.carrier} 延迟 ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="band-head"><span class="carrier-name">${carrierMark(l.carrier)}</span><span class="band-metric"><i>延迟</i><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="band-metric"><i>丢包</i><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span></span><span class="band-bars"><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span><span class="quality-bars loss-bars" title="最近 ${BAR_COUNT} 次丢包">${sampleBars(l.history, lossPercent, 20, BAR_COUNT)}</span></span></button>`,
     )
     .join("");
 }
@@ -845,7 +843,7 @@ function routeLines(n, f) {
   return f.routes
     .map(
       (r) =>
-        `<button class="net-line route-line ${r.known ? "known" : "unknown"}" data-detail="${n.id}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}" aria-label="${esc(`${r.carrier} ${r.label}`)}"><span class="carrier-name">${carrierMark(r.carrier)}</span><strong class="${r.known ? "" : "muted"}">${esc(r.label)}</strong></button>`,
+        `<button class="net-line route-line ${r.known ? "known" : "unknown"}" data-focus-kind="route" data-focus-carrier="${esc(r.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(r.title)}" aria-label="${esc(`${r.carrier} ${r.label}`)}"><span class="carrier-name">${carrierMark(r.carrier)}</span><strong class="${r.known ? "" : "muted"}">${esc(r.label)}</strong></button>`,
     )
     .join("");
 }
@@ -853,22 +851,33 @@ function routeLines(n, f) {
 function gridInner(n) {
   const f = nodeFacts(n);
   // 二次元皮肤（data-skin="anime"）的线路机立绘：只有名单里的节点才渲染这一层，
-  // 其余皮肤下 .anime-stage 是 display:none（见 styles.css）。图片走样式表的 [data-cast] 规则。
+  // 其余皮肤下 .anime-stage / .anime-hands 都是 display:none（见 styles.css）。
+  //
+  // 三层顺序就是这个函数返回的顺序 = DOM 顺序 = 看到的先后：
+  //   ① 人物层 .anime-stage（图里已经没有了那块牌子与双手，牌子那块矩形是透明的）
+  //   ② HTML 看板 .card-body（板面、板沿、节点数据都是 HTML 自己画的）
+  //   ③ 双手层 .anime-hands（带 alpha 的手，z-index 压在看板上沿）
+  // 于是看板上沿是 HTML 的边框，原图那块牌子的描边再也透不出来；手仍然是从板上面搭下来的。
   // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
-  // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这两个标记区分。
+  // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这个标记区分。
   const cast = castId(n);
-  // 折叠两件（只有名单里的节点才渲染）：立绘右上角的「卷起」胶囊、收起后印在她手里那块牌子上的名字。
-  // 牌子是**画进立绘里的贴图**（2026-10-09 起），所以这里只剩一层字，不再有 UI 画的纸带。
-  // 可见性全在 anime.css 里按卡壳上的 data-rolled 切，这里只负责摆出来。
-  const fold = cast
-    ? `<button class="anime-roll" type="button" data-fold="${cast}" data-bleed aria-label="展开卡片" aria-expanded="true">` +
-      `<span class="anime-roll-label" data-bleed><span class="node-dot anime-roll-dot ${n.online ? "" : "offline"}"></span><span class="anime-roll-name">${esc(n.name)}</span></span>` +
-      `</button>`
+  const stage = cast
+    ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
     : "";
+  const hands = cast ? `<div class="anime-hands" aria-hidden="true"></div>` : "";
+  // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心
+  // 不被它们挤动——收起 / 展开时名字落在同一坐标（折叠只影响板面上其余的内容/数据）。
+  const cardTop =
+    `<div class="card-top"><button class="fold-name" type="button" data-fold="${cast || `node-id:${n.id}`}" aria-expanded="true" aria-controls="body-${n.id}">` +
+    `<span class="node-dot ${n.online ? "" : "offline"}"></span>` +
+    `<span class="fold-name-text">${esc(n.name)}</span>` +
+    `<span class="fold-caret" aria-hidden="true">${FOLD_ICON}</span>` +
+    `</button><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div>`;
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
-  return `${cast ? `<div class="anime-stage" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>${fold}` : ""}<div class="card-body"><div class="card-top"><button class="fold-name" type="button" data-fold="${cast || `node-id:${n.id}`}" aria-expanded="true" aria-controls="body-${n.id}"><span class="node-dot ${n.online ? "" : "offline"}"></span><span class="fold-name-text">${esc(n.name)}</span></button><div class="card-actions">${unlockBadge(n)}${osTagsInner(n)}</div></div><div id="body-${n.id}"><div class="detail-row"><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>`;
+  // 「详细」是内容里唯一能进详情页的控件（卡片空白、数据行都不再导航）。
+  return `${stage}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="detail-row"><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${familySwitch(n, f)}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。
@@ -895,7 +904,9 @@ function listInner(n) {
     detected && f.routes.length
       ? head("三网回程", n.representative) + routeLines(n, f)
       : "";
-  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><button class="node-name" data-detail="${n.id}">${esc(n.name)}</button><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}</div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
+  // 名字不再是导航按钮（用户 2026-10-10：点数据行 / 点空白处都不许进详情页）。列表视图这一格
+  // 里补一枚「详细」——不然列表里就没有任何进详情的入口了，卡片视图那边也是同一枚按钮。
+  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div><button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div><div class="card-actions">${familySwitch(n, f)}${osTagsInner(n)}</div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 展示方式只在这里分叉：两个视图取数完全相同，liveTick 那一层找的也是同一批类名。

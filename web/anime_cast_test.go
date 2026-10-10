@@ -28,7 +28,17 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		t.Error("app.js 必须从 anime-cast.js 取角色名单")
 	}
 	if !strings.Contains(string(app), `class="anime-stage"`) {
-		t.Error("app.js 要渲染 .anime-stage 立绘层")
+		t.Error("app.js 要渲染 .anime-stage 人物层")
+	}
+	if !strings.Contains(string(app), `class="anime-hands"`) {
+		t.Error("app.js 要渲染 .anime-hands 双手层（压在 HTML 看板上沿的那一层）")
+	}
+	// 图层顺序就是 DOM 顺序：人物层 → HTML 看板 → 双手层（双手层是卡片最后一个孩子，靠 z-index 压在看板上沿）。
+	// 顺序写反了（比如手层落在看板前面）看起来就是「手被板压住」，和 CSS 里的 z-index 对不上，所以在这里钉死。
+	bodyAt := strings.Index(string(app), `${stage}<div class="card-body">`)
+	handsAt := strings.LastIndex(string(app), `${hands}`)
+	if bodyAt < 0 || handsAt < 0 || handsAt < bodyAt {
+		t.Error("app.js 里三层的顺序要是「人物层 → .card-body（看板）→ 双手层」")
 	}
 	if !strings.Contains(string(app), `data-cast="${cast}"`) {
 		t.Error("app.js 要在卡壳上挂 data-cast（牌面配色按它上色）")
@@ -55,21 +65,27 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 			t.Errorf("anime.css 缺少角色 %q 的夜版牌面配色", id)
 		}
 		if !strings.Contains(string(css), `--cast-art-url: url("/anime/`+id+`.webp")`) {
-			t.Errorf("anime.css 里角色 %q 缺 --cast-art-url（立绘与「下半身」共用这一张图）", id)
+			t.Errorf("anime.css 里角色 %q 缺 --cast-art-url（人物层：牌子与双手已从图里拆走）", id)
+		}
+		if !strings.Contains(string(css), `--cast-hands-url: url("/anime/`+id+`-hands.webp")`) {
+			t.Errorf("anime.css 里角色 %q 缺 --cast-hands-url（双手层：压在 HTML 看板上沿的那双手）", id)
 		}
 		if _, err := os.Stat("anime/" + id + ".webp"); err != nil {
 			t.Errorf("人物图 web/anime/%s.webp 不存在: %v", id, err)
 		}
+		if _, err := os.Stat("anime/" + id + "-hands.webp"); err != nil {
+			t.Errorf("双手层图 web/anime/%s-hands.webp 不存在（拆层脚本 scripts/anime-split-layers.py）: %v", id, err)
+		}
 	}
-	// 立绘是透明底全身像 + 手里那块牌子（牌子画在图里），每台的几何量不同、少一条那台机的构图就会崩：
-	// --cast-art-w 立绘在卡上的宽、--cast-plate-l/t/w/h 牌面在立绘框里的矩形（印节点名用）、
-	// --cast-cut 摊开时露到牌子的下沿。眨眼层是整图切换，没有眼睛带这类几何量。
+	// 拆层后每台机有三样几何量，少一样那张卡的构图就会崩：
+	// --cast-figure-h 人物层在卡上的高、--cast-art-w 它在卡上的宽、
+	// --cast-board-t HTML 看板的**上外沿**（= 画里那块牌子的上外沿，板面盖住旧描边）、
+	// --cast-cut 牌子的下外沿（摊开时露到这里，收起时看板就留这么高）。
 	for _, m := range ids {
 		id := m[1]
-		for _, v := range []string{"--cast-figure-h:", "--cast-art-w:", "--cast-plate-l:", "--cast-plate-t:",
-			"--cast-plate-w:", "--cast-plate-h:", "--cast-cut:"} {
+		for _, v := range []string{"--cast-figure-h:", "--cast-art-w:", "--cast-board-t:", "--cast-cut:"} {
 			if !strings.Contains(string(css), v) {
-				t.Errorf("anime.css 里角色 %q 缺 %s（全身立绘的几何量）", id, v)
+				t.Errorf("anime.css 里角色 %q 缺 %s（人物层 / 看板的几何量）", id, v)
 			}
 		}
 	}
@@ -103,15 +119,23 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	if got, want := strings.Count(string(css), "--cast-blink-dur:"), len(ids); got != want {
 		t.Errorf("--cast-blink-dur 要 %d 条（四个人得错开眨眼，不然四张卡同时眨），现在是 %d 条", want, got)
 	}
-	// 牌面矩形：每台一条，印名字的位置就是靠它算的，少一台那张卡的名字就会印到牌子外面。
-	for _, v := range []string{"--cast-plate-l:", "--cast-plate-t:", "--cast-plate-w:", "--cast-plate-h:", "--cast-cut:"} {
+	// 看板几何 / 双手层：每台一条，少一台那张卡的板沿或手就会落错位置。
+	for _, v := range []string{"--cast-board-t:", "--cast-hands-url:", "--cast-cut:"} {
 		if got, want := strings.Count(string(css), v), len(ids); got != want {
 			t.Errorf("%s 要 %d 条（每台一条：牌面逐台实测），现在是 %d 条", v, want, got)
 		}
 	}
-	// 牌子上只有「字」：卷轴纸带（渐变纸面 / 卷边伪元素）是上一版被否掉的做法，回来就直接红。
-	if strings.Contains(string(css), "卷边：纸身靠上那道") || regexp.MustCompile(`(?s)\.anime-roll-label \{[^}]*background-image:`).Match(css) {
-		t.Error("anime.css 的 .anime-roll-label 里又出现纸面背景了：名字应该直接印在她手里那块牌子上")
+	// 看板是 HTML 自己画的：板沿 + 板面上的数据都是 CSS 里的盒子，名字印在板面正中的固定坐标上。
+	// 上一版「名字印在她手里那块牌子上」用一个全卡大小的卷轴层盖住整卡（手是 CSS 抠的伪元素、板沿
+	// 会透出原图描边），整条去掉了——它要是回来，先在这里红。
+	if !strings.Contains(string(css), ".node-card[data-cast] .card-body {") {
+		t.Error("anime.css 缺少 .node-card[data-cast] .card-body（HTML 看板：板沿 + 板面）")
+	}
+	if !strings.Contains(string(css), ".anime-hands {") {
+		t.Error("anime.css 缺少 .anime-hands（双手层：压在 HTML 看板上沿那一层）")
+	}
+	if strings.Contains(string(css), "anime-roll") {
+		t.Error("anime.css 里不该再有卷轴（.anime-roll）：名字现在印在 HTML 看板正中的固定坐标上")
 	}
 	for _, m := range regexp.MustCompile(`data-cast="([a-z0-9-]+)"`).FindAllStringSubmatch(string(css), -1) {
 		if !strings.Contains(string(cast), `"`+m[1]+`":`) {
