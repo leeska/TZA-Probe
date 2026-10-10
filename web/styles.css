@@ -2921,6 +2921,31 @@ pre,
   table.stack td.drag-cell::before {
     content: none;
   }
+  /* 表头整行藏掉之后，任务表的「全选」也跟着没了（1100px 以下的笔记本上也是这样）。
+     只把带全选框的那一格留下来，作为卡片列表上方的一行。 */
+  table.stack thead:has(.select-all) {
+    display: block;
+    padding: 10px 16px 0;
+  }
+  table.stack thead:has(.select-all) tr {
+    display: block;
+  }
+  table.stack thead:has(.select-all) th:not(.select-col) {
+    display: none;
+  }
+  table.stack thead:has(.select-all),
+  table.stack thead:has(.select-all) tr,
+  table.stack thead:has(.select-all) th.select-col {
+    background: none;
+    border: 0;
+  }
+  table.stack thead:has(.select-all) th.select-col {
+    display: block;
+    padding: 0;
+  }
+  table.stack .select-all span {
+    display: inline;
+  }
 }
 
 /* ==========================================================================
@@ -3560,4 +3585,33 @@ label .local-time:empty {
   .admin-link-short {
     display: inline;
   }
+}
+
+/* 任务表的全选框：宽屏时表头里只放勾选框，文字只在堆叠成卡片时出现（见 1100px 媒体查询）。 */
+.select-all {
+  min-height: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.select-all span {
+  display: none;
+}
+
+/* 后台切页时等接口的那一下（admin.js render）：旧内容调暗、不可点。 */
+#admin-content {
+  transition: opacity 0.15s ease;
+}
+#admin-content.is-loading {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* 登录页左下角与后台侧栏底部的署名是一句短标签，窄一点的窗口里会折成两行
+   （「TZA PROBE / CONTROL / PLANE」「TZA PROBE / V2」），锁成一行。 */
+.login-story-foot small,
+.sidebar-bottom small {
+  white-space: nowrap;
+}
+.login-story-foot small {
+  flex-shrink: 0;
 }

@@ -94,6 +94,19 @@ function shell() {
   });
 }
 async function render() {
+  // 切页时面包屑与侧栏高亮立刻换，内容要等接口回来：中间这半秒把旧内容调暗并标成忙，
+  // 不然看起来像点到了「网络探测」却还停在「节点管理」。
+  const area = content();
+  area?.classList.add("is-loading");
+  area?.setAttribute("aria-busy", "true");
+  try {
+    await renderTab();
+  } finally {
+    area?.classList.remove("is-loading");
+    area?.removeAttribute("aria-busy");
+  }
+}
+async function renderTab() {
   container
     .querySelectorAll("[data-tab]")
     .forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -448,7 +461,7 @@ function confirmAction(title, message, action) {
   });
 }
 function renderTasks() {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">NETWORK OBSERVABILITY</div><h1>网络探测<span>${tasks.length}</span></h1><p>每个任务独立配置目标、协议、频率和参与节点。</p></div><div class="heading-actions"><button id="bind-selected">批量绑定节点</button><button id="add-task" class="primary">＋ 创建任务</button></div></section><div class="notice"><strong>回程标签由实际路径决定</strong><span>卡片使用节点指定的代表地区。标签按实际经过的骨干命名，如 163 / CN2GIA / CN2GT / 9929；IPv4 / IPv6 独立检测；空节点绑定不会执行。</span></div><section class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th><input id="select-tasks" type="checkbox" aria-label="选择全部任务"></th><th>任务</th><th>目标</th><th>地区 / 运营商</th><th>间隔</th><th>节点</th><th>操作</th></tr></thead><tbody>${tasks.map((t) => { const s = taskSummary(t); return `<tr><td data-label="选择"><input type="checkbox" data-select-task="${t.id}" aria-label="选择 ${esc(t.name)}"></td><td data-label="任务">${esc(t.name)}<small>${t.enabled ? "已启用" : "已停用"} · ${esc(s.checks)}</small></td><td data-label="目标">${s.unlock ? "内置目录" : s.count + " 个地址"}<small>${esc(s.families)}</small></td><td data-label="地区 / 运营商" title="${esc(s.targetsFull)}">${esc(s.targets)}<small>${s.regions > 3 ? `共 ${s.regions} 个地区` : ""}</small></td><td data-label="间隔">${esc(s.intervals)}</td><td data-label="节点">${t.node_ids?.filter((id) => nodes.some((n) => n.id === id)).length || 0} 个</td><td data-label="操作"><div class="row-actions"><button data-edit-task="${t.id}">编辑</button><button data-control="${t.enabled ? "pause" : "resume"}" data-task="${t.id}">${t.enabled ? "暂停" : "恢复"}</button><button data-control="run" data-task="${t.id}" ${!t.enabled || !t.node_ids?.length ? "disabled" : ""}>立即执行</button><button data-copy-task="${t.id}">复制</button><button data-bind-task="${t.id}">绑定</button><button data-runs-task="${t.id}">执行记录</button><button class="danger" data-delete-task="${t.id}">删除</button></div></td></tr>`; }).join("") || '<tr><td colspan="7" class="empty-cell">暂无任务。可从内置三网目标目录选择，也可填写自定义目标。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">NETWORK OBSERVABILITY</div><h1>网络探测<span>${tasks.length}</span></h1><p>每个任务独立配置目标、协议、频率和参与节点。</p></div><div class="heading-actions"><button id="bind-selected">批量绑定节点</button><button id="add-task" class="primary">＋ 创建任务</button></div></section><div class="notice"><strong>回程标签由实际路径决定</strong><span>卡片使用节点指定的代表地区。标签按实际经过的骨干命名，如 163 / CN2GIA / CN2GT / 9929；IPv4 / IPv6 独立检测；空节点绑定不会执行。</span></div><section class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-tasks" type="checkbox" aria-label="选择全部任务"><span>全选</span></label></th><th>任务</th><th>目标</th><th>地区 / 运营商</th><th>间隔</th><th>节点</th><th>操作</th></tr></thead><tbody>${tasks.map((t) => { const s = taskSummary(t); return `<tr><td data-label="选择"><input type="checkbox" data-select-task="${t.id}" aria-label="选择 ${esc(t.name)}"></td><td data-label="任务">${esc(t.name)}<small>${t.enabled ? "已启用" : "已停用"} · ${esc(s.checks)}</small></td><td data-label="目标">${s.unlock ? "内置目录" : s.count + " 个地址"}<small>${esc(s.families)}</small></td><td data-label="地区 / 运营商" title="${esc(s.targetsFull)}">${esc(s.targets)}<small>${s.regions > 3 ? `共 ${s.regions} 个地区` : ""}</small></td><td data-label="间隔">${esc(s.intervals)}</td><td data-label="节点">${t.node_ids?.filter((id) => nodes.some((n) => n.id === id)).length || 0} 个</td><td data-label="操作"><div class="row-actions"><button data-edit-task="${t.id}">编辑</button><button data-control="${t.enabled ? "pause" : "resume"}" data-task="${t.id}">${t.enabled ? "暂停" : "恢复"}</button><button data-control="run" data-task="${t.id}" ${!t.enabled || !t.node_ids?.length ? "disabled" : ""}>立即执行</button><button data-copy-task="${t.id}">复制</button><button data-bind-task="${t.id}">绑定</button><button data-runs-task="${t.id}">执行记录</button><button class="danger" data-delete-task="${t.id}">删除</button></div></td></tr>`; }).join("") || '<tr><td colspan="7" class="empty-cell">暂无任务。可从内置三网目标目录选择，也可填写自定义目标。</td></tr>'}</tbody></table></div></section>`;
   content().querySelector("#select-tasks").onchange = (e) => content().querySelectorAll("[data-select-task]").forEach((b) => b.checked = e.target.checked);
   content().querySelector("#bind-selected").onclick = () => {
     const ids = new Set([...content().querySelectorAll("[data-select-task]:checked")].map((b) => b.dataset.selectTask));

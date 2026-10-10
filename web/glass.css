@@ -1346,6 +1346,10 @@ input[type="checkbox"] {
   appearance: none;
   width: 20px;
   height: 20px;
+  /* 通用 input 的 8px 12px 内边距会漏到勾选框上，border-box 下被撑成 27×20 的圆角条，
+     看起来像按钮（网络探测表格那一列最明显）。勾选框固定成 20×20 的方块。 */
+  padding: 0;
+  box-sizing: border-box;
   margin: 0;
   flex: 0 0 auto;
   border: 1.5px solid rgba(var(--accent-rgb), 0.4);
