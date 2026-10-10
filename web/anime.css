@@ -1029,30 +1029,36 @@ html[data-skin="anime"] .detail-open {
 html[data-skin="anime"] .detail-open:hover { border-color: var(--cast-accent, #e8457c); }
 
 /* --------------------------------------------------------------------------
-   N+4b. 板内排版压紧（只作用于「有立绘的卡」）
+   N+4b. 板内排版压紧（只作用于**卡片视图**里「有立绘的卡」）
 
    这块板要一次装下：标题 / 地区·系统 / CPU·内存·磁盘·周期 / 流量 / 到期·续费 / 延迟三网 / 三网回程。
    按 gpt 的分组把这七段逐段收边距与行高（原来是 482px，现在 ~380px 一眼看全），
    字号不缩到看不清（正文 11–12px、标签 10–11px），**不设 overflow 裁切、不设滚动容器**。
+
+   2026-10-10：整段用 :where(.node-grid:not(.node-list)) 限死卡片视图。原来这些规则挂在
+   `.node-card[data-cast]` 上，列表里 4 台有立绘的行也在命中——它们的指标格字号/间距（metric
+   10px 副标、progress 5px、metrics-grid gap 7px 12px）因此比 8 台无立绘的行（11px 副标、
+   gap 10px 16px）小一档，指标格高 43 vs 51px，两套观感。:where() 的权重是 0，
+   所以选择器优先级与改动前完全一样，只是匹配范围收进卡片视图。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] .node-card[data-cast] .node-sub { margin-bottom: 6px; gap: 8px; }
-html[data-skin="anime"] .node-card[data-cast] .node-sub p { font-size: 11px; }
-html[data-skin="anime"] .node-card[data-cast] .metrics-grid { gap: 7px 12px; }
-html[data-skin="anime"] .node-card[data-cast] .metric { gap: 3px; }
-html[data-skin="anime"] .node-card[data-cast] .metric > div { font-size: 12px; }
-html[data-skin="anime"] .node-card[data-cast] .metric > div span { font-size: 11px; }
-html[data-skin="anime"] .node-card[data-cast] .metric progress { height: 5px; }
-html[data-skin="anime"] .node-card[data-cast] .metric small { font-size: 10px; }
-html[data-skin="anime"] .node-card[data-cast] .card-stats { padding-top: 6px; margin-bottom: 6px; gap: 6px; }
-html[data-skin="anime"] .node-card[data-cast] .route-heading { margin-bottom: 3px; font-size: 10px; }
-html[data-skin="anime"] .node-card[data-cast] .route-heading b { font-size: 10px; padding: 1px 5px; }
-html[data-skin="anime"] .node-card[data-cast] .latency-bands { gap: 4px; margin-bottom: 6px; }
-html[data-skin="anime"] .node-card[data-cast] .net-band { padding: 3px 6px; gap: 3px; }
-html[data-skin="anime"] .node-card[data-cast] .net-band .band-metric strong { font-size: 11.5px; }
-html[data-skin="anime"] .node-card[data-cast] .net-band .band-bars .quality-bars,
-html[data-skin="anime"] .node-card[data-cast] .net-band .band-bars .quality-bar { height: 6px !important; min-height: 6px; }
-html[data-skin="anime"] .node-card[data-cast] .route-grid { gap: 6px; }
-html[data-skin="anime"] .node-card[data-cast] .route-label { padding: 5px 2px; gap: 2px 4px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .node-sub { margin-bottom: 6px; gap: 8px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .node-sub p { font-size: 11px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metrics-grid { gap: 7px 12px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric { gap: 3px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric > div { font-size: 12px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric > div span { font-size: 11px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric progress { height: 5px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric small { font-size: 10px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .card-stats { padding-top: 6px; margin-bottom: 6px; gap: 6px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .route-heading { margin-bottom: 3px; font-size: 10px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .route-heading b { font-size: 10px; padding: 1px 5px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .latency-bands { gap: 4px; margin-bottom: 6px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .net-band { padding: 3px 6px; gap: 3px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .net-band .band-metric strong { font-size: 11.5px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .net-band .band-bars .quality-bars,
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .net-band .band-bars .quality-bar { height: 6px !important; min-height: 6px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .route-grid { gap: 6px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .route-label { padding: 5px 2px; gap: 2px 4px; }
 
 /* --------------------------------------------------------------------------
    N+5. 收起态：板压到只剩头部（名字 + 状态点 + 折叠箭头）
@@ -1156,4 +1162,104 @@ html[data-skin="anime"] .node-card:not([data-cast]) .card-body {
 }
 html[data-skin="anime"][data-theme="dark"] .node-card:not([data-cast]) .card-body {
   background: color-mix(in srgb, var(--cast-board, #1b1f2e) 70%, #000000);
+}
+
+/* --------------------------------------------------------------------------
+   N+7. 列表视图：紧凑行不分「有立绘 / 无立绘」（2026-10-10）
+
+   卡片视图那套「角色牌面色（--cast-board / motif / line / accent）+ 看板几何 + 裸眼 3D」
+   只属于卡片。列表是一行一台的紧凑行：12 台里 4 台有立绘、8 台没有，两种行**必须长得一模一样**，
+   否则同一列在两种行里 x 坐标对不齐（实测指标列 224 vs 221）、行高不等，底色一粉一米白像两套皮肤。
+   做法：
+     · 把 [data-cast] 的取色令牌在本视图内指回皮肤默认——牌面 → --anime-sign 白面、
+       牌面描边 → --anime-sign-line 发丝线、格子底 → --anime-muted、进度轨 / 强调色 → 皮肤主色，
+       立绘纹理 --cast-motif 置空。卡片视图那条 `.node-card[data-cast]{…}` 本身不改，
+       它引用的都是这几个令牌，所以这里只换令牌、不动规则。
+     · 卡片视图为了「立绘通铺到卡边」对 [data-cast] 写的 padding-left/right:0（和 [data-rolled]
+       的 padding-bottom:0）在列表里收回 16px 20px，六格起点才与无立绘行对齐。
+     · 关掉卡片视图的裸眼 3D 倾斜：列表里整行跟着指针转会变成「有立绘的行会动、别的行不动」。
+   立绘三层（.anime-stage / .anime-hands / .anime-legs）在列表里根本不被 app.js 渲染，
+   元素级的 display:none 兜底见上面 N+4 上方那三条。
+   -------------------------------------------------------------------------- */
+html[data-skin="anime"] .node-grid.node-list .node-card[data-cast] {
+  --cast-board: var(--anime-sign);
+  --cast-cell: var(--anime-muted);
+  --cast-line: var(--anime-sign-line);
+  --cast-accent: var(--anime-primary);
+  --cast-accent-rgb: 255, 122, 162;
+  --cast-track: #eef0f8;
+  --cast-motif: none;
+  --cast-motif-size: auto;
+  padding: 16px 20px;
+}
+html[data-skin="anime"][data-theme="dark"] .node-grid.node-list .node-card[data-cast] {
+  --cast-accent-rgb: 255, 154, 184;
+  --cast-track: #262b3c;
+}
+
+/* 裸眼 3D 只属于卡片视图（层间差速是给立绘的）。 */
+html[data-skin="anime"] .node-grid.node-list .node-card[data-cast].is-tilt {
+  transform: none;
+}
+
+/* 「详细」悬停色两种行统一走皮肤主色：卡片视图里无立绘行退回的是写死的 #e8457c，
+   有立绘行走 --cast-accent，列表里两者现在都收到 --anime-primary。 */
+html[data-skin="anime"] .node-grid.node-list .detail-open:hover {
+  border-color: var(--anime-primary);
+}
+
+/* 「详细」是固定两字的按钮：主机格扣掉状态点与两个间距后只剩 ~110px，不锁 nowrap 时
+   按钮的内容盒（两倍 9px 内边距之后只剩 20px）放不下「详细」两个字，会被挤成竖排的
+   「详 / 细」——实测字形盒 12×34px（宽 12 = 单字宽），正是用户点名的孤字换行。
+   锁成 nowrap 后按钮按两字宽（44px）撑开、不再参与横向收缩。 */
+html[data-skin="anime"] .node-grid.node-list .detail-open {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* 名字块吃满主机格的剩余宽度，把「详细」顶到这格右缘（与卡片视图里右对齐的「详细」一致）：
+   名字块若按内容宽（flex: 0 1 auto），按钮就会跟着名字长度逐行左右飘（实测 detailX 174~199），
+   12 行对不齐。.row-identity 是 align-items: flex-start，.node-identity 默认收缩到内容宽，
+   所以先把这一层拉满整格，再让名字块 flex:1——短名字那几行多余的宽度落在名字与按钮之间。 */
+html[data-skin="anime"] .node-grid.node-list .node-identity {
+  align-self: stretch;
+  width: 100%;
+}
+html[data-skin="anime"] .node-grid.node-list .node-identity > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 行圆角与卡片视图的「面」同一档：卡片是 --anime-r-xl（18px），列表原来挂的是容器档 14px。 */
+html[data-skin="anime"] .node-grid.node-list .node-card {
+  border-radius: var(--anime-r-xl) !important;
+}
+
+/* 主机格放得下节点名：共享的六格预算里第一格只有 150px，扣掉状态点、「详细」按钮与两个
+   间距后名字只剩 ~78px，像 US-干杯Cloud-Frontier 这种会长成三行（第一行只到「US-干杯」）。
+   anime 的列表行本来就更宽（圆角更大、内边距更足），这里把第一格抬到 190px、行宽随之
+   1208 → 1248px；其余五格一格不动（指标 / 延迟 / 回程的计算宽度都没变），所以不是「重排列」，
+   只是把名字这一格补足。--row-min 与六格 min 之和同步（190+280+96+300+145+105 = 1116），
+   窄屏横向滚动的 min-width 公式读的就是这个变量。 */
+html[data-skin="anime"] .node-grid.node-list {
+  --row-min: 1116px;
+  --row-cols:
+    minmax(190px, 0.9fr) minmax(280px, 1.35fr) minmax(96px, 96px)
+    minmax(300px, 1.3fr) minmax(145px, 0.6fr) minmax(105px, 0.5fr);
+}
+
+/* 阈值要跟 --row-min 一起走：共享那条 `@media (max-width: 1296px)` 是按 --row-min 1076 配的
+   （1208 + 88 余量），主机格抬到 190px 后行宽是 1248px。不补这一段的话，1297~1336 这段窗口里
+   共享默认（display:grid、无 min-width）会把卡压到 1248 以下，而六格轨道最小和仍有
+   1116 + 5×18 = 1206px，最后一格（计费）会被 overflow:hidden 裁掉几个像素。 */
+@media (max-width: 1336px) {
+  html[data-skin="anime"] .node-grid.node-list {
+    display: block;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  html[data-skin="anime"] .node-grid.node-list .node-card {
+    min-width: calc(var(--row-min) + 5 * var(--row-gap) + 40px + 2px);
+  }
 }

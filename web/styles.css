@@ -3085,7 +3085,10 @@ pre,
   }
 
   .node-grid.node-list .node-card {
-    min-width: calc(var(--row-min) + 5 * var(--row-gap) + 40px);
+    /* +40px = 左右内边距（2 × 20px）；再 +2px 是卡片左右各 1px 描边（border-box 下描边也占宽度）。
+       少了那 2px，六格轨道（--row-min 1076 + 5 × gap 18 = 1166）就比内容盒宽 2px，最后一格
+       （计费）会顶出内容盒、被 .node-card 的 overflow: hidden 切掉。 */
+    min-width: calc(var(--row-min) + 5 * var(--row-gap) + 40px + 2px);
     margin-bottom: 12px;
   }
 }
