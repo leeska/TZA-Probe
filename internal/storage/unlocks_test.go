@@ -268,3 +268,52 @@ func TestUnlockRoundMayReportLate(t *testing.T) {
 		t.Fatalf("a stale latency result was accepted: %v", err)
 	}
 }
+
+// TestUnlockLeaseFollowsTheHostAddressFamily: an unlock task with no family
+// runs over IPv4, so an IPv6-only host must be handed it as IPv6 (otherwise
+// every service fails), and a family the host cannot use is not handed out.
+func TestUnlockLeaseFollowsTheHostAddressFamily(t *testing.T) {
+	cases := []struct {
+		name       string
+		families   []string
+		taskFamily string
+		want       string // leased family; "-" means nothing leased
+	}{
+		{"dual stack keeps IPv4 default", []string{"ipv4", "ipv6"}, "", ""},
+		{"unreported families keep the default", nil, "", ""},
+		{"IPv6-only host is moved to IPv6", []string{"ipv6"}, "", "ipv6"},
+		{"host without any family gets nothing", []string{}, "", "-"},
+		{"explicit family the host lacks is skipped", []string{"ipv4"}, "ipv6", "-"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := openTest(t)
+			ctx := context.Background()
+			id, _ := makeNode(t, s)
+			now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+			m := capableMetrics()
+			m.IPFamilies = tc.families
+			if err := s.Report(ctx, id, m, now); err != nil {
+				t.Fatal(err)
+			}
+			task := unlockTask("解锁检测", id)
+			task.Family = tc.taskFamily
+			if _, err := s.SaveTask(ctx, task, true); err != nil {
+				t.Fatal(err)
+			}
+			jobs, err := s.Lease(ctx, id, now.Add(time.Second))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == "-" {
+				if len(jobs) != 0 {
+					t.Fatalf("leased %+v", jobs)
+				}
+				return
+			}
+			if len(jobs) != 1 || jobs[0].Task.Family != tc.want {
+				t.Fatalf("leased %+v, want family %q", jobs, tc.want)
+			}
+		})
+	}
+}

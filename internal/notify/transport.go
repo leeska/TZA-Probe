@@ -197,7 +197,7 @@ func (s Telegram) Send(ctx context.Context, c Config, e model.Event) error {
 	if e.Kind == "test" {
 		state = "连接测试"
 	}
-	names := map[string]string{"offline": "节点离线", "renewal": "到期续费", "traffic": "流量额度", "load": "系统负载", "test": "测试通知"}
+	names := map[string]string{"offline": "节点离线", "renewal": "到期续费", "traffic": "流量额度", "throttle": "达量降速", "load": "系统负载", "test": "测试通知"}
 	kind := names[e.Kind]
 	if kind == "" {
 		kind = e.Kind

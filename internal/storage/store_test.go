@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -439,5 +440,46 @@ func TestObservationsRelabelRouteOnRead(t *testing.T) {
 	}
 	if obs[0].Result.Route != "CMIN2" {
 		t.Fatalf("route must be recomputed from the hops, got %q", obs[0].Result.Route)
+	}
+}
+
+// Every writer connection must enforce foreign keys, not only the first one:
+// node deletion relies on ON DELETE CASCADE.
+func TestWriterConnectionsEnforceForeignKeys(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		conn, err := s.db.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var on int
+		if err = conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&on); err != nil || on != 1 {
+			t.Fatalf("foreign_keys=%d %v", on, err)
+		}
+		// Discard the connection so the pool has to open a fresh one.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		conn.Close()
+	}
+}
+
+// Events that waited longer than model.EventDeliveryWindow are no longer
+// offered for delivery: configuring a channel later must not replay old alerts.
+func TestPendingEventsExpire(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	for _, at := range []time.Time{now.Add(-model.EventDeliveryWindow - time.Minute), now.Add(-time.Hour)} {
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO events(node_id,node_name,kind,message,active,at) VALUES('n','node','offline','节点已离线',1,?)", at.Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pending, err := s.Events(ctx, true, now)
+	if err != nil || len(pending) != 1 || pending[0].At != now.Add(-time.Hour).Unix() {
+		t.Fatalf("pending=%+v %v", pending, err)
+	}
+	all, err := s.Events(ctx, false, now)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("history must keep expired events: %+v %v", all, err)
 	}
 }

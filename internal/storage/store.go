@@ -130,13 +130,16 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	f.Close()
-	db, err := sql.Open("sqlite", path)
+	// foreign_keys and busy_timeout are per connection: in the DSN they reach
+	// every connection the pool opens, including one that replaces a broken
+	// writer. A one-off Exec would leave that replacement without cascades.
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db}
-	if _, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;`); err != nil {
+	if _, err = db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -974,7 +977,19 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 			if leaf.Kind == model.UnlockKind {
 				// 解锁检测只有报了这个能力的 Agent 才领得到：老 Agent 会把它整轮
 				// 报成 failed，面板上就成了一片没来由的红。未知能力在这里是「不能」。
-				if capabilities.AllowsUnlock() {
+				if !capabilities.AllowsUnlock() {
+					continue
+				}
+				// 协议族留空时 Agent 固定走 IPv4（双栈机两条出口的结论不一样）；
+				// 纯 IPv6 机器没有 IPv4 出口，那样每一项都会 failed，这里改派 IPv6。
+				if leaf.Family == "" && !capabilities.AllowsFamily("ipv4") && capabilities.AllowsFamily("ipv6") {
+					leaf.Family = "ipv6"
+				}
+				family := leaf.Family
+				if family == "" {
+					family = "ipv4"
+				}
+				if capabilities.AllowsFamily(family) {
 					candidates = append(candidates, leaf)
 				}
 				continue
@@ -1018,26 +1033,21 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 		return []model.Job{}, nil
 	}
 	// Read scheduling history once. Retention exceeds the maximum task interval.
+	// The materialized latest table already holds the newest issue per probe
+	// key; scanning a week of jobs here ran on every poll under the write lock.
 	last := map[string]int64{}
-	history, err := tx.QueryContext(ctx, "SELECT task,max(issued) FROM jobs WHERE node_id=? GROUP BY task", node)
+	history, err := tx.QueryContext(ctx, "SELECT probe_key,issued FROM latest WHERE node_id=?", node)
 	if err != nil {
 		return nil, err
 	}
 	for history.Next() {
-		var data string
+		var key string
 		var at int64
-		var leaf model.Task
-		if err = history.Scan(&data, &at); err != nil {
+		if err = history.Scan(&key, &at); err != nil {
 			history.Close()
 			return nil, err
 		}
-		if err = json.Unmarshal([]byte(data), &leaf); err != nil {
-			history.Close()
-			return nil, err
-		}
-		if at > last[leaf.ProbeKey()] {
-			last[leaf.ProbeKey()] = at
-		}
+		last[key] = at
 	}
 	err = history.Err()
 	history.Close()
@@ -1437,12 +1447,12 @@ func (s *Store) Events(ctx context.Context, pending bool, now time.Time) ([]mode
 	where := ""
 	order := "DESC"
 	if pending {
-		where = "WHERE delivered=0 AND next_attempt<=? AND attempts<10"
+		where = "WHERE delivered=0 AND next_attempt<=? AND attempts<10 AND at>=?"
 		order = "ASC"
 	}
 	args := []any{}
 	if pending {
-		args = append(args, now.Unix())
+		args = append(args, now.Unix(), now.Add(-model.EventDeliveryWindow).Unix())
 	}
 	rows, err := s.query(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts,last_error FROM events "+where+" ORDER BY id "+order+" LIMIT 100", args...)
 	if err != nil {

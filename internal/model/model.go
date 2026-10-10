@@ -447,7 +447,7 @@ func (t Task) Validate() error {
 	}
 	if t.Kind == UnlockKind {
 		// 解锁检测是按「这台机器的出口」逐项发起的 HTTP 检测，没有目标地址，
-		// 也不需要端口；协议族留空表示由 Agent 自己选（纯 v6 机器因此不会失败）。
+		// 也不需要端口；协议族留空即自动：走 IPv4，纯 IPv6 机器由 Lease 改派 IPv6。
 		if t.Interval < UnlockMinInterval || t.Interval > 86400 || len(t.Name) == 0 || len(t.Name) > 100 {
 			return errors.New("解锁检测的名称或间隔无效：最短 1 小时")
 		}
@@ -589,6 +589,11 @@ func (o Observation) Redact() Observation {
 	}
 	return o
 }
+
+// EventDeliveryWindow is how long an alert stays worth sending. Events pile up
+// while no channel is configured; setting one up later must not replay weeks
+// of offline and recovery notices, so older events are left undelivered.
+const EventDeliveryWindow = 24 * time.Hour
 
 type Event struct {
 	LastError string `json:"last_error"`
