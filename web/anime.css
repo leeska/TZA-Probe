@@ -1250,7 +1250,7 @@ html[data-skin="anime"] .node-grid.node-list {
 
 /* 阈值要跟 --row-min 一起走：共享那条 `@media (max-width: 1296px)` 是按 --row-min 1076 配的
    （1208 + 88 余量），主机格抬到 190px 后行宽是 1248px。不补这一段的话，1297~1336 这段窗口里
-   共享默认（display:grid、无 min-width）会把卡压到 1248 以下，而六格轨道最小和仍有
+   共享默认（display:grid、无 min-width）会把卡压到 1248 以下，六格轨道最小和却有
    1116 + 5×18 = 1206px，最后一格（计费）会被 overflow:hidden 裁掉几个像素。 */
 @media (max-width: 1336px) {
   html[data-skin="anime"] .node-grid.node-list {
@@ -1261,5 +1261,25 @@ html[data-skin="anime"] .node-grid.node-list {
 
   html[data-skin="anime"] .node-grid.node-list .node-card {
     min-width: calc(var(--row-min) + 5 * var(--row-gap) + 40px + 2px);
+  }
+}
+
+/* 窄窗口（手机 358 / 桌面 431）：anime 的列表行不再整块横向滚动，改成「一行之内竖向分组」——
+   主机格 → 指标 2×2 → 网速 → 延迟 → 回程 → 计费，每块满宽接在下面，一屏读完不用滑。
+   共享皮肤在窄屏是「六格照排 + 横向滚动」（行还是那一行、只是要滑），可那样默认只看得到半截
+   指标列（gpt 验收点名「以半截文字作为默认展示」）。anime 的列表行本来就圆角更大、内边距更足，
+   竖向分组更贴它的设计语言；卡片视图与其它皮肤的列表都不受影响。
+   必须写在上面那条 1336 之后：同权重，靠后者覆盖。 */
+@media (max-width: 640px) {
+  html[data-skin="anime"] .node-grid.node-list {
+    display: block;
+    overflow-x: visible;
+  }
+
+  html[data-skin="anime"] .node-grid.node-list .node-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    min-width: 0;
+    padding: 14px 16px;
   }
 }
