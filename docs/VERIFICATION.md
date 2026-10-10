@@ -2618,6 +2618,9 @@ gpt-6.1-sol 看图确认（手机/桌面 × 明暗 × 四台）：方案确认�
 - **真浏览器**（headless chromium，本地面板 7 台）实测：点延迟格 → 聚焦视图标题「联通 · TCP 延迟」
   （`#charts`=false、`.detail-stats`=false）；点回程格 → 「电信 · 三网回程」；点卡片空白处 → 什么都没弹；
   点「详细」→ 综合详情（含 `#charts` 主机历史）。
-- 线上：见同日的部署记录（`tza-feature-check.mjs` 打 probe.tza.cc，同一组断言）。
+- 线上（`2.0.0-dev+daa35fa` 部署后，probe.tza.cc，13 台真实数据，headless chromium 真鼠标点击）实测：
+  点延迟格 → 聚焦视图标题「电信 · TCP 延迟」（`#charts`=false、`.detail-stats`=false）；点回程格 →
+  「电信 · 三网回程」；点卡片空白处 → 什么都没弹；点「详细」→ 综合详情（含主机历史）。同一次检查里
+  卡片与列表的线路带宽逐台一致（8 台有、5 台没有），拖动排序仍在真浏览器里通过、服务端 order 回到 0…12。
 
 待确认：无。
