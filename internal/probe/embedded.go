@@ -101,9 +101,9 @@ func (e Embedded) Trace(ctx context.Context, ip net.IP, port int) traceOutcome {
 		// BeginHop must be at least 1. The tracer otherwise sends its first
 		// probe with TTL 0, which is not a real hop and which Linux rejects
 		// outright (setsockopt: invalid argument), failing the whole trace.
-		BeginHop:        1,
-		DstIP:           ip,
-		DstPort:         port,
+		BeginHop: 1,
+		DstIP:    ip,
+		DstPort:  port,
 		// Long paths exist: a Tokyo probe reached a 四川 mobile target at TTL
 		// 25, one past the old cap, so the trace never saw the destination and
 		// the panel showed 未知. 30 covers those with room to spare.
