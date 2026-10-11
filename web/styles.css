@@ -3523,6 +3523,25 @@ pre,
   display: none;
 }
 
+/* 弹层要能从面板里伸出来：.panel 是 overflow: hidden（且带 backdrop-filter，本身就是
+   层叠上下文），而 .webhook-actions 里的下拉在面板的垂直中线上，弹层往下开时会被面板
+   下沿裁掉——后台「面板设置 → 默认外观」实测只露出 37.8px（弹层本身 51px），下面两个
+   选项点不到（elementFromPoint 落在面板上）。只在这块面板里真有展开的下拉时放开裁剪，
+   并把它抬到同级面板之上，否则伸出去的弹层会被下面那块面板盖住（backdrop-filter 的
+   面板按文档顺序绘制）。 */
+.panel:has(.select-shell.open) {
+  overflow: visible;
+  position: relative;
+  z-index: 5;
+}
+
+/* 上方更宽时把弹层翻上去（web/ui-select.js 按视口空间在打开时挂 .pop-up）：
+   面板里的下拉常落在手机下半屏，往下开会被折线切掉。 */
+.select-pop.pop-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
 .combo-opt.active {
   background: rgba(var(--accent-rgb), 0.12);
 }

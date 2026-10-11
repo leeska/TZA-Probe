@@ -28,6 +28,7 @@ const errors = [];
 // 数字框的步进箭头靠样式表关掉。伪元素在 jsdom 里算不出来，所以箭头样式按内容断言，
 // 「已生效」则单独起一个小文档确认计算值。
 const styles = await readFile(path.join(root, "web/styles.css"), "utf8");
+const selectSource = await readFile(path.join(root, "web/ui-select.js"), "utf8");
 assert.match(styles, /::-webkit-inner-spin-button/, "WebKit 的步进箭头同样要关掉");
 const cssProbe = new JSDOM(`<style>${styles}</style><input type="number" id="probe">`);
 assert.equal(
@@ -858,6 +859,27 @@ assert.equal(
   [...skinField.options].map((o) => o.value).join(","),
   "glass,press,shadcn,anime",
   "皮肤三档",
+);
+// 这三个下拉在页面上是自定义外壳（ui-select.js 把原生 select 换成 .select-trigger + .select-pop），
+// jsdom 里不加载 ui-select.js，所以下列断言只能按源码与样式表文本盯住。教训：选项一旦写回
+// <button>，按钮基样式 `.webhook-actions button`（0,1,1）就会压过 glass.css 的 .select-opt
+// （0,1,0），把选项排成一行白底按钮、从弹层两侧溢出去（线上「默认外观」就是这样被切掉的）。
+assert(
+  /<div class="select-opt/.test(selectSource) && !/<button[^>]*class="select-opt/.test(selectSource),
+  "下拉选项要用 div，不能用 button（会吃 .webhook-actions button 那套按钮基样式）",
+);
+assert(
+  /<div class="select-opt[^>]*role="option"/.test(selectSource) &&
+    /setAttribute\("role", "listbox"\)/.test(selectSource),
+  "弹层要带 listbox / option 语义",
+);
+assert(
+  /\.panel:has\(\.select-shell\.open\) \{[^}]*overflow: visible/.test(styles),
+  "展开下拉的面板要放开 overflow（否则弹层被 .panel 的 overflow:hidden 裁掉）",
+);
+assert(
+  /\.select-pop\.pop-up \{[^}]*bottom: calc\(100% \+ 6px\)/.test(styles),
+  "上方更宽时弹层要能翻上去（手机下半屏的下拉）",
 );
 const saveLook = async (theme, skin) => {
   $("#default-theme").value = theme;
