@@ -73,9 +73,11 @@ func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perG
 	for _, p := range probes {
 		// 按 issued 倒序取，但分组按 finished 排：一次结果最晚在下发后 90 秒到，而探测间隔
 		// 至少 30 秒，所以多取几条就能盖住「先发的后完成」造成的顺序差。
-		recent, err := s.query(ctx, `SELECT id,finished,json_extract(result,'$.latency'),coalesce(json_extract(result,'$.sent'),0),coalesce(json_extract(result,'$.received'),0)
-			FROM jobs WHERE node_id=? AND issued>=? AND issued<=? AND finished IS NOT NULL AND `+jobKeySQL+`=?
-			ORDER BY issued DESC LIMIT ?`, p.node, since.Unix(), p.newest, p.key, perGroup+8)
+		// 结果 JSON 坏掉的行（半写入）按「没有结果」算：直接 json_extract 会让整条语句报
+		// malformed JSON，一行坏数据就让整个面板的延迟格子消失。
+		recent, err := s.query(ctx, `SELECT id,finished,json_extract(r,'$.latency'),coalesce(json_extract(r,'$.sent'),0),coalesce(json_extract(r,'$.received'),0)
+			FROM (SELECT id,finished,issued,CASE WHEN json_valid(result) THEN result END AS r FROM jobs WHERE node_id=? AND issued>=? AND issued<=? AND finished IS NOT NULL AND `+jobKeySQL+`=?
+			ORDER BY issued DESC LIMIT ?)`, p.node, since.Unix(), p.newest, p.key, perGroup+8)
 		if err != nil {
 			return nil, err
 		}
@@ -121,5 +123,6 @@ func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perG
 
 // jobKeySQL is a job row's grouping key exactly as the latest table computes it:
 // the stored probe_key, or for a row written before that column existed the same
-// key rebuilt from its task JSON.
-var jobKeySQL = "(CASE WHEN probe_key<>'' THEN probe_key ELSE " + probeKeyExpr("") + " END)"
+// key rebuilt from its task JSON. A legacy row whose task JSON is broken has no
+// key (NULL) instead of failing the whole statement with "malformed JSON".
+var jobKeySQL = "(CASE WHEN probe_key<>'' THEN probe_key WHEN json_valid(task) THEN " + probeKeyExpr("") + " END)"

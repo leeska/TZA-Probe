@@ -27,6 +27,10 @@ type Store struct {
 	db     *sql.DB
 	read   *sql.DB
 	writes sync.Mutex
+	// 后台分批删除（见 purge.go）。
+	purgeWake chan struct{}
+	purgeStop context.CancelFunc
+	purgeDone chan struct{}
 }
 
 // readConns is how many connections serve read-only queries. One writer
@@ -149,7 +153,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 8 {
+	if version > 9 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -225,12 +229,20 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	if version < 9 {
+		// 后台分批删除的队列（见 purge.go）：改任务、删任务、删节点时要删的大批历史行。
+		if _, err = db.Exec("BEGIN; CREATE TABLE IF NOT EXISTS purges(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, target TEXT NOT NULL, cutoff INTEGER NOT NULL); PRAGMA user_version=9; COMMIT;"); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	read, err := openReadOnly(path)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	s.read = read
+	s.startPurger()
 	return s, nil
 }
 
@@ -374,6 +386,8 @@ PRAGMA user_version=1;
 COMMIT;`
 
 func (s *Store) Close() error {
+	// 正在删的那一批做完就停；没删完的留在 purges 里，下次 Open 接着删。
+	s.stopPurger()
 	err := s.db.Close()
 	if s.read != nil {
 		if rerr := s.read.Close(); err == nil {
@@ -688,7 +702,33 @@ func (s *Store) SaveNodeOrder(ctx context.Context, ids []string) error {
 	return tx.Commit()
 }
 
-func (s *Store) DeleteNode(ctx context.Context, id string) error { return s.delete(ctx, "nodes", id) }
+// DeleteNode removes a node at once — it disappears from the panel and its
+// key stops working — while its probe results and minute samples (a week and a
+// month of rows) are purged in the background, see purge.go.
+func (s *Store) DeleteNode(ctx context.Context, id string) error {
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	err := s.withoutCascade(ctx, func(tx *sql.Tx) error {
+		r, err := tx.ExecContext(ctx, "DELETE FROM nodes WHERE id=?", id)
+		if err != nil {
+			return err
+		}
+		if n, _ := r.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		// What the cascade used to do for the small tables; jobs and samples are queued.
+		for _, table := range []string{"bindings", "alert_state", "latest", "unlocks", "retries", "traffic", "traffic_hour"} {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE node_id=?", id); err != nil {
+				return err
+			}
+		}
+		return queuePurge(ctx, tx, purgeNodeRows, id, noCutoff)
+	})
+	if err == nil {
+		s.wakePurger()
+	}
+	return err
+}
 
 // DeleteTask removes a task and, for an unlock task, the verdicts it produced:
 // they are derived state, and leaving them behind would show a machine's unlock
@@ -703,28 +743,50 @@ func (s *Store) DeleteTask(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if t.Kind == model.UnlockKind {
-		if err = clearUnlocks(ctx, tx, t.NodeIDs); err != nil {
+	// 任务行与绑定、面板物化行立刻删；它的探测历史（可能上百万行）后台分批删，见 purge.go。
+	err = s.withoutCascade(ctx, func(tx *sql.Tx) error {
+		if t.Kind == model.UnlockKind {
+			if err := clearUnlocks(ctx, tx, t.NodeIDs); err != nil {
+				return err
+			}
+		}
+		r, err := tx.ExecContext(ctx, "DELETE FROM tasks WHERE id=?", id)
+		if err != nil {
 			return err
 		}
+		if n, _ := r.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		if _, err = tx.ExecContext(ctx, "DELETE FROM bindings WHERE task_id=?", id); err != nil {
+			return err
+		}
+		if err = dropTaskState(ctx, tx, id); err != nil {
+			return err
+		}
+		return queuePurge(ctx, tx, purgeTaskJobs, id, noCutoff)
+	})
+	if err == nil {
+		s.wakePurger()
 	}
-	r, err := tx.ExecContext(ctx, "DELETE FROM tasks WHERE id=?", id)
-	if err != nil {
+	return err
+}
+
+// dropTaskState removes what the panel and the scheduler read for a task: its
+// rows in the materialized latest table (keyed taskID|…), its pending route
+// retries, and its jobs still in flight. Older finished jobs are left to a purge.
+func dropTaskState(ctx context.Context, tx *sql.Tx, id string) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM latest WHERE probe_key>=? AND probe_key<?", id+"|", id+"}"); err != nil {
 		return err
 	}
-	if n, _ := r.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	// 补测行按 probe_key（taskID|…）记，没有指向 tasks 的外键，任务删掉时一起清。
-	if _, err = tx.ExecContext(ctx, "DELETE FROM retries WHERE probe_key LIKE ?", id+"|%"); err != nil {
+	// 补测行按 probe_key（taskID|…）记，没有指向 tasks 的外键。
+	if _, err := tx.ExecContext(ctx, "DELETE FROM retries WHERE probe_key>=? AND probe_key<?", id+"|", id+"}"); err != nil {
 		return err
 	}
-	return tx.Commit()
+	// In flight means a result may still be accepted (see finishWindow); older
+	// unfinished rows are dead and go with the purge. jobs_age keeps this a
+	// short range scan instead of a walk over the task's whole history.
+	_, err := tx.ExecContext(ctx, "DELETE FROM jobs WHERE rowid IN (SELECT rowid FROM jobs INDEXED BY jobs_age WHERE issued>=? AND task_id=? AND finished IS NULL)", time.Now().Add(-unlockFinishWindow).Unix(), id)
+	return err
 }
 
 // taskConfig reads a stored task, used by the writers that must know what a
@@ -751,19 +813,6 @@ func clearUnlocks(ctx context.Context, tx *sql.Tx, nodeIDs []string) error {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM unlocks WHERE node_id=?", id); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-func (s *Store) delete(ctx context.Context, table, id string) error {
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	r, err := s.db.ExecContext(ctx, "DELETE FROM "+table+" WHERE id=?", id)
-	if err != nil {
-		return err
-	}
-	n, _ := r.RowsAffected()
-	if n == 0 {
-		return ErrNotFound
 	}
 	return nil
 }
@@ -1014,9 +1063,22 @@ func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) (string
 	if err != nil {
 		return "", err
 	}
-	// Editing invalidates in-flight leases and old route classifications.
-	if _, err = tx.ExecContext(ctx, "DELETE FROM jobs WHERE task_id=?", t.ID); err != nil {
-		return "", err
+	// Editing invalidates in-flight leases and the task's history. What the panel
+	// and the scheduler read goes now; the history rows (up to a week of every
+	// target on every node) are purged in the background up to the newest job
+	// that exists at this moment, so jobs leased after the edit stay.
+	if !create {
+		if err = dropTaskState(ctx, tx, t.ID); err != nil {
+			return "", err
+		}
+		cutoff, err := jobsCutoff(ctx, tx)
+		if err != nil {
+			return "", err
+		}
+		if err = queuePurge(ctx, tx, purgeTaskJobs, t.ID, cutoff); err != nil {
+			return "", err
+		}
+		defer s.wakePurger()
 	}
 	if _, err = tx.ExecContext(ctx, "DELETE FROM bindings WHERE task_id=?", t.ID); err != nil {
 		return "", err
@@ -1205,7 +1267,7 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 			break
 		}
 		issued[t.Kind]++
-		j := model.Job{ID: model.Secret()[:24], Task: t}
+		j := model.Job{ID: jobID(now), Task: t}
 		if _, err = tx.ExecContext(ctx, "INSERT INTO jobs(id,task_id,node_id,task,issued,probe_key) VALUES(?,?,?,?,?,?)", j.ID, t.ID, node, encode(t), now.Unix(), t.ProbeKey()); err != nil {
 			return nil, err
 		}
@@ -1218,6 +1280,16 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 		out = append(out, j)
 	}
 	return out, tx.Commit()
+}
+
+// jobID is a new job's primary key: eight hex digits of the issue time, then 64
+// random bits — 24 characters like before, so nothing that stores or validates
+// one changes. The time prefix is for the B-tree: with a fully random id every
+// insert and every retention delete landed on a random page of the primary-key
+// index, about a millisecond a row once the table no longer fits the cache.
+// Time-ordered ids keep both at the right-hand edge and the oldest pages.
+func jobID(now time.Time) string {
+	return fmt.Sprintf("%08x", uint32(now.Unix())) + model.Secret()[:16]
 }
 
 // tcpLeaseJobs is how many latency probes one lease hands an Agent that runs
@@ -1475,23 +1547,22 @@ const (
 	retryRetention = 24 * time.Hour
 )
 
+// Clean applies the retention periods. Each table is deleted a chunk of rows
+// at a time with the write lock released in between: an hour of expired jobs
+// is a quarter of a million rows on ten nodes, 11s under one lock, long enough
+// for every Agent's report to time out.
 func (s *Store) Clean(ctx context.Context, now time.Time) error {
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	for _, q := range []struct {
-		query string
-		age   time.Duration
-	}{{"DELETE FROM samples WHERE at<?", samplesRetention}, {"DELETE FROM traffic WHERE day<?", trafficRetention}, {"DELETE FROM traffic_hour WHERE hour<?", trafficHourRetention}, {"DELETE FROM jobs WHERE issued<?", JobsRetention}, {"DELETE FROM events WHERE at<?", eventsRetention}, {"DELETE FROM retries WHERE at<?", retryRetention}} {
-		if _, err = tx.ExecContext(ctx, q.query, now.Add(-q.age).Unix()); err != nil {
+		table, column string
+		age           time.Duration
+	}{{"samples", "at", samplesRetention}, {"traffic", "day", trafficRetention}, {"traffic_hour", "hour", trafficHourRetention}, {"jobs", "issued", JobsRetention}, {"events", "at", eventsRetention}, {"retries", "at", retryRetention}} {
+		if _, err := s.deleteChunks(ctx, q.table, q.column+"<?", now.Add(-q.age).Unix()); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	// 后台删除的兜底：上次唤醒时失败的那条也在这里再试一次。
+	s.wakePurger()
+	return nil
 }
 func (s *Store) Setting(ctx context.Context, key string) (string, error) {
 	var value string

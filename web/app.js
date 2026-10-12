@@ -264,8 +264,6 @@ async function liveTick() {
     }
     setText(document.querySelector("#updated"), new Date().toLocaleTimeString("zh-CN", { hour12: false }));
     markLive(true);
-    // 指标数字变化可能把板高顶高一两像素（换行），人物图 / 板顶 / 收起态板条要跟着重新量一次。
-    layoutCastCards();
   } catch (e) {
     markLive(false);
     throw e;
@@ -291,6 +289,10 @@ function markLive(ok) {
   setText(meta?.querySelector("small"), stale ? "连接中断 · 正在重试" : "每秒刷新");
 }
 
+// 人物图 / 板顶 / 收起态板条只取决于皮肤里每台机的 --cast-top-frac 与几个常量（板高是常量，
+// 不量内容），所以只在卡片重绘、折叠、换皮肤时算：以前每秒的轻刷新也算一遍，每张卡读一次
+// 计算样式再写三个变量，逐卡强制样式重算，数值却从来不变。
+document.addEventListener("tza:skin", layoutCastCards);
 // 视口宽度变化会改板高（内容换行），人物图 / 板顶 / 收起态板条的量值要重算。
 let plateResizeTimer = 0;
 window.addEventListener("resize", () => {

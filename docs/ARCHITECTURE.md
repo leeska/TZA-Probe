@@ -41,4 +41,4 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 
 计费周期与校正规则分别归属 model、storage/billing.go；主机与网络历史由存储层聚合，web/charts.js 只负责绘图。通知失败原因存入事件记录，不将凭据或原始响应暴露给前端。
 
-部署保持 Server / Agent 两个进程及 SQLite；数据保留时间固定在 storage.Clean，备份按部署文档停服复制。当前范围不加入维护模式、后台备份系统、插件容器或额外基础服务。
+部署保持 Server / Agent 两个进程及 SQLite；数据保留时间固定在 storage.Clean，备份按部署文档停服复制。所有写入共用一把写锁：保留期清理、编辑 / 删除任务与删除节点的大批历史行都分批删除（`storage/purge.go`，每批持锁约 0.1 秒，删除队列记在 `purges` 表里、重启后继续），不在一个事务里把 Agent 的上报挡在锁外。`/api/` 的 JSON 响应按 `Accept-Encoding` 用 gzip 压缩。当前范围不加入维护模式、后台备份系统、插件容器或额外基础服务。

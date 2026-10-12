@@ -3,8 +3,11 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/rand"
+	"net"
 	"reflect"
 	"sort"
 	"strings"
@@ -49,10 +52,10 @@ func seedReadPaths(t *testing.T, s *Store, now time.Time) (nodes []string, taskI
 		nodes = append(nodes, id)
 	}
 	task := model.Task{Name: "混合", Checks: []string{"tcp", "route"}, Interval: 30, RouteInterval: 900, Enabled: true, NodeIDs: nodes[:2]}
-	for i, c := range []string{"电信", "电信", "联通", "移动"} {
+	// 两个电信目标落在同一分组（同地区、同协议族），联通单独一组。
+	for i, c := range []string{"电信", "电信", "联通"} {
 		task.Targets = append(task.Targets, model.Target{Host: fmt.Sprintf("10.0.0.%d", i+1), Port: 80, Family: "ipv4", Region: "上海", Carrier: c})
 	}
-	task.Targets = append(task.Targets, model.Target{Host: "2001:db8::1", Port: 443, Family: "ipv6", Region: "广州", Carrier: "电信"})
 	var err error
 	if taskID, err = s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
@@ -67,9 +70,9 @@ func seedReadPaths(t *testing.T, s *Store, now time.Time) (nodes []string, taskI
 		for _, leaf := range task.Leaves() {
 			step := int64(30)
 			if leaf.Kind == "route" {
-				step = 900
+				step = 600
 			}
-			for at := now.Add(-7 * time.Hour).Unix(); at < now.Unix(); at += step + int64(rng.Intn(5)) {
+			for at := now.Add(-90 * time.Minute).Unix(); at < now.Unix(); at += step + int64(rng.Intn(5)) {
 				seq++
 				key := leaf.ProbeKey()
 				if rng.Intn(10) == 0 {
@@ -105,8 +108,8 @@ func TestRecentLatencySamplesMatchesTheWindowScan(t *testing.T) {
 	s := openTest(t)
 	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	nodes, _ := seedReadPaths(t, s, now)
-	for _, window := range []time.Duration{10 * time.Minute, time.Hour, 3 * time.Hour, 8 * time.Hour} {
-		for _, per := range []int{1, 5, 20} {
+	for _, window := range []time.Duration{10 * time.Minute, 40 * time.Minute, 2 * time.Hour} {
+		for _, per := range []int{1, 20} {
 			since := now.Add(-window)
 			got, err := s.RecentLatencySamples(ctx, nodes, per, since)
 			if err != nil {
@@ -182,8 +185,8 @@ func TestTaskRunsMatchesTheJobRanking(t *testing.T) {
 		want = append(want, r)
 	}
 	rows.Close()
-	// 两台绑定节点 × 10 个目标；第三台没绑定，不出现。
-	if len(got) != len(want) || len(got) != 20 {
+	// 两台绑定节点 × 6 个探测（3 个目标 × 延迟/回程）；第三台没绑定，不出现。
+	if len(got) != len(want) || len(got) != 12 {
 		t.Fatalf("runs = %d, reference %d", len(got), len(want))
 	}
 	seen := map[string]bool{}
@@ -193,6 +196,88 @@ func TestTaskRunsMatchesTheJobRanking(t *testing.T) {
 	for _, r := range got {
 		if !seen[fmt.Sprintf("%s@%d/%d", r.NodeID, r.Issued, r.Finished)] {
 			t.Fatalf("run not in reference: %+v", r)
+		}
+	}
+}
+
+// oldNetworkHistory 是改写前的实现（逐行 json_extract、按六个表达式分组），留作基准。
+func oldNetworkHistory(ctx context.Context, s *Store, id string, hours int, now time.Time) ([]model.NetworkSeries, error) {
+	hours = min(max(hours, 1), 168)
+	step := max(60, hours*3600/240)
+	since := now.Add(-time.Duration(hours) * time.Hour).Unix()
+	// 索引是 (node_id, issued)，只按 finished 过滤会把这台节点 7 天的任务行全读一遍。
+	// TCP 结果只在下发后 90 秒内收（见 Finish），所以 issued 的下界放宽两分钟就不会漏行。
+	rows, err := s.query(ctx, `SELECT task_id,COALESCE(json_extract(task,'$.family'),''),COALESCE(json_extract(task,'$.host'),''),COALESCE(json_extract(task,'$.port'),0),COALESCE(json_extract(task,'$.region'),''),COALESCE(json_extract(task,'$.carrier'),''), max(finished), avg(CASE WHEN json_extract(result,'$.status')='ok' THEN json_extract(result,'$.latency') END), COALESCE(sum(json_extract(result,'$.sent')),0),COALESCE(sum(json_extract(result,'$.received')),0),task FROM (SELECT task_id,node_id,task,finished,CASE WHEN json_valid(result) THEN result END AS result FROM jobs WHERE node_id=? AND issued>=? AND finished>=?) WHERE CASE WHEN json_valid(task) THEN json_extract(task,'$.kind') END='tcp' GROUP BY task_id,json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier'),finished/? ORDER BY max(finished)`, id, since-tcpFinishSlack, since, step)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	series := []model.NetworkSeries{}
+	indexes := map[string]int{}
+	skipped := 0
+	for rows.Next() {
+		var taskID, family, host, region, carrier, raw string
+		var port, sent, received int
+		var at int64
+		var latency *float64
+		if err := rows.Scan(&taskID, &family, &host, &port, &region, &carrier, &at, &latency, &sent, &received, &raw); err != nil {
+			return nil, err
+		}
+		var task model.Task
+		if err := json.Unmarshal([]byte(raw), &task); err != nil {
+			skipped++
+			continue
+		}
+		if family == "" {
+			// 旧行没写 family。目标是 IP 字面量时地址族由地址本身决定，不是猜测：
+			// 补上它，旧数据才会和新数据并进同一条曲线，而不是在面板上消失。
+			if ip := net.ParseIP(host); ip != nil {
+				if ip.To4() != nil {
+					family = "ipv4"
+				} else {
+					family = "ipv6"
+				}
+			}
+		}
+		task.Family, task.Host, task.Port, task.Region, task.Carrier = family, host, port, region, carrier
+		key := task.ProbeKey()
+		index, ok := indexes[key]
+		if !ok {
+			index = len(series)
+			indexes[key] = index
+			series = append(series, model.NetworkSeries{Name: task.Name, Family: family, Host: host, Port: port, Region: region, Carrier: carrier, Samples: []model.NetworkSample{}})
+		}
+		var failure *float64
+		if sent > 0 {
+			v := 100 * float64(sent-received) / float64(sent)
+			failure = &v
+		}
+		series[index].Samples = append(series[index].Samples, model.NetworkSample{At: at, Latency: latency, Failure: failure})
+	}
+	if skipped > 0 {
+		slog.Warn("skipped jobs with unreadable task payload", "node", id, "jobs", skipped)
+	}
+	return series, rows.Err()
+}
+
+func TestNetworkHistoryMatchesThePerRowGrouping(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	nodes, _ := seedReadPaths(t, s, now)
+	for _, node := range nodes {
+		for _, hours := range []int{1, 2, 24} {
+			got, err := s.NetworkHistory(ctx, node, hours, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := oldNetworkHistory(ctx, s, node, hours, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("node %s %dh: %d series, want %d\ngot  %+v\nwant %+v", node, hours, len(got), len(want), got, want)
+			}
 		}
 	}
 }

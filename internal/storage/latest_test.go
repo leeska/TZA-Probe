@@ -213,6 +213,8 @@ func TestLatestFollowsWritesAndDeletes(t *testing.T) {
 	if got := latestSelection(t, s, node, now.Add(time.Second)); len(got) != 0 {
 		t.Fatalf("改任务后物化表仍有 %v", got)
 	}
+	// 历史行由后台分批删（见 purge.go）：删完之后旧查询也该选不出它。
+	drainPurges(t, s)
 	assertSameSelection(t, s, node, now.Add(time.Second))
 
 	// 保留期清理：删掉的旧行让位，最新的那条仍在。
@@ -259,7 +261,7 @@ func TestLatestMigrationBackfillsExistingJobs(t *testing.T) {
 	}
 	defer s.Close()
 	var version int
-	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 8 {
+	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 9 {
 		t.Fatalf("user_version = %d (%v)", version, err)
 	}
 	assertSameSelection(t, s, node, now)

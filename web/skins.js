@@ -47,6 +47,8 @@ export function applySkin(skin = skinPreference()) {
   }
   paintChrome();
   closeMenu();
+  // 依赖皮肤 CSS 变量的布局（app.js 的 layoutCastCards）在这里重算，而不是每秒轮询。
+  document.dispatchEvent(new CustomEvent("tza:skin", { detail: skin }));
 }
 
 function paintChrome() {

@@ -28,6 +28,10 @@ func TestNetworkHistoryToleratesLegacyJobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("旧行不能让网络历史整体失败：%v", err)
 	}
+	// 延迟样本沿同一段 jobs 往回走，同样会经过那行坏任务 JSON 的旧行。
+	if samples, err := s.RecentLatencySamples(ctx, []string{id}, 20, now.Add(-24*time.Hour)); err != nil || len(samples) != 3 {
+		t.Fatalf("旧行不能让延迟样本整体失败：%d %v", len(samples), err)
+	}
 	if len(series) != 3 {
 		t.Fatalf("want the two readable targets plus the torn-result one, got %d: %+v", len(series), series)
 	}

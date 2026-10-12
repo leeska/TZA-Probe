@@ -23,6 +23,14 @@ func openTest(t *testing.T) *Store {
 	t.Cleanup(func() { s.Close() })
 	return s
 }
+
+// drainPurges runs the background purge queue to the end synchronously.
+func drainPurges(t *testing.T, s *Store) {
+	t.Helper()
+	if err := s.runPurges(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
 func makeNode(t *testing.T, s *Store) (string, string) {
 	t.Helper()
 	_, token, err := s.SaveNode(context.Background(), model.Node{Name: "node", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
@@ -489,7 +497,7 @@ func TestPendingEventsExpire(t *testing.T) {
 func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 	s := openTest(t)
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 8 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 9 {
 		t.Fatalf("user_version=%d %v", version, err)
 	}
 	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "events_rule_time", "jobs_latest_insert"} {

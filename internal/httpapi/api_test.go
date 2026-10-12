@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -761,5 +763,54 @@ func TestAnonymousPanelSharesProbeSnapshot(t *testing.T) {
 	get("/api/v1/latency-samples?limit=5", "")
 	if o, l := repo.observations.Load(), repo.samples.Load(); o != 4 || l != 3 {
 		t.Fatalf("管理员与非默认 limit 必须现算，实际累计 %d / %d", o, l)
+	}
+}
+
+// /api/ 的 JSON 按 Accept-Encoding 压缩；没有正文的 204 不加 Content-Encoding。
+func TestAPIResponsesAreGzipped(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "gzip.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for i := 0; i < 5; i++ {
+		if _, _, err = s.SaveNode(context.Background(), model.Node{Name: fmt.Sprintf("node-%d", i), BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	admin := model.Secret()
+	handler := (&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler()
+	get := func(path string, gzipOK bool) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		if gzipOK {
+			r.Header.Set("Accept-Encoding", "gzip, deflate, br")
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	plain := get("/api/v1/nodes", false)
+	zipped := get("/api/v1/nodes", true)
+	if plain.Header().Get("Content-Encoding") != "" || zipped.Header().Get("Content-Encoding") != "gzip" || !strings.Contains(zipped.Header().Get("Vary"), "Accept-Encoding") {
+		t.Fatalf("headers: plain %v zipped %v", plain.Header(), zipped.Header())
+	}
+	zr, err := gzip.NewReader(zipped.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, plain.Body.Bytes()) || zipped.Body.Len() >= plain.Body.Len() {
+		t.Fatalf("gzip body: %d bytes → %d, equal=%v", plain.Body.Len(), zipped.Body.Len(), bytes.Equal(body, plain.Body.Bytes()))
+	}
+	r := httptest.NewRequest("POST", "/api/v1/logout", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	r.Header.Set("Authorization", "Bearer "+admin)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	if w.Code != 204 || w.Header().Get("Content-Encoding") != "" || w.Body.Len() != 0 {
+		t.Fatalf("204: %d %v %d", w.Code, w.Header(), w.Body.Len())
 	}
 }
