@@ -109,19 +109,22 @@ var adminTools = []tool{
 	},
 	{
 		Name:        "get_settings",
-		Description: "查看通知渠道状态（Telegram / Webhook / 关闭）。不返回任何凭据。",
+		Description: "查看通知渠道状态（Telegram / Webhook / 关闭）与公开面板显示项（延迟色带时间窗、访客默认明暗与皮肤）。不返回任何凭据。",
 		InputSchema: schema(map[string]any{}),
-		Annotations: annotations("Notification settings", true, false, true),
+		Annotations: annotations("Settings", true, false, true),
 	},
 	{
 		Name:        "update_settings",
-		Description: "设置通知出口：channel 取 telegram、webhook 或 none；Telegram 的 bot_token 留空沿用已存的那个；未选中的渠道凭据会被清掉。",
+		Description: "修改设置，只改传了的项。通知出口：channel 取 telegram、webhook 或 none（关闭通知必须显式传 none）；不传 channel 时沿用当前渠道；Telegram 的 bot_token、chat_id 留空沿用已存的；切换渠道时另一渠道的凭据会被清掉。面板显示项：latency_window_minutes、default_theme、default_skin。",
 		InputSchema: schema(map[string]any{
-			"channel":   map[string]any{"type": "string", "enum": []string{"telegram", "webhook", "none"}, "description": "通知渠道"},
-			"webhook":   map[string]any{"type": "string", "description": "Webhook 地址（channel=webhook 时必填）"},
-			"bot_token": map[string]any{"type": "string", "description": "Telegram Bot Token（留空保留已存的）"},
-			"chat_id":   map[string]any{"type": "string", "description": "Telegram Chat ID：数字 ID 或 @频道名"},
-		}, "channel"),
+			"channel":                map[string]any{"type": "string", "enum": []string{"telegram", "webhook", "none"}, "description": "通知渠道；不传则沿用当前渠道"},
+			"webhook":                map[string]any{"type": "string", "description": "Webhook 地址（channel=webhook 时必填）"},
+			"bot_token":              map[string]any{"type": "string", "description": "Telegram Bot Token（留空保留已存的）"},
+			"chat_id":                map[string]any{"type": "string", "description": "Telegram Chat ID：数字 ID 或 @频道名（留空保留已存的）"},
+			"latency_window_minutes": map[string]any{"type": "integer", "description": "公开卡片延迟色带回看的分钟数"},
+			"default_theme":          map[string]any{"type": "string", "enum": model.PanelThemes, "description": "访客默认明暗"},
+			"default_skin":           map[string]any{"type": "string", "enum": model.PanelSkins, "description": "访客默认皮肤"},
+		}),
 		Annotations: annotations("Update notification settings", false, false, true),
 	},
 	{
@@ -480,31 +483,71 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if err != nil {
 			return toolFailure("读取通知配置失败", err)
 		}
-		stored, err := s.Source.Setting(ctx, model.SettingLatencyWindowMinutes)
+		view, err := s.settingsView(ctx, config)
 		if err != nil {
 			return toolFailure("读取面板设置失败", err)
 		}
-		view := config.Public()
-		view[model.SettingLatencyWindowMinutes] = model.LatencyWindowMinutes(stored)
 		return toolResult(view), nil, 0
 
 	case "update_settings":
 		var args struct {
 			notify.Config
-			LatencyWindowMinutes *int `json:"latency_window_minutes"`
+			LatencyWindowMinutes *int    `json:"latency_window_minutes"`
+			DefaultTheme         *string `json:"default_theme"`
+			DefaultSkin          *string `json:"default_skin"`
 		}
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		// 只报 latency_window_minutes 的调用不该动通知出口：通知那套的语义是
-		// 「空值即清空」，所以通知部分一个字段都没给就跳过它。
+		// 只改传了的项：通知那套在面板表单里是「整份提交、空值即清空」，但 AI 客户端常只传想改的
+		// 那一个字段（比如只换 chat_id），按表单语义处理会把整个 Telegram 配置清成 none。
 		notifyTouched := args.Channel != "" || args.Webhook != "" || args.BotToken != "" || args.ChatID != ""
+		if !notifyTouched && args.LatencyWindowMinutes == nil && args.DefaultTheme == nil && args.DefaultSkin == nil {
+			return nil, &rpcError{Code: codeInvalidParams, Message: "至少给一项设置；关闭通知请传 channel=none"}, http.StatusOK
+		}
+		// 先全部校验，再逐项写入：不会出现通知改了、显示项因为值不对没改的半截状态。
+		if args.LatencyWindowMinutes != nil {
+			if err := model.ValidateLatencyWindowMinutes(*args.LatencyWindowMinutes); err != nil {
+				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
+			}
+		}
+		if args.DefaultTheme != nil {
+			if err := model.ValidatePanelTheme(*args.DefaultTheme); err != nil {
+				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
+			}
+		}
+		if args.DefaultSkin != nil {
+			if err := model.ValidatePanelSkin(*args.DefaultSkin); err != nil {
+				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
+			}
+		}
 		config, err := notify.Status(ctx, s.Source)
 		if err != nil {
 			return toolFailure("读取通知配置失败", err)
 		}
-		if notifyTouched || args.LatencyWindowMinutes == nil {
-			next, err := notify.Normalize(ctx, s.Source, args.Config)
+		if notifyTouched {
+			submitted := args.Config
+			if submitted.Channel == "" {
+				// 没说渠道：沿用当前渠道；当前是关闭状态时按给了哪类凭据推断。
+				submitted.Channel = config.Channel
+				if submitted.Channel == "none" || submitted.Channel == "" {
+					submitted.Channel = "webhook"
+					if submitted.BotToken != "" || submitted.ChatID != "" {
+						submitted.Channel = "telegram"
+					}
+				}
+			}
+			if submitted.Channel == "telegram" && submitted.ChatID == "" && config.Channel == "telegram" {
+				submitted.ChatID = config.ChatID
+			}
+			if submitted.Channel == "webhook" && submitted.Webhook == "" && config.Channel == "webhook" {
+				stored, err := notify.Destination(ctx, s.Source)
+				if err != nil {
+					return toolFailure("读取通知配置失败", err)
+				}
+				submitted.Webhook = notify.ReadConfig(stored).Webhook
+			}
+			next, err := notify.Normalize(ctx, s.Source, submitted)
 			if err != nil {
 				// The caller has to fix its input, so this is a protocol error.
 				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
@@ -514,21 +557,32 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 			}
 			config = next
 		}
-		if args.LatencyWindowMinutes != nil {
-			if err := model.ValidateLatencyWindowMinutes(*args.LatencyWindowMinutes); err != nil {
-				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
+		for _, item := range []struct {
+			key   string
+			value *string
+		}{
+			{model.SettingLatencyWindowMinutes, func() *string {
+				if args.LatencyWindowMinutes == nil {
+					return nil
+				}
+				v := strconv.Itoa(*args.LatencyWindowMinutes)
+				return &v
+			}()},
+			{model.SettingDefaultTheme, args.DefaultTheme},
+			{model.SettingDefaultSkin, args.DefaultSkin},
+		} {
+			if item.value == nil {
+				continue
 			}
-			if err := s.Source.SetSetting(ctx, model.SettingLatencyWindowMinutes, strconv.Itoa(*args.LatencyWindowMinutes)); err != nil {
+			if err := s.Source.SetSetting(ctx, item.key, *item.value); err != nil {
 				return toolFailure("保存面板设置失败", err)
 			}
 		}
-		stored, err := s.Source.Setting(ctx, model.SettingLatencyWindowMinutes)
+		// Never echo the credentials back, only what is configured.
+		view, err := s.settingsView(ctx, config)
 		if err != nil {
 			return toolFailure("读取面板设置失败", err)
 		}
-		// Never echo the credentials back, only what is configured.
-		view := config.Public()
-		view[model.SettingLatencyWindowMinutes] = model.LatencyWindowMinutes(stored)
 		return toolResult(view), nil, 0
 
 	case "test_notification":
@@ -552,6 +606,29 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		return toolResult(map[string]any{"sent": true, "channel": channel}), nil, 0
 	}
 	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + params.Name}, http.StatusOK
+}
+
+// settingsView is what get_settings and update_settings answer with: the
+// credential-free notification view plus the panel display settings, the same
+// set the panel's settings pages show.
+func (s *Server) settingsView(ctx context.Context, config notify.Config) (map[string]any, error) {
+	view := config.Public()
+	window, err := s.Source.Setting(ctx, model.SettingLatencyWindowMinutes)
+	if err != nil {
+		return nil, err
+	}
+	theme, err := s.Source.Setting(ctx, model.SettingDefaultTheme)
+	if err != nil {
+		return nil, err
+	}
+	skin, err := s.Source.Setting(ctx, model.SettingDefaultSkin)
+	if err != nil {
+		return nil, err
+	}
+	view[model.SettingLatencyWindowMinutes] = model.LatencyWindowMinutes(window)
+	view[model.SettingDefaultTheme] = model.PanelTheme(theme)
+	view[model.SettingDefaultSkin] = model.PanelSkin(skin)
+	return view, nil
 }
 
 // credentials is the shape the panel's 接入 dialog shows: the node id, the

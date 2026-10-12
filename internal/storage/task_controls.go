@@ -87,6 +87,17 @@ func (s *Store) ControlTask(ctx context.Context, id string, action model.TaskAct
 			if _, err = tx.ExecContext(ctx, "DELETE FROM bindings WHERE task_id=? AND node_id=?", id, node); err != nil {
 				return err
 			}
+			// 补测行按 taskID|… 记、没有外键，解绑的节点上不会再有人领走它。
+			if _, err = tx.ExecContext(ctx, "DELETE FROM retries WHERE node_id=? AND probe_key LIKE ?", node, id+"|%"); err != nil {
+				return err
+			}
+		}
+		// 解锁结论是这个任务在那台机器上跑出来的派生状态：解绑后不再有人更新它，留着就是一份
+		// 永远不变的分数（与 SaveTask / DeleteTask 的处理一致）。
+		if task.Kind == model.UnlockKind {
+			if err = clearUnlocks(ctx, tx, removed); err != nil {
+				return err
+			}
 		}
 		for _, node := range task.NodeIDs {
 			if _, err = tx.ExecContext(ctx, "INSERT INTO bindings(task_id,node_id) VALUES(?,?) ON CONFLICT DO NOTHING", id, node); err != nil {
@@ -139,7 +150,7 @@ func (s *Store) TaskRuns(ctx context.Context, id string, now time.Time) ([]model
 			r.Region = t.Region
 			r.Carrier = t.Carrier
 			r.Status = "pending"
-			if now.Unix()-r.Issued > 90 {
+			if now.Unix()-r.Issued > int64(finishWindow(t.Kind).Seconds()) {
 				r.Status = "timeout"
 				r.Reason = "timeout"
 			}

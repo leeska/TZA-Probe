@@ -345,6 +345,14 @@ func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 	if code, _ = request("GET", "/api/v1/nodes/"+id+"/history", admin, nil); code != 200 {
 		t.Fatal(code)
 	}
+	// 管理密钥只认 Bearer 形式，裸放在 Authorization 头里不算。
+	bare, _ := http.NewRequest("GET", server.URL+"/api/v1/admin/tasks", nil)
+	bare.Header.Set("Authorization", admin)
+	if resp, err := server.Client().Do(bare); err != nil {
+		t.Fatal(err)
+	} else if resp.Body.Close(); resp.StatusCode != 401 {
+		t.Fatalf("bare admin key accepted: %d", resp.StatusCode)
+	}
 	req, _ := http.NewRequest("POST", server.URL+"/api/v1/admin/nodes/"+id+"/token", nil)
 	req.Header.Set("Authorization", "Bearer "+admin)
 	req.Header.Set("Origin", "https://evil.example")

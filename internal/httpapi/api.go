@@ -423,7 +423,9 @@ func (a *API) Handler() http.Handler {
 	})
 }
 func (a *API) isAdmin(r *http.Request) bool {
-	if token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); len(token) == len(a.AdminToken) && subtle.ConstantTimeCompare([]byte(token), []byte(a.AdminToken)) == 1 {
+	// 与 agent() 一样只认标准的 Bearer 形式：TrimPrefix 在没有前缀时原样返回，会让裸放密钥的
+	// Authorization 头也通过。
+	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && len(token) == len(a.AdminToken) && subtle.ConstantTimeCompare([]byte(token), []byte(a.AdminToken)) == 1 {
 		return true
 	}
 	c, err := r.Cookie("tza_session")

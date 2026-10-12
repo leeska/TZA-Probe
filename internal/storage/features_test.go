@@ -119,6 +119,25 @@ func TestCycleAddsTheFirstPartialDayFromHourBuckets(t *testing.T) {
 	if got["midnight-anchor"] != 2200 {
 		t.Fatalf("锚点在整点日的周期用量 = %d，want 2200（日桶精确，不许再叠小时桶）", got["midnight-anchor"])
 	}
+
+	// 用量校正与显示同一口径：校正成多少，面板就显示多少——首日小时桶那一段不能再叠上去。
+	var start int64
+	for _, v := range views {
+		if v.Name == "mid-anchor" {
+			start = v.CycleStart
+		}
+	}
+	if err = s.CorrectTraffic(ctx, mid, 5000, start, now); err != nil {
+		t.Fatal(err)
+	}
+	if views, err = s.Nodes(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range views {
+		if v.Name == "mid-anchor" && v.TrafficUsed != 5000 {
+			t.Fatalf("校正为 5000 后显示 %d（多出来的是首日小时桶那一段）", v.TrafficUsed)
+		}
+	}
 }
 
 func TestReadPoolServesConcurrentReadsWhileWriting(t *testing.T) {

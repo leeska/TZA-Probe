@@ -910,6 +910,30 @@ func TestCatalogAndNotificationTools(t *testing.T) {
 		t.Fatalf("时间窗没保存: %v", again)
 	}
 
+	// 只传想改的那一项：换 chat_id 不能把整个 Telegram 配置清成 none，空参数也不能。
+	partial := structured(t, invoke(t, env, "update_settings", `{"chat_id":"@other"}`))
+	if partial["channel"] != "telegram" || partial["chat_id"] != "@other" || !strings.Contains(env.source.settings["notification"], token) {
+		t.Fatalf("只改 chat_id 动了别的通知配置: %v / %q", partial, env.source.settings["notification"])
+	}
+	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("空参数该被拒: %v", out)
+	}
+	if !strings.Contains(env.source.settings["notification"], token) {
+		t.Fatalf("空参数清掉了通知配置: %q", env.source.settings["notification"])
+	}
+
+	// 访客默认外观与面板一致可读写，非法值按协议错误回，且整次调用什么都不写。
+	look := structured(t, invoke(t, env, "update_settings", `{"default_theme":"dark","default_skin":"press"}`))
+	if look["default_theme"] != "dark" || look["default_skin"] != "press" || look["channel"] != "telegram" {
+		t.Fatalf("默认外观: %v", look)
+	}
+	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"default_theme":"light","default_skin":"bogus"}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("未知皮肤该被拒: %v", out)
+	}
+	if again := structured(t, invoke(t, env, "get_settings", `{}`)); again["default_theme"] != "dark" || again["default_skin"] != "press" {
+		t.Fatalf("被拒的调用改了外观: %v", again)
+	}
+
 	// The explicit test sends one event and reports the channel, not the URL.
 	if sent := structured(t, invoke(t, env, "test_notification", `{}`)); sent["sent"] != true || sent["channel"] != "telegram" {
 		t.Fatalf("test_notification: %v", sent)

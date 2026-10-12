@@ -174,3 +174,62 @@ func TestThrottleWindowReportsPartialCoverage(t *testing.T) {
 		t.Fatal("10 kbit/s 不该算达到 100 Mbit/s 阈值")
 	}
 }
+
+// Agent 停了两天、主机没重启：重连那一次的计数增量属于这两天，按时长摊进经过的每个小时桶与
+// 天桶，而不是全部记进重连的那一小时（那样 1 小时窗口的均值会暴涨成两天流量的 48 倍）。
+func TestReportSpreadsAGapOverItsBuckets(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	id, _ := makeNode(t, s)
+	start := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	m := metrics()
+	if err := s.Report(ctx, id, m, start); err != nil {
+		t.Fatal(err)
+	}
+	m.NetIn += 48 * 3_600_000 // 两天，每小时 3.6 MB
+	m.NetOut += 48 * 7_200
+	m.Uptime += 48 * 3600
+	now := start.Add(48 * time.Hour)
+	if err := s.Report(ctx, id, m, now); err != nil {
+		t.Fatal(err)
+	}
+	var hours, sumIn, sumOut, maxIn int64
+	if err := s.db.QueryRow("SELECT count(*),sum(incoming),sum(outgoing),max(incoming) FROM traffic_hour WHERE node_id=? AND incoming>0", id).Scan(&hours, &sumIn, &sumOut, &maxIn); err != nil {
+		t.Fatal(err)
+	}
+	if hours != 48 || sumIn != 48*3_600_000 || sumOut != 48*7_200 || maxIn != 3_600_000 {
+		t.Fatalf("小时桶 %d 个，合计 %d/%d，最大 %d；want 48 个、每个 3600000", hours, sumIn, sumOut, maxIn)
+	}
+	var days, dayIn int64
+	if err := s.db.QueryRow("SELECT count(*),sum(incoming) FROM traffic WHERE node_id=? AND incoming>0", id).Scan(&days, &dayIn); err != nil {
+		t.Fatal(err)
+	}
+	// 9-16 12:00 → 9-18 12:00：三个自然日（12 + 24 + 12 小时）。
+	if days != 3 || dayIn != 48*3_600_000 {
+		t.Fatalf("天桶 %d 个，合计 %d", days, dayIn)
+	}
+}
+
+func TestSpreadKeepsTheTotalExact(t *testing.T) {
+	for _, c := range []struct{ from, to, size, in, out int64 }{
+		{100, 100, 3600, 7, 9},                 // 零长度：整段进 to 所在的桶
+		{3590, 3605, 3600, 1001, 3},            // 跨一个整点
+		{0, 10*86400 + 17, 3600, 1<<62 + 5, 1}, // 大数值：取整误差都归最后一个桶
+		{0, 400 * 86400, 3600, 1e12, 1e12},     // 超过 maxSpread 的缺口只摊最后 45 天
+	} {
+		pieces := spread(c.from, c.to, c.size, c.in, c.out)
+		var in, out int64
+		for i, p := range pieces {
+			if p.in < 0 || p.out < 0 || p.at%c.size != 0 || (i > 0 && p.at <= pieces[i-1].at) {
+				t.Fatalf("%+v: bad piece %+v", c, p)
+			}
+			in, out = in+p.in, out+p.out
+		}
+		if in != c.in || out != c.out {
+			t.Fatalf("%+v: total %d/%d", c, in, out)
+		}
+		if n := int64(len(pieces)); n > int64(maxSpread.Seconds())/c.size+2 {
+			t.Fatalf("%+v: %d pieces", c, n)
+		}
+	}
+}

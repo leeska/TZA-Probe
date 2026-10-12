@@ -317,3 +317,90 @@ func TestUnlockLeaseFollowsTheHostAddressFamily(t *testing.T) {
 		})
 	}
 }
+
+// 用「绑定」把节点移出解锁任务：那台机器的解锁结论跟着清掉（不再有人更新它），仍绑定的
+// 节点不受影响；暂停只改管理状态，结论保留。
+func TestUnlockVerdictsGoWithAnUnbinding(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	a, _ := makeNode(t, s)
+	b, _ := makeNode(t, s)
+	task := unlockTask("解锁检测", a)
+	task.NodeIDs = []string{a, b}
+	taskID, err := s.SaveTask(ctx, task, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{a, b} {
+		if err = s.Report(ctx, id, capableMetrics(), now); err != nil {
+			t.Fatal(err)
+		}
+		jobs, err := s.Lease(ctx, id, now.Add(time.Second))
+		if err != nil || len(jobs) != 1 {
+			t.Fatalf("lease: %+v %v", jobs, err)
+		}
+		if err = s.Finish(ctx, id, model.Result{JobID: jobs[0].ID, Status: "ok", Unlocks: []model.UnlockResult{
+			{Service: "reddit", Status: model.UnlockYes},
+		}}, now.Add(2*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func(id string) int {
+		t.Helper()
+		var rows int
+		if err := s.queryRow(ctx, "SELECT count(*) FROM unlocks WHERE node_id=?", id).Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		return rows
+	}
+	if err = s.ControlTask(ctx, taskID, model.TaskAction{Action: "pause"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if count(a) != 1 || count(b) != 1 {
+		t.Fatalf("暂停不该清结论: a=%d b=%d", count(a), count(b))
+	}
+	if err = s.ControlTask(ctx, taskID, model.TaskAction{Action: "bind", NodeIDs: []string{a}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if count(a) != 1 || count(b) != 0 {
+		t.Fatalf("解绑后: a=%d b=%d，want 1/0", count(a), count(b))
+	}
+}
+
+// 一轮解锁检测要几分钟，Finish 收它 15 分钟：这段时间里执行记录与面板都该写「进行中」，
+// 过了上报窗口才算超时（延迟探测仍是 90 秒）。
+func TestUnlockRoundInFlightIsNotATimeout(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	id, _ := makeNode(t, s)
+	if err := s.Report(ctx, id, capableMetrics(), now); err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := s.SaveTask(ctx, unlockTask("解锁检测", id), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobs, err := s.Lease(ctx, id, now); err != nil || len(jobs) != 1 {
+		t.Fatalf("lease: %+v %v", jobs, err)
+	}
+	status := func(at time.Time) (string, string) {
+		t.Helper()
+		runs, err := s.TaskRuns(ctx, taskID, at)
+		if err != nil || len(runs) != 1 {
+			t.Fatalf("runs: %+v %v", runs, err)
+		}
+		obs, err := s.Observations(ctx, id, at)
+		if err != nil || len(obs) != 1 {
+			t.Fatalf("observations: %+v %v", obs, err)
+		}
+		return runs[0].Status, obs[0].Result.Status
+	}
+	if run, obs := status(now.Add(3 * time.Minute)); run != "pending" || obs != "pending" {
+		t.Fatalf("3 分钟时 = %s / %s，want pending", run, obs)
+	}
+	if run, obs := status(now.Add(16 * time.Minute)); run != "timeout" || obs != "timeout" {
+		t.Fatalf("16 分钟时 = %s / %s，want timeout", run, obs)
+	}
+}

@@ -694,12 +694,15 @@ func (s *Store) DeleteNode(ctx context.Context, id string) error { return s.dele
 // they are derived state, and leaving them behind would show a machine's unlock
 // panel for a check nothing runs any more.
 func (s *Store) DeleteTask(ctx context.Context, id string) error {
+	// 先拿写锁再读旧配置：锁外读的话，读完到删除之间一次并发的 SaveTask / bind 可能已经改了
+	// 绑定，按旧的 node_ids 清解锁结论会漏掉新绑定的节点。所有写入都持这把锁，锁内从读池
+	// 读到的就是最新提交的配置。
+	s.writes.Lock()
+	defer s.writes.Unlock()
 	t, err := s.taskConfig(ctx, id)
 	if err != nil {
 		return err
 	}
-	s.writes.Lock()
-	defer s.writes.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -832,18 +835,59 @@ func (s *Store) Report(ctx context.Context, id string, m model.Metrics, now time
 	if _, err = tx.ExecContext(ctx, "INSERT INTO samples VALUES(?,?,?) ON CONFLICT(node_id,at) DO UPDATE SET payload=excluded.payload", id, at, payload); err != nil {
 		return err
 	}
-	day := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC).Unix()
-	if _, err = tx.ExecContext(ctx, "INSERT INTO traffic VALUES(?,?,?,?) ON CONFLICT(node_id,day) DO UPDATE SET incoming=incoming+excluded.incoming,outgoing=outgoing+excluded.outgoing", id, day, in, out); err != nil {
-		return err
+	// 增量属于上一次上报到这一次之间：按时长比例摊进这段时间经过的每个桶。平时两次上报只隔
+	// 几秒，就是当前这一个桶；Agent 停了几天、主机没重启时，以前整段增量都记进重连的那一小时，
+	// 窗口均值瞬间暴涨（误报达量降速），跨了计费周期还会把上一周期的流量记进新周期。
+	from := now.Unix()
+	if seen > 0 {
+		from = seen
 	}
-	// 同一份增量再落一个整点桶：天桶服务「本周期用量」，小时桶服务「窗口内平均带宽」
+	for _, p := range spread(from, now.Unix(), 86400, in, out) {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO traffic VALUES(?,?,?,?) ON CONFLICT(node_id,day) DO UPDATE SET incoming=incoming+excluded.incoming,outgoing=outgoing+excluded.outgoing", id, p.at, p.in, p.out); err != nil {
+			return err
+		}
+	}
+	// 同一份增量再落整点桶：天桶服务「本周期用量」，小时桶服务「窗口内平均带宽」
 	// （达量降速）。天桶切不出 24 小时以外的窗口，也不该为了一个展示指标回头去扫
 	// samples（每节点每天 1440 行、还要 json_extract 出累计计数）。
-	hour := now.Unix() / 3600 * 3600
-	if _, err = tx.ExecContext(ctx, "INSERT INTO traffic_hour VALUES(?,?,?,?) ON CONFLICT(node_id,hour) DO UPDATE SET incoming=incoming+excluded.incoming,outgoing=outgoing+excluded.outgoing", id, hour, in, out); err != nil {
-		return err
+	for _, p := range spread(from, now.Unix(), 3600, in, out) {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO traffic_hour VALUES(?,?,?,?) ON CONFLICT(node_id,hour) DO UPDATE SET incoming=incoming+excluded.incoming,outgoing=outgoing+excluded.outgoing", id, p.at, p.in, p.out); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
+}
+
+// maxSpread bounds how far back a counter delta is spread: past the hourly
+// retention the buckets are deleted anyway, and the bound keeps one report from
+// writing thousands of rows. A longer gap is spread over its last maxSpread.
+const maxSpread = trafficHourRetention
+
+type piece struct{ at, in, out int64 }
+
+// spread splits a counter delta observed over [from, to] into size-aligned
+// buckets, in proportion to the seconds of the interval each bucket covers. The
+// pieces always add up to exactly in / out (the last one takes the rounding),
+// and a zero-length interval puts everything into the bucket holding to.
+func spread(from, to, size, in, out int64) []piece {
+	from = max(from, to-int64(maxSpread.Seconds()))
+	if to <= from || (in == 0 && out == 0) {
+		return []piece{{to / size * size, in, out}}
+	}
+	total := float64(to - from)
+	var pieces []piece
+	var givenIn, givenOut, covered int64
+	for b := from / size * size; b < to; b += size {
+		covered += min(b+size, to) - max(b, from)
+		share := float64(covered) / total
+		cumIn, cumOut := int64(float64(in)*share), int64(float64(out)*share)
+		if b+size >= to {
+			cumIn, cumOut = in, out
+		}
+		pieces = append(pieces, piece{b, cumIn - givenIn, cumOut - givenOut})
+		givenIn, givenOut = cumIn, cumOut
+	}
+	return pieces
 }
 func (s *Store) History(ctx context.Context, id string, hours int, now time.Time) ([]model.Sample, error) {
 	// Aggregate into <= 240 buckets. Each bucket returns its last observed sample.
@@ -1224,11 +1268,7 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 			slog.Warn("unreadable job task", "job", r.JobID)
 		}
 	}
-	window := now.Add(-90 * time.Second).Unix()
-	if task.Kind == model.UnlockKind {
-		window = now.Add(-unlockFinishWindow).Unix()
-	}
-	if issued < window {
+	if issued < now.Add(-finishWindow(task.Kind)).Unix() {
 		return ErrConflict
 	}
 	result, err := tx.ExecContext(ctx, "UPDATE jobs SET finished=?,result=? WHERE id=? AND node_id=? AND finished IS NULL", now.Unix(), encode(r), r.JobID, node)
@@ -1389,7 +1429,7 @@ func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([
 			}
 		} else {
 			o.Result.Status = "pending"
-			if now.Unix()-o.At > 90 {
+			if now.Unix()-o.At > int64(finishWindow(o.Task.Kind).Seconds()) {
 				o.Result.Status = "timeout"
 			}
 		}
@@ -1405,6 +1445,16 @@ func (s *Store) Observations(ctx context.Context, node string, now time.Time) ([
 // 保留期：Clean 按这几个时长删旧行。JobsRetention 是公开的，因为面板的延迟色带时间窗
 // 上限就是它——窗口再大也取不到更早的探测（model.MaxLatencyWindowMinutes 与它一致，
 // storage 的测试会把两者钉在一起）。
+// finishWindow is how long after it was issued a job may still report (see
+// Finish). Anything still open past it will never be accepted, so the panel and
+// the run history call it a timeout; before it, the job is simply running.
+func finishWindow(kind string) time.Duration {
+	if kind == model.UnlockKind {
+		return unlockFinishWindow
+	}
+	return 90 * time.Second
+}
+
 const (
 	// unlockFinishWindow is how late an unlock round may report. One round is
 	// minutes, not seconds (see probe.unlockBudget).
