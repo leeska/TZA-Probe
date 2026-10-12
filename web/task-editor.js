@@ -20,13 +20,13 @@ const target = ({ host, port, family, region, carrier }) => ({
 const regionSuggestions = (catalog, existing) =>
   regionOptions(
     catalog.targets.map((x) => x.region),
-    (existing?.targets || []).map((x) => x.region),
+    (existing?.probe?.targets || []).map((x) => x.region),
   );
 
 export function taskSummary(t) {
   // 解锁检测没有目标与端口：它的对象是内置目录里的 24 项服务，列表里要一眼看出它是这一类任务，
   // 所以「检测内容」写「解锁检测」、目标写「内置目录」，不去算不存在的地址数。
-  if (t.kind === "unlock") {
+  if (t.type === "unlock") {
     return {
       unlock: true,
       checks: "解锁检测",
@@ -35,10 +35,11 @@ export function taskSummary(t) {
       regions: 0,
       families: "",
       count: 0,
-      intervals: `${t.interval} 秒`,
+      intervals: `${t.unlock.interval} 秒`,
     };
   }
-  const targets = t.targets || [t];
+  const p = t.probe;
+  const targets = p.targets;
   // 地区 / 运营商按地区归并：同一地区的运营商合成一行，不再为每个运营商重复一遍地区名。
   const rank = (carrier) => {
     const at = ["电信", "联通", "移动", "其他"].indexOf(carrier);
@@ -55,7 +56,7 @@ export function taskSummary(t) {
       `${region} ${[...carriers].sort((a, b) => rank(a) - rank(b)).join("/")}`,
   );
   return {
-    checks: (t.checks || [t.kind])
+    checks: p.checks
       .map((x) => (x === "route" ? "回程" : "延迟"))
       .join(" + "),
     // 列表里只放前三个地区，超出的折成省略号，数量交给单元格的次级行（targetsFull 是完整名单，悬停显示）。
@@ -66,29 +67,23 @@ export function taskSummary(t) {
       ...new Set(targets.map((x) => (x.family === "ipv4" ? "IPv4" : "IPv6"))),
     ].join(" / "),
     count: targets.length,
-    intervals: (t.checks || [t.kind])
-      .map(
-        (k) =>
-          `${k === "route" ? "回程" : "延迟"} ${k === "route" ? t.route_interval || t.interval : t.interval} 秒`,
-      )
+    intervals: p.checks
+      .map((k) => `${k === "route" ? "回程" : "延迟"} ${k === "route" ? p.route_interval : p.interval} 秒`)
       .join(" / "),
   };
 }
 
 export function taskEditor(existing, catalog, nodes, onSaved) {
-  const t = existing || {
-    checks: ["tcp", "route"],
-    interval: 60,
-    route_interval: 3600,
-    enabled: true,
-    node_ids: [],
-  };
-  const checks = t.checks || [t.kind];
-  // 任务分两类：网络探测（延迟 / 回程，带目标）与解锁检测（无目标，按内置目录逐项检测）。
+  // 任务是 type + 定义的联合：probe（网络探测：延迟 / 回程，带目标）或 unlock（解锁检测：
+  // 无目标，按内置目录逐项检测）。表单两种都摆着，切换时只换显示，保存时只发当前那一种。
+  const t = existing || { type: "probe", enabled: true, node_ids: [] };
+  const probe = t.probe || { checks: ["tcp", "route"], targets: [], interval: 60, route_interval: 3600 };
+  const unlock = t.unlock || { interval: 3600, family: "" };
+  const checks = probe.checks;
   // 编辑已有解锁任务时直接进解锁表单；新建默认是网络探测。
-  let kind = existing?.kind === "unlock" ? "unlock" : "probe";
+  let kind = t.type === "unlock" ? "unlock" : "probe";
   const families = new Set(
-    existing ? (t.targets || [t]).map((x) => x.family) : ["ipv4", "ipv6"],
+    probe.targets.length ? probe.targets.map((x) => x.family) : ["ipv4", "ipv6"],
   );
   const groups = new Map();
   for (const x of catalog.targets) {
@@ -98,7 +93,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
   }
   // 每组目标记录自己的 IP 协议：all 是该组可用地址，families 是本任务实际要测的协议。
   const selected = new Map();
-  for (const x of existing ? t.targets || [t] : []) {
+  for (const x of probe.targets) {
     const key = x.region + " / " + x.carrier;
     const matching = groups
       .get(key)
@@ -164,15 +159,15 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
           <div class="option-group"><span class="option-label">IP 协议（批量设置，可在已选目标上单独调整）</span><div class="option-tiles">${checkbox("IPv4", "ipv4", families.has("ipv4"))}${checkbox("IPv6", "ipv6", families.has("ipv6"))}</div></div>
         </div>
         <details><summary>检测频率</summary><div class="form-grid">
-          <label>延迟间隔（秒）<input name="interval" type="number" min="30" max="86400" value="${t.kind === "route" ? 60 : t.interval}"></label>
-          <label>回程间隔（秒）<input name="route_interval" type="number" min="900" max="86400" value="${t.route_interval || (t.kind === "route" ? t.interval : 3600)}"></label>
+          <label>延迟间隔（秒）<input name="interval" type="number" min="30" max="86400" value="${probe.interval || 60}"></label>
+          <label>回程间隔（秒）<input name="route_interval" type="number" min="900" max="86400" value="${probe.route_interval || 3600}"></label>
         </div></details>
       </section>
       </div>
       <section class="form-section" id="unlock-section"${kind === "unlock" ? "" : " hidden"}><h3>2. 解锁检测</h3>
         <div class="form-grid">
-          <label>检测间隔（秒）<input name="unlock_interval" type="number" min="3600" max="86400" value="${t.kind === "unlock" ? t.interval : 3600}"></label>
-          <label>IP 协议<select name="unlock_family"><option value="">自动（由节点选择）</option><option value="ipv4"${t.kind === "unlock" && t.family === "ipv4" ? " selected" : ""}>IPv4</option><option value="ipv6"${t.kind === "unlock" && t.family === "ipv6" ? " selected" : ""}>IPv6</option></select></label>
+          <label>检测间隔（秒）<input name="unlock_interval" type="number" min="3600" max="86400" value="${unlock.interval}"></label>
+          <label>IP 协议<select name="unlock_family"><option value="">自动（由节点选择）</option><option value="ipv4"${unlock.family === "ipv4" ? " selected" : ""}>IPv4</option><option value="ipv6"${unlock.family === "ipv6" ? " selected" : ""}>IPv6</option></select></label>
         </div>
         <p class="hint">留空即自动：纯 IPv6 的节点也能跑，不会因为默认 IPv4 而整轮失败。间隔最短 1 小时（每轮是从这台机器自己的出口发几十次 HTTPS 检测）。</p>
       </section>
@@ -349,8 +344,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     const nodeIds = nodes
       .filter((n) => el("node:" + n.id).checked)
       .map((n) => n.id);
-    // 解锁检测：没有目标与检测项，只发 kind / 间隔 / 协议 / 节点——多带 checks、targets 会被
-    // 服务端按「带目标的探测任务」校验，反而报目标数不足。
+    // 解锁检测只发 unlock 一侧：联合类型里同时带 probe 会被服务端拒绝。
     if (kind === "unlock") {
       const interval = Number(el("unlock_interval").value);
       if (!Number.isInteger(interval) || interval < 3600 || interval > 86400)
@@ -360,9 +354,8 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         existing?.id ? "PUT" : "POST",
         {
           name: el("name").value.trim() || "解锁检测",
-          kind: "unlock",
-          interval,
-          family: el("unlock_family").value,
+          type: "unlock",
+          unlock: { interval, family: el("unlock_family").value },
           enabled: el("enabled").checked,
           node_ids: nodeIds,
         },
@@ -391,10 +384,13 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       existing?.id ? "PUT" : "POST",
       {
         name,
-        checks,
-        targets,
-        interval: Number(el("interval").value),
-        route_interval: Number(el("route_interval").value),
+        type: "probe",
+        probe: {
+          checks,
+          targets,
+          interval: Number(el("interval").value),
+          route_interval: Number(el("route_interval").value),
+        },
         enabled: el("enabled").checked,
         node_ids: nodeIds,
       },

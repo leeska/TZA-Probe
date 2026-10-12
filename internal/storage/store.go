@@ -153,7 +153,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 10 {
+	if version > 11 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -244,6 +244,13 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	if version < 11 {
+		// 任务改成 type + probe / unlock 的联合结构：旧的组合任务、单项任务与解锁任务就地转换。
+		if err = migrateTaskShape(db); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	read, err := openReadOnly(path)
 	if err != nil {
 		db.Close()
@@ -252,6 +259,108 @@ func Open(path string) (*Store, error) {
 	s.read = read
 	s.startPurger()
 	return s, nil
+}
+
+// legacyTask is every shape a stored task config had before version 11: the
+// combined form (checks × targets), the single-probe form (kind + one target)
+// and the unlock form (kind unlock + interval / family).
+type legacyTask struct {
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Enabled       bool           `json:"enabled"`
+	NodeIDs       []string       `json:"node_ids"`
+	Checks        []string       `json:"checks"`
+	Targets       []model.Target `json:"targets"`
+	RouteInterval int            `json:"route_interval"`
+	Kind          string         `json:"kind"`
+	Host          string         `json:"host"`
+	Port          int            `json:"port"`
+	Family        string         `json:"family"`
+	Region        string         `json:"region"`
+	Carrier       string         `json:"carrier"`
+	Interval      int            `json:"interval"`
+}
+
+// upgrade converts a legacy config into the tagged union. The probe keys stay
+// exactly as they were (same task id, kind, family, host, port, region and
+// carrier per probe), so results, history and schedules carry over.
+func (l legacyTask) upgrade() model.Task {
+	t := model.Task{ID: l.ID, Name: l.Name, Enabled: l.Enabled, NodeIDs: l.NodeIDs}
+	if t.NodeIDs == nil {
+		t.NodeIDs = []string{}
+	}
+	switch {
+	case l.Kind == model.UnlockKind:
+		t.Type = model.TaskUnlock
+		t.Unlock = &model.UnlockSpec{Interval: l.Interval, Family: l.Family}
+	case len(l.Checks) > 0 || len(l.Targets) > 0:
+		t.Type = model.TaskProbe
+		t.Probe = &model.ProbeSpec{Checks: l.Checks, Targets: l.Targets, Interval: l.Interval, RouteInterval: l.RouteInterval}
+	default:
+		// 单项任务：一个检测项、一个目标；它的间隔按检测类型落到对应字段。
+		t.Type = model.TaskProbe
+		spec := &model.ProbeSpec{Checks: []string{l.Kind}, Targets: []model.Target{{Host: l.Host, Port: l.Port, Family: l.Family, Region: l.Region, Carrier: l.Carrier}}}
+		if l.Kind == model.RouteKind {
+			spec.RouteInterval = l.Interval
+		} else {
+			spec.Interval = l.Interval
+		}
+		t.Probe = spec
+	}
+	return t
+}
+
+// migrateTaskShape rewrites every task config into the version 11 shape. A row
+// already in that shape (it has a type) is left alone.
+func migrateTaskShape(db *sql.DB) error {
+	rows, err := db.Query("SELECT id, config FROM tasks")
+	if err != nil {
+		return err
+	}
+	type change struct{ id, config string }
+	var changes []change
+	for rows.Next() {
+		var id, config string
+		if err = rows.Scan(&id, &config); err != nil {
+			rows.Close()
+			return err
+		}
+		var probe struct {
+			Type string `json:"type"`
+		}
+		if err = json.Unmarshal([]byte(config), &probe); err != nil {
+			rows.Close()
+			return err
+		}
+		if probe.Type != "" {
+			continue
+		}
+		var legacy legacyTask
+		if err = json.Unmarshal([]byte(config), &legacy); err != nil {
+			rows.Close()
+			return err
+		}
+		changes = append(changes, change{id, encode(legacy.upgrade())})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, c := range changes {
+		if _, err = tx.Exec("UPDATE tasks SET config=? WHERE id=?", c.config, c.id); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec("PRAGMA user_version=11"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // nowFunc is swapped in tests so the anchor migration can be asserted exactly.
@@ -791,7 +900,7 @@ func (s *Store) DeleteTask(ctx context.Context, id string) error {
 	}
 	// 任务行与绑定、面板物化行立刻删；它的探测历史（可能上百万行）后台分批删，见 purge.go。
 	err = s.withoutCascade(ctx, func(tx *sql.Tx) error {
-		if t.Kind == model.UnlockKind {
+		if t.Type == model.TaskUnlock {
 			if err := clearUnlocks(ctx, tx, t.NodeIDs); err != nil {
 				return err
 			}
@@ -1032,7 +1141,7 @@ func (s *Store) ProbeTargets(ctx context.Context) (map[string][]model.ProbeTarge
 		}
 		for _, leaf := range t.Leaves() {
 			k := key{leaf.Kind, leaf.Carrier, leaf.Family, leaf.Region}
-			for _, node := range leaf.NodeIDs {
+			for _, node := range t.NodeIDs {
 				if seen[node] == nil {
 					seen[node] = map[key]bool{}
 				}
@@ -1070,10 +1179,14 @@ func (s *Store) Tasks(ctx context.Context) ([]model.Task, error) {
 	return out, rows.Err()
 }
 
-// SaveTask creates or updates a probe task and returns the stored id.
+// SaveTask creates or updates a task and returns the stored id. An edit that
+// changes what is probed (the task's probe keys) starts over: in-flight leases,
+// results and history of the old definition go. An edit that keeps the probes —
+// a new name, new intervals, other bindings, paused or resumed — keeps them, the
+// same as the dedicated enable / bind operations.
 func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) (string, error) {
 	if err := t.Validate(); err != nil {
-		return "", err
+		return "", model.Invalid(err.Error())
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -1082,67 +1195,86 @@ func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) (string
 		return "", err
 	}
 	defer tx.Rollback()
-	if create {
-		t.ID = model.Secret()[:16]
-		_, err = tx.ExecContext(ctx, "INSERT INTO tasks VALUES(?,?)", t.ID, encode(t))
-	} else {
-		// 改任务即清历史：解锁结论是从结果派生的，旧结论必须跟着走，否则面板上会
-		// 留着一份没有任务在跑的解锁面板。旧配置要先读出来，改 kind 也要清。
-		previous, perr := s.taskConfig(ctx, t.ID)
-		if perr != nil {
-			return "", perr
-		}
-		var r sql.Result
-		r, err = tx.ExecContext(ctx, "UPDATE tasks SET config=? WHERE id=?", encode(t), t.ID)
-		if err == nil {
-			n, _ := r.RowsAffected()
-			if n == 0 {
-				return "", ErrNotFound
-			}
-		}
-		if err == nil && (previous.Kind == model.UnlockKind || t.Kind == model.UnlockKind) {
-			if err = clearUnlocks(ctx, tx, append(append([]string{}, previous.NodeIDs...), t.NodeIDs...)); err != nil {
-				return "", err
-			}
-		}
-	}
-	if err != nil {
-		return "", err
-	}
-	// Editing invalidates in-flight leases and the task's history. What the panel
-	// and the scheduler read goes now; the history rows (up to a week of every
-	// target on every node) are purged in the background up to the newest job
-	// that exists at this moment, so jobs leased after the edit stay.
-	if !create {
-		if err = dropTaskState(ctx, tx, t.ID); err != nil {
-			return "", err
-		}
-		cutoff, err := jobsCutoff(ctx, tx)
-		if err != nil {
-			return "", err
-		}
-		if err = queuePurge(ctx, tx, purgeTaskJobs, t.ID, cutoff); err != nil {
-			return "", err
-		}
-		defer s.wakePurger()
-	}
-	if _, err = tx.ExecContext(ctx, "DELETE FROM bindings WHERE task_id=?", t.ID); err != nil {
-		return "", err
-	}
 	for _, id := range t.NodeIDs {
 		var exists int
 		if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM nodes WHERE id=?", id).Scan(&exists); err != nil {
 			return "", err
 		}
 		if exists == 0 {
-			return "", fmt.Errorf("%w: bound node does not exist", model.ErrInvalid)
+			return "", model.Invalid("绑定的节点不存在：" + id)
 		}
+	}
+	if create {
+		t.ID = model.Secret()[:16]
+		if _, err = tx.ExecContext(ctx, "INSERT INTO tasks VALUES(?,?)", t.ID, encode(t)); err != nil {
+			return "", err
+		}
+		for _, id := range t.NodeIDs {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO bindings(task_id,node_id) VALUES(?,?)", t.ID, id); err != nil {
+				return "", err
+			}
+		}
+		return t.ID, tx.Commit()
+	}
+	previous, err := loadTask(ctx, tx, t.ID)
+	if err != nil {
+		return "", err
+	}
+	if _, err = tx.ExecContext(ctx, "UPDATE tasks SET config=? WHERE id=?", encode(t), t.ID); err != nil {
+		return "", err
+	}
+	if sameKeys(previous.ProbeKeys(), t.ProbeKeys()) {
+		// 探测内容没变：只按绑定差异增删（保留未变绑定的调度时间与历史），与 BindTasks 同一条路。
+		if err = bindTask(ctx, tx, t.ID, t.NodeIDs); err != nil {
+			return "", err
+		}
+		return t.ID, tx.Commit()
+	}
+	// 解锁结论是从结果派生的：探测内容一变，旧结论必须跟着走，否则面板上会留着一份
+	// 没有任务在跑的解锁面板。
+	if previous.Type == model.TaskUnlock || t.Type == model.TaskUnlock {
+		if err = clearUnlocks(ctx, tx, append(append([]string{}, previous.NodeIDs...), t.NodeIDs...)); err != nil {
+			return "", err
+		}
+	}
+	// Editing invalidates in-flight leases and the task's history. What the panel
+	// and the scheduler read goes now; the history rows (up to a week of every
+	// target on every node) are purged in the background up to the newest job
+	// that exists at this moment, so jobs leased after the edit stay.
+	if err = dropTaskState(ctx, tx, t.ID); err != nil {
+		return "", err
+	}
+	cutoff, err := jobsCutoff(ctx, tx)
+	if err != nil {
+		return "", err
+	}
+	if err = queuePurge(ctx, tx, purgeTaskJobs, t.ID, cutoff); err != nil {
+		return "", err
+	}
+	defer s.wakePurger()
+	if _, err = tx.ExecContext(ctx, "DELETE FROM bindings WHERE task_id=?", t.ID); err != nil {
+		return "", err
+	}
+	for _, id := range t.NodeIDs {
 		if _, err = tx.ExecContext(ctx, "INSERT INTO bindings(task_id,node_id) VALUES(?,?)", t.ID, id); err != nil {
 			return "", err
 		}
 	}
 	return t.ID, tx.Commit()
 }
+
+func sameKeys(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.Job, error) {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -1168,7 +1300,7 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 	if err != nil {
 		return nil, err
 	}
-	candidates := []model.Task{}
+	candidates := []model.Probe{}
 	requested := map[string]int64{}
 	for rows.Next() {
 		var data string
@@ -1289,7 +1421,7 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 		return nil, err
 	}
 	// Oldest due first prevents starvation when many targets share a node.
-	due := func(t model.Task) int64 {
+	due := func(t model.Probe) int64 {
 		if requested[t.ID] > last[t.ProbeKey()] {
 			return requested[t.ID]
 		}
@@ -1371,7 +1503,7 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 	// 上报窗口按任务类型分岔：一个延迟 / 回程探测几秒就回来，超过 90 秒的结果多半是
 	// 这台机器上另一个进程在冒充；而解锁检测一轮本来就是几分钟（20 多项 HTTPS），
 	// 用同一个窗口会把每一轮都判成过期。
-	var task model.Task
+	var task model.Probe
 	var issued int64
 	var taskJSON sql.NullString
 	if err = tx.QueryRowContext(ctx, "SELECT issued,task FROM jobs WHERE id=? AND node_id=? AND finished IS NULL", r.JobID, node).Scan(&issued, &taskJSON); err != nil {

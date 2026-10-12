@@ -196,9 +196,10 @@ func fixture() *fakeSource {
 			{Node: model.Node{ID: "n2", Name: "东京"}, Online: false},
 		},
 		tasks: []model.Task{{
-			ID: "t1", Name: "电信回程", Kind: "route", Enabled: true, Interval: 1800,
-			Host: "219.141.147.210", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信",
-			NodeIDs: []string{"n1"},
+			ID: "t1", Name: "电信回程", Type: model.TaskProbe, Enabled: true, NodeIDs: []string{"n1"},
+			Probe: &model.ProbeSpec{Checks: []string{"route"}, RouteInterval: 1800, Targets: []model.Target{
+				{Host: "219.141.147.210", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信"},
+			}},
 		}},
 		history: []model.Sample{{At: 1, Metrics: model.Metrics{CPU: 12, MemoryTotal: 100}}},
 		series: []model.NetworkSeries{{
@@ -207,7 +208,7 @@ func fixture() *fakeSource {
 		}},
 		observations: []model.Observation{
 			{
-				Task: model.Task{ID: "t1", Kind: "route", Host: "1.1.1.1", NodeIDs: []string{"n1"}},
+				Task: model.Probe{ID: "t1", Kind: "route", Host: "1.1.1.1"},
 				At:   2,
 				Result: model.Result{
 					Status: "ok", Route: "CN2GT",
@@ -215,7 +216,7 @@ func fixture() *fakeSource {
 				},
 			},
 			{
-				Task:   model.Task{ID: "t1", Kind: "route", Host: "1.1.1.1"},
+				Task:   model.Probe{ID: "t1", Kind: "route", Host: "1.1.1.1"},
 				At:     1,
 				Stale:  true,
 				Result: model.Result{Status: "ok", Route: "CN2GIA"},
@@ -794,11 +795,11 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 
 	// create_task takes the same definition the task editor builds.
 	createdTask := structured(t, invoke(t, env, "create_task",
-		`{"name":"上海联通","checks":["tcp"],"targets":[{"host":"112.64.235.107","port":443,"family":"ipv4","region":"上海","carrier":"联通"}],"interval":60,"enabled":true,"node_ids":["n1"]}`))
+		`{"name":"上海联通","type":"probe","probe":{"checks":["tcp"],"targets":[{"host":"112.64.235.107","port":443,"family":"ipv4","region":"上海","carrier":"联通"}],"interval":60},"enabled":true,"node_ids":["n1"]}`))
 	if createdTask["id"] != "new-task" {
 		t.Fatalf("create_task: %v", createdTask)
 	}
-	if len(env.source.savedTasks) != 1 || env.source.savedTasks[0].Interval != 60 || env.source.savedTasks[0].NodeIDs[0] != "n1" {
+	if len(env.source.savedTasks) != 1 || env.source.savedTasks[0].Probe.Interval != 60 || env.source.savedTasks[0].NodeIDs[0] != "n1" {
 		t.Fatalf("stored task: %+v", env.source.savedTasks)
 	}
 	// update_task merges too: only the submitted fields change.
@@ -810,7 +811,7 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 		t.Fatalf("update_task stored nothing: %+v", env.source.savedTasks)
 	}
 	task := env.source.savedTasks[0]
-	if task.ID != "t1" || task.Name != "电信回程" || task.Interval != 1800 || len(task.NodeIDs) != 1 || task.Enabled {
+	if task.ID != "t1" || task.Name != "电信回程" || task.Probe.RouteInterval != 1800 || len(task.NodeIDs) != 1 || task.Enabled {
 		t.Fatalf("update_task lost fields: %+v", task)
 	}
 

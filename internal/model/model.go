@@ -429,60 +429,115 @@ type Target struct {
 	Carrier string `json:"carrier"`
 }
 
+// Task kinds: a probe task runs TCP latency and/or route checks against a
+// target list; an unlock task checks the built-in service catalogue from each
+// bound node's own egress and has no targets.
+const (
+	TaskProbe  = "probe"
+	TaskUnlock = "unlock"
+)
+
+// Task is a management task as the panel and MCP edit it: a tagged union whose
+// Type says which of Probe / Unlock carries the definition. The scheduler never
+// runs a Task directly; Leaves expands it into independently scheduled Probes.
 type Task struct {
-	Checks        []string `json:"checks,omitempty"`
-	Targets       []Target `json:"targets,omitempty"`
-	RouteInterval int      `json:"route_interval,omitempty"`
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	Kind          string   `json:"kind"`
-	Host          string   `json:"host"`
-	Port          int      `json:"port"`
-	Family        string   `json:"family"`
-	Region        string   `json:"region"`
-	Carrier       string   `json:"carrier"`
-	Interval      int      `json:"interval"`
-	Enabled       bool     `json:"enabled"`
-	NodeIDs       []string `json:"node_ids"`
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Type    string      `json:"type"`
+	Enabled bool        `json:"enabled"`
+	NodeIDs []string    `json:"node_ids"`
+	Probe   *ProbeSpec  `json:"probe,omitempty"`
+	Unlock  *UnlockSpec `json:"unlock,omitempty"`
 }
 
-// Leaves resolves a management task into bounded, independently scheduled probes.
-func (t Task) Leaves() []Task {
-	if len(t.Checks) == 0 && len(t.Targets) == 0 {
-		return []Task{t}
-	}
-	out := []Task{}
-	for _, target := range t.Targets {
-		for _, kind := range t.Checks {
-			leaf := t
-			leaf.Checks = nil
-			leaf.Targets = nil
-			leaf.RouteInterval = 0
-			leaf.Kind = kind
-			leaf.Host = target.Host
-			leaf.Port = target.Port
-			leaf.Family = target.Family
-			leaf.Region = target.Region
-			leaf.Carrier = target.Carrier
-			if kind == "route" {
-				leaf.Interval = t.RouteInterval
+// ProbeSpec is a probe task's definition: every check runs against every
+// target. Interval is the TCP latency period, RouteInterval the route period;
+// each only matters when its check is selected.
+type ProbeSpec struct {
+	Checks        []string `json:"checks"`
+	Targets       []Target `json:"targets"`
+	Interval      int      `json:"interval,omitempty"`
+	RouteInterval int      `json:"route_interval,omitempty"`
+}
+
+// UnlockSpec is an unlock task's definition. An empty Family lets the Server
+// pick per node: IPv4, or IPv6 on a host without IPv4 (see storage.Lease).
+type UnlockSpec struct {
+	Interval int    `json:"interval"`
+	Family   string `json:"family,omitempty"`
+}
+
+// Probe is one independently scheduled check: what an Agent leases (Job.Task)
+// and what an observation reports. Its JSON is the Agent wire contract of
+// protocol 1 — the same fields the single-probe task had — so Agents already in
+// the field decode and validate it unchanged. ID is the parent task's id.
+type Probe struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Family   string `json:"family"`
+	Region   string `json:"region"`
+	Carrier  string `json:"carrier"`
+	Interval int    `json:"interval"`
+}
+
+// Leaves resolves a task into its probes: checks × targets for a probe task,
+// a single catalogue round for an unlock task.
+func (t Task) Leaves() []Probe {
+	switch {
+	case t.Type == TaskUnlock && t.Unlock != nil:
+		return []Probe{{ID: t.ID, Name: t.Name, Kind: UnlockKind, Family: t.Unlock.Family, Interval: t.Unlock.Interval}}
+	case t.Type == TaskProbe && t.Probe != nil:
+		out := []Probe{}
+		for _, target := range t.Probe.Targets {
+			for _, kind := range t.Probe.Checks {
+				leaf := Probe{ID: t.ID, Name: t.Name, Kind: kind, Host: target.Host, Port: target.Port,
+					Family: target.Family, Region: target.Region, Carrier: target.Carrier, Interval: t.Probe.Interval}
+				if kind == RouteKind {
+					leaf.Interval = t.Probe.RouteInterval
+				}
+				out = append(out, leaf)
 			}
-			out = append(out, leaf)
 		}
+		return out
+	}
+	return nil
+}
+
+// ProbeKey identifies one probe of one task across leases and results; the
+// latest table, retries and history are keyed by it.
+func (p Probe) ProbeKey() string {
+	return fmt.Sprintf("%s|%s|%s|%s|%d|%s|%s", p.ID, p.Kind, p.Family, p.Host, p.Port, p.Region, p.Carrier)
+}
+
+// ProbeKeys is the set of probe keys a task schedules: two definitions with the
+// same set probe the same things, whatever else (name, intervals, bindings)
+// changed between them.
+func (t Task) ProbeKeys() map[string]bool {
+	out := map[string]bool{}
+	for _, leaf := range t.Leaves() {
+		out[leaf.ProbeKey()] = true
 	}
 	return out
 }
-func (t Task) ProbeKey() string {
-	return fmt.Sprintf("%s|%s|%s|%s|%d|%s|%s", t.ID, t.Kind, t.Family, t.Host, t.Port, t.Region, t.Carrier)
-}
+
 func (t Task) Validate() error {
-	if len(t.Checks) > 0 || len(t.Targets) > 0 {
-		if len(t.Checks) < 1 || len(t.Checks) > 2 || len(t.Targets) < 1 || len(t.Targets) > 200 {
+	if strings.TrimSpace(t.Name) == "" || len(t.Name) > 100 {
+		return errors.New("任务名称必填且不超过 100 字节")
+	}
+	switch t.Type {
+	case TaskProbe:
+		if t.Probe == nil || t.Unlock != nil {
+			return errors.New("网络探测任务须给 probe（检测内容与目标），不能带 unlock")
+		}
+		p := t.Probe
+		if len(p.Checks) < 1 || len(p.Checks) > 2 || len(p.Targets) < 1 || len(p.Targets) > 200 {
 			return errors.New("请选择检测内容和目标（最多 200 个地址）")
 		}
-		for _, check := range t.Checks {
-			// 名字写错时直接指出是哪一项，否则错误会由叶子任务报成「任务类型须为 tcp 或 route」。
-			if check != "tcp" && check != "route" {
+		for _, check := range p.Checks {
+			if check != "tcp" && check != RouteKind {
 				return errors.New("检测内容须为 tcp（延迟）或 route（回程）")
 			}
 		}
@@ -496,58 +551,16 @@ func (t Task) Validate() error {
 				return err
 			}
 		}
-		return nil
-	}
-	if t.Kind != "tcp" && t.Kind != "route" && t.Kind != UnlockKind {
-		return errors.New("任务类型须为 tcp、route 或 unlock")
-	}
-	if t.Kind == UnlockKind {
-		// 解锁检测是按「这台机器的出口」逐项发起的 HTTP 检测，没有目标地址，
-		// 也不需要端口；协议族留空即自动：走 IPv4，纯 IPv6 机器由 Lease 改派 IPv6。
-		if t.Interval < UnlockMinInterval || t.Interval > 86400 || len(t.Name) == 0 || len(t.Name) > 100 {
-			return errors.New("解锁检测的名称或间隔无效：最短 1 小时")
+	case TaskUnlock:
+		if t.Unlock == nil || t.Probe != nil {
+			return errors.New("解锁检测任务须给 unlock（间隔与协议），不能带 probe")
 		}
-		if t.Family != "" && t.Family != "ipv4" && t.Family != "ipv6" {
-			return errors.New("IP 协议须为 ipv4 或 ipv6（留空即自动）")
+		if err := t.Leaves()[0].Validate(); err != nil {
+			return err
 		}
-		return validateBindings(t)
+	default:
+		return errors.New("任务类型须为 probe（网络探测）或 unlock（解锁检测）")
 	}
-	min := 30
-	if t.Kind == "route" {
-		min = 900
-	}
-	if t.Interval < min || t.Interval > 86400 || t.Port < 1 || t.Port > 65535 || len(t.Name) == 0 || len(t.Name) > 100 || len(t.Region) > 60 {
-		return errors.New("名称、端口或间隔无效：TCP 最短 30 秒，回程最短 900 秒")
-	}
-	if t.Family != "ipv4" && t.Family != "ipv6" {
-		return errors.New("IP 协议须为 ipv4 或 ipv6")
-	}
-	if t.Kind == "route" && (t.Region == "" || (t.Carrier != "电信" && t.Carrier != "联通" && t.Carrier != "移动" && t.Carrier != "其他")) {
-		return errors.New("回程任务需指定地区和运营商（含其他）")
-	}
-	if len(t.Carrier) > 20 || len(t.Host) == 0 || len(t.Host) > 253 || strings.TrimSpace(t.Host) != t.Host {
-		return errors.New("目标无效")
-	}
-	if ip := net.ParseIP(t.Host); ip != nil {
-		if (t.Family == "ipv4") != (ip.To4() != nil) {
-			return errors.New("目标与 IP 协议不匹配")
-		}
-	} else {
-		for _, label := range strings.Split(t.Host, ".") {
-			if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-				return errors.New("域名无效")
-			}
-			for _, c := range label {
-				if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
-					return errors.New("目标须为 IP 或 ASCII 域名")
-				}
-			}
-		}
-	}
-	return validateBindings(t)
-}
-
-func validateBindings(t Task) error {
 	if len(t.NodeIDs) > 1000 {
 		return errors.New("绑定节点过多")
 	}
@@ -561,9 +574,65 @@ func validateBindings(t Task) error {
 	return nil
 }
 
+// Validate checks one probe. The Agent runs it on every job it leases, so the
+// rules here are also what a lease must satisfy on the wire.
+func (p Probe) Validate() error {
+	if len(p.Name) == 0 || len(p.Name) > 100 {
+		return errors.New("任务名称必填且不超过 100 字节")
+	}
+	switch p.Kind {
+	case UnlockKind:
+		// 解锁检测是按「这台机器的出口」逐项发起的 HTTP 检测，没有目标地址，
+		// 也不需要端口；协议族留空即自动：走 IPv4，纯 IPv6 机器由 Lease 改派 IPv6。
+		if p.Interval < UnlockMinInterval || p.Interval > 86400 {
+			return errors.New("解锁检测的间隔无效：最短 1 小时")
+		}
+		if p.Family != "" && p.Family != "ipv4" && p.Family != "ipv6" {
+			return errors.New("IP 协议须为 ipv4 或 ipv6（留空即自动）")
+		}
+		return nil
+	case "tcp", RouteKind:
+	default:
+		return errors.New("检测类型须为 tcp、route 或 unlock")
+	}
+	min := 30
+	if p.Kind == RouteKind {
+		min = 900
+	}
+	if p.Interval < min || p.Interval > 86400 || p.Port < 1 || p.Port > 65535 || len(p.Region) > 60 {
+		return errors.New("端口或间隔无效：TCP 最短 30 秒，回程最短 900 秒")
+	}
+	if p.Family != "ipv4" && p.Family != "ipv6" {
+		return errors.New("IP 协议须为 ipv4 或 ipv6")
+	}
+	if p.Kind == RouteKind && (p.Region == "" || (p.Carrier != "电信" && p.Carrier != "联通" && p.Carrier != "移动" && p.Carrier != "其他")) {
+		return errors.New("回程任务需指定地区和运营商（含其他）")
+	}
+	if len(p.Carrier) > 20 || len(p.Host) == 0 || len(p.Host) > 253 || strings.TrimSpace(p.Host) != p.Host {
+		return errors.New("目标无效")
+	}
+	if ip := net.ParseIP(p.Host); ip != nil {
+		if (p.Family == "ipv4") != (ip.To4() != nil) {
+			return errors.New("目标与 IP 协议不匹配")
+		}
+		return nil
+	}
+	for _, label := range strings.Split(p.Host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return errors.New("域名无效")
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return errors.New("目标须为 IP 或 ASCII 域名")
+			}
+		}
+	}
+	return nil
+}
+
 type Job struct {
 	ID   string `json:"id"`
-	Task Task   `json:"task"`
+	Task Probe  `json:"task"`
 }
 type Hop struct {
 	TTL     int     `json:"ttl"`
@@ -623,18 +692,17 @@ func (r Result) Validate() error {
 }
 
 type Observation struct {
-	Task   Task   `json:"task"`
+	Task   Probe  `json:"task"`
 	At     int64  `json:"at"`
 	Result Result `json:"result"`
 	Stale  bool   `json:"stale"`
 }
 
-// Redact returns the observation as the public contract exposes it: the bound
-// node ids drop out, hop addresses keep only their masked prefix, and a stale or
+// Redact returns the observation as the public contract exposes it: hop
+// addresses keep only their masked prefix, and a stale or
 // failed probe reports no route instead of the label of an older, successful run.
 // The hop slice is masked in place, which is what the shared caller already owned.
 func (o Observation) Redact() Observation {
-	o.Task.NodeIDs = nil
 	for i := range o.Result.Hops {
 		hop := &o.Result.Hops[i]
 		hop.Address = PublicAddress(hop.Address)

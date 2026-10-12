@@ -637,10 +637,10 @@ function nodeFacts(n) {
   const reported = Array.isArray(n.ip_families) ? new Set(n.ip_families) : null;
   const hasIPv4 = reported
     ? reported.has("ipv4")
-    : allObs.some((o) => o.task.family === "ipv4" && o.task.enabled);
+    : allObs.some((o) => o.task.family === "ipv4");
   const hasIPv6 = reported
     ? reported.has("ipv6")
-    : allObs.some((o) => o.task.family === "ipv6" && o.task.enabled);
+    : allObs.some((o) => o.task.family === "ipv6");
   const effectiveFamily =
     hasIPv4 && !hasIPv6
       ? "ipv4"
@@ -650,9 +650,9 @@ function nodeFacts(n) {
           ? "ipv6"
           : "ipv4";
 
-  // 观测（结果）只用来填数值：这一族、已启用的任务才有最新结果。
+  // 观测（结果）只用来填数值：取这一族的最新结果（只有启用的任务会被领走，观测本身就来自启用的任务）。
   const obs = allObs.filter(
-    (o) => o.task.family === effectiveFamily && o.task.enabled,
+    (o) => o.task.family === effectiveFamily,
   );
   // 延迟按运营商分格显示，地区取节点的延迟地区，其次代表地区，都未设则不限地区。
   // 目录外的自定义目标（以及没有运营商的旧任务）归入“其他”。

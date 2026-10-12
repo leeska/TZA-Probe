@@ -56,7 +56,7 @@ func TestPerfProfile(t *testing.T) {
 	var task model.Task
 	var taskID, unlockID string
 	for _, x := range tasks {
-		if x.Kind == model.UnlockKind {
+		if x.Type == model.TaskUnlock {
 			unlockID = x.ID
 		} else {
 			task, taskID = x, x.ID
@@ -192,16 +192,16 @@ func seedPerf(t *testing.T, path string, now time.Time) {
 		}
 		ids = append(ids, id)
 	}
-	task := model.Task{Name: "三网", Checks: []string{"tcp", "route"}, Interval: 30, RouteInterval: 3600, Enabled: true, NodeIDs: ids}
+	task := model.Task{Name: "三网", Enabled: true, NodeIDs: ids, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp", "route"}, Interval: 30, RouteInterval: 3600}}
 	for i := 0; i < targets; i++ {
-		task.Targets = append(task.Targets, model.Target{Host: fmt.Sprintf("10.0.%d.1", i), Port: 80, Family: "ipv4", Region: fmt.Sprintf("地区%d", i), Carrier: carriers[i%3]})
+		task.Probe.Targets = append(task.Probe.Targets, model.Target{Host: fmt.Sprintf("10.0.%d.1", i), Port: 80, Family: "ipv4", Region: fmt.Sprintf("地区%d", i), Carrier: carriers[i%3]})
 	}
 	taskID, err := s.SaveTask(ctx, task, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	task.ID = taskID
-	unlockID, err := s.SaveTask(ctx, model.Task{Name: "解锁", Kind: model.UnlockKind, Interval: 3600, Enabled: true, NodeIDs: ids}, true)
+	unlockID, err := s.SaveTask(ctx, model.Task{Name: "解锁", Enabled: true, NodeIDs: ids, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: 3600}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

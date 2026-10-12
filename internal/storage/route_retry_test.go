@@ -16,7 +16,7 @@ func TestRouteUnknownSchedulesOneShortRetry(t *testing.T) {
 	ctx := context.Background()
 	id, _ := makeNode(t, s)
 	now := time.Now().Truncate(time.Second)
-	task := model.Task{Name: "三网回程", Kind: "route", Host: "example.com", Family: "ipv4", Port: 80, Interval: 3600, Enabled: true, Region: "上海", Carrier: "电信"}
+	task := model.Task{Name: "三网回程", Enabled: true, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"route"}, Targets: []model.Target{{Host: "example.com", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信"}}, RouteInterval: 3600}}
 	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}

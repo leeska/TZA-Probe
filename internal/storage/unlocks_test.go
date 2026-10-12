@@ -12,7 +12,7 @@ import (
 // unlockTask is the shape the panel creates for the unlock check: a kind of its
 // own, no targets, a coarse interval.
 func unlockTask(name, nodeID string) model.Task {
-	return model.Task{Name: name, Kind: model.UnlockKind, Interval: model.UnlockMinInterval, Enabled: true, NodeIDs: []string{nodeID}}
+	return model.Task{Name: name, Enabled: true, NodeIDs: []string{nodeID}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: model.UnlockMinInterval}}
 }
 
 func capableMetrics() model.Metrics {
@@ -107,9 +107,17 @@ func TestUnlockVerdictsScoreAndFollowTheTask(t *testing.T) {
 	if err != nil || len(views) != 1 || views[0].Unlock == nil || views[0].Unlock.Score != 3 {
 		t.Fatalf("views=%+v %v", views, err)
 	}
-	// 改任务即清历史：结论是从结果派生的，旧结论不能留在一个没有任务在跑的节点上。
+	// 只改名：检测内容没变，结论保留。
 	edited := unlockTask("解锁检测（改过）", id)
 	edited.ID = taskID
+	if _, err = s.SaveTask(ctx, edited, false); err != nil {
+		t.Fatal(err)
+	}
+	if summary, err = s.Unlocks(ctx, id); err != nil || summary == nil || summary.Score != 3 {
+		t.Fatalf("a rename dropped the verdicts: %+v %v", summary, err)
+	}
+	// 改检测内容（这里是出口协议）即清：结论是从结果派生的，旧结论不能留在一个已经不这么测的节点上。
+	edited.Unlock.Family = "ipv6"
 	if _, err = s.SaveTask(ctx, edited, false); err != nil {
 		t.Fatal(err)
 	}
@@ -180,12 +188,12 @@ func TestUnlockTaskValidation(t *testing.T) {
 		task model.Task
 		ok   bool
 	}{
-		{"default", model.Task{Name: "解锁检测", Kind: model.UnlockKind, Interval: 3600, Enabled: true, NodeIDs: []string{id}}, true},
-		{"auto family", model.Task{Name: "解锁检测", Kind: model.UnlockKind, Interval: 3600, Family: "", NodeIDs: []string{id}}, true},
-		{"ipv6", model.Task{Name: "解锁检测", Kind: model.UnlockKind, Interval: 3600, Family: "ipv6", NodeIDs: []string{id}}, true},
-		{"too fast", model.Task{Name: "解锁检测", Kind: model.UnlockKind, Interval: 60, NodeIDs: []string{id}}, false},
-		{"no name", model.Task{Kind: model.UnlockKind, Interval: 3600, NodeIDs: []string{id}}, false},
-		{"bad family", model.Task{Name: "解锁检测", Kind: model.UnlockKind, Interval: 3600, Family: "ipv5", NodeIDs: []string{id}}, false},
+		{"default", model.Task{Name: "解锁检测", Enabled: true, NodeIDs: []string{id}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: 3600}}, true},
+		{"auto family", model.Task{Name: "解锁检测", NodeIDs: []string{id}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: 3600, Family: ""}}, true},
+		{"ipv6", model.Task{Name: "解锁检测", NodeIDs: []string{id}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: 3600, Family: "ipv6"}}, true},
+		{"too fast", model.Task{Name: "解锁检测", NodeIDs: []string{id}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: 60}}, false},
+		{"no name", model.Task{NodeIDs: []string{id}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: 3600}}, false},
+		{"bad family", model.Task{Name: "解锁检测", NodeIDs: []string{id}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: 3600, Family: "ipv5"}}, false},
 	}
 	for _, c := range cases {
 		err := c.task.Validate()
@@ -193,10 +201,11 @@ func TestUnlockTaskValidation(t *testing.T) {
 			t.Fatalf("%s: err=%v", c.name, err)
 		}
 	}
-	// 解锁任务不需要 host / port，但也没有目标可言：给了目标就是另一种任务。
-	withTarget := model.Task{Name: "解锁检测", Kind: model.UnlockKind, Interval: 3600, Host: "example.com", Port: 443, NodeIDs: []string{id}}
-	if err := withTarget.Validate(); err != nil {
-		t.Fatalf("a stray target is ignored, not fatal: %v", err)
+	// 解锁任务没有目标可言：联合类型里同时带 probe 是两种任务混在一起，直接拒绝，
+	// 而不是悄悄忽略一半。
+	withTarget := model.Task{Name: "解锁检测", NodeIDs: []string{id}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: 3600}, Probe: &model.ProbeSpec{}}
+	if err := withTarget.Validate(); err == nil {
+		t.Fatal("an unlock task carrying a probe spec was accepted")
 	}
 }
 
@@ -254,7 +263,7 @@ func TestUnlockRoundMayReportLate(t *testing.T) {
 		t.Fatalf("summary=%+v %v", summary, err)
 	}
 	// 延迟探测的同一条路仍然会过期：窗口只对 unlock 放宽。
-	latency := model.Task{Name: "延迟", Kind: "tcp", Host: "1.1.1.1", Port: 443, Family: "ipv4", Interval: 60, Enabled: true, NodeIDs: []string{id}}
+	latency := model.Task{Name: "延迟", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "1.1.1.1", Port: 443, Family: "ipv4"}}, Interval: 60}}
 	if _, err = s.SaveTask(ctx, latency, true); err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +306,7 @@ func TestUnlockLeaseFollowsTheHostAddressFamily(t *testing.T) {
 				t.Fatal(err)
 			}
 			task := unlockTask("解锁检测", id)
-			task.Family = tc.taskFamily
+			task.Unlock.Family = tc.taskFamily
 			if _, err := s.SaveTask(ctx, task, true); err != nil {
 				t.Fatal(err)
 			}

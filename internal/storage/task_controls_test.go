@@ -14,7 +14,7 @@ func TestTaskControlsPreserveHistoryAndSchedule(t *testing.T) {
 	ctx := context.Background()
 	id, _ := makeNode(t, s)
 	other, _ := makeNode(t, s)
-	task := model.Task{Name: "test", Kind: "tcp", Host: "example.com", Port: 443, Family: "ipv4", Interval: 3600, Enabled: true, NodeIDs: []string{id}}
+	task := model.Task{Name: "test", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "example.com", Port: 443, Family: "ipv4"}}, Interval: 3600}}
 	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestManualRunCoversEveryLeafOnce(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	id, _ := makeNode(t, s)
-	task := model.Task{Name: "combined", Checks: []string{"tcp", "route"}, Targets: []model.Target{{Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "test", Carrier: "其他"}, {Host: "8.8.8.8", Port: 443, Family: "ipv4", Region: "test", Carrier: "其他"}}, Interval: 3600, RouteInterval: 3600, Enabled: true, NodeIDs: []string{id}}
+	task := model.Task{Name: "combined", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp", "route"}, Targets: []model.Target{{Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "test", Carrier: "其他"}, {Host: "8.8.8.8", Port: 443, Family: "ipv4", Region: "test", Carrier: "其他"}}, Interval: 3600, RouteInterval: 3600}}
 	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestManualRequestInSameSecondAsPreviousLease(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	id, _ := makeNode(t, s)
-	task := model.Task{Name: "same second", Kind: "tcp", Host: "example.com", Port: 443, Family: "ipv4", Interval: 3600, Enabled: true, NodeIDs: []string{id}}
+	task := model.Task{Name: "same second", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "example.com", Port: 443, Family: "ipv4"}}, Interval: 3600}}
 	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestBindTasksIsAtomic(t *testing.T) {
 	b, _ := makeNode(t, s)
 	var ids []string
 	for _, name := range []string{"one", "two"} {
-		id, err := s.SaveTask(ctx, model.Task{Name: name, Kind: "tcp", Host: "example.com", Port: 443, Family: "ipv4", Interval: 3600, Enabled: true, NodeIDs: []string{a}}, true)
+		id, err := s.SaveTask(ctx, model.Task{Name: name, Enabled: true, NodeIDs: []string{a}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "example.com", Port: 443, Family: "ipv4"}}, Interval: 3600}}, true)
 		if err != nil {
 			t.Fatal(err)
 		}

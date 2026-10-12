@@ -26,7 +26,7 @@ func parallelSetup(t *testing.T, capabilities ...string) (*Store, string, time.T
 	for i := 1; i <= 12; i++ {
 		targets = append(targets, model.Target{Host: fmt.Sprintf("127.0.0.%d", i), Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信"})
 	}
-	task := model.Task{Name: "三网", Checks: []string{"tcp", "route"}, Targets: targets, Interval: 30, RouteInterval: 900, Enabled: true, NodeIDs: []string{id}}
+	task := model.Task{Name: "三网", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp", "route"}, Targets: targets, Interval: 30, RouteInterval: 900}}
 	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}

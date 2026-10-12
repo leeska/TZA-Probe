@@ -122,7 +122,7 @@ func TestEmbeddedTracesLoopback(t *testing.T) {
 // A route job with no tracer configured stays unavailable instead of silently
 // reporting an empty measurement.
 func TestRunnerWithoutTracerStaysUnavailable(t *testing.T) {
-	task := model.Task{Name: "loopback", Kind: "route", Host: "127.0.0.1", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 900}
+	task := model.Probe{Name: "loopback", Kind: "route", Host: "127.0.0.1", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 900}
 	got := (Runner{}).Run(context.Background(), model.Job{Task: task})
 	if got.Status != "unavailable" || got.Reason != "tool_missing" {
 		t.Fatalf("missing tracer: %+v", got)

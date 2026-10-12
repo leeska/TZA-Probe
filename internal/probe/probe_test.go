@@ -51,7 +51,7 @@ func TestTCPSuccessAndMissingRouteTool(t *testing.T) {
 	}()
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
 	p, _ := strconv.Atoi(port)
-	task := model.Task{Name: "loopback", Kind: "tcp", Host: "127.0.0.1", Port: p, Family: "ipv4", Interval: 30}
+	task := model.Probe{Name: "loopback", Kind: "tcp", Host: "127.0.0.1", Port: p, Family: "ipv4", Interval: 30}
 	result := (Runner{}).Run(context.Background(), model.Job{ID: "j", Task: task})
 	if result.Status != "ok" || result.Received != 3 || result.Latency == nil {
 		t.Fatal(result)
@@ -69,7 +69,7 @@ func TestTCPSuccessAndMissingRouteTool(t *testing.T) {
 func TestFakeIPCannotBecomeSuccessfulMeasurement(t *testing.T) {
 	for _, host := range []string{"198.18.0.1", "198.19.255.254"} {
 		for _, kind := range []string{"route", "tcp"} {
-			task := model.Task{Name: "fake DNS", Kind: kind, Host: host, Port: 80, Family: "ipv4", Interval: 900, Region: "上海", Carrier: "电信"}
+			task := model.Probe{Name: "fake DNS", Kind: kind, Host: host, Port: 80, Family: "ipv4", Interval: 900, Region: "上海", Carrier: "电信"}
 			r := (Runner{Nexttrace: "/does-not-exist"}).Run(context.Background(), model.Job{Task: task})
 			if r.Status != "failed" || r.Reason != "synthetic_dns" || r.Received != 0 {
 				t.Fatalf("proxy address became measurement: %+v", r)

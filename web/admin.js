@@ -308,7 +308,7 @@ async function knownRegions() {
   try {
     const list = tasks.length ? tasks : await api("/admin/tasks");
     for (const task of list)
-      for (const target of task.targets || []) add(target.region);
+      for (const target of task.probe?.targets || []) add(target.region);
   } catch {}
   return [...found].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
 }

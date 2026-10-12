@@ -59,9 +59,9 @@ func referenceSelection(t *testing.T, s *Store, node string, now time.Time) []st
 	return out
 }
 
-func decodeTask(t *testing.T, raw string) model.Task {
+func decodeTask(t *testing.T, raw string) model.Probe {
 	t.Helper()
-	var task model.Task
+	var task model.Probe
 	if err := json.Unmarshal([]byte(raw), &task); err != nil {
 		t.Fatalf("task %q: %v", raw, err)
 	}
@@ -84,7 +84,7 @@ func assertSameSelection(t *testing.T, s *Store, node string, now time.Time) {
 // 只有历史数据或异常路径才会出现的行。
 type jobArgs struct {
 	id       string
-	task     model.Task
+	task     model.Probe
 	taskJSON string
 	issued   int64
 	finished *int64
@@ -97,8 +97,9 @@ func insertJobRow(t *testing.T, s *Store, node string, a jobArgs) {
 	if raw == "" {
 		raw = encode(a.task)
 	}
-	// jobs.task_id 有外键：直接写行时先把任务行补上（生产路径由 SaveTask 负责）。
-	if _, err := s.db.Exec("INSERT INTO tasks(id,config) VALUES(?,?) ON CONFLICT(id) DO NOTHING", a.task.ID, raw); err != nil {
+	// jobs.task_id 有外键：直接写行时先把任务行补上（生产路径由 SaveTask 负责）。任务行存的是
+	// 管理任务的形状，由这条探测按单项任务升级出来。
+	if _, err := s.db.Exec("INSERT INTO tasks(id,config) VALUES(?,?) ON CONFLICT(id) DO NOTHING", a.task.ID, taskRow(a.task)); err != nil {
 		t.Fatal(err)
 	}
 	var finished, result any
@@ -115,6 +116,11 @@ func insertJobRow(t *testing.T, s *Store, node string, a jobArgs) {
 
 func millis(v float64) *float64 { return &v }
 
+// taskRow is the management task a single probe belongs to, as a tasks.config.
+func taskRow(p model.Probe) string {
+	return encode(legacyTask{ID: p.ID, Name: p.Name, Kind: p.Kind, Host: p.Host, Port: p.Port, Family: p.Family, Region: p.Region, Carrier: p.Carrier, Interval: p.Interval}.upgrade())
+}
+
 // TestObservationsSelectionMatchesWindowFunction 是本改动的核心等价性测试：
 // 物化表必须与旧查询挑出同一批行——新的覆盖旧的、乱序完成不覆盖、窗口外不显示、
 // 坏 JSON 不顶替、同任务不同目标/协议族各自成组。
@@ -124,8 +130,8 @@ func TestObservationsSelectionMatchesWindowFunction(t *testing.T) {
 	node, _ := makeNode(t, s)
 	now := time.Now().Truncate(time.Second).Add(-time.Minute)
 
-	tcp := func(id, host, family string) model.Task {
-		return model.Task{Name: "n", ID: id, Kind: "tcp", Family: family, Host: host, Port: 443, Region: "上海", Carrier: "电信", Interval: 60}
+	tcp := func(id, host, family string) model.Probe {
+		return model.Probe{Name: "n", ID: id, Kind: "tcp", Family: family, Host: host, Port: 443, Region: "上海", Carrier: "电信", Interval: 60}
 	}
 	// A：同组两条都有结果，取新的那条。
 	insertJobRow(t, s, node, jobArgs{id: "a1", task: tcp("task-a", "a.example.com", "ipv4"), issued: now.Add(-5 * time.Minute).Unix(), finished: ptr(now.Add(-5 * time.Minute).Unix()), result: &model.Result{JobID: "a1", Status: "ok", Sent: 4, Received: 4, Latency: millis(10)}})
@@ -177,7 +183,7 @@ func TestLatestFollowsWritesAndDeletes(t *testing.T) {
 	node, token := makeNode(t, s)
 	now := time.Now().Truncate(time.Second)
 
-	task := model.Task{Name: "n", ID: "task-live", Kind: "tcp", Family: "ipv4", Host: "live.example.com", Port: 443, Region: "上海", Carrier: "电信", Interval: 60, Enabled: true}
+	task := model.Task{Name: "n", ID: "task-live", Enabled: true, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "live.example.com", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信"}}, Interval: 60}}
 	id, err := s.SaveTask(ctx, task, true)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +212,7 @@ func TestLatestFollowsWritesAndDeletes(t *testing.T) {
 	_ = token
 	// 改任务 → SaveTask 删掉该任务的历史，物化表里该组也要消失。
 	edited := task
-	edited.Host = "moved.example.com"
+	edited.Probe = &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "moved.example.com", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信"}}, Interval: 60}
 	if _, err = s.SaveTask(ctx, edited, false); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +224,7 @@ func TestLatestFollowsWritesAndDeletes(t *testing.T) {
 	assertSameSelection(t, s, node, now.Add(time.Second))
 
 	// 保留期清理：删掉的旧行让位，最新的那条仍在。
-	long := model.Task{Name: "n", ID: "task-old", Kind: "tcp", Family: "ipv4", Host: "old.example.com", Port: 80, Region: "上海", Carrier: "联通", Interval: 60}
+	long := model.Probe{Name: "n", ID: "task-old", Kind: "tcp", Family: "ipv4", Host: "old.example.com", Port: 80, Region: "上海", Carrier: "联通", Interval: 60}
 	insertJobRow(t, s, node, jobArgs{id: "old1", task: long, issued: now.Add(-9 * 24 * time.Hour).Unix()})
 	insertJobRow(t, s, node, jobArgs{id: "new1", task: long, issued: now.Add(-2 * time.Minute).Unix()})
 	if err = s.Clean(ctx, now); err != nil {
@@ -247,7 +253,7 @@ func TestLatestMigrationBackfillsExistingJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, host := range []string{"one.example.com", "two.example.com"} {
-		task := model.Task{Name: "n", ID: fmt.Sprintf("task-%d", i), Kind: "tcp", Family: "ipv4", Host: host, Port: 443, Region: "上海", Carrier: "电信", Interval: 60}
+		task := model.Probe{Name: "n", ID: fmt.Sprintf("task-%d", i), Kind: "tcp", Family: "ipv4", Host: host, Port: 443, Region: "上海", Carrier: "电信", Interval: 60}
 		for n := 0; n < 3; n++ {
 			issued := now.Add(time.Duration(-3*n) * time.Minute).Unix()
 			insertJobRow(t, s, node, jobArgs{id: fmt.Sprintf("j%d%d", i, n), task: task, issued: issued, finished: ptr(issued), result: &model.Result{JobID: "x", Status: "ok", Sent: 1, Received: 1, Latency: millis(float64(n))}})
@@ -261,7 +267,7 @@ func TestLatestMigrationBackfillsExistingJobs(t *testing.T) {
 	}
 	defer s.Close()
 	var version int
-	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 10 {
+	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 11 {
 		t.Fatalf("user_version = %d (%v)", version, err)
 	}
 	assertSameSelection(t, s, node, now)

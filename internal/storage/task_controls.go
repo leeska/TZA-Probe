@@ -156,7 +156,7 @@ func bindTask(ctx context.Context, tx *sql.Tx, id string, nodeIDs []string) erro
 	}
 	// 解锁结论是这个任务在那台机器上跑出来的派生状态：解绑后不再有人更新它，留着就是一份
 	// 永远不变的分数（与 SaveTask / DeleteTask 的处理一致）。
-	if task.Kind == model.UnlockKind {
+	if task.Type == model.TaskUnlock {
 		if err = clearUnlocks(ctx, tx, removed); err != nil {
 			return err
 		}
@@ -200,7 +200,7 @@ func (s *Store) TaskRuns(ctx context.Context, id string, now time.Time) ([]model
 		r.Finished = finished.Int64
 		r.Status = "never"
 		if task.Valid {
-			var t model.Task
+			var t model.Probe
 			if err = json.Unmarshal([]byte(task.String), &t); err != nil {
 				return nil, err
 			}

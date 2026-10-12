@@ -104,7 +104,7 @@ func TestObservationsSlimDropsHopTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := model.Task{Name: "回程", Kind: "route", Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 3600, Enabled: true, NodeIDs: []string{id}}
+	task := model.Task{Name: "回程", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"route"}, Targets: []model.Target{{Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信"}}, RouteInterval: 3600}}
 	if _, err = s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestPanelLatencyWindowControlsSampleLookBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := model.Task{Name: "延迟", Kind: "tcp", Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 60, Enabled: true, NodeIDs: []string{id}}
+	task := model.Task{Name: "延迟", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "1.1.1.1", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信"}}, Interval: 60}}
 	if _, err = s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}

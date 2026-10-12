@@ -253,7 +253,7 @@ func TestNetworkHistorySeparatesTargetsAndNullLatency(t *testing.T) {
 	ctx := context.Background()
 	id, _ := makeNode(t, s)
 	now := time.Now().Truncate(time.Minute)
-	task := model.Task{ID: "task", Kind: "tcp", Family: "ipv4", Host: "example.com", Port: 443, Region: "test"}
+	task := model.Probe{ID: "task", Kind: "tcp", Family: "ipv4", Host: "example.com", Port: 443, Region: "test"}
 	if _, err := s.db.Exec("INSERT INTO tasks VALUES(?,?)", task.ID, encode(task)); err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestProbeWindowSkipsHistoryThePanelCannotShow(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 
 	insert := func(name, kind string, at time.Time) {
-		task := model.Task{ID: "task-" + name, Kind: kind, Family: "ipv4", Host: "example.com", Port: 443, Region: "上海", Carrier: "电信"}
+		task := model.Probe{ID: "task-" + name, Kind: kind, Family: "ipv4", Host: "example.com", Port: 443, Region: "上海", Carrier: "电信"}
 		if _, err := s.db.Exec("INSERT INTO tasks VALUES(?,?) ON CONFLICT(id) DO NOTHING", task.ID, encode(task)); err != nil {
 			t.Fatal(err)
 		}
@@ -350,7 +350,7 @@ func TestRecentLatencySamplesKeepsPerProbeResults(t *testing.T) {
 	id, _ := makeNode(t, s)
 	now := time.Now().Truncate(time.Minute)
 	insert := func(seq int, carrier, family string, latency *float64, sent, received int, at time.Time) {
-		task := model.Task{ID: "task", Kind: "tcp", Family: family, Host: "example.com", Port: 443, Region: "上海", Carrier: carrier}
+		task := model.Probe{ID: "task", Kind: "tcp", Family: family, Host: "example.com", Port: 443, Region: "上海", Carrier: carrier}
 		if _, err := s.db.Exec("INSERT INTO tasks VALUES(?,?) ON CONFLICT(id) DO NOTHING", task.ID, encode(task)); err != nil {
 			t.Fatal(err)
 		}
@@ -398,7 +398,7 @@ func TestRecentLatencySamplesKeepsPerProbeResults(t *testing.T) {
 		t.Fatalf("空列表: %v %+v", err, empty)
 	}
 	// 回程任务不参与延迟格子
-	route := model.Task{ID: "route", Kind: "route", Family: "ipv4", Host: "example.com", Carrier: "电信", Region: "上海"}
+	route := model.Probe{ID: "route", Kind: "route", Family: "ipv4", Host: "example.com", Carrier: "电信", Region: "上海"}
 	if _, err := s.db.Exec("INSERT INTO tasks VALUES(?,?) ON CONFLICT(id) DO NOTHING", route.ID, encode(route)); err != nil {
 		t.Fatal(err)
 	}

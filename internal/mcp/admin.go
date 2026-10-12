@@ -78,13 +78,13 @@ var adminTools = []tool{
 	},
 	{
 		Name:        "create_task",
-		Description: "新建探测任务：检测项（tcp 延迟 / route 回程）、目标列表、间隔与绑定节点。返回新任务 id。",
+		Description: "新建任务：type=probe（网络探测：probe 里给检测项 tcp 延迟 / route 回程、目标列表与间隔）或 type=unlock（解锁检测：unlock 里给间隔与协议），以及绑定节点。返回新任务 id。",
 		InputSchema: taskSchema(false),
 		Annotations: annotations("Create probe task", false, false, false),
 	},
 	{
 		Name:        "update_task",
-		Description: "修改探测任务：只提交要改的字段，其余沿用当前值；改目标会清除该任务的旧结果。",
+		Description: "修改任务：只提交要改的字段，其余沿用当前值（probe / unlock 按字段合并）；改了检测项或目标会清除该任务的旧结果，只改名称、间隔、启停或绑定则保留。",
 		InputSchema: taskSchema(true),
 		Annotations: annotations("Update probe task", false, false, true),
 	},
@@ -224,24 +224,35 @@ func alertsSchema() map[string]any {
 
 func taskSchema(withID bool) map[string]any {
 	properties := map[string]any{
-		"name":           map[string]any{"type": "string", "description": "任务名称，必填"},
-		"kind":           map[string]any{"type": "string", "enum": []string{"tcp", "route", "unlock"}, "description": "任务类型；unlock 为解锁检测：不要 checks / targets，间隔最短 3600，由节点自己的出口逐项检测流媒体 / AI / 交易所（目录见 GET /api/v1/unlock-catalog）"},
-		"checks":         map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"tcp", "route"}}, "description": "检测项：tcp 延迟 / route 回程；两者可同时选"},
-		"targets":        map[string]any{"type": "array", "items": targetSchema(), "description": "目标列表，最多 200 个；目录见 list_catalog"},
-		"interval":       map[string]any{"type": "integer", "minimum": 30, "maximum": 86400, "description": "TCP 探测间隔秒数"},
-		"route_interval": map[string]any{"type": "integer", "minimum": 900, "maximum": 86400, "description": "回程探测间隔秒数，最短 900"},
-		"enabled":        map[string]any{"type": "boolean", "description": "是否启用调度"},
-		"node_ids":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "绑定节点 id；空列表不执行"},
+		"name": map[string]any{"type": "string", "description": "任务名称，必填"},
+		"type": map[string]any{"type": "string", "enum": []string{model.TaskProbe, model.TaskUnlock}, "description": "任务类型：probe 为网络探测（填 probe）；unlock 为解锁检测（填 unlock），由节点自己的出口逐项检测流媒体 / AI / 交易所（目录见 GET /api/v1/unlock-catalog）"},
+		"probe": map[string]any{
+			"type": "object", "additionalProperties": false,
+			"description": "type=probe 时必填：每个检测项都对每个目标执行",
+			"properties": map[string]any{
+				"checks":         map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"tcp", "route"}}, "description": "检测项：tcp 延迟 / route 回程；两者可同时选"},
+				"targets":        map[string]any{"type": "array", "items": targetSchema(), "description": "目标列表，最多 200 个；目录见 list_catalog"},
+				"interval":       map[string]any{"type": "integer", "minimum": 30, "maximum": 86400, "description": "TCP 探测间隔秒数（选了 tcp 时必填）"},
+				"route_interval": map[string]any{"type": "integer", "minimum": 900, "maximum": 86400, "description": "回程探测间隔秒数，最短 900（选了 route 时必填）"},
+			},
+		},
+		"unlock": map[string]any{
+			"type": "object", "additionalProperties": false,
+			"description": "type=unlock 时必填",
+			"properties": map[string]any{
+				"interval": map[string]any{"type": "integer", "minimum": model.UnlockMinInterval, "maximum": 86400, "description": "检测间隔秒数，最短 3600"},
+				"family":   map[string]any{"type": "string", "enum": []string{"", "ipv4", "ipv6"}, "description": "出口协议；留空自动（纯 IPv6 机器走 IPv6）"},
+			},
+		},
+		"enabled":  map[string]any{"type": "boolean", "description": "是否启用调度"},
+		"node_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "绑定节点 id；空列表不执行"},
 	}
 	if withID {
 		properties["task_id"] = map[string]any{"type": "string", "description": "任务 id，来自 list_tasks"}
-	}
-	if withID {
 		return schema(properties, "task_id")
 	}
-	// 解锁检测没有 checks / targets，所以只把真正通用的几项列成必填；具体约束由
-	// model.Task.Validate 把关，报错信息比 JSON Schema 更具体。
-	return schema(properties, "name", "interval", "node_ids")
+	// probe / unlock 二选一，具体约束由 model.Task.Validate 把关，报错信息比 JSON Schema 更具体。
+	return schema(properties, "name", "type", "node_ids")
 }
 
 func targetSchema() map[string]any {

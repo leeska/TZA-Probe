@@ -42,7 +42,7 @@ func (s *Store) RecentLatencySamples(ctx context.Context, nodeIDs []string, perG
 	}
 	type probe struct {
 		node, key string
-		task      model.Task
+		task      model.Probe
 		newest    int64
 	}
 	var probes []probe

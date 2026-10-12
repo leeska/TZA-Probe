@@ -100,7 +100,7 @@ func TestUnlockCatalogAndNodeVerdicts(t *testing.T) {
 	if err = s.Report(ctx, public, m, start); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.SaveTask(ctx, model.Task{Name: "解锁检测", Kind: model.UnlockKind, Interval: model.UnlockMinInterval, Enabled: true, NodeIDs: []string{public}}, true); err != nil {
+	if _, err = s.SaveTask(ctx, model.Task{Name: "解锁检测", Enabled: true, NodeIDs: []string{public}, Type: model.TaskUnlock, Unlock: &model.UnlockSpec{Interval: model.UnlockMinInterval}}, true); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err := s.Lease(ctx, public, start.Add(time.Second))
@@ -228,7 +228,7 @@ func TestResourceRoutes(t *testing.T) {
 	}
 	var tasks []string
 	for _, name := range []string{"一", "二"} {
-		id, err := s.SaveTask(ctx, model.Task{Name: name, Kind: "tcp", Host: "example.com", Port: 443, Family: "ipv4", Interval: 3600, Enabled: true}, true)
+		id, err := s.SaveTask(ctx, model.Task{Name: name, Enabled: true, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "example.com", Port: 443, Family: "ipv4"}}, Interval: 3600}}, true)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -66,9 +66,9 @@ status, err = call("POST", "/api/v1/agent/report", {"protocol": 1, "metrics": {
 assert status == 204, err
 
 status, err = call("POST", "/api/v1/admin/tasks", {
-    "name": "解锁检测验收", "kind": "unlock", "interval": 3600, "enabled": True,
-    "node_ids": [node_id], "family": ""})
-assert status == 204, err
+    "name": "解锁检测验收", "type": "unlock", "unlock": {"interval": 3600, "family": ""},
+    "enabled": True, "node_ids": [node_id]})
+assert status == 200, err
 
 jobs = call("GET", "/api/v1/agent/jobs", token=node_key)[1]
 job = next((j for j in jobs if j["task"]["kind"] == "unlock"), None)

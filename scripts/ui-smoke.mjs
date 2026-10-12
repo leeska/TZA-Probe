@@ -478,7 +478,8 @@ const createdTask = tasks.find(
   (t) => t.name === "UI 网络验收" && t.node_ids.includes(created.id),
 );
 assert(createdTask);
-assert.deepEqual(createdTask.checks, ["tcp", "route"]);
+assert.equal(createdTask.type, "probe", "网络探测任务以 type=probe 落库");
+assert.deepEqual(createdTask.probe.checks, ["tcp", "route"]);
 // 用真实租约灌一条延迟结果和一条回程结果：列表必须把两种数据分开并标注类型。
 const lease = await (
   await fetch(base + "/api/v1/agent/jobs", { headers: { Authorization: "Bearer " + nodeToken } })
@@ -624,7 +625,7 @@ await until(() => $('[data-edit-task="' + createdTask.id + '"]'), "task list aga
 // 列表里的「地区 / 运营商」按地区归并：同一个地区名只出现一次，运营商并排列在它后面，
 // 超过三个地区折成「…等 N 个地区」，完整名单放在单元格悬停里。
 const regionCell = $(`[data-edit-task="${createdTask.id}"]`).closest("tr").querySelector('td[data-label="地区 / 运营商"]');
-const taskRegions = [...new Set(createdTask.targets.map((x) => x.region))];
+const taskRegions = [...new Set(createdTask.probe.targets.map((x) => x.region))];
 for (const r of taskRegions) assert(regionCell.textContent.includes(r), `地区 ${r} 必须出现在列表里: ${regionCell.textContent}`);
 for (const r of taskRegions)
   assert.equal((regionCell.textContent.match(new RegExp(r, "g")) || []).length, 1, `地区名 ${r} 不应按运营商重复: ${regionCell.textContent}`);
@@ -633,14 +634,14 @@ assert.equal(/…/.test(regionCell.textContent), taskRegions.length > 3, "只有
 if (taskRegions.length > 3) assert(/共 \d+ 个地区/.test(regionCell.textContent), "折行时要写明地区总数: " + regionCell.textContent);
 else assert(!/个地区/.test(regionCell.textContent), "地区不多时不该再写数量: " + regionCell.textContent);
 // 三组目标：电信只留 IPv4，其余双栈
-assert.equal(createdTask.targets.length, 5);
+assert.equal(createdTask.probe.targets.length, 5);
 assert.deepEqual(
-  createdTask.targets.filter((x) => x.carrier === "电信").map((x) => x.family),
+  createdTask.probe.targets.filter((x) => x.carrier === "电信").map((x) => x.family),
   ["ipv4"],
   "a group limited to IPv4 must not save its IPv6 address",
 );
-assert.equal(createdTask.route_interval, 3600);
-assert.equal(createdTask.interval, 60);
+assert.equal(createdTask.probe.route_interval, 3600);
+assert.equal(createdTask.probe.interval, 60);
 $('[data-edit-task="' + createdTask.id + '"]').click();
 await until(() => $("#task-form"), "edit combined task");
 assert.equal(w.document.querySelectorAll("[data-remove]").length, 3);
@@ -681,8 +682,8 @@ const editedTask = (
     await fetch(base + "/api/v1/admin/tasks", { headers: adminHeaders })
   ).json()
 ).find((t) => t.id === createdTask.id);
-assert.equal(editedTask.targets.length, 7, "5 catalog addresses (电信 only IPv4) plus the custom dual-stack pair");
-assert.equal(editedTask.targets.filter((x) => x.carrier === "其他").length, 2);
+assert.equal(editedTask.probe.targets.length, 7, "5 catalog addresses (电信 only IPv4) plus the custom dual-stack pair");
+assert.equal(editedTask.probe.targets.filter((x) => x.carrier === "其他").length, 2);
 assert.equal(editedTask.node_ids.length, 1);
 // 改任务会把该任务的历史探测结果一并清掉（storage.SaveTask 更新时 DELETE FROM jobs），
 // 所以公开页要看数值，就得在最后一次改完之后再租一次、把结果发回去——否则卡片只有结构和
@@ -766,9 +767,9 @@ await until(
 const unlockTasks = await (await fetch(base + "/api/v1/admin/tasks", { headers: adminHeaders })).json();
 const unlockTask = unlockTasks.find((t) => t.name === "解锁检测验收");
 assert(unlockTask, "解锁任务要落库");
-assert.equal(unlockTask.kind, "unlock", "任务要以 kind=unlock 落库");
-assert.equal(unlockTask.interval, 3600, "解锁间隔要落库");
-assert.deepEqual(unlockTask.targets ?? [], [], "解锁任务不带目标");
+assert.equal(unlockTask.type, "unlock", "任务要以 type=unlock 落库");
+assert.equal(unlockTask.unlock?.interval, 3600, "解锁间隔要落库");
+assert.equal(unlockTask.probe, undefined, "解锁任务不带 probe（没有目标）");
 assert(unlockTask.node_ids.includes(unlockNode.id), "解锁任务要绑上节点");
 {
   const row = [...w.document.querySelectorAll("tr")].find((tr) => tr.textContent.includes("解锁检测验收"));

@@ -99,7 +99,7 @@ func TestExplicitBindingLeaseOwnershipAndEdit(t *testing.T) {
 	a, _ := makeNode(t, s)
 	b, _ := makeNode(t, s)
 	now := time.Now()
-	task := model.Task{Name: "route", Kind: "route", Host: "example.com", Family: "ipv4", Port: 80, Interval: 900, Enabled: true, Region: "上海", Carrier: "电信"}
+	task := model.Task{Name: "route", Enabled: true, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"route"}, Targets: []model.Target{{Host: "example.com", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信"}}, RouteInterval: 900}}
 	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
@@ -136,11 +136,21 @@ func TestExplicitBindingLeaseOwnershipAndEdit(t *testing.T) {
 	if err = s.Finish(ctx, a, r, now); !errors.Is(err, ErrConflict) {
 		t.Fatal("duplicate result accepted")
 	}
+	// 只暂停（探测内容不变）：结果保留，与专用的启停接口一致。
 	task.Enabled = false
 	if _, err = s.SaveTask(ctx, task, false); err != nil {
 		t.Fatal(err)
 	}
 	obs, err := s.Observations(ctx, a, now)
+	if err != nil || len(obs) != 1 {
+		t.Fatalf("pausing through a save dropped results: %d %v", len(obs), err)
+	}
+	// 改了探测内容：旧结果不再属于这个任务，面板立刻看不到。
+	task.Probe = &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "moved.example.com", Port: 443, Family: "ipv4"}}, Interval: 30}
+	if _, err = s.SaveTask(ctx, task, false); err != nil {
+		t.Fatal(err)
+	}
+	obs, err = s.Observations(ctx, a, now)
 	if err != nil || len(obs) != 0 {
 		t.Fatal("edited task retains stale observations")
 	}
@@ -237,10 +247,10 @@ func TestCombinedTaskIndependentProbes(t *testing.T) {
 	ctx := context.Background()
 	node, _ := makeNode(t, s)
 	now := time.Now()
-	task := model.Task{Name: "combined", Checks: []string{"tcp", "route"}, Targets: []model.Target{
+	task := model.Task{Name: "combined", Enabled: true, NodeIDs: []string{node}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp", "route"}, Targets: []model.Target{
 		{Host: "127.0.0.1", Port: 80, Family: "ipv4", Region: "本地", Carrier: "其他"},
 		{Host: "::1", Port: 80, Family: "ipv6", Region: "本地", Carrier: "其他"},
-	}, Interval: 30, RouteInterval: 900, Enabled: true, NodeIDs: []string{node}}
+	}, Interval: 30, RouteInterval: 900}}
 	if _, err := s.SaveTask(ctx, task, true); err != nil {
 		t.Fatal(err)
 	}
@@ -248,8 +258,8 @@ func TestCombinedTaskIndependentProbes(t *testing.T) {
 	finish := func(jobs []model.Job, at time.Time) {
 		t.Helper()
 		for _, j := range jobs {
-			if len(j.Task.Checks) != 0 || len(j.Task.Targets) != 0 {
-				t.Fatal("job must be scalar")
+			if j.Task.Host == "" || (j.Task.Kind != "tcp" && j.Task.Kind != "route") {
+				t.Fatalf("job must be one concrete probe: %+v", j.Task)
 			}
 			if err := s.Finish(ctx, node, model.Result{JobID: j.ID, Status: "failed"}, at); err != nil {
 				t.Fatal(err)
@@ -302,18 +312,18 @@ func TestProbeTargetsListWhatANodeReallyProbes(t *testing.T) {
 	bound, _ := makeNode(t, s)
 	spare, _ := makeNode(t, s)
 	// 一台机器挂三网（电信只有 IPv4）；另一台故意不挂任何任务。
-	three := model.Task{Name: "三网", Checks: []string{"tcp", "route"}, Targets: []model.Target{
+	three := model.Task{Name: "三网", Enabled: true, NodeIDs: []string{bound, spare}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp", "route"}, Targets: []model.Target{
 		{Host: "127.0.0.1", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信"},
 		{Host: "::1", Port: 80, Family: "ipv6", Region: "上海", Carrier: "电信"},
 		{Host: "127.0.0.2", Port: 80, Family: "ipv4", Region: "上海", Carrier: "其他"},
-	}, Interval: 30, RouteInterval: 900, Enabled: true, NodeIDs: []string{bound, spare}}
+	}, Interval: 30, RouteInterval: 900}}
 	if _, err := s.SaveTask(ctx, three, true); err != nil {
 		t.Fatal(err)
 	}
 	// 第二台任务：国际目标（没有运营商、没有地区的老写法），只有 TCP —— 计划要把两个任务并起来。
-	international := model.Task{Name: "国际", Checks: []string{"tcp"}, Targets: []model.Target{
+	international := model.Task{Name: "国际", Enabled: true, NodeIDs: []string{bound}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{
 		{Host: "127.0.0.3", Port: 443, Family: "ipv4", Carrier: ""},
-	}, Interval: 30, Enabled: true, NodeIDs: []string{bound}}
+	}, Interval: 30}}
 	if _, err := s.SaveTask(ctx, international, true); err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +401,7 @@ func TestLeaseSkipsUnavailableAddressFamilies(t *testing.T) {
 	if !reflect.DeepEqual(views[0].IPFamilies, []string{"ipv6"}) {
 		t.Fatalf("reported families not exposed: %+v", views[0].IPFamilies)
 	}
-	v4 := model.Task{Name: "v4", Kind: "tcp", Host: "1.1.1.1", Family: "ipv4", Port: 80, Interval: 60, Enabled: true, NodeIDs: []string{id}}
+	v4 := model.Task{Name: "v4", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "1.1.1.1", Port: 80, Family: "ipv4"}}, Interval: 60}}
 	if _, err = s.SaveTask(ctx, v4, true); err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +409,7 @@ func TestLeaseSkipsUnavailableAddressFamilies(t *testing.T) {
 	if err != nil || len(jobs) != 0 {
 		t.Fatalf("IPv4 task leased to IPv6-only host: jobs=%v err=%v", jobs, err)
 	}
-	v6 := model.Task{Name: "v6", Kind: "tcp", Host: "2606:4700:4700::1111", Family: "ipv6", Port: 80, Interval: 60, Enabled: true, NodeIDs: []string{id}}
+	v6 := model.Task{Name: "v6", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "2606:4700:4700::1111", Port: 80, Family: "ipv6"}}, Interval: 60}}
 	if _, err = s.SaveTask(ctx, v6, true); err != nil {
 		t.Fatal(err)
 	}
@@ -416,11 +426,7 @@ func TestObservationsRelabelRouteOnRead(t *testing.T) {
 	ctx := context.Background()
 	node, _ := makeNode(t, s)
 	now := time.Date(2026, 9, 22, 20, 8, 41, 0, time.UTC)
-	_, err := s.SaveTask(ctx, model.Task{
-		Name: "移动回程", Kind: "route", Family: "ipv6",
-		Host: "2409:8c62:e10:32::99:80", Region: "四川", Carrier: "移动", Port: 443,
-		Interval: 3600, RouteInterval: 3600, Enabled: true, NodeIDs: []string{node},
-	}, true)
+	_, err := s.SaveTask(ctx, model.Task{Name: "移动回程", Enabled: true, NodeIDs: []string{node}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"route"}, Targets: []model.Target{{Host: "2409:8c62:e10:32::99:80", Port: 443, Family: "ipv6", Region: "四川", Carrier: "移动"}}, RouteInterval: 3600}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,7 +539,7 @@ func TestEventsPageAndFilter(t *testing.T) {
 func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 	s := openTest(t)
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 10 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 11 {
 		t.Fatalf("user_version=%d %v", version, err)
 	}
 	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "events_rule_time", "jobs_latest_insert"} {
@@ -603,5 +609,73 @@ func TestFreeFlagMigrationAndSave(t *testing.T) {
 		if n.ID == id && (!n.Free || n.Price != 0 || n.PricePeriod != "") {
 			t.Fatalf("free save kept a price: %+v", n.Node)
 		}
+	}
+}
+
+// Version 11 turns every legacy task config (combined, single probe, unlock)
+// into the tagged union, keeping each probe's key exactly as it was so results,
+// history and schedules stay attached.
+func TestTaskShapeMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	legacy := map[string]string{
+		"combined": `{"id":"combined","name":"三网","enabled":true,"node_ids":[],"checks":["tcp","route"],"targets":[{"host":"1.1.1.1","port":443,"family":"ipv4","region":"上海","carrier":"电信"}],"interval":60,"route_interval":1800}`,
+		"tcp":      `{"id":"tcp","name":"单项延迟","enabled":true,"node_ids":[],"kind":"tcp","host":"example.com","port":443,"family":"ipv4","region":"","carrier":"","interval":30}`,
+		"route":    `{"id":"route","name":"单项回程","enabled":false,"node_ids":[],"kind":"route","host":"2.2.2.2","port":80,"family":"ipv4","region":"北京","carrier":"联通","interval":900}`,
+		"unlock":   `{"id":"unlock","name":"解锁","enabled":true,"node_ids":[],"kind":"unlock","family":"ipv6","interval":7200}`,
+	}
+	wantKeys := map[string][]string{
+		"combined": {"combined|tcp|ipv4|1.1.1.1|443|上海|电信", "combined|route|ipv4|1.1.1.1|443|上海|电信"},
+		"tcp":      {"tcp|tcp|ipv4|example.com|443||"},
+		"route":    {"route|route|ipv4|2.2.2.2|80|北京|联通"},
+		"unlock":   {"unlock|unlock|ipv6||0||"},
+	}
+	for id, config := range legacy {
+		if _, err = s.db.Exec("INSERT INTO tasks VALUES(?,?)", id, config); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = s.db.Exec("PRAGMA user_version=10"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	tasks, err := s.Tasks(ctx)
+	if err != nil || len(tasks) != 4 {
+		t.Fatalf("tasks: %d %v", len(tasks), err)
+	}
+	for _, task := range tasks {
+		if err := task.Validate(); err != nil {
+			t.Fatalf("%s did not migrate into a valid task: %v (%+v)", task.ID, err, task)
+		}
+		keys := task.ProbeKeys()
+		if len(keys) != len(wantKeys[task.ID]) {
+			t.Fatalf("%s keys %v", task.ID, keys)
+		}
+		for _, k := range wantKeys[task.ID] {
+			if !keys[k] {
+				t.Fatalf("%s lost probe key %q (has %v)", task.ID, k, keys)
+			}
+		}
+	}
+	byID := map[string]model.Task{}
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	if c := byID["combined"]; c.Type != model.TaskProbe || c.Probe.Interval != 60 || c.Probe.RouteInterval != 1800 {
+		t.Fatalf("combined: %+v %+v", c, c.Probe)
+	}
+	if r := byID["route"]; r.Enabled || r.Probe.RouteInterval != 900 || r.Probe.Interval != 0 {
+		t.Fatalf("single route: %+v %+v", r, r.Probe)
+	}
+	if u := byID["unlock"]; u.Type != model.TaskUnlock || u.Unlock.Interval != 7200 || u.Unlock.Family != "ipv6" || u.Probe != nil {
+		t.Fatalf("unlock: %+v", u)
 	}
 }

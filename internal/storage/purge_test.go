@@ -14,7 +14,7 @@ func purgeFixture(t *testing.T, s *Store, now time.Time) (node, token string, ta
 	t.Helper()
 	ctx := context.Background()
 	node, token = makeNode(t, s)
-	task = model.Task{Name: "t", Kind: "tcp", Family: "ipv4", Host: "example.com", Port: 443, Region: "上海", Carrier: "电信", Interval: 30, Enabled: true, NodeIDs: []string{node}}
+	task = model.Task{Name: "t", Enabled: true, NodeIDs: []string{node}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "example.com", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信"}}, Interval: 30}}
 	id, err := s.SaveTask(ctx, task, true)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestEditPurgesOnlyTheHistoryBeforeTheEdit(t *testing.T) {
 	before := rowCount(t, s, "SELECT count(*) FROM jobs WHERE task_id=?", task.ID)
 	s.stopPurger() // 让历史留到下面手动删，才能证明删除有界
 	edited := task
-	edited.Host = "moved.example.com"
+	edited.Probe = &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "moved.example.com", Port: 443, Family: "ipv4", Region: "上海", Carrier: "电信"}}, Interval: 30}
 	if _, err := s.SaveTask(ctx, edited, false); err != nil {
 		t.Fatal(err)
 	}

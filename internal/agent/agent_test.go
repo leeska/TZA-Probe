@@ -201,10 +201,10 @@ func TestAgentRunsWholeLeaseAndKeepsPolling(t *testing.T) {
 	defer func(original time.Duration) { pollInterval = original }(pollInterval)
 	pollInterval = 10 * time.Millisecond
 	transport := &fakeTransport{finished: map[string]bool{}, lease: []model.Job{
-		{ID: "tcp-1", Task: model.Task{Kind: "tcp"}},
-		{ID: "tcp-2", Task: model.Task{Kind: "tcp"}},
-		{ID: "route", Task: model.Task{Kind: "route"}},
-		{ID: "unlock", Task: model.Task{Kind: model.UnlockKind}},
+		{ID: "tcp-1", Task: model.Probe{Kind: "tcp"}},
+		{ID: "tcp-2", Task: model.Probe{Kind: "tcp"}},
+		{ID: "route", Task: model.Probe{Kind: "route"}},
+		{ID: "unlock", Task: model.Probe{Kind: model.UnlockKind}},
 	}}
 	release := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())

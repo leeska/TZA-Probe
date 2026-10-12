@@ -83,7 +83,7 @@ func TestBillingDayMigratesToAnchor(t *testing.T) {
 	}
 
 	var version int
-	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 10 {
+	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 11 {
 		t.Fatalf("user_version = %d (%v)", version, err)
 	}
 	var raw string

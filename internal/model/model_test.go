@@ -418,7 +418,7 @@ func TestMasks(t *testing.T) {
 	}
 }
 func TestTaskBoundaries(t *testing.T) {
-	base := Task{Name: "test", Kind: "route", Host: "example.com", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 900}
+	base := Probe{Name: "test", Kind: "route", Host: "example.com", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 900}
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -447,49 +447,80 @@ func TestPublicAddressRejectsEmbeddedSecrets(t *testing.T) {
 }
 
 func TestCombinedTaskValidation(t *testing.T) {
-	task := Task{Name: "海外双栈", Checks: []string{"tcp", "route"}, Targets: []Target{
+	spec := &ProbeSpec{Checks: []string{"tcp", "route"}, Targets: []Target{
 		{Host: "example.com", Port: 443, Family: "ipv4", Region: "新加坡", Carrier: "其他"},
 		{Host: "example.com", Port: 443, Family: "ipv6", Region: "新加坡", Carrier: "其他"},
 	}, Interval: 60, RouteInterval: 900}
+	task := Task{Name: "海外双栈", Type: TaskProbe, Probe: spec}
 	if err := task.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	task.Targets[1].Host = "1.1.1.1"
+	if leaves := task.Leaves(); len(leaves) != 4 || leaves[1].Kind != "route" || leaves[1].Interval != 900 || leaves[0].Interval != 60 {
+		t.Fatalf("leaves: %+v", leaves)
+	}
+	spec.Targets[1].Host = "1.1.1.1"
 	if err := task.Validate(); err == nil {
 		t.Fatal("accepted mismatched family")
 	}
-	task.Targets[1].Host = "example.com"
-	task.Checks = []string{"tcp", "tcp"}
+	spec.Targets[1].Host = "example.com"
+	spec.Checks = []string{"tcp", "tcp"}
 	if err := task.Validate(); err == nil {
 		t.Fatal("accepted duplicate checks")
 	}
-	// 名字写错时要说清是检测项本身不对，而不是让叶子任务报「任务类型须为 tcp 或 route」。
-	task.Checks = []string{"latency"}
+	// 名字写错时要说清是检测项本身不对，而不是让叶子任务报「检测类型须为 tcp、route 或 unlock」。
+	spec.Checks = []string{"latency"}
 	if err := task.Validate(); err == nil || !strings.Contains(err.Error(), "检测内容须为") {
 		t.Fatalf("check name error = %v", err)
 	}
-	task.Checks = []string{"tcp", "route"}
-	task.Checks = []string{"route"}
-	task.RouteInterval = 30
+	spec.Checks = []string{"route"}
+	spec.RouteInterval = 30
 	if err := task.Validate(); err == nil {
 		t.Fatal("accepted excessive route frequency")
 	}
 }
 
+// The task is a tagged union: the type names which spec carries the
+// definition, and the other one must be absent.
+func TestTaskUnion(t *testing.T) {
+	unlock := Task{Name: "解锁", Type: TaskUnlock, Unlock: &UnlockSpec{Interval: 3600}}
+	if err := unlock.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if leaves := unlock.Leaves(); len(leaves) != 1 || leaves[0].Kind != UnlockKind || leaves[0].Interval != 3600 {
+		t.Fatalf("unlock leaves: %+v", leaves)
+	}
+	probe := &ProbeSpec{Checks: []string{"tcp"}, Targets: []Target{{Host: "1.1.1.1", Port: 443, Family: "ipv4"}}, Interval: 60}
+	for name, bad := range map[string]Task{
+		"no type":          {Name: "x", Probe: probe},
+		"unknown type":     {Name: "x", Type: "tcp", Probe: probe},
+		"probe without":    {Name: "x", Type: TaskProbe},
+		"unlock with both": {Name: "x", Type: TaskUnlock, Unlock: &UnlockSpec{Interval: 3600}, Probe: probe},
+		"short unlock":     {Name: "x", Type: TaskUnlock, Unlock: &UnlockSpec{Interval: 60}},
+		"no name":          {Type: TaskUnlock, Unlock: &UnlockSpec{Interval: 3600}},
+	} {
+		if bad.Validate() == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	// 同一组探测、换了名字或间隔：探测键不变（编辑时据此决定是否清历史）。
+	a := Task{ID: "t", Name: "a", Type: TaskProbe, Probe: probe}
+	b := Task{ID: "t", Name: "b", Type: TaskProbe, Probe: &ProbeSpec{Checks: probe.Checks, Targets: probe.Targets, Interval: 120}}
+	if ka, kb := a.ProbeKeys(), b.ProbeKeys(); len(ka) != 1 || !kb[a.Leaves()[0].ProbeKey()] {
+		t.Fatalf("probe keys differ: %v %v", ka, kb)
+	}
+}
+
 // TestObservationRedact pins the masking both the panel and the MCP endpoint
-// apply: bound node ids and unmasked hop addresses must never leave the server.
+// apply: unmasked hop addresses must never leave the server.
 func TestObservationRedact(t *testing.T) {
 	fresh := Observation{
-		Task: Task{ID: "t1", Kind: "route", NodeIDs: []string{"n1", "n2"}},
+		Task: Probe{ID: "t1", Kind: "route"},
 		Result: Result{
 			Status: "ok", Route: "CN2GT",
 			Hops: []Hop{{TTL: 1, Address: "59.43.1.2", ASN: "4134"}, {TTL: 2, Address: "202.97.5.6", ASN: "as4134"}},
 		},
 	}
 	out := fresh.Redact()
-	if out.Task.NodeIDs != nil {
-		t.Fatalf("node bindings leaked: %v", out.Task.NodeIDs)
-	}
 	if out.Result.Hops[0].Address != "59.43.*.*" || out.Result.Hops[1].Address != "202.97.*.*" {
 		t.Fatalf("hop addresses not masked: %v", out.Result.Hops)
 	}
@@ -559,6 +590,31 @@ func TestMetricsAddressFamilyCapability(t *testing.T) {
 		valid.IPFamilies = bad
 		if err := valid.Validate(); err == nil {
 			t.Fatalf("accepted invalid families %v", bad)
+		}
+	}
+}
+
+// A leased job's task is the Agent wire contract of protocol 1: Agents already
+// in the field decode it into the single-probe task they were built with and
+// validate it there. The keys must stay exactly that probe's keys.
+func TestProbeWireShape(t *testing.T) {
+	data, err := json.Marshal(Job{ID: "j", Task: Probe{ID: "t", Name: "n", Kind: "tcp", Host: "1.1.1.1", Port: 443, Family: "ipv4", Interval: 60}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Task map[string]any `json:"task"`
+	}
+	if err = json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"id", "name", "kind", "host", "port", "family", "region", "carrier", "interval"}
+	if len(wire.Task) != len(want) {
+		t.Fatalf("wire keys changed: %v", wire.Task)
+	}
+	for _, key := range want {
+		if _, ok := wire.Task[key]; !ok {
+			t.Fatalf("wire key %q missing: %v", key, wire.Task)
 		}
 	}
 }

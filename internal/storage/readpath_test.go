@@ -51,10 +51,10 @@ func seedReadPaths(t *testing.T, s *Store, now time.Time) (nodes []string, taskI
 		id, _ := makeNode(t, s)
 		nodes = append(nodes, id)
 	}
-	task := model.Task{Name: "混合", Checks: []string{"tcp", "route"}, Interval: 30, RouteInterval: 900, Enabled: true, NodeIDs: nodes[:2]}
+	task := model.Task{Name: "混合", Enabled: true, NodeIDs: nodes[:2], Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp", "route"}, Interval: 30, RouteInterval: 900}}
 	// 两个电信目标落在同一分组（同地区、同协议族），联通单独一组。
 	for i, c := range []string{"电信", "电信", "联通"} {
-		task.Targets = append(task.Targets, model.Target{Host: fmt.Sprintf("10.0.0.%d", i+1), Port: 80, Family: "ipv4", Region: "上海", Carrier: c})
+		task.Probe.Targets = append(task.Probe.Targets, model.Target{Host: fmt.Sprintf("10.0.0.%d", i+1), Port: 80, Family: "ipv4", Region: "上海", Carrier: c})
 	}
 	var err error
 	if taskID, err = s.SaveTask(ctx, task, true); err != nil {
@@ -223,7 +223,7 @@ func oldNetworkHistory(ctx context.Context, s *Store, id string, hours int, now 
 		if err := rows.Scan(&taskID, &family, &host, &port, &region, &carrier, &at, &latency, &sent, &received, &raw); err != nil {
 			return nil, err
 		}
-		var task model.Task
+		var task model.Probe
 		if err := json.Unmarshal([]byte(raw), &task); err != nil {
 			skipped++
 			continue

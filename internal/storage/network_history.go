@@ -45,7 +45,7 @@ func (s *Store) NetworkHistory(ctx context.Context, id string, hours int, now ti
 	defer rows.Close()
 	series := []model.NetworkSeries{}
 	indexes := map[string]int{}
-	tasks := map[string]*model.Task{} // 每个分组键只解析一次任务 JSON
+	tasks := map[string]*model.Probe{} // 每个分组键只解析一次任务 JSON
 	skipped := 0
 	for rows.Next() {
 		var key, raw string
@@ -57,7 +57,7 @@ func (s *Store) NetworkHistory(ctx context.Context, id string, hours int, now ti
 		}
 		task, ok := tasks[key]
 		if !ok {
-			var t model.Task
+			var t model.Probe
 			if err := json.Unmarshal([]byte(raw), &t); err != nil {
 				tasks[key] = nil
 			} else {

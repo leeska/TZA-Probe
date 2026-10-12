@@ -78,10 +78,10 @@ export async function detail(id, focus = null) {
   const reported = Array.isArray(n.ip_families) ? new Set(n.ip_families) : null;
   const hasIPv4 = reported
     ? reported.has("ipv4")
-    : obs.some((o) => o.task.family === "ipv4" && o.task.enabled);
+    : obs.some((o) => o.task.family === "ipv4");
   const hasIPv6 = reported
     ? reported.has("ipv6")
-    : obs.some((o) => o.task.family === "ipv6" && o.task.enabled);
+    : obs.some((o) => o.task.family === "ipv6");
   // 与公开面板同一套：有几族给几段（单栈就一段，不摆点不动的灰段）。
   const familyControl =
     !hasIPv4 && !hasIPv6
