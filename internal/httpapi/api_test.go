@@ -685,3 +685,73 @@ func TestAnonymousPanelSharesNodeSnapshot(t *testing.T) {
 		t.Fatalf("快照过期后应重算，实际累计 %d 次", n)
 	}
 }
+
+// probeCountingRepo 数逐目标观测与延迟样本各被查了几次。
+type probeCountingRepo struct {
+	Repository
+	observations, samples atomic.Int32
+}
+
+func (c *probeCountingRepo) Observations(ctx context.Context, id string, now time.Time) ([]model.Observation, error) {
+	c.observations.Add(1)
+	return c.Repository.Observations(ctx, id, now)
+}
+
+func (c *probeCountingRepo) RecentLatencySamples(ctx context.Context, ids []string, limit int, since time.Time) ([]model.LatencySample, error) {
+	c.samples.Add(1)
+	return c.Repository.RecentLatencySamples(ctx, ids, limit, since)
+}
+
+// 首页每 10 秒一轮要取全部节点的观测与延迟样本，后者要逐行 json_extract 时间窗内的结果：
+// 匿名访客在 probesTTL 内共用一份；管理员与非默认 limit 现算。
+func TestAnonymousPanelSharesProbeSnapshot(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "probes.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, name := range []string{"a", "b"} {
+		if _, _, err = s.SaveNode(context.Background(), model.Node{Name: name, BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo := &probeCountingRepo{Repository: s}
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: repo, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	get := func(path, token string) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", server.URL+path, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s: %d", path, resp.StatusCode)
+		}
+	}
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			get("/api/v1/observations", "")
+			get("/api/v1/latency-samples?limit=20", "")
+		}()
+	}
+	wg.Wait()
+	if o, l := repo.observations.Load(), repo.samples.Load(); o != 2 || l != 1 {
+		t.Fatalf("20 个匿名访客应共用一次计算（2 台节点的观测 + 1 次样本），实际 %d / %d", o, l)
+	}
+	get("/api/v1/observations", admin)
+	get("/api/v1/latency-samples", admin)
+	get("/api/v1/latency-samples?limit=5", "")
+	if o, l := repo.observations.Load(), repo.samples.Load(); o != 4 || l != 3 {
+		t.Fatalf("管理员与非默认 limit 必须现算，实际累计 %d / %d", o, l)
+	}
+}

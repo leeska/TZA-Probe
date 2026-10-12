@@ -61,15 +61,44 @@ type API struct {
 	sessions      map[string]time.Time
 	loginWindow   time.Time
 	loginAttempts int
-	// 匿名面板共用的节点快照，见 panelNodes。
-	nodesMu  sync.Mutex
-	nodesAt  time.Time
-	nodesFor []model.NodeView
+	// 匿名面板共用的快照，见 panelNodes / allObservations / latencySamples。
+	nodesSnap        snapshot[[]model.NodeView]
+	observationsSnap snapshot[map[string][]model.Observation]
+	samplesSnap      snapshot[map[string]any]
+}
+
+// snapshot 是匿名访客共用的一份计算结果：有效期内直接复用，过期后同时到达的请求排队等同一次
+// 计算，再多访客每个周期也只算一次。存进来的值之后只读，调用方不得修改。
+type snapshot[T any] struct {
+	mu    sync.Mutex
+	at    time.Time
+	value T
+	ok    bool
+}
+
+func (c *snapshot[T]) get(ttl time.Duration, compute func() (T, error)) (T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ok && time.Since(c.at) < ttl {
+		return c.value, nil
+	}
+	value, err := compute()
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	c.at, c.value, c.ok = time.Now(), value, true
+	return value, nil
 }
 
 // nodesTTL 是匿名访客共用节点快照的有效期。Agent 本来就约 1 秒报一次，面板也是 1 秒一拍，
 // 再新也没有新数据可看。
 const nodesTTL = time.Second
+
+// probesTTL 是匿名访客共用探测快照（逐目标观测、延迟样本）的有效期。面板 10 秒才取一轮，
+// 探测本身 30 秒以上一次，5 秒的延迟看不出来；而这两条查询要逐行 json_extract 时间窗内的
+// 结果，以前每个访客每 10 秒各算一遍。
+const probesTTL = 5 * time.Second
 
 // panelNodes 返回节点视图。首页每秒拉一次 /nodes，而一次 Store.Nodes 要读全部任务、逐台查
 // 流量与降速窗口（13 台约 30 条查询）：以前每个开着面板的访客都各算一遍，访客越多 1 核机越吃力。
@@ -79,18 +108,10 @@ func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) 
 	if admin {
 		return a.Store.Nodes(r.Context(), time.Now())
 	}
-	a.nodesMu.Lock()
-	defer a.nodesMu.Unlock()
-	if a.nodesFor != nil && time.Since(a.nodesAt) < nodesTTL {
-		return a.nodesFor, nil
-	}
-	// 排在后面的请求等的是这次计算，发起者断开不该让它们一起失败。
-	nodes, err := a.Store.Nodes(context.WithoutCancel(r.Context()), time.Now())
-	if err != nil {
-		return nil, err
-	}
-	a.nodesAt, a.nodesFor = time.Now(), nodes
-	return nodes, nil
+	return a.nodesSnap.get(nodesTTL, func() ([]model.NodeView, error) {
+		// 排在后面的请求等的是这次计算，发起者断开不该让它们一起失败。
+		return a.Store.Nodes(context.WithoutCancel(r.Context()), time.Now())
+	})
 }
 
 func (a *API) Handler() http.Handler {
@@ -609,28 +630,42 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 // keyed by node id. The public panel used to ask once per node; with a dozen
 // nodes that was a dozen round trips for rows the server reads in well under 1ms.
 func (a *API) allObservations(w http.ResponseWriter, r *http.Request) {
-	now := time.Now()
 	admin := a.isAdmin(r)
-	nodes, err := a.panelNodes(r, admin)
+	compute := func(ctx context.Context) (map[string][]model.Observation, error) {
+		nodes, err := a.panelNodes(r, admin)
+		if err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		out := map[string][]model.Observation{}
+		for _, n := range nodes {
+			if !n.Public && !admin {
+				continue
+			}
+			list, err := a.Store.Observations(ctx, n.ID, now)
+			if err != nil {
+				return nil, err
+			}
+			for i := range list {
+				list[i] = list[i].Redact()
+				list[i].Result.Hops = nil
+			}
+			out[n.ID] = list
+		}
+		return out, nil
+	}
+	var out map[string][]model.Observation
+	var err error
+	if admin {
+		out, err = compute(r.Context())
+	} else {
+		out, err = a.observationsSnap.get(probesTTL, func() (map[string][]model.Observation, error) {
+			return compute(context.WithoutCancel(r.Context()))
+		})
+	}
 	if err != nil {
 		fail(w, err)
 		return
-	}
-	out := map[string][]model.Observation{}
-	for _, n := range nodes {
-		if !n.Public && !admin {
-			continue
-		}
-		list, err := a.Store.Observations(r.Context(), n.ID, now)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		for i := range list {
-			list[i] = list[i].Redact()
-			list[i].Result.Hops = nil
-		}
-		out[n.ID] = list
 	}
 	write(w, 200, out)
 }
@@ -690,36 +725,54 @@ func (a *API) panelDefaults(ctx context.Context) (string, string, error) {
 // latencySamples feeds the per-probe cells on the public card. Only nodes the
 // caller may already see are included, so this adds no new visibility.
 func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
-	limit := 20
+	limit := defaultSampleLimit
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			limit = min(max(n, 1), 60)
 		}
 	}
-	_, since, err := a.latencyWindow(r.Context())
-	if err != nil {
-		fail(w, err)
-		return
-	}
 	admin := a.isAdmin(r)
-	nodes, err := a.panelNodes(r, admin)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	ids := []string{}
-	for _, n := range nodes {
-		if n.Public || admin {
-			ids = append(ids, n.ID)
+	compute := func(ctx context.Context) (map[string]any, error) {
+		_, since, err := a.latencyWindow(ctx)
+		if err != nil {
+			return nil, err
 		}
+		nodes, err := a.panelNodes(r, admin)
+		if err != nil {
+			return nil, err
+		}
+		ids := []string{}
+		for _, n := range nodes {
+			if n.Public || admin {
+				ids = append(ids, n.ID)
+			}
+		}
+		out, err := a.Store.RecentLatencySamples(ctx, ids, limit, since)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"samples": out}, nil
 	}
-	out, err := a.Store.RecentLatencySamples(r.Context(), ids, limit, since)
+	var out map[string]any
+	var err error
+	// 快照只存面板实际用的那一档（limit=20）；别的 limit 很少见，直接算。
+	if admin || limit != defaultSampleLimit {
+		out, err = compute(r.Context())
+	} else {
+		out, err = a.samplesSnap.get(probesTTL, func() (map[string]any, error) {
+			return compute(context.WithoutCancel(r.Context()))
+		})
+	}
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	write(w, 200, map[string]any{"samples": out})
+	write(w, 200, out)
 }
+
+// defaultSampleLimit 是公开卡片每组取的样本数（web/app.js 固定发 limit=20）。
+const defaultSampleLimit = 20
+
 func (a *API) saveNode(w http.ResponseWriter, r *http.Request) {
 	var n model.Node
 	if !decode(w, r, &n) {

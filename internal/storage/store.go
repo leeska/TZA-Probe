@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -148,7 +149,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 7 {
+	if version > 8 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -210,6 +211,16 @@ func Open(path string) (*Store, error) {
 		// 回程补测队列（每台节点 × 每条探针一行，见 Store.Finish）。不回填：它是
 		// 「刚出了一次未知」的短命标记，迁移时的旧结果没有补测可言。
 		if _, err = db.Exec("BEGIN; CREATE TABLE IF NOT EXISTS retries(node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE, probe_key TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(node_id,probe_key)); CREATE INDEX IF NOT EXISTS retries_at ON retries(at); PRAGMA user_version=7; COMMIT;"); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 8 {
+		// 两个删除路径上的索引。没有它们时：jobs_latest_delete 触发器每删一行 job 就把 latest
+		// 整表扫一遍（Clean 每小时删几万行，全程持写锁）；SaveTask / DeleteTask 的
+		// DELETE FROM jobs WHERE task_id=?（以及外键级联）把七天的 jobs 整表扫一遍。写锁
+		// 被占住时所有 Agent 的上报与领任务都在排队。
+		if _, err = db.Exec("BEGIN; CREATE INDEX IF NOT EXISTS latest_job ON latest(job_id); CREATE INDEX IF NOT EXISTS jobs_task ON jobs(task_id); PRAGMA user_version=8; COMMIT;"); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -422,19 +433,30 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 	if err != nil {
 		return nil, err
 	}
+	// 每台节点的周期用量：日桶一条、首日切片一条，两条查询把整页都算完（以前逐台各查两次，
+	// 首页每秒一轮，节点越多查询越多）。
+	days := make([]span, 0, len(views))
+	edges := []span{}
+	for _, v := range views {
+		days = append(days, span{v.ID, v.CycleStart, v.CycleEnd})
+		// 日桶只能整天算：锚点不在 00:00 时周期首日那一天的桶整体早于 cycle_start，被日桶
+		// 查询整段丢掉，用小时桶把锚点之后的那一段补回来（见 cycleStartSlice）。
+		if from, to, ok := cycleStartSlice(v.CycleStart, v.CycleEnd); ok {
+			edges = append(edges, span{v.ID, from, to})
+		}
+	}
+	dayTotals, err := s.rangeSums(ctx, "traffic", "day", days)
+	if err != nil {
+		return nil, err
+	}
+	edgeTotals, err := s.rangeSums(ctx, "traffic_hour", "hour", edges)
+	if err != nil {
+		return nil, err
+	}
 	for i := range views {
 		v := &views[i]
-		var in, out int64
-		if err = s.queryRow(ctx, "SELECT coalesce(sum(incoming),0),coalesce(sum(outgoing),0) FROM traffic WHERE node_id=? AND day>=? AND day<?", v.ID, v.CycleStart, v.CycleEnd).Scan(&in, &out); err != nil {
-			return nil, err
-		}
-		// 日桶只能整天算：锚点不在 00:00 时周期首日那一天的桶整体早于 cycle_start，被上面
-		// 这条查询整段丢掉，用小时桶把锚点之后的那一段补回来（见 cycleStartSlice）。
-		edgeIn, edgeOut, err := s.cycleStartSlice(ctx, v.ID, v.CycleStart, v.CycleEnd)
-		if err != nil {
-			return nil, err
-		}
-		v.TrafficUsed = model.Traffic(in+edgeIn, out+edgeOut, v.TrafficMode)
+		d, e := dayTotals[v.ID], edgeTotals[v.ID]
+		v.TrafficUsed = model.Traffic(d.in+e.in, d.out+e.out, v.TrafficMode)
 		if v.AdjustmentCycle == v.CycleStart {
 			v.TrafficUsed = max(0, v.TrafficUsed+v.TrafficAdjustment)
 		}
@@ -470,23 +492,54 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 // 锚点不在整点时，含锚点的那一个小时横跨边界：宁可少算它（月周期约 0.03%），也不能
 // 多算——按周期额度降速的线路会因此提前被判定为用满。小时桶只留 30 天，切不到就退回
 // 原样（不补），任何情况下都不会多算。
-func (s *Store) cycleStartSlice(ctx context.Context, id string, start, end int64) (int64, int64, error) {
+func cycleStartSlice(start, end int64) (int64, int64, bool) {
 	if start%86400 == 0 {
-		return 0, 0, nil // 锚点在整日边界：日桶已经精确覆盖，别动
+		return 0, 0, false // 锚点在整日边界：日桶已经精确覆盖，别动
 	}
 	from := start
 	if from%3600 != 0 {
 		from = from/3600*3600 + 3600
 	}
 	to := min(end, start/86400*86400+86400)
-	if from >= to {
-		return 0, 0, nil
+	return from, to, from < to
+}
+
+// span 是一台节点要汇总的桶区间 [from, to)。
+type span struct {
+	id       string
+	from, to int64
+}
+
+type totals struct{ in, out int64 }
+
+// rangeSums 用一条查询给每台节点汇总各自区间内的桶：区间作为 VALUES 表与桶表按
+// (node_id, 桶) 主键连接，每台节点仍是一次索引范围查找，只是不再逐台往返。
+// table / column 只取代码里的常量，不来自输入。
+func (s *Store) rangeSums(ctx context.Context, table, column string, spans []span) (map[string]totals, error) {
+	out := make(map[string]totals, len(spans))
+	if len(spans) == 0 {
+		return out, nil
 	}
-	var in, out int64
-	if err := s.queryRow(ctx, "SELECT coalesce(sum(incoming),0),coalesce(sum(outgoing),0) FROM traffic_hour WHERE node_id=? AND hour>=? AND hour<?", id, from, to).Scan(&in, &out); err != nil {
-		return 0, 0, err
+	values := make([]string, len(spans))
+	args := make([]any, 0, len(spans)*3)
+	for i, sp := range spans {
+		values[i] = "(?,?,?)"
+		args = append(args, sp.id, sp.from, sp.to)
 	}
-	return in, out, nil
+	rows, err := s.query(ctx, "WITH r(id,a,b) AS (VALUES "+strings.Join(values, ",")+") SELECT r.id,coalesce(sum(t.incoming),0),coalesce(sum(t.outgoing),0) FROM r JOIN "+table+" t ON t.node_id=r.id AND t."+column+">=r.a AND t."+column+"<r.b GROUP BY r.id", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var t totals
+		if err = rows.Scan(&id, &t.in, &t.out); err != nil {
+			return nil, err
+		}
+		out[id] = t
+	}
+	return out, rows.Err()
 }
 
 // attachWindow 给每台节点算「降速窗口内的平均带宽」。
@@ -503,53 +556,62 @@ func (s *Store) attachWindow(ctx context.Context, views []model.NodeView, now ti
 	if len(views) == 0 {
 		return nil
 	}
-	byWindow := map[int][]string{}
+	// 一次取出最长窗口内的小时桶（按 hour 索引范围扫，行数 ≈ 节点数 × 窗口小时数），
+	// 再在内存里按每台节点自己的窗口汇总。以前每种窗口各跑一遍不带节点过滤的 GROUP BY，
+	// 而 GROUP BY node_id 让规划器选了主键全表扫（45 天的小时桶），每秒一轮。
+	startOf := func(hours int) int64 { return (now.Unix() - int64(hours)*3600) / 3600 * 3600 }
+	longest := 0
 	for i := range views {
-		hours := views[i].Node.WindowHours()
-		views[i].WindowHours = hours
-		byWindow[hours] = append(byWindow[hours], views[i].ID)
+		views[i].WindowHours = views[i].Node.WindowHours()
+		longest = max(longest, views[i].WindowHours)
 	}
-	for hours, ids := range byWindow {
-		start := (now.Unix() - int64(hours)*3600) / 3600 * 3600
+	type bucket struct{ hour, in, out int64 }
+	byNode := map[string][]bucket{}
+	rows, err := s.query(ctx, "SELECT node_id,hour,incoming,outgoing FROM traffic_hour WHERE hour>=?", startOf(longest))
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id string
+		var b bucket
+		if err = rows.Scan(&id, &b.hour, &b.in, &b.out); err != nil {
+			rows.Close()
+			return err
+		}
+		byNode[id] = append(byNode[id], b)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for i := range views {
+		v := &views[i]
+		hours := v.WindowHours
+		start := startOf(hours)
 		span := now.Unix() - start
-		rows, err := s.query(ctx, "SELECT node_id,coalesce(sum(incoming),0),coalesce(sum(outgoing),0),min(hour) FROM traffic_hour WHERE hour>=? GROUP BY node_id", start)
-		if err != nil {
-			return err
-		}
-		type window struct{ in, out, first int64 }
-		buckets := map[string]window{}
-		for rows.Next() {
-			var id string
-			var w window
-			if err = rows.Scan(&id, &w.in, &w.out, &w.first); err != nil {
-				rows.Close()
-				return err
-			}
-			buckets[id] = w
-		}
-		rows.Close()
-		if err = rows.Err(); err != nil {
-			return err
-		}
-		wanted := map[string]bool{}
-		for _, id := range ids {
-			wanted[id] = true
-		}
-		for i := range views {
-			v := &views[i]
-			b, ok := buckets[v.ID]
-			if !wanted[v.ID] || !ok || span <= 0 {
+		var in, out int64
+		first, seen := int64(0), false
+		for _, b := range byNode[v.ID] {
+			if b.hour < start {
 				continue
 			}
-			covered := min(span, now.Unix()-b.first)
-			if covered <= 0 {
-				continue
+			in += b.in
+			out += b.out
+			if !seen || b.hour < first {
+				first, seen = b.hour, true
 			}
-			v.AvgBits = float64(model.Traffic(b.in, b.out, v.TrafficMode)) * 8 / float64(covered)
-			v.CoveredHours = int((covered + 3599) / 3600)
-			if covered >= span {
-				v.CoveredHours = hours
-			}
+		}
+		if !seen || span <= 0 {
+			continue
+		}
+		covered := min(span, now.Unix()-first)
+		if covered <= 0 {
+			continue
+		}
+		v.AvgBits = float64(model.Traffic(in, out, v.TrafficMode)) * 8 / float64(covered)
+		v.CoveredHours = int((covered + 3599) / 3600)
+		if covered >= span {
+			v.CoveredHours = hours
 		}
 	}
 	return nil

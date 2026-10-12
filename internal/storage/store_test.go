@@ -489,7 +489,7 @@ func TestPendingEventsExpire(t *testing.T) {
 func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 	s := openTest(t)
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 7 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 8 {
 		t.Fatalf("user_version=%d %v", version, err)
 	}
 	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "events_rule_time", "jobs_latest_insert"} {
