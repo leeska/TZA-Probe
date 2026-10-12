@@ -38,6 +38,15 @@ func (e invalidError) Is(target error) bool { return target == ErrInvalid }
 // Invalid returns an error that matches ErrInvalid and reads as msg.
 func Invalid(msg string) error { return invalidError{msg} }
 
+// notFoundError is an ErrNotFound that names what was missing.
+type notFoundError struct{ msg string }
+
+func (e notFoundError) Error() string        { return e.msg }
+func (e notFoundError) Is(target error) bool { return target == ErrNotFound }
+
+// NotFound returns an error that matches ErrNotFound and reads as msg.
+func NotFound(msg string) error { return notFoundError{msg} }
+
 // Version is overridden at release time with -ldflags "-X …/internal/model.Version=v2.0.0".
 var Version = "2.0.0-dev"
 

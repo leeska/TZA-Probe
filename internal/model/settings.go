@@ -94,3 +94,43 @@ func ValidatePanelSkin(v string) error {
 	}
 	return fmt.Errorf("默认皮肤须为 %s 之一", strings.Join(PanelSkins, " / "))
 }
+
+// PanelSettings is the visitor-facing panel configuration as the admin pages
+// and the MCP tools read it: every value already normalized.
+type PanelSettings struct {
+	LatencyWindowMinutes int    `json:"latency_window_minutes"`
+	DefaultTheme         string `json:"default_theme"`
+	DefaultSkin          string `json:"default_skin"`
+}
+
+// PanelPatch changes only the fields it carries.
+type PanelPatch struct {
+	LatencyWindowMinutes *int    `json:"latency_window_minutes"`
+	DefaultTheme         *string `json:"default_theme"`
+	DefaultSkin          *string `json:"default_skin"`
+}
+
+// Empty reports whether the patch changes nothing.
+func (p PanelPatch) Empty() bool {
+	return p.LatencyWindowMinutes == nil && p.DefaultTheme == nil && p.DefaultSkin == nil
+}
+
+// Validate checks every carried field before anything is written.
+func (p PanelPatch) Validate() error {
+	if p.LatencyWindowMinutes != nil {
+		if err := ValidateLatencyWindowMinutes(*p.LatencyWindowMinutes); err != nil {
+			return err
+		}
+	}
+	if p.DefaultTheme != nil {
+		if err := ValidatePanelTheme(*p.DefaultTheme); err != nil {
+			return err
+		}
+	}
+	if p.DefaultSkin != nil {
+		if err := ValidatePanelSkin(*p.DefaultSkin); err != nil {
+			return err
+		}
+	}
+	return nil
+}

@@ -158,6 +158,7 @@ func (f *fakeSource) RunTask(context.Context, string, time.Time) error { return 
 func (f *fakeSource) BindTasks(context.Context, []string, []string) error {
 	return f.control("bind")
 }
+func (f *fakeSource) SaveNodeOrder(context.Context, []string) error { return f.failure }
 func (f *fakeSource) SetNodeAlerts(_ context.Context, ids []string, _ model.Alerts) error {
 	if f.failure != nil {
 		return f.failure
@@ -721,7 +722,7 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	// update_node merges into the stored node: a field the caller did not mention
 	// keeps its value, and an object such as alerts is merged field by field.
 	env.source.savedNodes = nil
-	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"line_mbps":1000,"throttle_mbps":100,"throttle_on":"quota","alerts":{"offline":true}}`))["id"] != "n1" {
+	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"traffic_limit":1000000000000,"line_mbps":1000,"throttle_mbps":100,"throttle_on":"quota","alerts":{"offline":true}}`))["id"] != "n1" {
 		t.Fatalf("update_node did not report the node")
 	}
 	if len(env.source.savedNodes) != 1 {

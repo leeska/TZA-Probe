@@ -1,18 +1,16 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/service"
 )
 
 // adminTools are the ones that change the fleet: they mirror what the panel
@@ -261,16 +259,16 @@ func targetSchema() map[string]any {
 }
 
 func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any, *rpcError, int) {
+	svc := s.service()
 	switch params.Name {
 	case "create_node":
 		var args nodeArgs
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		node := args.Node
-		id, token, err := s.Source.SaveNode(ctx, node, true)
+		id, token, err := svc.CreateNode(ctx, args.Node)
 		if err != nil {
-			return s.adminFailure("新建节点失败", err)
+			return failure("新建节点失败", err)
 		}
 		return toolResult(s.credentials(ctx, id, token)), nil, 0
 
@@ -279,21 +277,15 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		node, failure := s.lookupNode(ctx, args.NodeID)
-		if failure != nil {
-			return failure, nil, 0
+		node, missing := s.lookupNode(ctx, args.NodeID)
+		if missing != nil {
+			return missing, nil, 0
 		}
 		// The stored node is the base, so a partial edit cannot blank a field.
-		merged, err := merge(node.Node, params.Arguments)
-		if err != nil {
-			return toolError("参数无法合并到当前节点：" + err.Error()), nil, 0
+		if _, err := svc.PatchNode(ctx, node.ID, params.Arguments); err != nil {
+			return failure("修改节点失败", err)
 		}
-		merged.ID = node.ID
-		id, _, err := s.Source.SaveNode(ctx, merged, false)
-		if err != nil {
-			return s.adminFailure("修改节点失败", err)
-		}
-		return toolResult(map[string]any{"id": id, "name": node.Name, "updated": true}), nil, 0
+		return toolResult(map[string]any{"id": node.ID, "name": node.Name, "updated": true}), nil, 0
 
 	case "delete_node":
 		var args nodeArgs
@@ -305,11 +297,11 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		}
 		// Deleting is destructive, so say which node it was.
 		name := args.NodeID
-		if node, failure := s.lookupNode(ctx, args.NodeID); failure == nil {
+		if node, missing := s.lookupNode(ctx, args.NodeID); missing == nil {
 			name = node.Name
 		}
-		if err := s.Source.DeleteNode(ctx, args.NodeID); err != nil {
-			return s.adminFailure("删除节点失败", err)
+		if err := svc.DeleteNode(ctx, args.NodeID); err != nil {
+			return failure("删除节点失败", err)
 		}
 		return toolResult(map[string]any{"id": args.NodeID, "name": name, "deleted": true}), nil, 0
 
@@ -321,9 +313,9 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if args.NodeID == "" {
 			return toolError("缺少 node_id；先用 list_nodes 获取可用 id。"), nil, 0
 		}
-		token, err := s.Source.Rotate(ctx, args.NodeID)
+		token, err := svc.RotateToken(ctx, args.NodeID)
 		if err != nil {
-			return s.adminFailure("轮换节点密钥失败", err)
+			return failure("轮换节点密钥失败", err)
 		}
 		return toolResult(s.credentials(ctx, args.NodeID, token)), nil, 0
 
@@ -339,11 +331,11 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if args.NodeID == "" {
 			return toolError("缺少 node_id；先用 list_nodes 获取可用 id。"), nil, 0
 		}
-		if err := s.Source.CorrectTraffic(ctx, args.NodeID, args.Used, args.Cycle, time.Now()); err != nil {
+		if err := svc.CorrectTraffic(ctx, args.NodeID, args.Used, args.Cycle); err != nil {
 			if errors.Is(err, model.ErrConflict) {
 				return toolError("周期已变化：先用 list_nodes 取当前 cycle_start，再校正。"), nil, 0
 			}
-			return s.adminFailure("用量校正失败", err)
+			return failure("用量校正失败", err)
 		}
 		return toolResult(map[string]any{"node_id": args.NodeID, "used": args.Used, "cycle": args.Cycle, "corrected": true}), nil, 0
 
@@ -355,70 +347,22 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		if err := s.Source.SetNodeAlerts(ctx, args.NodeIDs, args.Alerts); err != nil {
-			return s.adminFailure("设置提醒规则失败", err)
+		if err := svc.SetAlerts(ctx, args.NodeIDs, args.Alerts); err != nil {
+			return failure("设置提醒规则失败", err)
 		}
 		return toolResult(map[string]any{"node_ids": args.NodeIDs, "alerts": args.Alerts, "updated": true}), nil, 0
 
 	case "list_catalog":
-		var args struct {
-			Region  string `json:"region"`
-			Carrier string `json:"carrier"`
-			Family  string `json:"family"`
-		}
-		if e := arguments(params.Arguments, &args); e != nil {
-			return nil, e, http.StatusOK
-		}
-		// The schema lists the values, but a client may ignore the hint: an
-		// impossible filter must fail loudly instead of answering "no targets".
-		if args.Carrier != "" && !oneOf(args.Carrier, "电信", "联通", "移动", "其他") {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "carrier 须为 电信、联通、移动 或 其他"}, http.StatusOK
-		}
-		if args.Family != "" && !oneOf(args.Family, "ipv4", "ipv6") {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "family 须为 ipv4 或 ipv6"}, http.StatusOK
-		}
-		var snapshot struct {
-			Source       string `json:"source"`
-			SnapshotDate string `json:"snapshot_date"`
-			Targets      []struct {
-				ID      string `json:"id"`
-				Family  string `json:"family"`
-				Region  string `json:"region"`
-				Carrier string `json:"carrier"`
-				Host    string `json:"host"`
-				Port    int    `json:"port"`
-				Source  string `json:"source"`
-			} `json:"targets"`
-		}
-		if err := json.Unmarshal(catalog.JSON, &snapshot); err != nil {
-			return toolError("内置目录无法解析：" + err.Error()), nil, 0
-		}
-		matches := make([]any, 0, len(snapshot.Targets))
-		for _, t := range snapshot.Targets {
-			if args.Region != "" && !strings.Contains(t.Region, args.Region) {
-				continue
-			}
-			if args.Carrier != "" && t.Carrier != args.Carrier {
-				continue
-			}
-			if args.Family != "" && t.Family != args.Family {
-				continue
-			}
-			matches = append(matches, map[string]any{"id": t.ID, "family": t.Family, "region": t.Region, "carrier": t.Carrier, "host": t.Host, "port": t.Port})
-		}
-		return toolResult(map[string]any{
-			"source": snapshot.Source, "snapshot_date": snapshot.SnapshotDate,
-			"targets": matches, "count": len(matches), "total": len(snapshot.Targets),
-		}), nil, 0
+		return listCatalog(params)
 
 	case "create_task":
 		var args taskArgs
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		id, err := s.Source.SaveTask(ctx, args.Task, true)
+		id, err := svc.CreateTask(ctx, args.Task)
 		if err != nil {
-			return s.adminFailure("新建任务失败", err)
+			return failure("新建任务失败", err)
 		}
 		return toolResult(map[string]any{"id": id, "created": true}), nil, 0
 
@@ -427,20 +371,14 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		current, failure := s.lookupTask(ctx, args.TaskID)
-		if failure != nil {
-			return failure, nil, 0
+		current, missing := s.lookupTask(ctx, args.TaskID)
+		if missing != nil {
+			return missing, nil, 0
 		}
-		merged, err := merge(current, params.Arguments)
-		if err != nil {
-			return toolError("参数无法合并到当前任务：" + err.Error()), nil, 0
+		if _, err := svc.PatchTask(ctx, current.ID, params.Arguments); err != nil {
+			return failure("修改任务失败", err)
 		}
-		merged.ID = current.ID
-		id, err := s.Source.SaveTask(ctx, merged, false)
-		if err != nil {
-			return s.adminFailure("修改任务失败", err)
-		}
-		return toolResult(map[string]any{"id": id, "updated": true}), nil, 0
+		return toolResult(map[string]any{"id": current.ID, "updated": true}), nil, 0
 
 	case "delete_task":
 		var args taskArgs
@@ -450,8 +388,8 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if args.TaskID == "" {
 			return toolError("缺少 task_id；先用 list_tasks 获取可用 id。"), nil, 0
 		}
-		if err := s.Source.DeleteTask(ctx, args.TaskID); err != nil {
-			return s.adminFailure("删除任务失败", err)
+		if err := svc.DeleteTask(ctx, args.TaskID); err != nil {
+			return failure("删除任务失败", err)
 		}
 		return toolResult(map[string]any{"id": args.TaskID, "deleted": true}), nil, 0
 
@@ -467,25 +405,22 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if args.TaskID == "" {
 			return toolError("缺少 task_id；先用 list_tasks 获取可用 id。"), nil, 0
 		}
-		switch args.Action {
-		case "pause", "resume", "run", "bind":
-		default:
-			return nil, &rpcError{Code: codeInvalidParams, Message: "action 须为 pause、resume、run 或 bind"}, http.StatusOK
-		}
 		var err error
 		switch args.Action {
 		case "pause", "resume":
-			err = s.Source.SetTaskEnabled(ctx, args.TaskID, args.Action == "resume")
+			err = svc.SetTaskEnabled(ctx, args.TaskID, args.Action == "resume")
 		case "run":
-			err = s.Source.RunTask(ctx, args.TaskID, time.Now())
+			err = svc.RunTask(ctx, args.TaskID)
 		case "bind":
-			err = s.Source.BindTasks(ctx, []string{args.TaskID}, args.NodeIDs)
+			err = svc.BindTasks(ctx, []string{args.TaskID}, args.NodeIDs)
+		default:
+			return nil, &rpcError{Code: codeInvalidParams, Message: "action 须为 pause、resume、run 或 bind"}, http.StatusOK
 		}
 		if errors.Is(err, model.ErrConflict) {
 			return toolError("任务未启用或未绑定节点，无法执行：先 resume 并 bind 节点。"), nil, 0
 		}
 		if err != nil {
-			return s.adminFailure("任务操作失败", err)
+			return failure("任务操作失败", err)
 		}
 		return toolResult(map[string]any{"task_id": args.TaskID, "action": args.Action, "node_ids": args.NodeIDs, "ok": true}), nil, 0
 
@@ -494,13 +429,10 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		if args.TaskID == "" {
-			return toolError("缺少 task_id；先用 list_tasks 获取可用 id。"), nil, 0
+		if _, missing := s.lookupTask(ctx, args.TaskID); missing != nil {
+			return missing, nil, 0
 		}
-		if _, failure := s.lookupTask(ctx, args.TaskID); failure != nil {
-			return failure, nil, 0
-		}
-		runs, err := s.Source.TaskRuns(ctx, args.TaskID, time.Now())
+		runs, err := svc.TaskRuns(ctx, args.TaskID)
 		if err != nil {
 			return toolFailure("读取执行记录失败", err)
 		}
@@ -510,156 +442,119 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if e := arguments(params.Arguments, &struct{}{}); e != nil {
 			return nil, e, http.StatusOK
 		}
-		config, err := notify.Status(ctx, s.Source)
+		config, err := svc.Notification(ctx)
 		if err != nil {
 			return toolFailure("读取通知配置失败", err)
 		}
-		view, err := s.settingsView(ctx, config)
+		panel, err := svc.Panel(ctx)
 		if err != nil {
 			return toolFailure("读取面板设置失败", err)
 		}
-		return toolResult(view), nil, 0
+		return toolResult(settingsView(config, panel)), nil, 0
 
 	case "update_settings":
 		var args struct {
 			notify.Config
-			LatencyWindowMinutes *int    `json:"latency_window_minutes"`
-			DefaultTheme         *string `json:"default_theme"`
-			DefaultSkin          *string `json:"default_skin"`
+			model.PanelPatch
 		}
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		// 只改传了的项：通知那套在面板表单里是「整份提交、空值即清空」，但 AI 客户端常只传想改的
-		// 那一个字段（比如只换 chat_id），按表单语义处理会把整个 Telegram 配置清成 none。
-		notifyTouched := args.Channel != "" || args.Webhook != "" || args.BotToken != "" || args.ChatID != ""
-		if !notifyTouched && args.LatencyWindowMinutes == nil && args.DefaultTheme == nil && args.DefaultSkin == nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "至少给一项设置；关闭通知请传 channel=none"}, http.StatusOK
+		// 只改传了的项：AI 客户端常只传想改的那一个字段（比如只换 chat_id），按面板表单
+		// 「整份提交、空值即清空」的语义处理会把整个 Telegram 配置清成 none。
+		var notification *notify.Config
+		if args.Channel != "" || args.Webhook != "" || args.BotToken != "" || args.ChatID != "" {
+			notification = &args.Config
 		}
-		// 先全部校验，再逐项写入：不会出现通知改了、显示项因为值不对没改的半截状态。
-		if args.LatencyWindowMinutes != nil {
-			if err := model.ValidateLatencyWindowMinutes(*args.LatencyWindowMinutes); err != nil {
-				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
-			}
-		}
-		if args.DefaultTheme != nil {
-			if err := model.ValidatePanelTheme(*args.DefaultTheme); err != nil {
-				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
-			}
-		}
-		if args.DefaultSkin != nil {
-			if err := model.ValidatePanelSkin(*args.DefaultSkin); err != nil {
-				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
-			}
-		}
-		config, err := notify.Status(ctx, s.Source)
+		config, panel, err := svc.UpdateSettings(ctx, notification, args.PanelPatch)
 		if err != nil {
-			return toolFailure("读取通知配置失败", err)
-		}
-		if notifyTouched {
-			submitted := args.Config
-			if submitted.Channel == "" {
-				// 没说渠道：沿用当前渠道；当前是关闭状态时按给了哪类凭据推断。
-				submitted.Channel = config.Channel
-				if submitted.Channel == "none" || submitted.Channel == "" {
-					submitted.Channel = "webhook"
-					if submitted.BotToken != "" || submitted.ChatID != "" {
-						submitted.Channel = "telegram"
-					}
-				}
-			}
-			if submitted.Channel == "telegram" && submitted.ChatID == "" && config.Channel == "telegram" {
-				submitted.ChatID = config.ChatID
-			}
-			if submitted.Channel == "webhook" && submitted.Webhook == "" && config.Channel == "webhook" {
-				stored, err := notify.Destination(ctx, s.Source)
-				if err != nil {
-					return toolFailure("读取通知配置失败", err)
-				}
-				submitted.Webhook = notify.ReadConfig(stored).Webhook
-			}
-			next, err := notify.Normalize(ctx, s.Source, submitted)
-			if err != nil {
-				// The caller has to fix its input, so this is a protocol error.
-				return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
-			}
-			if err := notify.Persist(ctx, s.Source, next); err != nil {
-				return toolFailure("保存通知配置失败", err)
-			}
-			config = next
-		}
-		for _, item := range []struct {
-			key   string
-			value *string
-		}{
-			{model.SettingLatencyWindowMinutes, func() *string {
-				if args.LatencyWindowMinutes == nil {
-					return nil
-				}
-				v := strconv.Itoa(*args.LatencyWindowMinutes)
-				return &v
-			}()},
-			{model.SettingDefaultTheme, args.DefaultTheme},
-			{model.SettingDefaultSkin, args.DefaultSkin},
-		} {
-			if item.value == nil {
-				continue
-			}
-			if err := s.Source.SetSetting(ctx, item.key, *item.value); err != nil {
-				return toolFailure("保存面板设置失败", err)
-			}
+			return failure("保存设置失败", err)
 		}
 		// Never echo the credentials back, only what is configured.
-		view, err := s.settingsView(ctx, config)
-		if err != nil {
-			return toolFailure("读取面板设置失败", err)
-		}
-		return toolResult(view), nil, 0
+		return toolResult(settingsView(config, panel)), nil, 0
 
 	case "test_notification":
 		if e := arguments(params.Arguments, &struct{}{}); e != nil {
 			return nil, e, http.StatusOK
 		}
-		value, err := notify.Destination(ctx, s.Source)
-		if err != nil {
-			return toolFailure("读取通知配置失败", err)
-		}
-		if value == "" {
+		channel, err := svc.TestNotification(ctx)
+		var sendErr service.SendError
+		switch {
+		case errors.Is(err, model.ErrInvalid):
 			return toolError("请先配置通知渠道（update_settings）。"), nil, 0
-		}
-		if s.Notifier == nil {
+		case errors.Is(err, service.ErrNoSender):
 			return toolError("当前 Server 没有可用的通知发送器。"), nil, 0
-		}
-		channel := notify.ReadConfig(value).Channel
-		if err := s.Notifier.Send(ctx, value, model.Event{Kind: "test", Message: "TZA Probe 通知测试", At: time.Now().Unix()}); err != nil {
-			return toolError("测试通知发送失败：" + err.Error()), nil, 0
+		case errors.As(err, &sendErr):
+			return toolError(err.Error()), nil, 0
+		case err != nil:
+			return toolFailure("读取通知配置失败", err)
 		}
 		return toolResult(map[string]any{"sent": true, "channel": channel}), nil, 0
 	}
 	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + params.Name}, http.StatusOK
 }
 
+// listCatalog filters the built-in offline target list.
+func listCatalog(params call) (map[string]any, *rpcError, int) {
+	var args struct {
+		Region  string `json:"region"`
+		Carrier string `json:"carrier"`
+		Family  string `json:"family"`
+	}
+	if e := arguments(params.Arguments, &args); e != nil {
+		return nil, e, http.StatusOK
+	}
+	// The schema lists the values, but a client may ignore the hint: an
+	// impossible filter must fail loudly instead of answering "no targets".
+	if args.Carrier != "" && !oneOf(args.Carrier, "电信", "联通", "移动", "其他") {
+		return nil, &rpcError{Code: codeInvalidParams, Message: "carrier 须为 电信、联通、移动 或 其他"}, http.StatusOK
+	}
+	if args.Family != "" && !oneOf(args.Family, "ipv4", "ipv6") {
+		return nil, &rpcError{Code: codeInvalidParams, Message: "family 须为 ipv4 或 ipv6"}, http.StatusOK
+	}
+	var snapshot struct {
+		Source       string `json:"source"`
+		SnapshotDate string `json:"snapshot_date"`
+		Targets      []struct {
+			ID      string `json:"id"`
+			Family  string `json:"family"`
+			Region  string `json:"region"`
+			Carrier string `json:"carrier"`
+			Host    string `json:"host"`
+			Port    int    `json:"port"`
+			Source  string `json:"source"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal(catalog.JSON, &snapshot); err != nil {
+		return toolError("内置目录无法解析：" + err.Error()), nil, 0
+	}
+	matches := make([]any, 0, len(snapshot.Targets))
+	for _, t := range snapshot.Targets {
+		if args.Region != "" && !strings.Contains(t.Region, args.Region) {
+			continue
+		}
+		if args.Carrier != "" && t.Carrier != args.Carrier {
+			continue
+		}
+		if args.Family != "" && t.Family != args.Family {
+			continue
+		}
+		matches = append(matches, map[string]any{"id": t.ID, "family": t.Family, "region": t.Region, "carrier": t.Carrier, "host": t.Host, "port": t.Port})
+	}
+	return toolResult(map[string]any{
+		"source": snapshot.Source, "snapshot_date": snapshot.SnapshotDate,
+		"targets": matches, "count": len(matches), "total": len(snapshot.Targets),
+	}), nil, 0
+}
+
 // settingsView is what get_settings and update_settings answer with: the
-// credential-free notification view plus the panel display settings, the same
-// set the panel's settings pages show.
-func (s *Server) settingsView(ctx context.Context, config notify.Config) (map[string]any, error) {
+// credential-free notification view plus the panel display settings.
+func settingsView(config notify.Config, panel model.PanelSettings) map[string]any {
 	view := config.Public()
-	window, err := s.Source.Setting(ctx, model.SettingLatencyWindowMinutes)
-	if err != nil {
-		return nil, err
-	}
-	theme, err := s.Source.Setting(ctx, model.SettingDefaultTheme)
-	if err != nil {
-		return nil, err
-	}
-	skin, err := s.Source.Setting(ctx, model.SettingDefaultSkin)
-	if err != nil {
-		return nil, err
-	}
-	view[model.SettingLatencyWindowMinutes] = model.LatencyWindowMinutes(window)
-	view[model.SettingDefaultTheme] = model.PanelTheme(theme)
-	view[model.SettingDefaultSkin] = model.PanelSkin(skin)
-	return view, nil
+	view[model.SettingLatencyWindowMinutes] = panel.LatencyWindowMinutes
+	view[model.SettingDefaultTheme] = panel.DefaultTheme
+	view[model.SettingDefaultSkin] = panel.DefaultSkin
+	return view
 }
 
 // credentials is the shape the panel's 接入 dialog shows: the node id, the
@@ -684,83 +579,19 @@ func (s *Server) lookupTask(ctx context.Context, id string) (model.Task, map[str
 	if id == "" {
 		return model.Task{}, toolError("缺少 task_id；先用 list_tasks 获取可用 id。")
 	}
-	tasks, err := s.Source.Tasks(ctx)
+	t, err := s.service().Task(ctx, id)
+	if errors.Is(err, model.ErrNotFound) {
+		return model.Task{}, toolError(err.Error() + "；先用 list_tasks 获取可用 id。")
+	}
 	if err != nil {
 		return model.Task{}, toolError("读取任务失败：" + err.Error())
 	}
-	for _, t := range tasks {
-		if t.ID == id {
-			return t, nil
-		}
-	}
-	return model.Task{}, toolError("任务不存在：" + id + "；先用 list_tasks 获取可用 id。")
+	return t, nil
 }
 
-// merge overlays the fields the caller actually sent onto the stored value, so
-// update_node and update_task behave like the panel's edit form: only what was
-// submitted changes, a field the caller left out keeps its current value, and an
-// object such as alerts is merged field by field instead of being replaced.
-func merge[T any](current T, submitted json.RawMessage) (T, error) {
-	var out T
-	data, err := json.Marshal(current)
-	if err != nil {
-		return out, err
-	}
-	base := map[string]json.RawMessage{}
-	if err := json.Unmarshal(data, &base); err != nil {
-		return out, err
-	}
-	patch := map[string]json.RawMessage{}
-	if len(submitted) > 0 {
-		if err := json.Unmarshal(submitted, &patch); err != nil {
-			return out, err
-		}
-	}
-	// The id is never taken from the patch: it comes from node_id / task_id and
-	// from the stored row, so a patch cannot rewrite a different node or task.
-	for _, key := range []string{"id", "node_id", "task_id"} {
-		delete(patch, key)
-	}
-	merged, err := mergeObjects(base, patch)
-	if err != nil {
-		return out, err
-	}
-	data, err = json.Marshal(merged)
-	if err != nil {
-		return out, err
-	}
-	// Strict decoding keeps a misspelled field loud even though the merge itself
-	// deserialises into maps.
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	return out, decoder.Decode(&out)
-}
-
-func mergeObjects(base, patch map[string]json.RawMessage) (map[string]json.RawMessage, error) {
-	for key, value := range patch {
-		if existing, ok := base[key]; ok {
-			var left, right map[string]json.RawMessage
-			if json.Unmarshal(existing, &left) == nil && json.Unmarshal(value, &right) == nil && left != nil && right != nil {
-				merged, err := mergeObjects(left, right)
-				if err != nil {
-					return nil, err
-				}
-				data, err := json.Marshal(merged)
-				if err != nil {
-					return nil, err
-				}
-				base[key] = data
-				continue
-			}
-		}
-		base[key] = value
-	}
-	return base, nil
-}
-
-// adminFailure turns a storage error into what the caller can act on: input the
+// failure turns a service error into what the caller can act on: input the
 // caller got wrong is a protocol error, everything else is a readable result.
-func (s *Server) adminFailure(message string, err error) (map[string]any, *rpcError, int) {
+func failure(message string, err error) (map[string]any, *rpcError, int) {
 	if errors.Is(err, model.ErrInvalid) {
 		return nil, &rpcError{Code: codeInvalidParams, Message: err.Error()}, http.StatusOK
 	}

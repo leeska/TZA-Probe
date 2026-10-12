@@ -22,10 +22,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/service"
 )
 
 const (
@@ -69,31 +69,9 @@ type rpcError struct {
 	Data    any    `json:"data,omitempty"`
 }
 
-// Source is the persistence port this package needs. storage.Store implements
-// it: the tools expose exactly what the administrator panel can do, so every
-// method here is either a read or the same write the panel performs.
-type Source interface {
-	Nodes(context.Context, time.Time) ([]model.NodeView, error)
-	Tasks(context.Context) ([]model.Task, error)
-	History(context.Context, string, int, time.Time) ([]model.Sample, error)
-	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
-	Observations(context.Context, string, time.Time) ([]model.Observation, error)
-	Events(context.Context, model.EventQuery) ([]model.Event, error)
-	RecentLatencySamples(context.Context, []string, int, time.Time) ([]model.LatencySample, error)
-	SaveNode(context.Context, model.Node, bool) (string, string, error)
-	DeleteNode(context.Context, string) error
-	Rotate(context.Context, string) (string, error)
-	CorrectTraffic(context.Context, string, int64, int64, time.Time) error
-	SaveTask(context.Context, model.Task, bool) (string, error)
-	DeleteTask(context.Context, string) error
-	SetTaskEnabled(context.Context, string, bool) error
-	RunTask(context.Context, string, time.Time) error
-	BindTasks(context.Context, []string, []string) error
-	SetNodeAlerts(context.Context, []string, model.Alerts) error
-	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
-	Setting(context.Context, string) (string, error)
-	SetSetting(context.Context, string, string) error
-}
+// Source is the persistence port: the same one the management service uses,
+// so every tool is either a read or the same write the panel performs.
+type Source = service.Store
 
 // Server answers MCP requests. Name and Version identify it in serverInfo;
 // Instructions is the guidance clients show to their model. Notifier sends the
@@ -104,6 +82,12 @@ type Server struct {
 	Name         string
 	Version      string
 	Instructions string
+}
+
+// service is the management surface the tools call; it is cheap to build, and
+// building it per call keeps Server a plain struct literal.
+func (s *Server) service() *service.Service {
+	return &service.Service{Store: s.Source, Notifier: s.Notifier}
 }
 
 type request struct {

@@ -264,6 +264,19 @@ func TestResourceRoutes(t *testing.T) {
 	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`"],"alerts":{"throttle":true}}`); code != 400 || !strings.Contains(body, "甲：") {
 		t.Fatalf("alerts invalid: %d %s", code, body)
 	}
+	// PATCH 只改提交的字段，与 MCP 的 update_node / update_task 是同一个合并。
+	if code, body := call("PATCH", "/api/v1/admin/nodes/"+a, `{"group":"HK","alerts":{"load":true,"cpu_percent":80,"memory_percent":80,"hold_seconds":60}}`); code != 200 || !strings.Contains(body, `"group":"HK"`) || !strings.Contains(body, `"offline":true`) {
+		t.Fatalf("patch node: %d %s", code, body)
+	}
+	if code, body := call("PATCH", "/api/v1/admin/nodes/"+a, `{"gruop":"HK"}`); code != 400 {
+		t.Fatalf("patch typo: %d %s", code, body)
+	}
+	if code, body := call("PATCH", "/api/v1/admin/tasks/"+tasks[1], `{"name":"二改"}`); code != 200 || !strings.Contains(body, "二改") || !strings.Contains(body, b) {
+		t.Fatalf("patch task: %d %s", code, body)
+	}
+	if code, _ := call("PATCH", "/api/v1/admin/tasks/nope", `{}`); code != 404 {
+		t.Fatalf("patch missing task: %d", code)
+	}
 	if code, body := call("GET", "/api/v1/admin/notification", ""); code != 200 || !strings.Contains(body, `"channel"`) || strings.Contains(body, "latency_window") {
 		t.Fatalf("notification: %d %s", code, body)
 	}

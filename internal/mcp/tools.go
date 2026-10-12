@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
-	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
 )
@@ -122,12 +122,13 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 	if params.Name == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "tools/call requires a tool name"}, http.StatusOK
 	}
+	svc := s.service()
 	switch params.Name {
 	case "list_nodes":
 		if e := arguments(params.Arguments, &struct{}{}); e != nil {
 			return nil, e, http.StatusOK
 		}
-		nodes, err := s.Source.Nodes(ctx, time.Now())
+		nodes, err := svc.Nodes(ctx)
 		if err != nil {
 			return toolFailure("读取节点失败", err)
 		}
@@ -137,7 +138,7 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 		if e := arguments(params.Arguments, &struct{}{}); e != nil {
 			return nil, e, http.StatusOK
 		}
-		tasks, err := s.Source.Tasks(ctx)
+		tasks, err := svc.Tasks(ctx)
 		if err != nil {
 			return toolFailure("读取任务失败", err)
 		}
@@ -153,7 +154,7 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		events, err := s.Source.Events(ctx, model.EventQuery{Before: args.Before, Limit: args.Limit, NodeID: args.NodeID, Kind: args.Kind})
+		events, err := svc.Events(ctx, model.EventQuery{Before: args.Before, Limit: args.Limit, NodeID: args.NodeID, Kind: args.Kind})
 		if err != nil {
 			return toolFailure("读取告警事件失败", err)
 		}
@@ -168,8 +169,7 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 		if failure != nil {
 			return failure, nil, 0
 		}
-		hours := window(args.Hours, 24, 720)
-		samples, err := s.Source.History(ctx, node.ID, hours, time.Now())
+		samples, hours, err := svc.History(ctx, node.ID, args.Hours)
 		if err != nil {
 			return toolFailure("读取主机历史失败", err)
 		}
@@ -184,8 +184,7 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 		if failure != nil {
 			return failure, nil, 0
 		}
-		hours := window(args.Hours, 24, 168)
-		series, err := s.Source.NetworkHistory(ctx, node.ID, hours, time.Now())
+		series, hours, err := svc.NetworkHistory(ctx, node.ID, args.Hours)
 		if err != nil {
 			return toolFailure("读取网络历史失败", err)
 		}
@@ -200,15 +199,10 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 		if failure != nil {
 			return failure, nil, 0
 		}
-		observations, err := s.Source.Observations(ctx, node.ID, time.Now())
+		// Same masking as the HTTP contract (service.Observations redacts).
+		out, err := svc.Observations(ctx, node.ID)
 		if err != nil {
 			return toolFailure("读取观测结果失败", err)
-		}
-		// Same masking as the HTTP contract: node bindings drop out and hop
-		// addresses keep only their prefix.
-		out := make([]model.Observation, 0, len(observations))
-		for _, o := range observations {
-			out = append(out, o.Redact())
 		}
 		return toolResult(map[string]any{"node_id": node.ID, "name": node.Name, "observations": out, "count": len(out)}), nil, 0
 
@@ -219,8 +213,7 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		limit := window(args.Limit, 20, 60)
-		nodes, err := s.Source.Nodes(ctx, time.Now())
+		nodes, err := svc.Nodes(ctx)
 		if err != nil {
 			return toolFailure("读取节点失败", err)
 		}
@@ -229,12 +222,7 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 			ids = append(ids, n.ID)
 		}
 		// 与公开面板同一个时间窗（settings 里的 latency_window_minutes）。
-		stored, err := s.Source.Setting(ctx, model.SettingLatencyWindowMinutes)
-		if err != nil {
-			return toolFailure("读取时间窗设置失败", err)
-		}
-		minutes := model.LatencyWindowMinutes(stored)
-		samples, err := s.Source.RecentLatencySamples(ctx, ids, limit, time.Now().Add(-time.Duration(minutes)*time.Minute))
+		samples, limit, minutes, err := svc.LatencySamples(ctx, ids, args.Limit)
 		if err != nil {
 			return toolFailure("读取延迟样本失败", err)
 		}
@@ -256,16 +244,14 @@ func (s *Server) lookupNode(ctx context.Context, id string) (model.NodeView, map
 	if id == "" {
 		return model.NodeView{}, toolError("缺少 node_id；先用 list_nodes 获取可用 id。")
 	}
-	nodes, err := s.Source.Nodes(ctx, time.Now())
+	n, err := s.service().Node(ctx, id)
+	if errors.Is(err, model.ErrNotFound) {
+		return model.NodeView{}, toolError(err.Error() + "；先用 list_nodes 获取可用 id。")
+	}
 	if err != nil {
 		return model.NodeView{}, toolError("读取节点失败：" + err.Error())
 	}
-	for _, n := range nodes {
-		if n.ID == id {
-			return n, nil
-		}
-	}
-	return model.NodeView{}, toolError("节点不存在：" + id + "；先用 list_nodes 获取可用 id。")
+	return n, nil
 }
 
 // arguments decodes tool arguments, rejecting unknown fields the way the HTTP
@@ -280,21 +266,6 @@ func arguments(raw json.RawMessage, v any) *rpcError {
 		return &rpcError{Code: codeInvalidParams, Message: "invalid arguments: " + err.Error()}
 	}
 	return nil
-}
-
-// window applies the same "0 means default, otherwise clamp" rule the HTTP
-// endpoints use, so both surfaces answer with the range they actually read.
-func window(value, fallback, highest int) int {
-	if value == 0 {
-		return fallback
-	}
-	if value < 1 {
-		return 1
-	}
-	if value > highest {
-		return highest
-	}
-	return value
 }
 
 // toolResult returns the payload as both readable text and structured content.

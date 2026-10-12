@@ -19,39 +19,22 @@ import (
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/agentdist"
-	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/service"
 )
 
+// Repository is the persistence the HTTP contract needs: the management
+// operations (through the service) plus the public visibility check and the
+// Agent protocol.
 type Repository interface {
-	SetTaskEnabled(context.Context, string, bool) error
-	RunTask(context.Context, string, time.Time) error
-	BindTasks(context.Context, []string, []string) error
-	SetNodeAlerts(context.Context, []string, model.Alerts) error
-	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
-	CorrectTraffic(context.Context, string, int64, int64, time.Time) error
-	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
+	service.Store
 	IsPublic(context.Context, string) (bool, error)
-	Nodes(context.Context, time.Time) ([]model.NodeView, error)
-	SaveNode(context.Context, model.Node, bool) (string, string, error)
-	SaveNodeOrder(context.Context, []string) error
-	DeleteNode(context.Context, string) error
-	Rotate(context.Context, string) (string, error)
 	Authenticate(context.Context, string) (string, error)
 	Report(context.Context, string, model.Metrics, time.Time) error
-	History(context.Context, string, int, time.Time) ([]model.Sample, error)
-	Tasks(context.Context) ([]model.Task, error)
-	SaveTask(context.Context, model.Task, bool) (string, error)
-	DeleteTask(context.Context, string) error
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
-	Observations(context.Context, string, time.Time) ([]model.Observation, error)
-	RecentLatencySamples(context.Context, []string, int, time.Time) ([]model.LatencySample, error)
-	Setting(context.Context, string) (string, error)
-	SetSetting(context.Context, string, string) error
-	Events(context.Context, model.EventQuery) ([]model.Event, error)
 }
 type API struct {
 	Store         Repository
@@ -67,6 +50,7 @@ type API struct {
 	nodesSnap        snapshot[[]model.NodeView]
 	observationsSnap snapshot[map[string][]model.Observation]
 	samplesSnap      snapshot[map[string]any]
+	svc              *service.Service
 }
 
 // snapshot 是匿名访客共用的一份计算结果：有效期内直接复用，过期后同时到达的请求排队等同一次
@@ -118,6 +102,7 @@ func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) 
 
 func (a *API) Handler() http.Handler {
 	a.sessions = map[string]time.Time{}
+	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, map[string]any{"version": model.Version, "protocol": model.Protocol})
@@ -140,192 +125,14 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/observations", a.allObservations)
 	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
 	mux.HandleFunc("GET /api/v1/unlock-catalog", a.unlockCatalog)
-	mux.HandleFunc("GET /api/v1/admin/nodes", a.admin(a.nodes))
-	mux.HandleFunc("POST /api/v1/admin/nodes", a.admin(a.saveNode))
-	mux.HandleFunc("POST /api/v1/admin/nodes/order", a.admin(a.saveNodeOrder))
-	// 提醒规则按批设置（告警页的规则总览）：同一份规则写给所选节点，一个事务。
-	mux.HandleFunc("PUT /api/v1/admin/nodes/alerts", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		var v struct {
-			NodeIDs []string     `json:"node_ids"`
-			Alerts  model.Alerts `json:"alerts"`
-		}
-		if !decode(w, r, &v) {
-			return
-		}
-		if len(v.NodeIDs) > 500 {
-			write(w, 400, map[string]string{"error": "一次最多 500 个节点"})
-			return
-		}
-		respond(w, a.Store.SetNodeAlerts(r.Context(), v.NodeIDs, v.Alerts))
-	}))
-	mux.HandleFunc("PUT /api/v1/admin/nodes/{id}", a.admin(a.saveNode))
-	mux.HandleFunc("DELETE /api/v1/admin/nodes/{id}", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		respond(w, a.Store.DeleteNode(r.Context(), r.PathValue("id")))
-	}))
-	mux.HandleFunc("POST /api/v1/admin/nodes/{id}/traffic", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		var v struct {
-			Used  int64 `json:"used"`
-			Cycle int64 `json:"cycle"`
-		}
-		if !decode(w, r, &v) {
-			return
-		}
-		respond(w, a.Store.CorrectTraffic(r.Context(), r.PathValue("id"), v.Used, v.Cycle, time.Now()))
-	}))
-	mux.HandleFunc("POST /api/v1/admin/nodes/{id}/token", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		token, err := a.Store.Rotate(r.Context(), r.PathValue("id"))
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, 200, map[string]string{"token": token})
-	}))
-	mux.HandleFunc("GET /api/v1/admin/tasks", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := a.Store.Tasks(r.Context())
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, 200, tasks)
-	}))
-	// 任务的管理状态各自一个出口：启停、立即执行、绑定节点。三者都不改探测定义，所以都不清历史结果；
-	// 绑定按批提交（单个任务就是一批一个），一个事务里要么全改要么都不改。
-	mux.HandleFunc("PUT /api/v1/admin/tasks/{id}/enabled", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		var v struct {
-			Enabled *bool `json:"enabled"`
-		}
-		if !decode(w, r, &v) {
-			return
-		}
-		if v.Enabled == nil {
-			write(w, 400, map[string]string{"error": "缺少 enabled"})
-			return
-		}
-		respond(w, a.Store.SetTaskEnabled(r.Context(), r.PathValue("id"), *v.Enabled))
-	}))
-	mux.HandleFunc("POST /api/v1/admin/tasks/{id}/run", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		respond(w, a.Store.RunTask(r.Context(), r.PathValue("id"), time.Now()))
-	}))
-	mux.HandleFunc("PUT /api/v1/admin/tasks/bindings", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		var v struct {
-			TaskIDs []string `json:"task_ids"`
-			NodeIDs []string `json:"node_ids"`
-		}
-		if !decode(w, r, &v) {
-			return
-		}
-		respond(w, a.Store.BindTasks(r.Context(), v.TaskIDs, v.NodeIDs))
-	}))
-	mux.HandleFunc("GET /api/v1/admin/tasks/{id}/runs", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		out, err := a.Store.TaskRuns(r.Context(), r.PathValue("id"), time.Now())
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, 200, out)
-	}))
-	mux.HandleFunc("POST /api/v1/admin/tasks", a.admin(a.saveTask))
-	mux.HandleFunc("PUT /api/v1/admin/tasks/{id}", a.admin(a.saveTask))
-	mux.HandleFunc("DELETE /api/v1/admin/tasks/{id}", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		respond(w, a.Store.DeleteTask(r.Context(), r.PathValue("id")))
-	}))
-	mux.HandleFunc("GET /api/v1/admin/catalog", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(catalog.JSON)
-	}))
-	mux.HandleFunc("GET /api/v1/admin/events", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		// 事件保存 90 天，一页放不下：before 是上一页最后一条的 id，node_id / kind 用来筛选。
-		q := r.URL.Query()
-		before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
-		limit, _ := strconv.Atoi(q.Get("limit"))
-		events, err := a.Store.Events(r.Context(), model.EventQuery{Before: before, Limit: limit, NodeID: q.Get("node_id"), Kind: q.Get("kind")})
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, 200, events)
-	}))
-	// 通知出口与面板显示项是两组设置，各自一个资源：通知那套是「整份提交、空值即清空」，
-	// 面板显示项是「只改传了的项」，混在一个出口里会让只想改显示项的人顺手把 Bot Token 清掉。
-	mux.HandleFunc("GET /api/v1/admin/notification", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		config, err := notify.Status(r.Context(), a.Store)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, 200, config.Public())
-	}))
-	mux.HandleFunc("GET /api/v1/admin/panel", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		window, _, err := a.latencyWindow(r.Context())
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		theme, skin, err := a.panelDefaults(r.Context())
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, 200, map[string]any{model.SettingLatencyWindowMinutes: window, model.SettingDefaultTheme: theme, model.SettingDefaultSkin: skin})
-	}))
-	mux.HandleFunc("PUT /api/v1/admin/panel", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		var v struct {
-			LatencyWindowMinutes *int    `json:"latency_window_minutes"`
-			DefaultTheme         *string `json:"default_theme"`
-			DefaultSkin          *string `json:"default_skin"`
-		}
-		if !decode(w, r, &v) {
-			return
-		}
-		if v.LatencyWindowMinutes == nil && v.DefaultTheme == nil && v.DefaultSkin == nil {
-			write(w, 400, map[string]string{"error": "至少给一项面板显示设置"})
-			return
-		}
-		if v.LatencyWindowMinutes != nil {
-			if err := model.ValidateLatencyWindowMinutes(*v.LatencyWindowMinutes); err != nil {
-				write(w, 400, map[string]string{"error": err.Error()})
-				return
-			}
-		}
-		if v.DefaultTheme != nil {
-			if err := model.ValidatePanelTheme(*v.DefaultTheme); err != nil {
-				write(w, 400, map[string]string{"error": err.Error()})
-				return
-			}
-		}
-		if v.DefaultSkin != nil {
-			if err := model.ValidatePanelSkin(*v.DefaultSkin); err != nil {
-				write(w, 400, map[string]string{"error": err.Error()})
-				return
-			}
-		}
-		if v.LatencyWindowMinutes != nil {
-			if err := a.Store.SetSetting(r.Context(), model.SettingLatencyWindowMinutes, strconv.Itoa(*v.LatencyWindowMinutes)); err != nil {
-				fail(w, err)
-				return
-			}
-		}
-		if v.DefaultTheme != nil {
-			if err := a.Store.SetSetting(r.Context(), model.SettingDefaultTheme, *v.DefaultTheme); err != nil {
-				fail(w, err)
-				return
-			}
-		}
-		if v.DefaultSkin != nil {
-			if err := a.Store.SetSetting(r.Context(), model.SettingDefaultSkin, *v.DefaultSkin); err != nil {
-				fail(w, err)
-				return
-			}
-		}
-		respond(w, nil)
-	}))
+	a.adminRoutes(mux)
 	// 前台默认外观必须在样式表之前定下来，否则首屏会先按内置默认闪一下再跳到设置里的皮肤。
 	// CSP 是 script-src 'self'，index.html 里写不了内联脚本，所以这里发一份几十字节的
 	// 动态脚本，由 index.html 在 theme-boot.js 之前引用。
 	mux.HandleFunc("GET /theme-default.js", func(w http.ResponseWriter, r *http.Request) {
-		theme, skin, err := a.panelDefaults(r.Context())
-		if err != nil {
-			theme, skin = model.DefaultPanelTheme, model.DefaultPanelSkin
+		theme, skin := model.DefaultPanelTheme, model.DefaultPanelSkin
+		if panel, err := a.svc.Panel(r.Context()); err == nil {
+			theme, skin = panel.DefaultTheme, panel.DefaultSkin
 		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -333,39 +140,6 @@ func (a *API) Handler() http.Handler {
 			fmt.Fprintf(w, "window.__tzaDefault={theme:%q,skin:%q};\n", theme, skin)
 		}
 	})
-	mux.HandleFunc("PUT /api/v1/admin/notification", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		var v notify.Config
-		if !decode(w, r, &v) {
-			return
-		}
-		next, err := notify.Normalize(r.Context(), a.Store, v)
-		if err != nil {
-			write(w, 400, map[string]string{"error": err.Error()})
-			return
-		}
-		respond(w, notify.Persist(r.Context(), a.Store, next))
-	}))
-	mux.HandleFunc("POST /api/v1/admin/notification/test", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		value, err := notify.Destination(r.Context(), a.Store)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		if value == "" {
-			write(w, 400, map[string]string{"error": "请先配置通知渠道"})
-			return
-		}
-		if a.Notifier == nil {
-			write(w, 503, map[string]string{"error": "通知发送组件不可用"})
-			return
-		}
-		err = a.Notifier.Send(r.Context(), value, model.Event{Kind: "test", Message: "TZA Probe 通知测试", At: time.Now().Unix()})
-		if err != nil {
-			write(w, 502, map[string]string{"error": err.Error()})
-			return
-		}
-		w.WriteHeader(204)
-	}))
 	mux.HandleFunc("POST /api/v1/agent/report", a.agent(func(w http.ResponseWriter, r *http.Request, id string) {
 		var v model.Report
 		if !decode(w, r, &v) {
@@ -615,10 +389,7 @@ func (a *API) history(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hours, _ := strconv.Atoi(r.URL.Query().Get("hours"))
-	if hours == 0 {
-		hours = 24
-	}
-	history, err := a.Store.History(r.Context(), r.PathValue("id"), hours, time.Now())
+	history, _, err := a.svc.History(r.Context(), r.PathValue("id"), hours)
 	if err != nil {
 		fail(w, err)
 		return
@@ -658,13 +429,12 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slim := r.URL.Query().Get("slim") != ""
-	out, err := a.Store.Observations(r.Context(), r.PathValue("id"), time.Now())
+	out, err := a.svc.Observations(r.Context(), r.PathValue("id"))
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	for i := range out {
-		out[i] = out[i].Redact()
 		if slim {
 			out[i].Result.Hops = nil
 		}
@@ -682,18 +452,16 @@ func (a *API) allObservations(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		now := time.Now()
 		out := map[string][]model.Observation{}
 		for _, n := range nodes {
 			if !n.Public && !admin {
 				continue
 			}
-			list, err := a.Store.Observations(ctx, n.ID, now)
+			list, err := a.svc.Observations(ctx, n.ID)
 			if err != nil {
 				return nil, err
 			}
 			for i := range list {
-				list[i] = list[i].Redact()
 				list[i].Result.Hops = nil
 			}
 			out[n.ID] = list
@@ -723,47 +491,13 @@ func (a *API) unlockCatalog(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"categories": model.UnlockCategories, "services": model.UnlockCatalog})
 }
 
-// latencyWindow is the configured look-back for the public latency bands
-// (model.SettingLatencyWindowMinutes), falling back to the default when unset.
-func (a *API) latencyWindow(ctx context.Context) (int, time.Time, error) {
-	stored, err := a.Store.Setting(ctx, model.SettingLatencyWindowMinutes)
-	if err != nil {
-		return 0, time.Time{}, err
-	}
-	minutes := model.LatencyWindowMinutes(stored)
-	return minutes, time.Now().Add(-time.Duration(minutes) * time.Minute), nil
-}
-
-// panelDefaults reads the visitor-facing default look: which 明暗 and which 皮肤 a
-// visitor sees before they pick anything themselves. Values are normalized, so a
-// hand-edited database row cannot hand the browser an unknown skin id.
-func (a *API) panelDefaults(ctx context.Context) (string, string, error) {
-	theme, err := a.Store.Setting(ctx, model.SettingDefaultTheme)
-	if err != nil {
-		return "", "", err
-	}
-	skin, err := a.Store.Setting(ctx, model.SettingDefaultSkin)
-	if err != nil {
-		return "", "", err
-	}
-	return model.PanelTheme(theme), model.PanelSkin(skin), nil
-}
-
 // latencySamples feeds the per-probe cells on the public card. Only nodes the
 // caller may already see are included, so this adds no new visibility.
 func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
-	limit := defaultSampleLimit
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			limit = min(max(n, 1), 60)
-		}
-	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	limit = service.Window(limit, service.DefaultLatencySamples, service.MaxLatencySamples)
 	admin := a.isAdmin(r)
 	compute := func(ctx context.Context) (map[string]any, error) {
-		_, since, err := a.latencyWindow(ctx)
-		if err != nil {
-			return nil, err
-		}
 		nodes, err := a.panelNodes(r, admin)
 		if err != nil {
 			return nil, err
@@ -774,7 +508,7 @@ func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
 				ids = append(ids, n.ID)
 			}
 		}
-		out, err := a.Store.RecentLatencySamples(ctx, ids, limit, since)
+		out, _, _, err := a.svc.LatencySamples(ctx, ids, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -783,7 +517,7 @@ func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
 	var out map[string]any
 	var err error
 	// 快照只存面板实际用的那一档（limit=20）；别的 limit 很少见，直接算。
-	if admin || limit != defaultSampleLimit {
+	if admin || limit != service.DefaultLatencySamples {
 		out, err = compute(r.Context())
 	} else {
 		out, err = a.samplesSnap.get(probesTTL, func() (map[string]any, error) {
@@ -797,68 +531,16 @@ func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, out)
 }
 
-// defaultSampleLimit 是公开卡片每组取的样本数（web/app.js 固定发 limit=20）。
-const defaultSampleLimit = 20
-
-func (a *API) saveNode(w http.ResponseWriter, r *http.Request) {
-	var n model.Node
-	if !decode(w, r, &n) {
-		return
-	}
-	n.ID = r.PathValue("id")
-	if err := n.Validate(); err != nil {
-		write(w, 400, map[string]string{"error": err.Error()})
-		return
-	}
-	id, token, err := a.Store.SaveNode(r.Context(), n, r.Method == "POST")
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	write(w, 200, map[string]string{"id": id, "token": token})
-}
-
-// saveNodeOrder 保存后台拖动排序后的顺序。请求体是**当前可见的整份节点 id 列表**
-// （拖动只改这个列表的顺序），服务端按 0,1,2… 重写 order 一个字段——由服务端
-// 定号，前端不必自己算，也不会因为逐台 PUT 整份配置而把别的字段顺手清掉。
-func (a *API) saveNodeOrder(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		IDs []string `json:"ids"`
-	}
-	if !decode(w, r, &body) {
-		return
-	}
-	if len(body.IDs) == 0 || len(body.IDs) > 500 {
-		write(w, 400, map[string]string{"error": "节点数量须在 1—500 之间"})
-		return
-	}
-	seen := map[string]bool{}
-	for _, id := range body.IDs {
-		if id == "" || seen[id] {
-			write(w, 400, map[string]string{"error": "节点 id 不能为空或重复"})
-			return
-		}
-		seen[id] = true
-	}
-	respond(w, a.Store.SaveNodeOrder(r.Context(), body.IDs))
-}
-
-func (a *API) saveTask(w http.ResponseWriter, r *http.Request) {
-	var t model.Task
-	if !decode(w, r, &t) {
-		return
-	}
-	t.ID = r.PathValue("id")
-	if err := t.Validate(); err != nil {
-		write(w, 400, map[string]string{"error": err.Error()})
-		return
-	}
-	_, err := a.Store.SaveTask(r.Context(), t, r.Method == "POST")
-	respond(w, err)
-}
-func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+func jsonRequest(w http.ResponseWriter, r *http.Request) bool {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		write(w, 415, map[string]string{"error": "请求须为 application/json"})
+		return false
+	}
+	return true
+}
+
+func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	if !jsonRequest(w, r) {
 		return false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
@@ -881,22 +563,34 @@ func respond(w http.ResponseWriter, err error) {
 	}
 	w.WriteHeader(204)
 }
+
+// fail answers with the error's kind as the status and its message as the
+// body. The bare sentinels get a generic Chinese line; a message built with
+// model.Invalid / NotFound / Conflict is shown as is.
 func fail(w http.ResponseWriter, err error) {
+	var sendErr service.SendError
 	switch {
 	case errors.Is(err, model.ErrInvalid):
-		write(w, 400, map[string]string{"error": err.Error()})
+		write(w, 400, map[string]string{"error": message(err, model.ErrInvalid, "请求参数无效")})
 	case errors.Is(err, model.ErrNotFound):
-		write(w, 404, map[string]string{"error": "对象不存在"})
+		write(w, 404, map[string]string{"error": message(err, model.ErrNotFound, "对象不存在")})
 	case errors.Is(err, model.ErrConflict):
-		msg := err.Error()
-		if err == model.ErrConflict {
-			msg = "操作冲突，请刷新后重试"
-		}
-		write(w, 409, map[string]string{"error": msg})
+		write(w, 409, map[string]string{"error": message(err, model.ErrConflict, "操作冲突，请刷新后重试")})
+	case errors.Is(err, service.ErrNoSender):
+		write(w, 503, map[string]string{"error": err.Error()})
+	case errors.As(err, &sendErr):
+		write(w, 502, map[string]string{"error": err.Error()})
 	default:
 		slog.Error("request failed", "error", err)
 		write(w, 500, map[string]string{"error": "服务器处理失败"})
 	}
+}
+
+func message(err, sentinel error, fallback string) string {
+	if err == sentinel {
+		return fallback
+	}
+	return err.Error()
 }
 func write(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -912,10 +606,7 @@ func (a *API) networkHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hours, _ := strconv.Atoi(r.URL.Query().Get("hours"))
-	if hours == 0 {
-		hours = 24
-	}
-	out, err := a.Store.NetworkHistory(r.Context(), r.PathValue("id"), hours, time.Now())
+	out, _, err := a.svc.NetworkHistory(r.Context(), r.PathValue("id"), hours)
 	if err != nil {
 		fail(w, err)
 		return

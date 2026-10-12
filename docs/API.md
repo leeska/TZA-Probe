@@ -11,11 +11,11 @@
 | GET /latency-samples?limit=20 | 卡片延迟格用：每个「节点 / 运营商 / 协议 / 地区」最近 N 次逐次 TCP 结果（范围 1–60），只含调用者可见的节点 |
 | POST /login、POST /logout、GET /session | 管理会话 |
 | GET、POST /admin/nodes | 列表、新建节点（返回一次性 token） |
-| PUT、DELETE /admin/nodes/{id} | 编辑、删除节点 |
+| PUT、PATCH、DELETE /admin/nodes/{id} | 编辑（PUT 整份替换；PATCH 只改提交的字段、嵌套对象按字段合并，返回合并后的节点）、删除节点 |
 | PUT /admin/nodes/alerts | `{"node_ids":[…],"alerts":{…}}`：把同一份提醒规则写给所选节点，一个事务；任何一台不合规整批不改，错误里写明是哪台 |
 | POST /admin/nodes/{id}/token | 撤销旧令牌，返回新令牌 |
-| GET、POST /admin/tasks | 列表、创建探测任务 |
-| PUT、DELETE /admin/tasks/{id} | 编辑、删除任务 |
+| GET、POST /admin/tasks | 列表、创建探测任务（返回 `{"id":…}`） |
+| PUT、PATCH、DELETE /admin/tasks/{id} | 编辑（PUT 整份替换；PATCH 同上合并语义）、删除任务 |
 | PUT /admin/tasks/{id}/enabled | `{"enabled":true|false}`：恢复 / 暂停 |
 | POST /admin/tasks/{id}/run | 立即安排执行；任务暂停或未绑定节点时 409 |
 | PUT /admin/tasks/bindings | `{"task_ids":[…],"node_ids":[…]}`：所选任务换成同一份节点列表，一个事务 |
