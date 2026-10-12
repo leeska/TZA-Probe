@@ -99,6 +99,9 @@ type NodeDisplay struct {
 	LatencyRegion string `json:"latency_region"`
 	// LatencyCarriers narrows the latency cells; empty shows every carrier.
 	LatencyCarriers []string `json:"latency_carriers,omitempty"`
+	// RouteCarriers narrows the route cells the same way. Route cells exist for
+	// the three domestic carriers only, so 其他 is not a choice here.
+	RouteCarriers []string `json:"route_carriers,omitempty"`
 }
 
 // Billing is the line's price and its traffic cycle.
@@ -143,6 +146,13 @@ func (n Node) Validate() error {
 	for _, carrier := range d.LatencyCarriers {
 		if (carrier != "电信" && carrier != "联通" && carrier != "移动" && carrier != "其他") || seenCarriers[carrier] {
 			return errors.New("延迟展示运营商无效或重复")
+		}
+		seenCarriers[carrier] = true
+	}
+	seenCarriers = map[string]bool{}
+	for _, carrier := range d.RouteCarriers {
+		if (carrier != "电信" && carrier != "联通" && carrier != "移动") || seenCarriers[carrier] {
+			return errors.New("回程展示运营商须为电信、联通、移动，且不能重复")
 		}
 		seenCarriers[carrier] = true
 	}
@@ -220,6 +230,9 @@ func (a Alerts) Validate() error {
 // Normalized is the node as it is stored: a free machine keeps no price or
 // price period, whatever the form or a partial MCP edit still carried.
 func (n Node) Normalized() Node {
+	// 卡片地区要与任务目标的地区逐字相同才对得上，首尾空白是最常见的静默失配。
+	n.Display.RouteRegion = strings.TrimSpace(n.Display.RouteRegion)
+	n.Display.LatencyRegion = strings.TrimSpace(n.Display.LatencyRegion)
 	if n.Billing.Free {
 		n.Billing.Price, n.Billing.PricePeriod = 0, ""
 	}

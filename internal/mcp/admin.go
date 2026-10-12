@@ -173,10 +173,14 @@ func nodeSchema(withID bool) map[string]any {
 		"region": map[string]any{"type": "string", "description": "节点所在地区"},
 		"public": map[string]any{"type": "boolean", "description": "是否在公开面板展示"},
 		"order":  map[string]any{"type": "integer", "description": "排序，越小越靠前"},
-		"display": object("公开卡片显示哪些探测结果；地区须与所绑任务的目标地区逐字一致", map[string]any{
+		"display": object("公开卡片显示哪些探测结果；两个地区须是内置目录或已有任务用到的目标地区（list_catalog / list_tasks），否则拒绝", map[string]any{
 			"route_region":     map[string]any{"type": "string", "description": "卡片回程显示的地区；留空不限地区"},
 			"latency_region":   map[string]any{"type": "string", "description": "卡片延迟显示的地区；留空沿用 route_region"},
 			"latency_carriers": carrierList(),
+			"route_carriers": map[string]any{
+				"type": "array", "items": map[string]any{"type": "string", "enum": []string{"电信", "联通", "移动"}},
+				"description": "卡片展示哪些运营商的回程（只有三网），留空显示全部",
+			},
 		}),
 		"billing": object("价格与流量周期；新建时 reset_at 与 traffic_mode 必填", map[string]any{
 			"reset_at":      map[string]any{"type": "string", "description": "计费周期锚点，RFC3339 精确到秒，如 2026-09-01T00:00:00Z；其日与时分秒逐月顺延"},

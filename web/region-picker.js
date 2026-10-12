@@ -14,7 +14,7 @@ import { searchMatch } from "./search.js";
 const MAX_OPTIONS = 300;
 
 // label / name / value / options 与旧的 regionSelect 一致，多一个 placeholder：
-// 空值在「代表地区 / 延迟地区」上是有含义的（沿用代表地区），所以文案写在占位符里。
+// 空值在「回程地区 / 延迟地区」上是有含义的（沿用回程地区），所以文案写在占位符里。
 export function regionCombobox(
   label,
   name,

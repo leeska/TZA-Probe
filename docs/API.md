@@ -58,14 +58,15 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 
 ```json
 {"id":"…","name":"东京","group":"JP","region":"日本","order":0,"public":true,
- "display":{"route_region":"上海","latency_region":"","latency_carriers":["电信"]},
+ "display":{"route_region":"上海","latency_region":"","latency_carriers":["电信"],"route_carriers":["电信","联通"]},
  "billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_limit":2000000000000,"traffic_mode":"max",
             "free":false,"price":9.9,"currency":"USD","price_period":"月","expires_at":""},
  "line":{"mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"bandwidth"},
  "alerts":{…}}
 ```
 
-- `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区（原 `representative`），`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。
+- `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区（原 `representative`），`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。保存时去掉首尾空白，新填或改动的地区必须出现在内置目录或某个任务的目标地区里，否则 400 并指出是哪个地区（节点原有的值不受影响，照常可编辑）。`latency_carriers` / `route_carriers` 只在这台机器真有的探测项里再筛一道，留空显示全部；回程只有电信、联通、移动三网。
+- `region`（节点所在地区）只做展示，不参与匹配，不做这项检查。
 - `billing`：`reset_at` 是周期锚点（原 `billing_at`）；`free` 见下文。
 - `line`：线路带宽 `mbps`（原 `line_mbps`）与商家降速规则。
 - 节点视图另带运行状态：`online`、`last_seen`、`metrics`、`cycle_start` / `cycle_end`、`traffic_used`、`avg_bps`、`covered_hours`、`window_hours`、`throttled`、`probe_targets`、`unlock`。

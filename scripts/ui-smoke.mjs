@@ -154,7 +154,7 @@ assert.equal(form.elements.region.tagName, "INPUT", "地区控件仍是输入框
 assert.equal(
   w.document.querySelectorAll("#node-form [data-combo]").length,
   3,
-  "节点表单的三个地区字段（所在地区 / 代表地区 / 延迟地区）都要可检索",
+  "节点表单的三个地区字段（所在地区 / 回程地区 / 延迟地区）都要可检索",
 );
 // 检索走的是 web/search.js 那一套：中文、全拼、拼音首字母、英文代号命中同一条建议。
 const matchesFor = (name, query) => {
@@ -291,6 +291,45 @@ await until(async () => {
 }, "latency region saved and read back");
 // 编辑保存（PUT 204，无正文）之后要提示「节点已保存」，而不是读空正文抛错。
 await until(() => $("#toast").textContent === "节点已保存", "edit save toast: " + $("#toast").textContent);
+// 卡片地区只认内置目录或已有任务用到的地区：对不上的值保存时直接拒绝，而不是让卡片悄悄空着。
+{
+  const resp = await fetch(base + "/api/v1/admin/nodes/" + created.id, {
+    method: "PATCH",
+    headers: { ...adminHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ display: { route_region: "上海市" } }),
+  });
+  assert.equal(resp.status, 400, "对不上任何目标的卡片地区要被拒绝");
+  assert.match((await resp.json()).error, /上海市/, "错误要指出是哪个地区");
+}
+// 回程运营商筛选：表单里有三网勾选，取消一项后落库为剩下的两项。
+await until(
+  () => {
+    $(`[data-edit="${created.id}"]`).click();
+    form = $("#node-form");
+    const ok = form?.elements.namedItem("route_carrier:移动") && form.elements.latency_region.value === "上海";
+    if (!ok) $(".close")?.click();
+    return ok;
+  },
+  "node form with route carrier checkboxes",
+);
+assert(!form.elements.namedItem("route_carrier:其他"), "回程只有三网，不给「其他」");
+form.elements.namedItem("route_carrier:移动").checked = false;
+submit(form);
+await until(async () => {
+  list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
+  return JSON.stringify(list.find((n) => n.id === created.id)?.display.route_carriers) === JSON.stringify(["电信", "联通"]);
+}, "route carriers saved");
+await until(() => !$("#dialog").open, "node form closed after saving route carriers");
+// 复原成「全部显示」，后面公开卡片那段按三网回程断言。
+assert.equal(
+  (await fetch(base + "/api/v1/admin/nodes/" + created.id, {
+    method: "PATCH",
+    headers: { ...adminHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ display: { route_carriers: [] } }),
+  })).status,
+  200,
+  "清空回程运营商筛选",
+);
 // 保存之后管理页会整块重渲染（save 里 `await render()` 重新拉 /admin/nodes），服务端读回不代表
 // 页面已经换好——抢在那次重渲染之前打开表单，会把上一份节点数据填进输入框（读到空串）。
 // 所以这里重试「打开 → 读 → 不对就关掉再来」，而不是打开一次就断言。
@@ -995,7 +1034,7 @@ for (const query of ["hk", "xianggang", "xg", "香港"]) {
 }
 publicSearch.value = "";
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
-// 延迟按运营商分四格显示，与三网回程同构；地区取延迟地区，其次代表地区。
+// 延迟按运营商分四格显示，与三网回程同构；地区取延迟地区，其次回程地区。
 // 数据目录跨多次运行复用，所以要按名字找到本轮创建的卡片，不能取第一张。
 const findPublicCard = () =>
   [...publicDOM.window.document.querySelectorAll(".node-card")].find((c) => c.textContent.includes(name));

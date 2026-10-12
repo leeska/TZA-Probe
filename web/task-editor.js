@@ -15,7 +15,7 @@ const target = ({ host, port, family, region, carrier }) => ({
   region,
   carrier,
 });
-// 自定义目标的地区会与节点卡片的代表地区逐字比对，手输容易写出对不上的名字，
+// 自定义目标的地区会与节点卡片的回程 / 延迟地区逐字比对，手输容易写出对不上的名字，
 // 所以给候选；目录里没有的其他地区仍然可以自己填。
 const regionSuggestions = (catalog, existing) =>
   regionOptions(

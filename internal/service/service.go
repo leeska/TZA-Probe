@@ -12,9 +12,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
 )
@@ -90,8 +93,12 @@ func (s *Service) Node(ctx context.Context, id string) (model.NodeView, error) {
 // CreateNode stores a new node and returns its id and one-time Agent key.
 func (s *Service) CreateNode(ctx context.Context, n model.Node) (string, string, error) {
 	n.ID = ""
+	n = n.Normalized()
 	if err := n.Validate(); err != nil {
 		return "", "", model.Invalid(err.Error())
+	}
+	if err := s.checkRegions(ctx, n.Display, model.NodeDisplay{}); err != nil {
+		return "", "", err
 	}
 	return s.Store.SaveNode(ctx, n, true)
 }
@@ -99,12 +106,89 @@ func (s *Service) CreateNode(ctx context.Context, n model.Node) (string, string,
 // ReplaceNode stores the whole submitted configuration (the panel form).
 func (s *Service) ReplaceNode(ctx context.Context, id string, n model.Node) error {
 	n.ID = id
+	n = n.Normalized()
 	if err := n.Validate(); err != nil {
 		return model.Invalid(err.Error())
 	}
-	_, _, err := s.Store.SaveNode(ctx, n, false)
+	current, err := s.Node(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err = s.checkRegions(ctx, n.Display, current.Display); err != nil {
+		return err
+	}
+	_, _, err = s.Store.SaveNode(ctx, n, false)
 	return err
 }
+
+// checkRegions rejects a card region nothing can ever match. The card shows a
+// result only when the node's region equals a task target's region letter for
+// letter, so 「上海市」 or a typo silently leaves the card empty. A region is
+// known when the built-in catalogue or some task's targets use it. A value the
+// node already had is let through, so an older node stays editable.
+func (s *Service) checkRegions(ctx context.Context, next, previous model.NodeDisplay) error {
+	changed := []struct{ label, value, before string }{
+		{"卡片回程地区", next.RouteRegion, previous.RouteRegion},
+		{"卡片延迟地区", next.LatencyRegion, previous.LatencyRegion},
+	}
+	var known map[string]bool
+	for _, c := range changed {
+		if c.value == "" || c.value == c.before {
+			continue
+		}
+		if known == nil {
+			var err error
+			if known, err = s.KnownRegions(ctx); err != nil {
+				return err
+			}
+		}
+		if !known[c.value] {
+			return model.Invalid(fmt.Sprintf("%s「%s」不在内置目录或任何任务的目标地区里，卡片不会有结果；请从候选里选，或先建好这个地区的任务", c.label, c.value))
+		}
+	}
+	return nil
+}
+
+// KnownRegions is every region a card can match: the built-in catalogue's
+// target regions plus the regions of every task's targets.
+func (s *Service) KnownRegions(ctx context.Context) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, region := range catalogRegions() {
+		out[region] = true
+	}
+	tasks, err := s.Store.Tasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range tasks {
+		if t.Probe == nil {
+			continue
+		}
+		for _, target := range t.Probe.Targets {
+			if target.Region != "" {
+				out[target.Region] = true
+			}
+		}
+	}
+	return out, nil
+}
+
+// catalogRegions reads the regions of the embedded catalogue once.
+var catalogRegions = sync.OnceValue(func() []string {
+	var snapshot struct {
+		Targets []struct {
+			Region string `json:"region"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal(catalog.JSON, &snapshot); err != nil {
+		return nil
+	}
+	out := []string{}
+	for _, t := range snapshot.Targets {
+		out = append(out, t.Region)
+	}
+	return out
+})
 
 // PatchNode overlays only the submitted fields onto the stored node; nested
 // objects merge field by field, so a partial edit cannot blank anything.

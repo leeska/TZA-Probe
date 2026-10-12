@@ -654,7 +654,7 @@ function nodeFacts(n) {
   const obs = allObs.filter(
     (o) => o.task.family === effectiveFamily,
   );
-  // 延迟按运营商分格显示，地区取节点的延迟地区，其次代表地区，都未设则不限地区。
+  // 延迟按运营商分格显示，地区取节点的延迟地区，其次回程地区，都未设则不限地区。
   // 目录外的自定义目标（以及没有运营商的旧任务）归入“其他”。
   const carriers = ["电信", "联通", "移动"];
   const carrierOf = (o) =>
@@ -680,13 +680,15 @@ function nodeFacts(n) {
       ) && (!n.display.latency_carriers?.length || n.display.latency_carriers.includes(c)),
   );
   // 回程只有三网三格（自定义目标不参与回程），同一套资格判断。
-  const routeBuckets = carriers.filter((c) =>
-    scoped.some(
-      (t) =>
-        t.kind === "route" &&
-        inRegion(t.region, n.display.route_region) &&
-        t.carrier === c,
-    ),
+  // 后台的「公开卡片显示回程」同样只在这个集合里再筛一道。
+  const routeBuckets = carriers.filter(
+    (c) =>
+      scoped.some(
+        (t) =>
+          t.kind === "route" &&
+          inRegion(t.region, n.display.route_region) &&
+          t.carrier === c,
+      ) && (!n.display.route_carriers?.length || n.display.route_carriers.includes(c)),
   );
   const tcp = obs.filter(
     (o) =>
@@ -745,7 +747,7 @@ function nodeFacts(n) {
       .sort((a, b) => b.at - a.at)[0];
     const known =
       match && !match.stale && match.result.status === "ok" && n.online;
-    const region = match?.task.region || n.display.route_region || "未设代表地区";
+    const region = match?.task.region || n.display.route_region || "未设回程地区";
     const label = known ? match.result.route : "未知";
     const title = match ? [region, label, date(match.at), statusName[match.result.status] || "未知"].join(" · ") : "尚未检测";
     return { carrier, known, label, title };
