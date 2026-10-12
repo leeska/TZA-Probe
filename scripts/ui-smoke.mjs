@@ -877,9 +877,9 @@ const saveWindow = async (minutes) => {
     },
     `latency window ${minutes}`,
   );
-  assert.equal(
-    $("#latency-window").value,
-    String(minutes),
+  // 接口读回只说明落了库；页面是保存后再取一次设置才重渲染的，要等那次渲染完再看输入框。
+  await until(
+    () => $("#latency-window")?.value === String(minutes),
     "重渲染后输入框该显示已保存的时间窗",
   );
 };
@@ -936,8 +936,10 @@ const saveLook = async (theme, skin) => {
     },
     `default look ${theme}/${skin}`,
   );
-  assert.equal($("#default-theme").value, theme, "重渲染后要显示已保存的明暗");
-  assert.equal($("#default-skin").value, skin, "重渲染后要显示已保存的皮肤");
+  await until(
+    () => $("#default-theme")?.value === theme && $("#default-skin")?.value === skin,
+    "重渲染后要显示已保存的明暗与皮肤",
+  );
   const js = await (await fetch(base + "/theme-default.js")).text();
   assert(
     js.includes(`theme:"${theme}"`) && js.includes(`skin:"${skin}"`),
