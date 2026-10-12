@@ -86,7 +86,10 @@ type Source interface {
 	CorrectTraffic(context.Context, string, int64, int64, time.Time) error
 	SaveTask(context.Context, model.Task, bool) (string, error)
 	DeleteTask(context.Context, string) error
-	ControlTask(context.Context, string, model.TaskAction, time.Time) error
+	SetTaskEnabled(context.Context, string, bool) error
+	RunTask(context.Context, string, time.Time) error
+	BindTasks(context.Context, []string, []string) error
+	SetNodeAlerts(context.Context, []string, model.Alerts) error
 	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
 	Setting(context.Context, string) (string, error)
 	SetSetting(context.Context, string, string) error

@@ -60,6 +60,15 @@ var adminTools = []tool{
 		Annotations: annotations("Correct cycle traffic", false, false, false),
 	},
 	{
+		Name:        "set_node_alerts",
+		Description: "把同一份提醒规则写给一批节点（面板「告警与通知 → 规则总览」的批量设置）：整份替换这些节点的 alerts，一个事务，任何一台不合规（如没填降速阈值却开降速告警）整批不改并指出是哪台。",
+		InputSchema: schema(map[string]any{
+			"node_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "节点 id 列表"},
+			"alerts":   alertsSchema(),
+		}, "node_ids", "alerts"),
+		Annotations: annotations("Set alert rules", false, false, true),
+	},
+	{
 		Name:        "list_catalog",
 		Description: "内置的离线目标目录（地区 / 运营商 / IP 协议 / 地址），新建任务时用来挑目标。可按地区、运营商、协议筛选。",
 		InputSchema: schema(map[string]any{
@@ -338,6 +347,19 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		}
 		return toolResult(map[string]any{"node_id": args.NodeID, "used": args.Used, "cycle": args.Cycle, "corrected": true}), nil, 0
 
+	case "set_node_alerts":
+		var args struct {
+			NodeIDs []string     `json:"node_ids"`
+			Alerts  model.Alerts `json:"alerts"`
+		}
+		if e := arguments(params.Arguments, &args); e != nil {
+			return nil, e, http.StatusOK
+		}
+		if err := s.Source.SetNodeAlerts(ctx, args.NodeIDs, args.Alerts); err != nil {
+			return s.adminFailure("设置提醒规则失败", err)
+		}
+		return toolResult(map[string]any{"node_ids": args.NodeIDs, "alerts": args.Alerts, "updated": true}), nil, 0
+
 	case "list_catalog":
 		var args struct {
 			Region  string `json:"region"`
@@ -450,7 +472,15 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		default:
 			return nil, &rpcError{Code: codeInvalidParams, Message: "action 须为 pause、resume、run 或 bind"}, http.StatusOK
 		}
-		err := s.Source.ControlTask(ctx, args.TaskID, model.TaskAction{Action: args.Action, NodeIDs: args.NodeIDs}, time.Now())
+		var err error
+		switch args.Action {
+		case "pause", "resume":
+			err = s.Source.SetTaskEnabled(ctx, args.TaskID, args.Action == "resume")
+		case "run":
+			err = s.Source.RunTask(ctx, args.TaskID, time.Now())
+		case "bind":
+			err = s.Source.BindTasks(ctx, []string{args.TaskID}, args.NodeIDs)
+		}
 		if errors.Is(err, model.ErrConflict) {
 			return toolError("任务未启用或未绑定节点，无法执行：先 resume 并 bind 节点。"), nil, 0
 		}

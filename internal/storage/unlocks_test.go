@@ -354,13 +354,13 @@ func TestUnlockVerdictsGoWithAnUnbinding(t *testing.T) {
 		}
 		return rows
 	}
-	if err = s.ControlTask(ctx, taskID, model.TaskAction{Action: "pause"}, now); err != nil {
+	if err = s.SetTaskEnabled(ctx, taskID, false); err != nil {
 		t.Fatal(err)
 	}
 	if count(a) != 1 || count(b) != 1 {
 		t.Fatalf("暂停不该清结论: a=%d b=%d", count(a), count(b))
 	}
-	if err = s.ControlTask(ctx, taskID, model.TaskAction{Action: "bind", NodeIDs: []string{a}}, now); err != nil {
+	if err = s.BindTasks(ctx, []string{taskID}, []string{a}); err != nil {
 		t.Fatal(err)
 	}
 	if count(a) != 1 || count(b) != 0 {

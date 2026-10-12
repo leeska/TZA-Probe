@@ -206,7 +206,7 @@ func TestPanelLatencyWindowControlsSampleLookBack(t *testing.T) {
 	}
 	windowOf := func() float64 {
 		t.Helper()
-		code, body := request("GET", "/api/v1/admin/settings", admin, nil)
+		code, body := request("GET", "/api/v1/admin/panel", admin, nil)
 		if code != 200 {
 			t.Fatalf("settings: %d %s", code, body)
 		}
@@ -309,8 +309,20 @@ func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 		t.Fatal(code)
 	}
 	for _, token := range []string{"", model.Secret()} {
-		if code, _ := request("POST", "/api/v1/admin/tasks/example/control", token, model.TaskAction{Action: "run"}); code != 401 {
-			t.Fatal("task control authentication", code)
+		for _, route := range []struct {
+			method, path string
+			body         any
+		}{
+			{"PUT", "/api/v1/admin/tasks/example/enabled", map[string]bool{"enabled": false}},
+			{"POST", "/api/v1/admin/tasks/example/run", nil},
+			{"PUT", "/api/v1/admin/tasks/bindings", map[string]any{"task_ids": []string{"example"}, "node_ids": []string{}}},
+			{"PUT", "/api/v1/admin/nodes/alerts", map[string]any{"node_ids": []string{"example"}, "alerts": model.Alerts{}}},
+			{"GET", "/api/v1/admin/notification", nil},
+			{"GET", "/api/v1/admin/panel", nil},
+		} {
+			if code, _ := request(route.method, route.path, token, route.body); code != 401 {
+				t.Fatal("authentication", route.path, code)
+			}
 		}
 		if code, _ := request("GET", "/api/v1/admin/tasks/example/runs", token, nil); code != 401 {
 			t.Fatal("task history authentication", code)

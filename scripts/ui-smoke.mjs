@@ -136,12 +136,9 @@ quota.focus();
 assert.equal(w.document.activeElement, quota);
 quota.dispatchEvent(new w.Event("wheel", { bubbles: true }));
 assert.notEqual(w.document.activeElement, quota, "滚轮经过数字框时必须失焦，避免滑动页面时误改数值");
-// 每个提醒阈值都要在界面上写明默认值（标签里写明，或提示行里列出）。
-const rules = $("#node-form").textContent;
-for (const d of ["（默认 60）", "（默认 7）", "（默认 80）", "（默认 90）", "（默认 300）"])
-  assert(rules.includes(d), "提醒规则缺少默认值提示: " + d);
-assert(rules.includes("新建节点的默认值：离线等待 60 秒"), "提示行要列出各项默认值");
-assert.equal(form.elements.repeat_minutes.placeholder, "默认 0（只提醒一次）");
+// 提醒规则不在节点表单里改，而是在告警页的规则总览（见下方告警页那一段）。
+assert.equal(form.elements.namedItem("offline"), null, "节点表单里不该再有提醒规则输入");
+assert(/新节点默认不开任何提醒/.test($("#node-form").textContent), "新节点表单要说明提醒规则在哪设置");
 // 内置目录只有国内三网，而节点多半在海外：建议列表必须补上常用海外地区，且仍可自由填写。
 // 2026-10-10 起地区控件是可检索的组合框（web/region-picker.js）：建议表在弹层里，真正的
 // 表单字段仍然是那个输入框，所以目录外的值照样能手打进去，只是多了一份可搜的建议。
@@ -191,10 +188,6 @@ regionBox.querySelector('[data-region-option="日本"]').click();
 assert.equal(form.elements.region.value, "日本", "点建议要把它写进表单字段");
 assert(!regionBox.classList.contains("open"), "选完要关掉弹层");
 set(form, "region", "香港");
-form.elements.offline.checked = true;
-form.elements.renewal.checked = true;
-form.elements.traffic.checked = true;
-form.elements.load.checked = true;
 submit(form);
 await until(() => $("#agent-config"), "one-time agent configuration");
 const nodeToken = JSON.parse($("#agent-config").textContent).token;
@@ -206,7 +199,7 @@ let list = await (
   await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })
 ).json();
 const created = list.find((n) => n.name === name);
-assert(created?.alerts.load);
+assert(created && !created.alerts.load && !created.alerts.offline, "新节点默认不开提醒");
 assert.equal(created.traffic_limit, 2e12);
 assert.equal(created.region, "香港", "地区输入框里的值要原样落库（控件换组合框不改取值）");
 assert.equal(created.currency, "CNY", "默认人民币");
@@ -286,7 +279,6 @@ $(".close").click();
 $(`[data-edit="${created.id}"]`).click();
 form = $("#node-form");
 assert.equal(form.elements.name.value, name);
-assert.equal(form.elements.hold_seconds.value, "300");
 assert.match(form.elements.billing_at.value, /^\d{4}-\d{2}-01 00:00:00$/, "重置时间要能原样回填");
 assert.equal(form.elements.expires_at.value, "2027-09-18 03:04:05", "到期时间回填必须保留秒");
 assert.equal(form.elements.latency_region.value, "", "latency region defaults to empty (falls back to the representative region)");
@@ -309,14 +301,6 @@ await until(
   },
   "saved latency region must reappear in the form",
 );
-// 未启用的规则禁用其阈值：服务端允许这些字段为 0，输入框的 min 不应把这样的节点锁死。
-form.elements.load.checked = false;
-form.elements.load.dispatchEvent(new w.Event("change"));
-assert(form.elements.cpu_percent.disabled && form.elements.hold_seconds.disabled, "disabled rule must not validate its thresholds");
-assert(!form.elements.offline_seconds.disabled === form.elements.offline.checked);
-form.elements.load.checked = true;
-form.elements.load.dispatchEvent(new w.Event("change"));
-assert(!form.elements.cpu_percent.disabled, "enabling a rule must re-enable its thresholds");
 $(".close").click();
 // 通过 API 造一个阈值全 0 的节点（旧数据或脚本创建），编辑表单必须回填可保存的值
 const zeroAlerts = {
@@ -333,12 +317,6 @@ $("#refresh-nodes").click();
 await until(() => $(`[data-edit="${zeroNode.id}"]`), "node list including the zero-threshold node");
 $(`[data-edit="${zeroNode.id}"]`).click();
 form = $("#node-form");
-// 禁用元素的 checkValidity() 恒为真，所以直接比对值与 min。
-for (const field of ["traffic_percent", "cpu_percent", "memory_percent", "hold_seconds"]) {
-  const el = form.elements[field];
-  assert(Number(el.value) >= Number(el.min), `${field}=${el.value} is below min=${el.min}: the node could never be saved`);
-}
-assert.equal(form.elements.traffic_percent.value, "80");
 // 免费是单独的勾选：勾上时价格、货币、周期都禁用；周期里不再有「免费」这一项，
 // 取消勾选时周期从「月」起。
 assert(form.elements.free.checked, "免费机器要回填勾选");
@@ -357,6 +335,20 @@ assert(
   "空货币要有一条「未设置」选项",
 );
 $(".close").click();
+// 阈值全 0 的节点打开规则编辑，也必须回填可保存的值（禁用元素的 checkValidity() 恒为真，
+// 所以直接比对值与 min）。规则编辑在告警页，切过去再回来。
+$('[data-tab="alerts"]').click();
+await until(() => $(`[data-alerts="${zeroNode.id}"]`), "rules overview");
+$(`[data-alerts="${zeroNode.id}"]`).click();
+form = $("#alerts-form");
+for (const field of ["traffic_percent", "cpu_percent", "memory_percent", "hold_seconds"]) {
+  const el = form.elements[field];
+  assert(Number(el.value) >= Number(el.min), `${field}=${el.value} is below min=${el.min}: the rules could never be saved`);
+}
+assert.equal(form.elements.traffic_percent.value, "80");
+$(".close").click();
+$('[data-tab="nodes"]').click();
+await until(() => $("#add-node"), "node list again");
 await fetch(base + "/api/v1/admin/nodes/" + zeroNode.id, { method: "DELETE", headers: adminHeaders });
 // 拖动排序：松手时把整份可见 id 列表交给 POST /api/v1/admin/nodes/order，服务端按 0,1,2…
 // 重写 order（前端不自己算号，也不逐台 PUT 整份配置）。jsdom 没有 PointerEvent，elementFromPoint
@@ -814,6 +806,51 @@ await until(() => $("#configure-webhook"), "alert page");
 $("#configure-webhook").click();
 assert($('#dialog input[name="webhook"]'));
 $(".close").click();
+// 规则总览：每台节点一行。单台编辑——每个阈值都写明默认值，未启用的规则禁用其阈值。
+await until(() => $(`[data-alerts="${created.id}"]`), "rules overview row");
+$(`[data-alerts="${created.id}"]`).click();
+form = $("#alerts-form");
+{
+  const text = form.textContent;
+  for (const d of ["（默认 60）", "（默认 7）", "（默认 80）", "（默认 90）", "（默认 300）"])
+    assert(text.includes(d), "提醒规则缺少默认值提示: " + d);
+  assert(text.includes("阈值默认值：离线等待 60 秒"), "提示行要列出各项默认值");
+}
+assert.equal(form.elements.repeat_minutes.placeholder, "默认 0（只提醒一次）");
+assert(form.elements.cpu_percent.disabled, "未启用的负载规则不校验阈值");
+for (const rule of ["offline", "renewal", "traffic", "load"]) {
+  form.elements[rule].checked = true;
+  form.elements[rule].dispatchEvent(new w.Event("change"));
+}
+assert(!form.elements.cpu_percent.disabled, "启用规则要恢复阈值输入");
+assert.equal(form.elements.hold_seconds.value, "300");
+submit(form);
+await until(async () => {
+  const n = (await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json()).find((x) => x.id === created.id);
+  return n?.alerts.load && n.alerts.offline && n.alerts.renewal && n.alerts.traffic && n.alerts.hold_seconds === 300;
+}, "single-node rules saved");
+// 批量设置：勾两台，一份规则同时写给两台（服务端一个事务）。
+await until(() => $(`[data-select-node="${created.id}"]`) && !$("#dialog").open, "overview re-rendered");
+{
+  const all = (await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json());
+  const other = all.find((n) => n.id !== created.id);
+  $(`[data-select-node="${created.id}"]`).checked = true;
+  $(`[data-select-node="${other.id}"]`).checked = true;
+  $("#bulk-alerts").click();
+  form = $("#alerts-form");
+  assert(/2 个节点/.test($("#dialog").textContent), "批量弹窗要写明作用于几台");
+  form.elements.offline.checked = true;
+  form.elements.offline.dispatchEvent(new w.Event("change"));
+  set(form, "repeat_minutes", "30");
+  submit(form);
+  await until(async () => {
+    const list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
+    return [created.id, other.id].every((id) => {
+      const a = list.find((n) => n.id === id)?.alerts;
+      return a?.offline && !a.load && a.repeat_seconds === 1800;
+    });
+  }, "batch rules saved on both nodes");
+}
 // 面板显示项（延迟色带 / 默认外观）在单独的「面板设置」页，不再挂在告警页里。
 assert(!$("#latency-window"), "告警页不该再出现面板显示项");
 $('[data-tab="settings"]').click();
@@ -834,7 +871,7 @@ const saveWindow = async (minutes) => {
   await until(
     async () => {
       const view = await (
-        await fetch(base + "/api/v1/admin/settings", { headers: { Cookie: cookie } })
+        await fetch(base + "/api/v1/admin/panel", { headers: { Cookie: cookie } })
       ).json();
       return Number(view.latency_window_minutes) === minutes;
     },
@@ -893,7 +930,7 @@ const saveLook = async (theme, skin) => {
   await until(
     async () => {
       const view = await (
-        await fetch(base + "/api/v1/admin/settings", { headers: { Cookie: cookie } })
+        await fetch(base + "/api/v1/admin/panel", { headers: { Cookie: cookie } })
       ).json();
       return view.default_theme === theme && view.default_skin === skin;
     },

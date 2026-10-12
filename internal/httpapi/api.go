@@ -26,7 +26,10 @@ import (
 )
 
 type Repository interface {
-	ControlTask(context.Context, string, model.TaskAction, time.Time) error
+	SetTaskEnabled(context.Context, string, bool) error
+	RunTask(context.Context, string, time.Time) error
+	BindTasks(context.Context, []string, []string) error
+	SetNodeAlerts(context.Context, []string, model.Alerts) error
 	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
 	CorrectTraffic(context.Context, string, int64, int64, time.Time) error
 	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
@@ -140,6 +143,21 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/nodes", a.admin(a.nodes))
 	mux.HandleFunc("POST /api/v1/admin/nodes", a.admin(a.saveNode))
 	mux.HandleFunc("POST /api/v1/admin/nodes/order", a.admin(a.saveNodeOrder))
+	// 提醒规则按批设置（告警页的规则总览）：同一份规则写给所选节点，一个事务。
+	mux.HandleFunc("PUT /api/v1/admin/nodes/alerts", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			NodeIDs []string     `json:"node_ids"`
+			Alerts  model.Alerts `json:"alerts"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		if len(v.NodeIDs) > 500 {
+			write(w, 400, map[string]string{"error": "一次最多 500 个节点"})
+			return
+		}
+		respond(w, a.Store.SetNodeAlerts(r.Context(), v.NodeIDs, v.Alerts))
+	}))
 	mux.HandleFunc("PUT /api/v1/admin/nodes/{id}", a.admin(a.saveNode))
 	mux.HandleFunc("DELETE /api/v1/admin/nodes/{id}", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		respond(w, a.Store.DeleteNode(r.Context(), r.PathValue("id")))
@@ -170,12 +188,33 @@ func (a *API) Handler() http.Handler {
 		}
 		write(w, 200, tasks)
 	}))
-	mux.HandleFunc("POST /api/v1/admin/tasks/{id}/control", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		var v model.TaskAction
+	// 任务的管理状态各自一个出口：启停、立即执行、绑定节点。三者都不改探测定义，所以都不清历史结果；
+	// 绑定按批提交（单个任务就是一批一个），一个事务里要么全改要么都不改。
+	mux.HandleFunc("PUT /api/v1/admin/tasks/{id}/enabled", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			Enabled *bool `json:"enabled"`
+		}
 		if !decode(w, r, &v) {
 			return
 		}
-		respond(w, a.Store.ControlTask(r.Context(), r.PathValue("id"), v, time.Now()))
+		if v.Enabled == nil {
+			write(w, 400, map[string]string{"error": "缺少 enabled"})
+			return
+		}
+		respond(w, a.Store.SetTaskEnabled(r.Context(), r.PathValue("id"), *v.Enabled))
+	}))
+	mux.HandleFunc("POST /api/v1/admin/tasks/{id}/run", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		respond(w, a.Store.RunTask(r.Context(), r.PathValue("id"), time.Now()))
+	}))
+	mux.HandleFunc("PUT /api/v1/admin/tasks/bindings", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			TaskIDs []string `json:"task_ids"`
+			NodeIDs []string `json:"node_ids"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		respond(w, a.Store.BindTasks(r.Context(), v.TaskIDs, v.NodeIDs))
 	}))
 	mux.HandleFunc("GET /api/v1/admin/tasks/{id}/runs", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		out, err := a.Store.TaskRuns(r.Context(), r.PathValue("id"), time.Now())
@@ -206,30 +245,29 @@ func (a *API) Handler() http.Handler {
 		}
 		write(w, 200, events)
 	}))
-	mux.HandleFunc("GET /api/v1/admin/settings", a.admin(func(w http.ResponseWriter, r *http.Request) {
+	// 通知出口与面板显示项是两组设置，各自一个资源：通知那套是「整份提交、空值即清空」，
+	// 面板显示项是「只改传了的项」，混在一个出口里会让只想改显示项的人顺手把 Bot Token 清掉。
+	mux.HandleFunc("GET /api/v1/admin/notification", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		config, err := notify.Status(r.Context(), a.Store)
 		if err != nil {
 			fail(w, err)
 			return
 		}
+		write(w, 200, config.Public())
+	}))
+	mux.HandleFunc("GET /api/v1/admin/panel", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		window, _, err := a.latencyWindow(r.Context())
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		view := config.Public()
-		view[model.SettingLatencyWindowMinutes] = window
 		theme, skin, err := a.panelDefaults(r.Context())
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		view[model.SettingDefaultTheme] = theme
-		view[model.SettingDefaultSkin] = skin
-		write(w, 200, view)
+		write(w, 200, map[string]any{model.SettingLatencyWindowMinutes: window, model.SettingDefaultTheme: theme, model.SettingDefaultSkin: skin})
 	}))
-	// 面板显示项单独一个出口：通知那套的语义是「空值即清空」，混在同一个 PUT 里
-	// 会让只想改显示项的人顺手把 webhook 或 Bot Token 清掉。
 	mux.HandleFunc("PUT /api/v1/admin/panel", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		var v struct {
 			LatencyWindowMinutes *int    `json:"latency_window_minutes"`
@@ -295,7 +333,7 @@ func (a *API) Handler() http.Handler {
 			fmt.Fprintf(w, "window.__tzaDefault={theme:%q,skin:%q};\n", theme, skin)
 		}
 	})
-	mux.HandleFunc("PUT /api/v1/admin/settings", a.admin(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("PUT /api/v1/admin/notification", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		var v notify.Config
 		if !decode(w, r, &v) {
 			return
@@ -307,7 +345,7 @@ func (a *API) Handler() http.Handler {
 		}
 		respond(w, notify.Persist(r.Context(), a.Store, next))
 	}))
-	mux.HandleFunc("POST /api/v1/admin/settings/test", a.admin(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/v1/admin/notification/test", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		value, err := notify.Destination(r.Context(), a.Store)
 		if err != nil {
 			fail(w, err)

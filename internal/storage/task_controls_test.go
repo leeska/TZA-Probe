@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/leeska/TZA-Probe/internal/model"
+	"strings"
 	"testing"
 	"time"
 )
@@ -29,7 +30,14 @@ func TestTaskControlsPreserveHistoryAndSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	control := func(action string, ids []string, at time.Time) error {
-		return s.ControlTask(ctx, task.ID, model.TaskAction{Action: action, NodeIDs: ids}, at)
+		switch action {
+		case "pause", "resume":
+			return s.SetTaskEnabled(ctx, task.ID, action == "resume")
+		case "run":
+			return s.RunTask(ctx, task.ID, at)
+		default:
+			return s.BindTasks(ctx, []string{task.ID}, ids)
+		}
 	}
 	if err = control("pause", nil, now); err != nil {
 		t.Fatal(err)
@@ -70,7 +78,7 @@ func TestTaskControlsPreserveHistoryAndSchedule(t *testing.T) {
 	if err != nil || len(runs) != 1 || runs[0].Reason != "connect_failed" {
 		t.Fatal(runs, err)
 	}
-	if err = control("bind", []string{id, "missing"}, now); err != model.ErrInvalid {
+	if err = control("bind", []string{id, "missing"}, now); !errors.Is(err, model.ErrInvalid) {
 		t.Fatal(err)
 	}
 	if err = control("bind", []string{other}, now); err != nil {
@@ -122,7 +130,7 @@ func TestManualRunCoversEveryLeafOnce(t *testing.T) {
 			}
 		}
 		if round == 0 {
-			if err := s.ControlTask(ctx, task.ID, model.TaskAction{Action: "run"}, now.Add(9*time.Second)); err != nil {
+			if err := s.RunTask(ctx, task.ID, now.Add(9*time.Second)); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -154,11 +162,74 @@ func TestManualRequestInSameSecondAsPreviousLease(t *testing.T) {
 	if err = s.Finish(ctx, id, model.Result{JobID: jobs[0].ID, Status: "failed", Sent: 1}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.ControlTask(ctx, tasks[0].ID, model.TaskAction{Action: "run"}, now); err != nil {
+	if err = s.RunTask(ctx, tasks[0].ID, now); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err = s.Lease(ctx, id, now.Add(time.Second))
 	if err != nil || len(jobs) != 1 {
 		t.Fatal("request swallowed", jobs, err)
+	}
+}
+
+// Binding several tasks is one transaction: a task that cannot take the node
+// list (here a missing one) leaves every task's bindings as they were.
+func TestBindTasksIsAtomic(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	a, _ := makeNode(t, s)
+	b, _ := makeNode(t, s)
+	var ids []string
+	for _, name := range []string{"one", "two"} {
+		id, err := s.SaveTask(ctx, model.Task{Name: name, Kind: "tcp", Host: "example.com", Port: 443, Family: "ipv4", Interval: 3600, Enabled: true, NodeIDs: []string{a}}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := s.BindTasks(ctx, append(append([]string{}, ids...), "missing-task"), []string{b}); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("missing task: %v", err)
+	}
+	tasks, _ := s.Tasks(ctx)
+	for _, task := range tasks {
+		if len(task.NodeIDs) != 1 || task.NodeIDs[0] != a {
+			t.Fatalf("partial bind leaked into %s: %v", task.Name, task.NodeIDs)
+		}
+	}
+	if err := s.BindTasks(ctx, ids, []string{a, b}); err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ = s.Tasks(ctx)
+	for _, task := range tasks {
+		if len(task.NodeIDs) != 2 {
+			t.Fatalf("bind missed %s: %v", task.Name, task.NodeIDs)
+		}
+	}
+}
+
+// Batch alert rules land on every node or none, and the failing node is named.
+func TestSetNodeAlertsBatch(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	a, _ := makeNode(t, s)
+	b, _ := makeNode(t, s)
+	rules := model.Alerts{Offline: true, OfflineSeconds: 120, Load: true, CPUPercent: 80, MemoryPercent: 85, HoldSeconds: 60}
+	if err := s.SetNodeAlerts(ctx, []string{a, b}, rules); err != nil {
+		t.Fatal(err)
+	}
+	// 降速告警需要节点上的降速阈值：这两台都没有，整批拒绝且不改任何一台。
+	throttle := rules
+	throttle.Throttle = true
+	err := s.SetNodeAlerts(ctx, []string{a, b}, throttle)
+	if !errors.Is(err, model.ErrInvalid) || !strings.Contains(err.Error(), "node：") {
+		t.Fatalf("throttle without threshold: %v", err)
+	}
+	nodes, _ := s.Nodes(ctx, time.Now())
+	for _, n := range nodes {
+		if n.Alerts != rules {
+			t.Fatalf("%s alerts=%+v", n.ID, n.Alerts)
+		}
+	}
+	if err = s.SetNodeAlerts(ctx, []string{"missing"}, rules); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("missing node: %v", err)
 	}
 }

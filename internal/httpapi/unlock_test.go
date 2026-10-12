@@ -190,3 +190,89 @@ func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
 		t.Fatalf("conflict: %d %v", code, obj)
 	}
 }
+
+// The step-2 routes: task enable / run / batch bind, batch alert rules, the
+// two settings resources, and the removed catch-all routes answering 404.
+func TestResourceRoutes(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "routes.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	call := func(method, path, body string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(method, server.URL+path, strings.NewReader(body))
+		req.RequestURI = ""
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+admin)
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(raw)
+	}
+	node := model.Node{Name: "甲", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}
+	a, _, err := s.SaveNode(ctx, node, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _, err := s.SaveNode(ctx, node, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tasks []string
+	for _, name := range []string{"一", "二"} {
+		id, err := s.SaveTask(ctx, model.Task{Name: name, Kind: "tcp", Host: "example.com", Port: 443, Family: "ipv4", Interval: 3600, Enabled: true}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks = append(tasks, id)
+	}
+	if code, body := call("POST", "/api/v1/admin/tasks/"+tasks[0]+"/run", ""); code != 409 || !strings.Contains(body, "未绑定节点") {
+		t.Fatalf("run unbound: %d %s", code, body)
+	}
+	if code, body := call("PUT", "/api/v1/admin/tasks/bindings", `{"task_ids":["`+tasks[0]+`","`+tasks[1]+`"],"node_ids":["`+a+`","`+b+`"]}`); code != 204 {
+		t.Fatalf("bind: %d %s", code, body)
+	}
+	if code, body := call("PUT", "/api/v1/admin/tasks/bindings", `{"task_ids":["`+tasks[0]+`"],"node_ids":["nope"]}`); code != 400 || !strings.Contains(body, "节点不存在") {
+		t.Fatalf("bind missing node: %d %s", code, body)
+	}
+	if code, _ := call("POST", "/api/v1/admin/tasks/"+tasks[0]+"/run", ""); code != 204 {
+		t.Fatalf("run: %d", code)
+	}
+	if code, _ := call("PUT", "/api/v1/admin/tasks/"+tasks[1]+"/enabled", `{"enabled":false}`); code != 204 {
+		t.Fatalf("pause: %d", code)
+	}
+	if code, _ := call("PUT", "/api/v1/admin/tasks/"+tasks[1]+"/enabled", `{}`); code != 400 {
+		t.Fatalf("enabled missing: %d", code)
+	}
+	list, _ := s.Tasks(ctx)
+	for _, task := range list {
+		if len(task.NodeIDs) != 2 || task.Enabled != (task.ID == tasks[0]) {
+			t.Fatalf("task %s: enabled=%v nodes=%v", task.Name, task.Enabled, task.NodeIDs)
+		}
+	}
+	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`","`+b+`"],"alerts":{"offline":true,"offline_seconds":90}}`); code != 204 {
+		t.Fatalf("alerts: %d %s", code, body)
+	}
+	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`"],"alerts":{"throttle":true}}`); code != 400 || !strings.Contains(body, "甲：") {
+		t.Fatalf("alerts invalid: %d %s", code, body)
+	}
+	if code, body := call("GET", "/api/v1/admin/notification", ""); code != 200 || !strings.Contains(body, `"channel"`) || strings.Contains(body, "latency_window") {
+		t.Fatalf("notification: %d %s", code, body)
+	}
+	if code, body := call("GET", "/api/v1/admin/panel", ""); code != 200 || !strings.Contains(body, "latency_window_minutes") || strings.Contains(body, "channel") {
+		t.Fatalf("panel: %d %s", code, body)
+	}
+	for _, old := range [][2]string{{"POST", "/api/v1/admin/tasks/" + tasks[0] + "/control"}, {"GET", "/api/v1/admin/settings"}, {"POST", "/api/v1/admin/settings/test"}} {
+		if code, _ := call(old[0], old[1], `{"action":"run"}`); code != 404 && code != 405 {
+			t.Fatalf("removed route %s still answers %d", old[1], code)
+		}
+	}
+}

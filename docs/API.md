@@ -12,14 +12,18 @@
 | POST /login、POST /logout、GET /session | 管理会话 |
 | GET、POST /admin/nodes | 列表、新建节点（返回一次性 token） |
 | PUT、DELETE /admin/nodes/{id} | 编辑、删除节点 |
+| PUT /admin/nodes/alerts | `{"node_ids":[…],"alerts":{…}}`：把同一份提醒规则写给所选节点，一个事务；任何一台不合规整批不改，错误里写明是哪台 |
 | POST /admin/nodes/{id}/token | 撤销旧令牌，返回新令牌 |
 | GET、POST /admin/tasks | 列表、创建探测任务 |
 | PUT、DELETE /admin/tasks/{id} | 编辑、删除任务 |
+| PUT /admin/tasks/{id}/enabled | `{"enabled":true|false}`：恢复 / 暂停 |
+| POST /admin/tasks/{id}/run | 立即安排执行；任务暂停或未绑定节点时 409 |
+| PUT /admin/tasks/bindings | `{"task_ids":[…],"node_ids":[…]}`：所选任务换成同一份节点列表，一个事务 |
 | GET /admin/catalog | 内置离线目标目录 |
 | GET /admin/events?before=&limit=&node_id=&kind= | 告警与发送结果，按 id 倒序分页：`limit` 默认 100、上限 500，`before` 传上一页最后一条的 id 续读，`node_id` / `kind` 筛选 |
-| GET、PUT /admin/settings | 查询是否配置通知、设置 webhook |
-| PUT /admin/panel | 面板显示项：延迟色带时间窗（`latency_window_minutes`，1–10080 分钟；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
-| POST /admin/settings/test | 显式测试已配置 Webhook |
+| GET、PUT /admin/notification | 通知出口：查询渠道状态（不回凭据）、设置 Telegram / Webhook / 关闭 |
+| POST /admin/notification/test | 向已配置的渠道发送测试通知 |
+| GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |
 | GET /agent/jobs | 获取有限租约任务：报了 `parallel_jobs` 能力的 Agent 最多 8 个 TCP + 1 个回程 + 1 个解锁，其余最多两个 |
@@ -36,12 +40,12 @@
 - `2026-07-28`（无握手）：每个请求在 `_meta` 里声明版本，并在头部镜像 `MCP-Protocol-Version`、`Mcp-Method`（`tools/call` 还有 `Mcp-Name`，非 ASCII 用 `=?base64?…?=`），三者必须与请求体一致，缺失或不符返回 400 与 `-32020 HeaderMismatch`；版本不认识返回 400 与 `-32022 UnsupportedProtocolVersionError`（`data.supported` 列出支持版本）；方法不认识返回 404 与 `-32601`。结果带 `resultType: "complete"` 与 `_meta["io.modelcontextprotocol/serverInfo"]`，`server/discover` 与 `tools/list` 带 `ttlMs` / `cacheScope`。
 - `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
 
-工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`）、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`alerts`）按字段合并。
+工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`set_node_alerts`（`node_ids` + `alerts`，与 HTTP 批量设置同一个事务）、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`alerts`）按字段合并。
 `create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（两者另外回面板显示项：延迟色带时间窗 `latency_window_minutes`、访客默认明暗 `default_theme` 与皮肤 `default_skin`）。`update_settings` 只改传了的项：不传 `channel` 沿用当前渠道，Telegram 的 `bot_token` / `chat_id` 留空沿用已存的，只传显示项时不动通知配置；关闭通知须显式传 `channel: "none"`，一项都不传返回 `-32602`；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
 
 ## 通知渠道
 
-`GET /admin/settings` 返回当前渠道状态，不返回凭据。`PUT /admin/settings` 支持 Telegram、Webhook 或关闭通知；`POST /admin/settings/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项与通知出口分开保存：`GET /admin/settings` 会带上生效值（`latency_window_minutes`，未设置时 60 分钟），改动走 `PUT /admin/panel`，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
+`GET /admin/notification` 返回当前渠道状态，不返回凭据。`PUT /admin/notification` 支持 Telegram、Webhook 或关闭通知（整份提交，空值即清空）；`POST /admin/notification/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项是另一个资源：`GET /admin/panel` 返回生效值（`latency_window_minutes` 未设置时 60 分钟），`PUT /admin/panel` 只改传了的项。两者分开，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
 
 HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：冲突，`error` 写明是哪一种（如报告过频、租约失效、重复结果、计费周期已变化、任务暂停或未绑定节点时立即执行）；400：无效输入；500：内部错误（详细内容仅记录服务日志）。错误正文统一为 `{"error":"<中文说明>"}`。成功变更通常返回 204；创建节点/轮换令牌返回 200 JSON。
 
@@ -75,8 +79,9 @@ kind / host / port / family / region / carrier 快照，不依赖后台表单。
 
 ## 网络任务管理
 
-- 管理员接口 `POST /api/v1/admin/tasks/{id}/control` 接收 `{"action":"pause|resume|run|bind","node_ids":[]}`。仅 bind 使用 node_ids，并替换该任务全部绑定；空列表不会执行任务。无效节点使本次更新整体失败。
-- pause/resume/bind 保留历史结果，暂停不取消已领取的探测；run 要求启用且已绑定节点，由 Agent 拉取执行，遵守原有并发限制。请求使用一个时间标记，不积累无限任务队列。
+- 任务的管理状态各有一个接口：`PUT /admin/tasks/{id}/enabled` 启停，`POST /admin/tasks/{id}/run` 立即执行，`PUT /admin/tasks/bindings` 绑定。绑定替换所选任务的全部绑定，空列表停止调度；无效节点或任务使本次整体失败，不会只改一部分。
+- 启停与绑定保留历史结果，暂停不取消已领取的探测；立即执行要求启用且已绑定节点，由 Agent 拉取执行，遵守原有并发限制。请求使用一个时间标记，不积累无限任务队列。
 - `GET /api/v1/admin/tasks/{id}/runs` 返回当前绑定节点每个已执行目标的最近领取时间、完成时间、结果和失败原因；全部尚未执行的节点显示未执行，未返回原始路径地址。
-- 后台支持选择多个任务后统一绑定节点，并支持搜索和全选筛选结果。跨任务依次保存，失败时提示已成功数量。
+- 后台支持选择多个任务后统一绑定节点，并支持搜索和全选筛选结果。一次请求、一个事务保存。
+- 提醒规则在「告警与通知」页的规则总览里设置：每台节点一行，可单台编辑，也可勾选多台后批量套用同一份规则（`PUT /admin/nodes/alerts`）。节点编辑表单只显示当前规则摘要与入口，保存节点时原样带回规则。
 - 复制任务打开预填创建表单，默认暂停，保存前可修改目标和绑定。编辑探测定义仍会清除该任务旧结果；专用暂停、恢复、绑定操作不会清除。

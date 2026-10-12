@@ -2,8 +2,10 @@ import { api, send, esc, modal, guard, toast } from "./api.js";
 import { searchMatch } from "./search.js";
 import { date, statusName, reasonName } from "./format.js";
 
+// 暂停 / 恢复改的是 enabled，立即执行是单独的动作；两者都不清历史结果。
 export async function controlTask(id, action, refresh) {
-  await send(`/admin/tasks/${id}/control`, "POST", {action});
+  if (action === "run") await send(`/admin/tasks/${id}/run`, "POST");
+  else await send(`/admin/tasks/${id}/enabled`, "PUT", {enabled: action === "resume"});
   toast(action === "run" ? "已安排执行，等待 Agent 领取；离线节点上线后执行" : action === "pause" ? "已暂停后续调度，正在执行的探测会完成" : "已恢复调度");
   await refresh();
 }
@@ -28,16 +30,10 @@ export function bindTasks(tasks, nodes, refresh) {
   d.querySelector("form").onsubmit = guard(async (e) => {
     e.preventDefault();
     const button = d.querySelector('[type="submit"]'); button.disabled = true;
-    let completed = 0;
+    // 一次提交全部任务，服务端在一个事务里改：要么都改了，要么都没改。
     try {
-      for (const task of tasks) {
-        await send(`/admin/tasks/${task.id}/control`, "POST", {action:"bind",node_ids:[...selected]});
-        completed++;
-      }
+      await send("/admin/tasks/bindings", "PUT", {task_ids: tasks.map((t) => t.id), node_ids: [...selected]});
       d.close(); toast("节点绑定已更新"); await refresh();
-    } catch (error) {
-      error.message = `已保存 ${completed}/${tasks.length} 个任务；${error.message}`;
-      throw error;
     } finally {button.disabled = false;}
   });
 }

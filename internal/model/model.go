@@ -29,6 +29,15 @@ func (e conflictError) Is(target error) bool { return target == ErrConflict }
 // Conflict returns an error that matches ErrConflict and reads as msg.
 func Conflict(msg string) error { return conflictError{msg} }
 
+// invalidError is an ErrInvalid that reads as its own message (a 400 body).
+type invalidError struct{ msg string }
+
+func (e invalidError) Error() string        { return e.msg }
+func (e invalidError) Is(target error) bool { return target == ErrInvalid }
+
+// Invalid returns an error that matches ErrInvalid and reads as msg.
+func Invalid(msg string) error { return invalidError{msg} }
+
 // Version is overridden at release time with -ldflags "-X …/internal/model.Version=v2.0.0".
 var Version = "2.0.0-dev"
 
@@ -837,10 +846,6 @@ func ValidUnlockStatus(status string) bool {
 	return false
 }
 
-type TaskAction struct {
-	Action  string   `json:"action"`
-	NodeIDs []string `json:"node_ids"`
-}
 type TaskRun struct {
 	NodeID   string `json:"node_id"`
 	NodeName string `json:"node_name"`

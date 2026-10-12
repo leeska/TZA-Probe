@@ -47,7 +47,7 @@ func TestPanelDefaultLookSettings(t *testing.T) {
 	}
 	look := func() (string, string) {
 		t.Helper()
-		code, body := request("GET", "/api/v1/admin/settings", admin, nil)
+		code, body := request("GET", "/api/v1/admin/panel", admin, nil)
 		if code != 200 {
 			t.Fatalf("settings: %d %s", code, body)
 		}

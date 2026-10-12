@@ -357,16 +357,9 @@ function dragHandle(n) {
   return `<button type="button" class="drag-handle" data-drag="${n.id}" title="按住拖动调整顺序" aria-label="拖动排序 ${esc(n.name)}">${DRAG_ICON}</button>`;
 }
 function nodeForm(existing) {
-  const n = existing || structuredClone(defaults),
-    a = n.alerts;
+  const n = existing || structuredClone(defaults);
   // 新节点默认排在最后：默认值 0 会让它插到所有已排好的节点前面。
   if (!existing) n.order = Math.max(0, ...nodes.map((x) => x.order || 0)) + 1;
-  // 未启用的规则允许存 0（服务端只在启用时要求有效阈值），但 0 不满足输入框的 min，
-  // 直接回填会让这个节点再也保存不了。对必须 ≥1 的阈值退回默认值。
-  const threshold = (key) => a[key] || defaults.alerts[key];
-  // 离线等待与续费提前天数允许 0（不等待 / 到期当天提醒），所以只有规则启用时才原样回填；
-  // 规则没开时库里的 0 多半只是没设过，显示「默认 60」却填着 0 让人分不清，这时回填默认值。
-  const ruleValue = (rule, key) => (a[rule] ? a[key] || 0 : threshold(key));
   const options = nodeRegions([n.region, n.representative, n.latency_region]);
   // 免费机器存的周期是空值；取消勾选时周期从「月」起，不留一个「未设置」选项。
   const period = n.free ? "月" : n.price_period || "";
@@ -382,24 +375,19 @@ function nodeForm(existing) {
         ["out", "仅上传"],
       ],
       n.traffic_mode,
-    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${check("免费机器（不计价）", "free", n.free)}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.currency), n.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), period), period)}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line_mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间按「日 + 时分秒」逐月顺延，当月没有该日时取最后一天；到期时间用于续费提醒。首次接入时建立流量基线，不补算历史用量。降速阈值填 0 表示这条线路没有降速规则。</p><details class="more"><summary>降速规则说明</summary><p class="hint"><b>窗口平均带宽</b>：按 Agent 上报的网卡计数，取统计窗口内的平均速率，达到阈值即视为降速（常见口径：近 24 小时平均超过 100 Mbit/s 降到 100 Mbit/s），口径与本节点的流量计费方式一致。<b>额度用满后限速</b>：本周期用量达到额度即视为已降速，适合「用满后不计量但限速」的套餐，这时「线路带宽」填突发峰值。主机重启或网卡变化时会自动重建流量基线。</p></details></div><div class="form-section"><h3>提醒规则</h3><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数（默认 60）", "offline_seconds", ruleValue("offline", "offline_seconds"), "number", 'min="0" max="86400" placeholder="默认 60"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费（默认 7）", "renewal_days", ruleValue("renewal", "renewal_days"), "number", 'min="0" max="365" placeholder="默认 7"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比（默认 80）", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100" placeholder="默认 80"')}</div><div class="rule-row">${check("达量降速警告", "throttle", a.throttle)}<small class="hint">按上面的规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（需先填速率）。</small></div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %（默认 90）", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("内存阈值 %（默认 90）", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("负载持续秒数（默认 300）", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400" placeholder="默认 300"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次；默认 0）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"')}<p class="hint">新建节点的默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU/内存 90%、负载持续 300 秒、重复间隔 0（只提醒一次）。未勾选的规则不生效；节点 45 秒未上报即判定离线，恢复时通知一次；重复间隔至少 5 分钟。通知出口在“告警与通知”页配置。</p></div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${check("免费机器（不计价）", "free", n.free)}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.currency), n.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), period), period)}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line_mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间按「日 + 时分秒」逐月顺延，当月没有该日时取最后一天；到期时间用于续费提醒。首次接入时建立流量基线，不补算历史用量。降速阈值填 0 表示这条线路没有降速规则。</p><details class="more"><summary>降速规则说明</summary><p class="hint"><b>窗口平均带宽</b>：按 Agent 上报的网卡计数，取统计窗口内的平均速率，达到阈值即视为降速（常见口径：近 24 小时平均超过 100 Mbit/s 降到 100 Mbit/s），口径与本节点的流量计费方式一致。<b>额度用满后限速</b>：本周期用量达到额度即视为已降速，适合「用满后不计量但限速」的套餐，这时「线路带宽」填突发峰值。主机重启或网卡变化时会自动重建流量基线。</p></details></div><div class="form-section"><h3>提醒规则</h3><p class="hint">${existing ? `当前：${esc(alertSummary(n.alerts))}。` : "新节点默认不开任何提醒。"}提醒规则在「告警与通知」页的规则总览里设置，可以多台一起改。</p>${existing ? '<button type="button" id="goto-alerts">去设置提醒规则 →</button>' : ""}</div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
   // 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
   const form = d.querySelector("form"),
     el = (name) => form.elements.namedItem(name);
   wireComboboxes(form);
-  const rules = {
-    offline: ["offline_seconds"],
-    renewal: ["renewal_days"],
-    traffic: ["traffic_percent"],
-    load: ["cpu_percent", "memory_percent", "hold_seconds"],
-  };
-  const syncRules = () => {
-    for (const [rule, names] of Object.entries(rules))
-      names.forEach((name) => (el(name).disabled = !el(rule).checked));
-  };
-  Object.keys(rules).forEach((rule) => (el(rule).onchange = syncRules));
-  syncRules();
+  const goto = d.querySelector("#goto-alerts");
+  if (goto)
+    goto.onclick = guard(async () => {
+      d.close();
+      tab = "alerts";
+      await render();
+    });
   // 勾选免费时价格、货币与周期都不生效，一并禁用；保存时服务端也会把价格与周期清掉。
   const syncFree = () => {
     for (const name of ["price", "currency", "price_period"]) el(name).disabled = el("free").checked;
@@ -456,20 +444,8 @@ function nodeForm(existing) {
       currency: el("currency").value,
       price_period: f.has("free") ? "" : get("price_period"),
       expires_at: get("expires_at") ? stampISO(get("expires_at")) : "",
-      alerts: {
-        offline: f.has("offline"),
-        offline_seconds: num("offline_seconds"),
-        repeat_seconds: num("repeat_minutes") * 60,
-        renewal: f.has("renewal"),
-        renewal_days: num("renewal_days"),
-        traffic: f.has("traffic"),
-        traffic_percent: num("traffic_percent"),
-        throttle: f.has("throttle"),
-        load: f.has("load"),
-        cpu_percent: num("cpu_percent"),
-        memory_percent: num("memory_percent"),
-        hold_seconds: num("hold_seconds"),
-      },
+      // 提醒规则不在这张表单里改（见告警页的规则总览），原样带回。
+      alerts: n.alerts,
     };
     const result = await send(
       "/admin/nodes" + (existing ? "/" + existing.id : ""),
@@ -540,6 +516,86 @@ async function taskForm(existing) {
   taskEditor(existing, catalog, nodes, render);
 }
 
+// 提醒规则：告警页的规则总览与它的编辑弹窗共用这几样（单台编辑与批量设置是同一张表单）。
+const RULES = {
+  offline: ["offline_seconds"],
+  renewal: ["renewal_days"],
+  traffic: ["traffic_percent"],
+  load: ["cpu_percent", "memory_percent", "hold_seconds"],
+};
+function alertFields(a) {
+  // 未启用的规则允许存 0（服务端只在启用时要求有效阈值），但 0 不满足输入框的 min，
+  // 直接回填会让这些规则再也保存不了。对必须 ≥1 的阈值退回默认值。
+  const threshold = (key) => a[key] || defaults.alerts[key];
+  // 离线等待与续费提前天数允许 0（不等待 / 到期当天提醒），所以只有规则启用时才原样回填；
+  // 规则没开时库里的 0 多半只是没设过，显示「默认 60」却填着 0 让人分不清，这时回填默认值。
+  const ruleValue = (rule, key) => (a[rule] ? a[key] || 0 : threshold(key));
+  return `<div class="form-section"><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数（默认 60）", "offline_seconds", ruleValue("offline", "offline_seconds"), "number", 'min="0" max="86400" placeholder="默认 60"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费（默认 7）", "renewal_days", ruleValue("renewal", "renewal_days"), "number", 'min="0" max="365" placeholder="默认 7"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比（默认 80）", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100" placeholder="默认 80"')}</div><div class="rule-row">${check("达量降速警告", "throttle", a.throttle)}<small class="hint">按节点编辑里的降速规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（节点需先填降速速率）。</small></div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %（默认 90）", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("内存阈值 %（默认 90）", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("负载持续秒数（默认 300）", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400" placeholder="默认 300"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次；默认 0）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"')}<p class="hint">阈值默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU/内存 90%、负载持续 300 秒、重复间隔 0（只提醒一次）。未勾选的规则不生效；节点 45 秒未上报即判定离线，恢复时通知一次；重复间隔至少 5 分钟。</p></div>`;
+}
+// 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
+function wireAlerts(form) {
+  const el = (name) => form.elements.namedItem(name);
+  const sync = () => {
+    for (const [rule, names] of Object.entries(RULES))
+      names.forEach((name) => (el(name).disabled = !el(rule).checked));
+  };
+  Object.keys(RULES).forEach((rule) => (el(rule).onchange = sync));
+  sync();
+}
+function readAlerts(form) {
+  const f = new FormData(form),
+    // 从元素读取而非 FormData：禁用的阈值不出现在 FormData 里，但取消勾选不应清掉已设好的数值。
+    num = (k) => Number(form.elements.namedItem(k).value);
+  return {
+    offline: f.has("offline"),
+    offline_seconds: num("offline_seconds"),
+    repeat_seconds: num("repeat_minutes") * 60,
+    renewal: f.has("renewal"),
+    renewal_days: num("renewal_days"),
+    traffic: f.has("traffic"),
+    traffic_percent: num("traffic_percent"),
+    throttle: f.has("throttle"),
+    load: f.has("load"),
+    cpu_percent: num("cpu_percent"),
+    memory_percent: num("memory_percent"),
+    hold_seconds: num("hold_seconds"),
+  };
+}
+// 规则总览每格的文字：开着写阈值，关着写「—」。
+function alertCells(a) {
+  return {
+    offline: a.offline ? `等 ${a.offline_seconds || 0} 秒` : "—",
+    renewal: a.renewal ? `提前 ${a.renewal_days || 0} 天` : "—",
+    traffic: a.traffic ? `${a.traffic_percent}%` : "—",
+    throttle: a.throttle ? "开" : "—",
+    load: a.load ? `CPU ${a.cpu_percent}% · 内存 ${a.memory_percent}% · ${a.hold_seconds} 秒` : "—",
+    repeat: a.repeat_seconds ? `每 ${a.repeat_seconds / 60} 分钟` : "只提醒一次",
+  };
+}
+function alertSummary(a) {
+  const c = alertCells(a);
+  const on = [["离线", c.offline], ["续费", c.renewal], ["流量", c.traffic], ["降速", c.throttle], ["负载", c.load]].filter(([, v]) => v !== "—");
+  return on.length ? on.map(([k, v]) => `${k} ${v}`).join("，") : "未开启任何提醒";
+}
+// 编辑一台或一批节点的提醒规则：整份替换所选节点的 alerts，服务端一个事务里改完。
+function alertsEditor(targets, refresh) {
+  const one = targets.length === 1;
+  const a = one ? targets[0].alerts : structuredClone(defaults.alerts);
+  const d = modal(
+    one ? `提醒规则 · ${targets[0].name}` : `批量设置提醒规则（${targets.length} 个节点）`,
+    `<form id="alerts-form">${one ? "" : `<p class="hint">保存后，所选 ${targets.length} 个节点的提醒规则都会换成下面这一份：${esc(targets.map((n) => n.name).join("、"))}。</p>`}${alertFields(a)}<div class="form-footer"><button type="submit" class="primary">保存规则</button></div></form>`,
+  );
+  const form = d.querySelector("form");
+  wireAlerts(form);
+  form.onsubmit = guard(async (e) => {
+    e.preventDefault();
+    await send("/admin/nodes/alerts", "PUT", { node_ids: targets.map((n) => n.id), alerts: readAlerts(form) });
+    d.close();
+    await refresh();
+    toast(one ? "提醒规则已保存" : `已更新 ${targets.length} 个节点的提醒规则`);
+  });
+}
+
 // 事件保存 90 天，接口按 id 倒序分页（每页 100 条）：筛选在服务端做，「加载更多」把上一页
 // 最后一条的 id 作为 before 续读。筛选条件跨刷新保留，换条件就从第一页重来。
 let eventFilter = { node_id: "", kind: "" };
@@ -554,10 +610,39 @@ function eventsURL(before = 0) {
 function eventRows(events, configured) {
   return events.map((e) => `<tr><td data-label="时间">${date(e.at)}</td><td data-label="节点">${esc(e.node_name)}</td><td data-label="类型">${esc(kindName[e.kind] || e.kind)}</td><td data-label="状态"><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td data-label="内容">${esc(e.message)}</td><td data-label="通知">${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : Date.now() / 1000 - e.at > 86400 ? "超过 24 小时，不再发送" : configured ? "待发送 / 重试" : "未配置出口"}${e.attempts > 0 ? `<small>${e.attempts} 次尝试</small>` : ""}${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("");
 }
+// 规则总览：每台节点一行，每条规则一格；勾选若干行可以批量套同一份规则。
+function rulesPanel() {
+  const rows = nodes
+    .map((n) => {
+      const c = alertCells(n.alerts);
+      return `<tr><td data-label="选择"><input type="checkbox" data-select-node="${esc(n.id)}" aria-label="选择 ${esc(n.name)}"></td><td data-label="节点">${esc(n.name)}<small>${esc(n.group || "默认")}</small></td><td data-label="离线">${c.offline}</td><td data-label="续费">${c.renewal}</td><td data-label="流量">${c.traffic}</td><td data-label="降速">${c.throttle}</td><td data-label="负载">${c.load}</td><td data-label="重复提醒">${c.repeat}</td><td data-label="操作"><div class="row-actions"><button data-alerts="${esc(n.id)}">编辑规则</button></div></td></tr>`;
+    })
+    .join("");
+  return `<section class="panel"><div class="panel-head"><h3>提醒规则</h3><button id="bulk-alerts">批量设置</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-nodes" type="checkbox" aria-label="选择全部节点"><span>全选</span></label></th><th>节点</th><th>离线</th><th>续费</th><th>流量</th><th>降速</th><th>负载</th><th>重复提醒</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="9" class="empty-cell">还没有节点。</td></tr>'}</tbody></table></div></section>`;
+}
+function wireRulesPanel() {
+  const refresh = async () => {
+    nodes = await api("/admin/nodes");
+    await renderAlerts();
+  };
+  content().querySelector("#select-nodes").onchange = (e) =>
+    content().querySelectorAll("[data-select-node]").forEach((b) => (b.checked = e.target.checked));
+  content().querySelector("#bulk-alerts").onclick = () => {
+    const ids = new Set([...content().querySelectorAll("[data-select-node]:checked")].map((b) => b.dataset.selectNode));
+    if (!ids.size) {
+      toast("请先勾选节点");
+      return;
+    }
+    alertsEditor(nodes.filter((n) => ids.has(n.id)), refresh);
+  };
+  content().querySelectorAll("[data-alerts]").forEach(
+    (b) => (b.onclick = () => alertsEditor([nodes.find((n) => n.id === b.dataset.alerts)], refresh)),
+  );
+}
 async function renderAlerts() {
   const [events, settings] = await Promise.all([
     api(eventsURL()),
-    api("/admin/settings"),
+    api("/admin/notification"),
   ]);
   const configured = settings.channel !== "none";
   const channelName = settings.telegram_configured
@@ -568,7 +653,8 @@ async function renderAlerts() {
   const filtered = eventFilter.node_id || eventFilter.kind;
   const nodeOptions = withCurrent(nodes.map((n) => [n.id, n.name]), eventFilter.node_id, "全部节点");
   const kindOptions = [["", "全部类型"], ...Object.entries(kindName).filter(([k]) => k !== "test")];
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>按节点配置提醒阈值，在这里管理统一通知出口和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section><section class="panel"><div class="panel-head"><h3>事件记录</h3><span class="muted">保存 90 天 · 每次加载 ${EVENT_PAGE} 条</span></div><div class="catalog-filters event-filters"><label>节点<select id="event-node"><option value="">全部节点</option>${nodeOptions.filter(([v]) => v).map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.node_id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label><label>类型<select id="event-kind">${kindOptions.map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.kind ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div><div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody id="event-rows">${eventRows(events, configured) || `<tr><td colspan="6" class="empty-cell">${filtered ? "没有符合筛选条件的事件。" : "暂无事件。提醒规则可在节点编辑页单独开启。"}</td></tr>`}</tbody></table></div><div class="catalog-toolbar event-more"><button id="more-events" class="quiet" ${events.length < EVENT_PAGE ? "hidden" : ""}>加载更多</button></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>通知出口、每台节点的提醒规则和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel()}<section class="panel"><div class="panel-head"><h3>事件记录</h3><span class="muted">保存 90 天 · 每次加载 ${EVENT_PAGE} 条</span></div><div class="catalog-filters event-filters"><label>节点<select id="event-node"><option value="">全部节点</option>${nodeOptions.filter(([v]) => v).map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.node_id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label><label>类型<select id="event-kind">${kindOptions.map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.kind ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div><div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody id="event-rows">${eventRows(events, configured) || `<tr><td colspan="6" class="empty-cell">${filtered ? "没有符合筛选条件的事件。" : "暂无事件。提醒规则在上方的规则总览里开启。"}</td></tr>`}</tbody></table></div><div class="catalog-toolbar event-more"><button id="more-events" class="quiet" ${events.length < EVENT_PAGE ? "hidden" : ""}>加载更多</button></div></section>`;
+  wireRulesPanel();
   let last = events.at(-1)?.id || 0;
   const more = content().querySelector("#more-events");
   more.onclick = guard(async () => {
@@ -589,7 +675,7 @@ async function renderAlerts() {
     });
   content().querySelector("#refresh-events").onclick = guard(renderAlerts);
   content().querySelector("#test-webhook").onclick = guard(async () => {
-    await send("/admin/settings/test", "POST");
+    await send("/admin/notification/test", "POST");
     toast("测试通知已送达");
   });
   content().querySelector("#configure-webhook").onclick = () => {
@@ -621,7 +707,7 @@ async function renderAlerts() {
     form.onsubmit = guard(async (e) => {
       e.preventDefault();
       const f = new FormData(form);
-      await send("/admin/settings", "PUT", {
+      await send("/admin/notification", "PUT", {
         channel: f.get("channel"),
         bot_token:
           f.get("channel") === "telegram" ? f.get("bot_token").trim() : "",
@@ -638,7 +724,7 @@ async function renderAlerts() {
 // 面板设置：公开面板的全站显示项（延迟色带时间窗、访客首屏外观）。以前挂在「告警与通知」页里，
 // 但它们跟告警无关，单独一页。两项都走 /admin/panel 保存（见下方注释）。
 async function renderSettings() {
-  const settings = await api("/admin/settings");
+  const settings = await api("/admin/panel");
   // 时间范围给几个常用档位（分钟是接口单位，档位只是界面）：
   // 探测结果保留 7 天，所以更长的一律取到保留上限，不另设选项。
   const windows = [

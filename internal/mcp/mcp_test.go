@@ -31,7 +31,8 @@ type fakeSource struct {
 	failure    error
 	deleted    []string
 	rotated    []string
-	controlled []model.TaskAction
+	controlled []string
+	alerted    []string
 	savedNodes []model.Node
 	savedTasks []model.Task
 	runs       []model.TaskRun
@@ -140,11 +141,28 @@ func (f *fakeSource) DeleteTask(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeSource) ControlTask(_ context.Context, _ string, action model.TaskAction, _ time.Time) error {
+func (f *fakeSource) control(action string) error {
 	if f.failure != nil {
 		return f.failure
 	}
 	f.controlled = append(f.controlled, action)
+	return nil
+}
+func (f *fakeSource) SetTaskEnabled(_ context.Context, _ string, enabled bool) error {
+	if enabled {
+		return f.control("resume")
+	}
+	return f.control("pause")
+}
+func (f *fakeSource) RunTask(context.Context, string, time.Time) error { return f.control("run") }
+func (f *fakeSource) BindTasks(context.Context, []string, []string) error {
+	return f.control("bind")
+}
+func (f *fakeSource) SetNodeAlerts(_ context.Context, ids []string, _ model.Alerts) error {
+	if f.failure != nil {
+		return f.failure
+	}
+	f.alerted = append(f.alerted, ids...)
 	return nil
 }
 
@@ -383,7 +401,7 @@ func TestModernRevisionRoundTrip(t *testing.T) {
 	entries, _ := list["tools"].([]any)
 	want := []string{
 		"list_nodes", "list_tasks", "node_history", "node_network_history", "node_observations", "recent_events", "latency_samples",
-		"create_node", "update_node", "delete_node", "rotate_node_token", "correct_node_traffic", "list_catalog",
+		"create_node", "update_node", "delete_node", "rotate_node_token", "correct_node_traffic", "set_node_alerts", "list_catalog",
 		"create_task", "update_task", "delete_task", "control_task", "task_runs",
 		"get_settings", "update_settings", "test_notification",
 	}
@@ -799,7 +817,7 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	if !structured(t, invoke(t, env, "control_task", `{"task_id":"t1","action":"pause"}`))["ok"].(bool) {
 		t.Fatalf("control_task did not report success")
 	}
-	if len(env.source.controlled) != 1 || env.source.controlled[0].Action != "pause" {
+	if len(env.source.controlled) != 1 || env.source.controlled[0] != "pause" {
 		t.Fatalf("control: %+v", env.source.controlled)
 	}
 	if _, out := env.modern(t, "1", "tools/call", "control_task", `{"task_id":"t1","action":"delete"}`); codeOf(t, out) != codeInvalidParams {
