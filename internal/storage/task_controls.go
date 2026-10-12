@@ -122,7 +122,11 @@ func (s *Store) TaskRuns(ctx context.Context, id string, now time.Time) ([]model
 		return nil, model.ErrNotFound
 	}
 	// Latest attempt for each bound node and probe target. Never expose raw hops.
-	rows, err := s.query(ctx, `SELECT n.id,json_extract(n.config,'$.name'),j.issued,j.finished,j.task,j.result FROM bindings b JOIN nodes n ON n.id=b.node_id LEFT JOIN jobs j ON j.id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY json_extract(task,'$.kind'),json_extract(task,'$.family'),json_extract(task,'$.host'),json_extract(task,'$.port'),json_extract(task,'$.region'),json_extract(task,'$.carrier') ORDER BY issued DESC,id DESC) pos FROM jobs WHERE task_id=b.task_id AND node_id=b.node_id) WHERE pos=1) WHERE b.task_id=? ORDER BY n.id,j.issued DESC`, id)
+	// The materialized latest table already holds exactly that row per node and
+	// probe key (taskID|kind|family|host|port|region|carrier), so this is a
+	// primary-key range per binding. Ranking the task's jobs instead re-read the
+	// whole task history for every binding: 69s with ten nodes and a week of it.
+	rows, err := s.query(ctx, `SELECT n.id,json_extract(n.config,'$.name'),l.issued,l.finished,l.task,l.result FROM bindings b JOIN nodes n ON n.id=b.node_id LEFT JOIN latest l ON l.node_id=b.node_id AND l.probe_key>=? AND l.probe_key<? WHERE b.task_id=? ORDER BY n.id,l.issued DESC`, id+"|", id+"}", id)
 	if err != nil {
 		return nil, err
 	}
