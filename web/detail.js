@@ -117,18 +117,18 @@ export async function detail(id, focus = null) {
         : `<div id="network-overview"></div><div id="route-details"></div>`;
   // 达量降速：线路真配了规则才给这一格（与公开卡片同一判断）。按窗口平均带宽的写窗口
   // 均值并如实报出本机已上报多少小时；按周期额度用满后限速的写那条额度与用满后的速率。
-  const trafficWord = { sum: "双向", max: "较大方向", in: "下载", out: "上传" }[n.traffic_mode] || "双向";
+  const trafficWord = { sum: "双向", max: "较大方向", in: "下载", out: "上传" }[n.billing.traffic_mode] || "双向";
   const throttleTile =
-    n.throttle_mbps > 0
-      ? n.throttle_on === "quota"
-        ? `<div class="detail-wide"><span>用满额度后的限速</span><strong>${n.throttle_mbps} Mbit/s</strong><small>额度 ${bytes(n.traffic_limit)}${n.line_mbps ? `（${trafficWord}）· 峰值 ${n.line_mbps} Mbit/s` : ""} · 本周期已用 ${bytes(n.traffic_used)}${n.throttled ? " · 已达额度" : ""}</small></div>`
-        : `<div class="detail-wide"><span>近 ${Math.min(n.covered_hours || n.window_hours || 24, n.window_hours || 24)} 小时平均带宽</span><strong>${n.covered_hours > 0 ? mbps(n.avg_bps) : n.last_seen ? "统计中" : "未接入"}</strong><small>降速阈值 ${n.throttle_mbps} Mbit/s${n.line_mbps ? ` · 线路带宽 ${n.line_mbps} Mbit/s` : ""}${n.throttled ? " · 已达阈值" : ""}${n.covered_hours > 0 && n.covered_hours < (n.window_hours || 24) ? ` · 本机已上报 ${n.covered_hours} 小时` : ""} · 按${trafficWord}统计</small></div>`
+    n.line.throttle_mbps > 0
+      ? n.line.throttle_on === "quota"
+        ? `<div class="detail-wide"><span>用满额度后的限速</span><strong>${n.line.throttle_mbps} Mbit/s</strong><small>额度 ${bytes(n.billing.traffic_limit)}${n.line.mbps ? `（${trafficWord}）· 峰值 ${n.line.mbps} Mbit/s` : ""} · 本周期已用 ${bytes(n.traffic_used)}${n.throttled ? " · 已达额度" : ""}</small></div>`
+        : `<div class="detail-wide"><span>近 ${Math.min(n.covered_hours || n.window_hours || 24, n.window_hours || 24)} 小时平均带宽</span><strong>${n.covered_hours > 0 ? mbps(n.avg_bps) : n.last_seen ? "统计中" : "未接入"}</strong><small>降速阈值 ${n.line.throttle_mbps} Mbit/s${n.line.mbps ? ` · 线路带宽 ${n.line.mbps} Mbit/s` : ""}${n.throttled ? " · 已达阈值" : ""}${n.covered_hours > 0 && n.covered_hours < (n.window_hours || 24) ? ` · 本机已上报 ${n.covered_hours} 小时` : ""} · 按${trafficWord}统计</small></div>`
       : "";
   // 线路带宽：后台填了就在详情里单独给一格（前台看得到线路规格）。已经按降速规则在
   // throttleTile 里写过这一项（「峰值 X Mbit/s」/「线路带宽 X Mbit/s」）就不重复一遍。
   const bandwidthTile =
-    n.line_mbps > 0 && !throttleTile
-      ? `<div><span>线路带宽</span><strong>${bandwidth(n.line_mbps)}</strong><small>商家标称的端口 / 峰值速率</small></div>`
+    n.line.mbps > 0 && !throttleTile
+      ? `<div><span>线路带宽</span><strong>${bandwidth(n.line.mbps)}</strong><small>商家标称的端口 / 峰值速率</small></div>`
       : "";
   // 解锁检测：这台机器跑过检测才有这一块（没跑过就不画，不留占位）。数据取节点自带的
   // unlock 字段（/nodes 已经带上）。

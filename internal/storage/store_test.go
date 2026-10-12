@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func drainPurges(t *testing.T, s *Store) {
 }
 func makeNode(t *testing.T, s *Store) (string, string) {
 	t.Helper()
-	_, token, err := s.SaveNode(context.Background(), model.Node{Name: "node", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
+	_, token, err := s.SaveNode(context.Background(), model.Node{Name: "node", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,7 +540,7 @@ func TestEventsPageAndFilter(t *testing.T) {
 func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 	s := openTest(t)
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 11 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 12 {
 		t.Fatalf("user_version=%d %v", version, err)
 	}
 	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "events_rule_time", "jobs_latest_insert"} {
@@ -585,28 +586,28 @@ func TestFreeFlagMigrationAndSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range nodes {
-		if n.ID == "free" && (!n.Free || n.PricePeriod != "" || n.Currency != "CNY") {
+		if n.ID == "free" && (!n.Billing.Free || n.Billing.PricePeriod != "" || n.Billing.Currency != "CNY") {
 			t.Fatalf("free node after migration: %+v", n.Node)
 		}
-		if n.ID == "paid" && (n.Free || n.PricePeriod != "月") {
+		if n.ID == "paid" && (n.Billing.Free || n.Billing.PricePeriod != "月") {
 			t.Fatalf("paid node touched: %+v", n.Node)
 		}
 	}
-	base := model.Node{Name: "x", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}
+	base := model.Node{Name: "x", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}
 	legacy := base
-	legacy.PricePeriod = "免费"
+	legacy.Billing.PricePeriod = "免费"
 	if _, _, err = s.SaveNode(ctx, legacy, true); err == nil {
 		t.Fatal("price period 免费 accepted")
 	}
 	free := base
-	free.Free, free.Price, free.PricePeriod = true, 9.9, "月"
+	free.Billing.Free, free.Billing.Price, free.Billing.PricePeriod = true, 9.9, "月"
 	id, _, err := s.SaveNode(ctx, free, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	nodes, _ = s.Nodes(ctx, time.Now())
 	for _, n := range nodes {
-		if n.ID == id && (!n.Free || n.Price != 0 || n.PricePeriod != "") {
+		if n.ID == id && (!n.Billing.Free || n.Billing.Price != 0 || n.Billing.PricePeriod != "") {
 			t.Fatalf("free save kept a price: %+v", n.Node)
 		}
 	}
@@ -677,5 +678,61 @@ func TestTaskShapeMigration(t *testing.T) {
 	}
 	if u := byID["unlock"]; u.Type != model.TaskUnlock || u.Unlock.Interval != 7200 || u.Unlock.Family != "ipv6" || u.Probe != nil {
 		t.Fatalf("unlock: %+v", u)
+	}
+}
+
+// Version 12 groups the node config (display / billing / line) and moves the
+// server-kept creation time and cycle correction into their own columns; every
+// value survives and the correction still applies to its cycle.
+func TestNodeShapeMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nodes.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	cycle, _ := model.Cycle(now, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	flat := fmt.Sprintf(`{"id":"n","name":"东京","group":"JP","region":"日本","order":3,"public":true,
+		"representative":"上海","latency_region":"北京","latency_carriers":["电信"],
+		"traffic_limit":2000,"traffic_mode":"max","billing_at":"2026-09-01T00:00:00Z","free":false,"price":9.9,"currency":"USD","price_period":"月","expires_at":"2027-01-01T00:00:00Z",
+		"line_mbps":1000,"throttle_mbps":100,"throttle_hours":12,"throttle_on":"bandwidth",
+		"alerts":{"offline":true,"offline_seconds":60},
+		"created_at":1700000000,"traffic_adjustment":700,"adjustment_cycle":%d}`, cycle.Unix())
+	if _, err = s.db.Exec("ALTER TABLE nodes DROP COLUMN created_at; ALTER TABLE nodes DROP COLUMN traffic_adjustment; ALTER TABLE nodes DROP COLUMN adjustment_cycle"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec("INSERT INTO nodes(id,config,token_hash) VALUES('n',?,'h')", flat); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec("PRAGMA user_version=11"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	views, err := s.Nodes(context.Background(), now)
+	if err != nil || len(views) != 1 {
+		t.Fatalf("nodes: %d %v", len(views), err)
+	}
+	v := views[0]
+	want := model.Node{ID: "n", Name: "东京", Group: "JP", Region: "日本", Order: 3, Public: true,
+		Display: model.NodeDisplay{RouteRegion: "上海", LatencyRegion: "北京", LatencyCarriers: []string{"电信"}},
+		Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficLimit: 2000, TrafficMode: "max", Price: 9.9, Currency: "USD", PricePeriod: "月", ExpiresAt: "2027-01-01T00:00:00Z"},
+		Line:    model.Line{Mbps: 1000, ThrottleMbps: 100, ThrottleHours: 12, ThrottleOn: "bandwidth"},
+		Alerts:  model.Alerts{Offline: true, OfflineSeconds: 60}}
+	if encode(v.Node) != encode(want) {
+		t.Fatalf("node after migration:\n got %s\nwant %s", encode(v.Node), encode(want))
+	}
+	if v.CreatedAt != 1700000000 || v.TrafficUsed != 700 {
+		t.Fatalf("server-kept state lost: created=%d used=%d", v.CreatedAt, v.TrafficUsed)
+	}
+	var raw string
+	if err = s.db.QueryRow("SELECT config FROM nodes WHERE id='n'").Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw, "traffic_adjustment") || strings.Contains(raw, "created_at") || strings.Contains(raw, "representative") {
+		t.Fatalf("config still carries the old fields: %s", raw)
 	}
 }

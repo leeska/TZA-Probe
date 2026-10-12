@@ -100,7 +100,7 @@ func TestObservationsSlimDropsHopTables(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, body
 	}
-	id, _, err := s.SaveNode(ctx, model.Node{Name: "slim", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true)
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "slim", Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestObservationsSlimDropsHopTables(t *testing.T) {
 	}
 
 	// 批量接口：首页一次取回所有节点，内容与逐台 slim 一致；不公开的节点匿名看不到。
-	hidden, _, err := s.SaveNode(ctx, model.Node{Name: "hidden", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
+	hidden, _, err := s.SaveNode(ctx, model.Node{Name: "hidden", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestPanelLatencyWindowControlsSampleLookBack(t *testing.T) {
 		return len(out.Samples)
 	}
 
-	id, _, err := s.SaveNode(ctx, model.Node{Name: "window", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true)
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "window", Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 			t.Fatal("task history authentication", code)
 		}
 	}
-	node := model.Node{Name: "private", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}
+	node := model.Node{Name: "private", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}
 	code, data := request("POST", "/api/v1/admin/nodes", admin, node)
 	if code != 200 {
 		t.Fatalf("create: %d %s", code, data)
@@ -523,11 +523,7 @@ func TestSaveNodeOrderRewritesOnlyOrder(t *testing.T) {
 	names := []string{"甲", "乙", "丙"}
 	ids := []string{}
 	for _, name := range names {
-		id, _, err := s.SaveNode(ctx, model.Node{
-			Name: name, Region: "香港", Public: true,
-			BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum",
-			Price: 12.5, Currency: "USD", PricePeriod: "年", ExpiresAt: "2027-09-01T00:00:00Z",
-		}, true)
+		id, _, err := s.SaveNode(ctx, model.Node{Name: name, Region: "香港", Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Price: 12.5, Currency: "USD", PricePeriod: "年", ExpiresAt: "2027-09-01T00:00:00Z"}}, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -588,7 +584,7 @@ func TestSaveNodeOrderRewritesOnlyOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range list {
-		if n.Price != 12.5 || n.Currency != "USD" || n.PricePeriod != "年" || n.BillingAt != "2026-09-01T00:00:00Z" || n.Region != "香港" {
+		if n.Billing.Price != 12.5 || n.Billing.Currency != "USD" || n.Billing.PricePeriod != "年" || n.Billing.ResetAt != "2026-09-01T00:00:00Z" || n.Region != "香港" {
 			t.Fatalf("拖动不该改别的字段: %+v", n.Node)
 		}
 	}
@@ -659,7 +655,7 @@ func TestAnonymousPanelSharesNodeSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, _, err = s.SaveNode(context.Background(), model.Node{Name: "pub", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true); err != nil {
+	if _, _, err = s.SaveNode(context.Background(), model.Node{Name: "pub", Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true); err != nil {
 		t.Fatal(err)
 	}
 	repo := &countingRepo{Repository: s}
@@ -733,7 +729,7 @@ func TestAnonymousPanelSharesProbeSnapshot(t *testing.T) {
 	}
 	defer s.Close()
 	for _, name := range []string{"a", "b"} {
-		if _, _, err = s.SaveNode(context.Background(), model.Node{Name: name, BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true); err != nil {
+		if _, _, err = s.SaveNode(context.Background(), model.Node{Name: name, Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -786,7 +782,7 @@ func TestAPIResponsesAreGzipped(t *testing.T) {
 	}
 	defer s.Close()
 	for i := 0; i < 5; i++ {
-		if _, _, err = s.SaveNode(context.Background(), model.Node{Name: fmt.Sprintf("node-%d", i), BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Public: true}, true); err != nil {
+		if _, _, err = s.SaveNode(context.Background(), model.Node{Name: fmt.Sprintf("node-%d", i), Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true); err != nil {
 			t.Fatal(err)
 		}
 	}

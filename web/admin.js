@@ -21,21 +21,18 @@ const defaults = {
   region: "",
   order: 0,
   public: true,
-  representative: "",
-  latency_region: "",
-  latency_carriers: [],
-  traffic_limit: 0,
-  traffic_mode: "sum",
-  billing_at: "",
-  free: false,
-  price: 0,
-  currency: "CNY",
-  price_period: "月",
-  expires_at: "",
-  line_mbps: 0,
-  throttle_mbps: 0,
-  throttle_hours: 24,
-  throttle_on: "bandwidth",
+  display: { route_region: "", latency_region: "", latency_carriers: [] },
+  billing: {
+    reset_at: "",
+    traffic_limit: 0,
+    traffic_mode: "sum",
+    free: false,
+    price: 0,
+    currency: "CNY",
+    price_period: "月",
+    expires_at: "",
+  },
+  line: { mbps: 0, throttle_mbps: 0, throttle_hours: 24, throttle_on: "bandwidth" },
   alerts: {
     offline: false,
     offline_seconds: 60,
@@ -149,7 +146,7 @@ function dueCell(expiresAt) {
   return `<span class="${cls}">${esc(expiresAt.slice(0, 10))}</span>${note}`;
 }
 function renderNodes() {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${nodes.filter((n) => n.expires_at && days(n.expires_at) <= 7).length}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${nodes.map((n) => `<tr data-node="${n.id}"><td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 代表地区 ${esc(n.representative || "未设置")}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><small>Agent ${n.metrics ? esc(n.metrics.version) + " · " + esc(n.metrics.arch || "") : "未接入"}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.traffic_limit ? "/ " + bytes(n.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.expires_at)}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${nodes.map((n) => `<tr data-node="${n.id}"><td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 代表地区 ${esc(n.display.route_region || "未设置")}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><small>Agent ${n.metrics ? esc(n.metrics.version) + " · " + esc(n.metrics.arch || "") : "未接入"}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
   content().querySelectorAll("[data-billing]").forEach((b) => {
     b.onclick = () => {
       const n = nodes.find((x) => x.id === b.dataset.billing);
@@ -360,12 +357,12 @@ function nodeForm(existing) {
   const n = existing || structuredClone(defaults);
   // 新节点默认排在最后：默认值 0 会让它插到所有已排好的节点前面。
   if (!existing) n.order = Math.max(0, ...nodes.map((x) => x.order || 0)) + 1;
-  const options = nodeRegions([n.region, n.representative, n.latency_region]);
+  const options = nodeRegions([n.region, n.display.route_region, n.display.latency_region]);
   // 免费机器存的周期是空值；取消勾选时周期从「月」起，不留一个「未设置」选项。
-  const period = n.free ? "月" : n.price_period || "";
+  const period = n.billing.free ? "月" : n.billing.price_period || "";
   const d = modal(
     existing ? "编辑节点" : "添加节点",
-    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionCombobox("节点所在地区", "region", n.region, options)}${regionCombobox("卡片代表地区（与回程任务一致）", "representative", n.representative, options, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("卡片延迟地区（留空沿用代表地区）", "latency_region", n.latency_region, options, { placeholder: "沿用代表地区" })}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.latency_carriers?.length || n.latency_carriers.includes(carrier))).join("")}</div><small class="hint">空配置会显示全部延迟分组。</small></div>${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
+    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionCombobox("节点所在地区", "region", n.region, options)}${regionCombobox("卡片代表地区（与回程任务一致）", "representative", n.display.route_region, options, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("卡片延迟地区（留空沿用代表地区）", "latency_region", n.display.latency_region, options, { placeholder: "沿用代表地区" })}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.display.latency_carriers?.length || n.display.latency_carriers.includes(carrier))).join("")}</div><small class="hint">空配置会显示全部延迟分组。</small></div>${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.billing.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
       "流量计费方式",
       "traffic_mode",
       [
@@ -374,8 +371,8 @@ function nodeForm(existing) {
         ["in", "仅下载"],
         ["out", "仅上传"],
       ],
-      n.traffic_mode,
-    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${check("免费机器（不计价）", "free", n.free)}${field("价格", "price", n.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.currency), n.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), period), period)}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line_mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间按「日 + 时分秒」逐月顺延，当月没有该日时取最后一天；到期时间用于续费提醒。首次接入时建立流量基线，不补算历史用量。降速阈值填 0 表示这条线路没有降速规则。</p><details class="more"><summary>降速规则说明</summary><p class="hint"><b>窗口平均带宽</b>：按 Agent 上报的网卡计数，取统计窗口内的平均速率，达到阈值即视为降速（常见口径：近 24 小时平均超过 100 Mbit/s 降到 100 Mbit/s），口径与本节点的流量计费方式一致。<b>额度用满后限速</b>：本周期用量达到额度即视为已降速，适合「用满后不计量但限速」的套餐，这时「线路带宽」填突发峰值。主机重启或网卡变化时会自动重建流量基线。</p></details></div><div class="form-section"><h3>提醒规则</h3><p class="hint">${existing ? `当前：${esc(alertSummary(n.alerts))}。` : "新节点默认不开任何提醒。"}提醒规则在「告警与通知」页的规则总览里设置，可以多台一起改。</p>${existing ? '<button type="button" id="goto-alerts">去设置提醒规则 →</button>' : ""}</div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+      n.billing.traffic_mode,
+    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing.reset_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${check("免费机器（不计价）", "free", n.billing.free)}${field("价格", "price", n.billing.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.billing.currency), n.billing.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), period), period)}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.billing.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line.mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.line.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.line.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.line.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间按「日 + 时分秒」逐月顺延，当月没有该日时取最后一天；到期时间用于续费提醒。首次接入时建立流量基线，不补算历史用量。降速阈值填 0 表示这条线路没有降速规则。</p><details class="more"><summary>降速规则说明</summary><p class="hint"><b>窗口平均带宽</b>：按 Agent 上报的网卡计数，取统计窗口内的平均速率，达到阈值即视为降速（常见口径：近 24 小时平均超过 100 Mbit/s 降到 100 Mbit/s），口径与本节点的流量计费方式一致。<b>额度用满后限速</b>：本周期用量达到额度即视为已降速，适合「用满后不计量但限速」的套餐，这时「线路带宽」填突发峰值。主机重启或网卡变化时会自动重建流量基线。</p></details></div><div class="form-section"><h3>提醒规则</h3><p class="hint">${existing ? `当前：${esc(alertSummary(n.alerts))}。` : "新节点默认不开任何提醒。"}提醒规则在「告警与通知」页的规则总览里设置，可以多台一起改。</p>${existing ? '<button type="button" id="goto-alerts">去设置提醒规则 →</button>' : ""}</div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
   // 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
   const form = d.querySelector("form"),
@@ -420,30 +417,36 @@ function nodeForm(existing) {
       // 从元素读取而非 FormData：禁用的阈值不出现在 FormData 里，
       // 但取消勾选不应清掉已设好的数值。
       num = (k) => Number(el(k).value);
+    // 节点配置按关注点分组：卡片显示（display）、计费（billing）、线路（line）、提醒（alerts）。
     const value = {
-      ...defaults,
       name: get("name"),
       group: get("group"),
       region: get("region"),
-      representative: get("representative"),
-      latency_region: get("latency_region"),
-      latency_carriers: ["电信", "联通", "移动", "其他"].filter((carrier) => f.has("latency_carrier:" + carrier)),
       // 顺序只由列表拖动决定（POST /admin/nodes/order），表单原样带回。
       order: n.order,
       public: f.has("public"),
-      traffic_limit: Math.round(num("quota") * 1e9),
-      traffic_mode: get("traffic_mode"),
-      billing_at: stampISO(get("billing_at")),
-      line_mbps: Math.round(num("line_mbps") || 0),
-      throttle_mbps: Math.round(num("throttle_mbps") || 0),
-      throttle_hours: Math.round(num("throttle_hours") || 0),
-      throttle_on: get("throttle_on"),
-      free: f.has("free"),
-      price: f.has("free") ? 0 : num("price"),
-      // 货币从元素读：免费时它被禁用、不在 FormData 里，但不该因此清掉。
-      currency: el("currency").value,
-      price_period: f.has("free") ? "" : get("price_period"),
-      expires_at: get("expires_at") ? stampISO(get("expires_at")) : "",
+      display: {
+        route_region: get("representative"),
+        latency_region: get("latency_region"),
+        latency_carriers: ["电信", "联通", "移动", "其他"].filter((carrier) => f.has("latency_carrier:" + carrier)),
+      },
+      billing: {
+        reset_at: stampISO(get("billing_at")),
+        traffic_limit: Math.round(num("quota") * 1e9),
+        traffic_mode: get("traffic_mode"),
+        free: f.has("free"),
+        price: f.has("free") ? 0 : num("price"),
+        // 货币从元素读：免费时它被禁用、不在 FormData 里，但不该因此清掉。
+        currency: el("currency").value,
+        price_period: f.has("free") ? "" : get("price_period"),
+        expires_at: get("expires_at") ? stampISO(get("expires_at")) : "",
+      },
+      line: {
+        mbps: Math.round(num("line_mbps") || 0),
+        throttle_mbps: Math.round(num("throttle_mbps") || 0),
+        throttle_hours: Math.round(num("throttle_hours") || 0),
+        throttle_on: get("throttle_on"),
+      },
       // 提醒规则不在这张表单里改（见告警页的规则总览），原样带回。
       alerts: n.alerts,
     };
@@ -454,7 +457,8 @@ function nodeForm(existing) {
     );
     d.close();
     await render();
-    if (result.token) showToken(result.token);
+    // 新建返回一次性密钥；编辑（PUT）成功是 204，没有正文。
+    if (result?.token) showToken(result.token);
     else toast("节点已保存");
   });
 }

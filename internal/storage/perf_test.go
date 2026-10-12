@@ -186,7 +186,7 @@ func seedPerf(t *testing.T, path string, now time.Time) {
 	var ids []string
 	for i := 0; i < nodes; i++ {
 		id, _ := makeNode(t, s)
-		n := model.Node{ID: id, Name: fmt.Sprintf("node-%d", i), BillingAt: "2026-09-23T12:36:00Z", TrafficMode: "sum", Public: true, ThrottleMbps: 100, ThrottleHours: 24 * (i%3 + 1)}
+		n := model.Node{ID: id, Name: fmt.Sprintf("node-%d", i), Public: true, Billing: model.Billing{ResetAt: "2026-09-23T12:36:00Z", TrafficMode: "sum"}, Line: model.Line{ThrottleMbps: 100, ThrottleHours: 24 * (i%3 + 1)}}
 		if _, _, err := s.SaveNode(ctx, n, false); err != nil {
 			t.Fatal(err)
 		}

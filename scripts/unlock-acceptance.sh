@@ -50,12 +50,12 @@ print("unlock-catalog: %d 项 · 分类 %s" % (len(catalog["services"]), " / ".j
 # 一台跑过检测的机器，和一台没跑过的（用来验证「没有数据就不带字段」）。
 status, node = call("POST", "/api/v1/admin/nodes", {
     "name": "unlock-accept", "region": "日本", "group": "JP", "public": True,
-    "billing_at": "2026-09-01T00:00:00Z", "traffic_mode": "sum"})
+    "billing": {"reset_at": "2026-09-01T00:00:00Z", "traffic_mode": "sum"}})
 assert status == 200, node
 node_id, node_key = node["id"], node["token"]
 plain_id = call("POST", "/api/v1/admin/nodes", {
     "name": "unlock-accept-plain", "region": "日本", "public": True,
-    "billing_at": "2026-09-01T00:00:00Z", "traffic_mode": "sum"})[1]["id"]
+    "billing": {"reset_at": "2026-09-01T00:00:00Z", "traffic_mode": "sum"}})[1]["id"]
 
 # 指标必须带上 capabilities=["unlock"]，否则服务端不会把解锁任务派给这台机器。
 status, err = call("POST", "/api/v1/agent/report", {"protocol": 1, "metrics": {

@@ -32,7 +32,7 @@ func (s *Store) CorrectTraffic(ctx context.Context, id string, used int64, cycle
 	if err = json.Unmarshal([]byte(raw), &n); err != nil {
 		return err
 	}
-	start, end := model.Cycle(now, model.BillingAnchor(n.BillingAt, now))
+	start, end := model.Cycle(now, model.BillingAnchor(n.Billing.ResetAt, now))
 	if cycle != start.Unix() {
 		return model.Conflict("计费周期已变化，请刷新后重新校正")
 	}
@@ -49,9 +49,8 @@ func (s *Store) CorrectTraffic(ctx context.Context, id string, used int64, cycle
 		}
 		incoming, outgoing = incoming+edgeIn, outgoing+edgeOut
 	}
-	n.AdjustmentCycle = start.Unix()
-	n.TrafficAdjustment = used - model.Traffic(incoming, outgoing, n.TrafficMode)
-	if _, err = tx.ExecContext(ctx, "UPDATE nodes SET config=? WHERE id=?", encode(n), id); err != nil {
+	adjustment := used - model.Traffic(incoming, outgoing, n.Billing.TrafficMode)
+	if _, err = tx.ExecContext(ctx, "UPDATE nodes SET traffic_adjustment=?,adjustment_cycle=? WHERE id=?", adjustment, start.Unix(), id); err != nil {
 		return err
 	}
 	return tx.Commit()

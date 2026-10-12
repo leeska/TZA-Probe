@@ -25,7 +25,7 @@ func TestThrottleWindowAverage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	save(model.Node{Name: "node", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", LineMbps: 1000, ThrottleMbps: 1, ThrottleHours: 1})
+	save(model.Node{Name: "node", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 1, ThrottleHours: 1}})
 
 	m := metrics() // NetIn 1000, NetOut 2000
 	if err := s.Report(ctx, id, m, now.Add(-90*time.Minute)); err != nil {
@@ -54,7 +54,7 @@ func TestThrottleWindowAverage(t *testing.T) {
 	}
 
 	// 阈值抬到 2 Mbit/s：同一份数据不再算达到降速。
-	save(model.Node{Name: "node", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", LineMbps: 1000, ThrottleMbps: 2, ThrottleHours: 1})
+	save(model.Node{Name: "node", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 2, ThrottleHours: 1}})
 	views, err = s.Nodes(ctx, now)
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestThrottleWindowAverage(t *testing.T) {
 
 	// 统计方式取「较大方向」时按较大方向那一边算，与本周期用量同一口径：双向合计是
 	// 1 Mbit/s，较大方向（6 亿字节）只有 0.89 Mbit/s，所以区间断言能分辨出取错了方向。
-	save(model.Node{Name: "node", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "max", LineMbps: 1000, ThrottleMbps: 1, ThrottleHours: 1})
+	save(model.Node{Name: "node", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "max"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 1, ThrottleHours: 1}})
 	views, err = s.Nodes(ctx, now)
 	if err != nil {
 		t.Fatal(err)
@@ -84,8 +84,7 @@ func TestThrottleOnQuotaFollowsCycleVolume(t *testing.T) {
 	base := func(mode string) string {
 		t.Helper()
 		id, _ := makeNode(t, s)
-		n := model.Node{ID: id, Name: "dmit", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum",
-			TrafficLimit: 1_000_000, LineMbps: 4000, ThrottleMbps: 50, ThrottleOn: mode}
+		n := model.Node{ID: id, Name: "dmit", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", TrafficLimit: 1_000_000}, Line: model.Line{Mbps: 4000, ThrottleMbps: 50, ThrottleOn: mode}}
 		if _, _, err := s.SaveNode(ctx, n, false); err != nil {
 			t.Fatal(err)
 		}
@@ -113,8 +112,8 @@ func TestThrottleOnQuotaFollowsCycleVolume(t *testing.T) {
 		byName[v.ID] = v
 	}
 	q, bw := byName[quotaID], byName[bwID]
-	if q.TrafficUsed < q.TrafficLimit {
-		t.Fatalf("用量 %d 没到额度 %d，用例前提不成立", q.TrafficUsed, q.TrafficLimit)
+	if q.TrafficUsed < q.Billing.TrafficLimit {
+		t.Fatalf("用量 %d 没到额度 %d，用例前提不成立", q.TrafficUsed, q.Billing.TrafficLimit)
 	}
 	if !q.Throttled {
 		t.Fatalf("用满额度不算降速：%+v", q)
@@ -125,7 +124,7 @@ func TestThrottleOnQuotaFollowsCycleVolume(t *testing.T) {
 
 	// 额度抬到 100 MB：同一份用量不再算降速。
 	n := q.Node
-	n.TrafficLimit = 100_000_000
+	n.Billing.TrafficLimit = 100_000_000
 	if _, _, err = s.SaveNode(ctx, n, false); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +146,7 @@ func TestThrottleWindowReportsPartialCoverage(t *testing.T) {
 	s := openTest(t)
 	now := time.Date(2026, 9, 18, 12, 30, 0, 0, time.UTC)
 	id, _ := makeNode(t, s)
-	if _, _, err := s.SaveNode(ctx, model.Node{ID: id, Name: "fresh", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", LineMbps: 1000, ThrottleMbps: 100}, false); err != nil {
+	if _, _, err := s.SaveNode(ctx, model.Node{ID: id, Name: "fresh", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 100}}, false); err != nil {
 		t.Fatal(err)
 	}
 	m := metrics()

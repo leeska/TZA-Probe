@@ -184,25 +184,25 @@ function metricsInner(n) {
   // 速率与流量仍按十进制（bytes），与商家的流量口径一致。
   const memSub = hasMetrics ? `${gib(m.memory_used)} / ${gib(m.memory_total)}` : "未报告";
   const diskSub = hasMetrics ? `${gib(m.disk_used)} / ${gib(m.disk_total)}` : "未报告";
-  const trafficSub = n.traffic_limit ? `${bytes(n.traffic_limit)} 额度 · ${esc({ sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.traffic_mode])}` : "无限制额度";
+  const trafficSub = n.billing.traffic_limit ? `${bytes(n.billing.traffic_limit)} 额度 · ${esc({ sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.billing.traffic_mode])}` : "无限制额度";
   // 达量降速：线路自带的两条规则都可能——按窗口平均带宽（德国商家）或按周期额度用满后
   // 限速（DMIT T1 这类不计量但限速）。只有真配了规则的线路才写这一行，没配的机器不显示
   // 占位文案；窗口口径按本机实际上报的小时数写，覆盖不满就说还在统计，不假装有一整个窗口。
   const throttleNote =
-    n.throttle_mbps > 0
+    n.line.throttle_mbps > 0
       ? `<small class="throttle-note${n.throttled ? " over" : ""}">${
-          n.throttle_on === "quota"
-            ? `${n.throttled ? "已用满额度" : `用满 ${bytes(n.traffic_limit)} 额度`} · 限速 ${n.throttle_mbps} Mbit/s`
+          n.line.throttle_on === "quota"
+            ? `${n.throttled ? "已用满额度" : `用满 ${bytes(n.billing.traffic_limit)} 额度`} · 限速 ${n.line.throttle_mbps} Mbit/s`
             : `${
                 n.covered_hours > 0
                   ? `近 ${Math.min(n.covered_hours, n.window_hours || 24)} 小时均值 ${mbps(n.avg_bps)}`
                   : n.last_seen
                     ? "近 " + (n.window_hours || 24) + " 小时均值统计中"
                     : "接入后开始统计均值"
-              } · 阈值 ${n.throttle_mbps} Mbit/s`
+              } · 阈值 ${n.line.throttle_mbps} Mbit/s`
         }</small>`
       : "";
-  return `${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
+  return `${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.billing.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
 }
 
 // 实时速率：两个视图都是「一行一个方向」（小图标 + 数值靠右，标签收进 title）。
@@ -661,7 +661,7 @@ function nodeFacts(n) {
     carriers.includes(o.task.carrier) ? o.task.carrier : "其他";
   const bucketOf = (carrier) =>
     carriers.includes(carrier) ? carrier : "其他";
-  const latencyRegion = n.latency_region || n.representative || "";
+  const latencyRegion = n.display.latency_region || n.display.route_region || "";
   const inRegion = (region, want) => !want || region === want;
   // 一格的资格来自服务端给的 probe_targets（这台机器真有那些探测项，取自任务定义），
   // 不是从 jobs 推的：新绑的任务要等 Agent 认领才有行，从 jobs 推会让卡片先画空再长出来。
@@ -677,14 +677,14 @@ function nodeFacts(n) {
           t.kind === "tcp" &&
           inRegion(t.region, latencyRegion) &&
           bucketOf(t.carrier) === c,
-      ) && (!n.latency_carriers?.length || n.latency_carriers.includes(c)),
+      ) && (!n.display.latency_carriers?.length || n.display.latency_carriers.includes(c)),
   );
   // 回程只有三网三格（自定义目标不参与回程），同一套资格判断。
   const routeBuckets = carriers.filter((c) =>
     scoped.some(
       (t) =>
         t.kind === "route" &&
-        inRegion(t.region, n.representative) &&
+        inRegion(t.region, n.display.route_region) &&
         t.carrier === c,
     ),
   );
@@ -739,13 +739,13 @@ function nodeFacts(n) {
       .filter(
         (o) =>
           o.task.kind === "route" &&
-          inRegion(o.task.region, n.representative) &&
+          inRegion(o.task.region, n.display.route_region) &&
           o.task.carrier === carrier,
       )
       .sort((a, b) => b.at - a.at)[0];
     const known =
       match && !match.stale && match.result.status === "ok" && n.online;
-    const region = match?.task.region || n.representative || "未设代表地区";
+    const region = match?.task.region || n.display.route_region || "未设代表地区";
     const label = known ? match.result.route : "未知";
     const title = match ? [region, label, date(match.at), statusName[match.result.status] || "未知"].join(" · ") : "尚未检测";
     return { carrier, known, label, title };
@@ -772,7 +772,7 @@ function nodeFacts(n) {
     routes,
     hasProbe,
     probeState,
-    expiry: days(n.expires_at),
+    expiry: days(n.billing.expires_at),
   };
 }
 
@@ -800,15 +800,15 @@ function expiryPill(n, expiry) {
     : expiry < 0
       ? `<span class="expiry-pill expired">已过期 ${Math.abs(expiry)} 天</span>`
       : expiry > LONG_TERM_DAYS
-        ? `<span class="expiry-pill" title="到期 ${esc(String(n.expires_at || "").slice(0, 10))}">长期</span>`
+        ? `<span class="expiry-pill" title="到期 ${esc(String(n.billing.expires_at || "").slice(0, 10))}">长期</span>`
         : `<span class="expiry-pill${expiry <= 7 ? " warning" : ""}">剩余 ${expiry} 天</span>`;
 }
 
 function priceLabel(n) {
-  const price = n.free
+  const price = n.billing.free
     ? "免费"
-    : n.price
-      ? `${esc(n.currency || "CNY")} ${n.price.toFixed(2)} / ${esc(n.price_period || "月")}`
+    : n.billing.price
+      ? `${esc(n.billing.currency || "CNY")} ${n.billing.price.toFixed(2)} / ${esc(n.billing.price_period || "月")}`
       : "未设置价格";
   return `<span class="price-label">${price}</span>`;
 }
@@ -817,7 +817,7 @@ function priceLabel(n) {
 // 与到期、价格同在计费那一组，卡片与列表共用这一份，两处口径不会走岔。没填就整块
 // 不渲染——不摆「未标注」这类占位（用户点名过）。
 function bandwidthPill(n) {
-  const text = bandwidth(n.line_mbps);
+  const text = bandwidth(n.line.mbps);
   return text
     ? `<span class="line-pill" title="线路带宽（商家标称的端口 / 峰值速率）">${text}</span>`
     : "";
@@ -864,7 +864,7 @@ function networkSections(n, f) {
   if (!f.hasProbe) return probeNote(f.probeState);
   // 延迟与回程在这里各占一段：延迟是一家运营商一块（文字在上、延迟与丢包两条色带并排在下），
   // 回程仍是三个并排的胶囊。
-  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="latency-bands">${latencyBands(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.representative ? `<span class="rep-label">${esc(n.representative)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
+  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="latency-bands">${latencyBands(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.display.route_region ? `<span class="rep-label">${esc(n.display.route_region)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
 }
 
 // 回程格子里的运营商身份：用各家的官方图形标志（电信 / 联通 / 移动，见 web/carrier-logos.js）。
@@ -993,7 +993,7 @@ function listInner(n) {
             : probeNote(f.probeState);
   const routeCell =
     detected && f.routes.length
-      ? head("三网回程", n.representative) + routeLines(n, f)
+      ? head("三网回程", n.display.route_region) + routeLines(n, f)
       : "";
   // 名字不再是导航按钮（用户 2026-10-10：点数据行 / 点空白处都不许进详情页）。列表视图这一格
   // 里补一枚「详细」——不然列表里就没有任何进详情的入口了，卡片视图那边也是同一枚按钮。

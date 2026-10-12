@@ -27,8 +27,7 @@ func open(t *testing.T) *Service {
 func TestPatchNodeMerges(t *testing.T) {
 	svc := open(t)
 	ctx := context.Background()
-	id, _, err := svc.CreateNode(ctx, model.Node{Name: "甲", Group: "HK", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum",
-		Alerts: model.Alerts{Load: true, CPUPercent: 80, MemoryPercent: 80, HoldSeconds: 60}})
+	id, _, err := svc.CreateNode(ctx, model.Node{Name: "甲", Group: "HK", Alerts: model.Alerts{Load: true, CPUPercent: 80, MemoryPercent: 80, HoldSeconds: 60}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -200,13 +200,14 @@ let list = await (
 ).json();
 const created = list.find((n) => n.name === name);
 assert(created && !created.alerts.load && !created.alerts.offline, "新节点默认不开提醒");
-assert.equal(created.traffic_limit, 2e12);
+assert.equal(created.billing.traffic_limit, 2e12);
 assert.equal(created.region, "香港", "地区输入框里的值要原样落库（控件换组合框不改取值）");
-assert.equal(created.currency, "CNY", "默认人民币");
-assert.equal(created.price_period, "月", "默认月付");
-assert.equal(created.line_mbps, 1000, "线路带宽要落库（前台要显示它）");
-assert.equal(created.expires_at, "2027-09-18T03:04:05Z", "到期时间要带上输入框里的秒");
-assert.match(created.billing_at, /^\d{4}-\d{2}-01T00:00:00Z$/, "重置时间 = " + created.billing_at);
+assert.equal(created.billing.currency, "CNY", "默认人民币");
+assert.equal(created.billing.price_period, "月", "默认月付");
+assert.equal(created.line.mbps, 1000, "线路带宽要落库（前台要显示它）");
+assert.equal(created.billing.expires_at, "2027-09-18T03:04:05Z", "到期时间要带上输入框里的秒");
+assert.match(created.billing.reset_at, /^\d{4}-\d{2}-01T00:00:00Z$/, "重置时间 = " + created.billing.reset_at);
+assert.equal(created.display.route_region, "上海", "卡片回程地区落在 display.route_region");
 // 还没上报地址族的节点：不给出无从探测的 IPv4/IPv6 切换，网络区块整体隐藏。
 $(`[data-inspect="${created.id}"]`).click();
 await until(() => $("#history-range"), "node detail and history controls");
@@ -286,8 +287,10 @@ set(form, "latency_region", "上海");
 submit(form);
 await until(async () => {
   list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
-  return list.find((n) => n.id === created.id)?.latency_region === "上海";
+  return list.find((n) => n.id === created.id)?.display.latency_region === "上海";
 }, "latency region saved and read back");
+// 编辑保存（PUT 204，无正文）之后要提示「节点已保存」，而不是读空正文抛错。
+await until(() => $("#toast").textContent === "节点已保存", "edit save toast: " + $("#toast").textContent);
 // 保存之后管理页会整块重渲染（save 里 `await render()` 重新拉 /admin/nodes），服务端读回不代表
 // 页面已经换好——抢在那次重渲染之前打开表单，会把上一份节点数据填进输入框（读到空串）。
 // 所以这里重试「打开 → 读 → 不对就关掉再来」，而不是打开一次就断言。
@@ -305,8 +308,8 @@ $(".close").click();
 // 通过 API 造一个阈值全 0 的节点（旧数据或脚本创建），编辑表单必须回填可保存的值
 const zeroAlerts = {
   name: "UI 零阈值 " + Date.now(), group: "", region: "", order: 0, public: false,
-  representative: "", traffic_limit: 0, traffic_mode: "sum", billing_at: "2026-09-01T00:00:00Z", price: 0,
-  currency: "", free: true, price_period: "", expires_at: "",
+  display: { route_region: "" },
+  billing: { traffic_limit: 0, traffic_mode: "sum", reset_at: "2026-09-01T00:00:00Z", price: 0, currency: "", free: true, price_period: "", expires_at: "" },
   alerts: { offline: false, offline_seconds: 0, repeat_seconds: 0, renewal: false, renewal_days: 0, traffic: false, traffic_percent: 0, load: false, cpu_percent: 0, memory_percent: 0, hold_seconds: 0 },
 };
 const zeroResponse = await fetch(base + "/api/v1/admin/nodes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json" }, body: JSON.stringify(zeroAlerts) });
@@ -364,8 +367,7 @@ await fetch(base + "/api/v1/admin/nodes/" + zeroNode.id, { method: "DELETE", hea
       body: JSON.stringify({
         name: `${dragName}${suffix}`,
         region: "香港",
-        billing_at: "2026-09-01T00:00:00Z",
-        traffic_mode: "sum",
+        billing: { reset_at: "2026-09-01T00:00:00Z", traffic_mode: "sum" },
         public: false,
       }),
     });
@@ -711,7 +713,7 @@ const madeUnlock = await fetch(base + "/api/v1/admin/nodes", {
   headers: { ...adminHeaders, "Content-Type": "application/json" },
   body: JSON.stringify({
     name: unlockNodeName, region: "日本", group: "JP", public: true,
-    billing_at: "2026-09-01T00:00:00Z", traffic_mode: "sum",
+    billing: { reset_at: "2026-09-01T00:00:00Z", traffic_mode: "sum" },
   }),
 });
 assert.equal(madeUnlock.status, 200, "解锁验收节点要能创建: " + (await madeUnlock.clone().text()));
@@ -2278,11 +2280,7 @@ const madeLong = await fetch(base + "/api/v1/admin/nodes", {
     name: longName,
     region: "香港",
     public: true,
-    currency: "CNY",
-    free: true,
-    billing_at: "2026-09-01T00:00:00Z",
-    traffic_mode: "max",
-    expires_at: "2226-07-04T00:00:00Z",
+    billing: { currency: "CNY", free: true, reset_at: "2026-09-01T00:00:00Z", traffic_mode: "max", expires_at: "2226-07-04T00:00:00Z" },
   }),
 });
 // 正文只读一次：这个响应下面还要用它的 id，先 clone 再读副本会让原响应在这里被消耗掉。
@@ -2378,11 +2376,8 @@ const madeThrottle = await fetch(base + "/api/v1/admin/nodes", {
     region: "德国",
     group: "DE",
     public: true,
-    billing_at: "2026-09-01T00:00:00Z",
-    traffic_mode: "sum",
-    line_mbps: 1000,
-    throttle_mbps: 1,
-    throttle_hours: 1,
+    billing: { reset_at: "2026-09-01T00:00:00Z", traffic_mode: "sum" },
+    line: { mbps: 1000, throttle_mbps: 1, throttle_hours: 1 },
     alerts: { throttle: true },
   }),
 });
@@ -2490,12 +2485,8 @@ const madeQuota = await fetch(base + "/api/v1/admin/nodes", {
     region: "香港",
     group: "HK",
     public: true,
-    billing_at: "2026-09-01T00:00:00Z",
-    traffic_limit: 1000000,
-    traffic_mode: "max",
-    line_mbps: 4000,
-    throttle_mbps: 50,
-    throttle_on: "quota",
+    billing: { reset_at: "2026-09-01T00:00:00Z", traffic_limit: 1000000, traffic_mode: "max" },
+    line: { mbps: 4000, throttle_mbps: 50, throttle_on: "quota" },
     alerts: { throttle: true },
   }),
 });
@@ -2510,7 +2501,7 @@ const quotaNode = await madeQuota.clone().json();
   const stored = (await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json()).find(
     (x) => x.id === quotaNode.id,
   );
-  assert.equal(stored?.throttle_on, "quota", `创建接口要落库 throttle_on，实际 ${JSON.stringify(stored?.throttle_on)}`);
+  assert.equal(stored?.line.throttle_on, "quota", `创建接口要落库 line.throttle_on，实际 ${JSON.stringify(stored?.line)}`);
 }
 {
   const quotaReport = (metrics) =>
@@ -2533,7 +2524,7 @@ const quotaView = async () =>
 await until(async () => (await quotaView())?.throttled === true, "用满额度的节点要标 throttled");
 {
   const view = await quotaView();
-  assert.equal(view.throttle_on, "quota", "公开接口要给出降速触发条件");
+  assert.equal(view.line.throttle_on, "quota", "公开接口要给出降速触发条件");
   assert(view.avg_bps < 1e6, `按额度降速的线路不该因为均值而降速，实际均值 ${view.avg_bps} bit/s`);
 }
 publicSearch.value = quotaName;

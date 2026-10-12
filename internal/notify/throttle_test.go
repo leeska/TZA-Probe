@@ -21,8 +21,7 @@ func TestThrottleRuleOnQuota(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Date(2026, 9, 18, 12, 30, 0, 0, time.UTC)
-	node := model.Node{Name: "hk-dmit", BillingAt: billingAt(now), TrafficMode: "max", TrafficLimit: 1_000_000_000,
-		LineMbps: 4000, ThrottleMbps: 50, ThrottleOn: "quota", Alerts: model.Alerts{Throttle: true}}
+	node := model.Node{Name: "hk-dmit", Alerts: model.Alerts{Throttle: true}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "max", TrafficLimit: 1_000_000_000}, Line: model.Line{Mbps: 4000, ThrottleMbps: 50, ThrottleOn: "quota"}}
 	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +63,7 @@ func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Date(2026, 9, 18, 12, 30, 0, 0, time.UTC)
-	node := model.Node{Name: "de-netcup", BillingAt: billingAt(now), TrafficMode: "sum", LineMbps: 1000, ThrottleMbps: 1, ThrottleHours: 1, Alerts: model.Alerts{Throttle: true}}
+	node := model.Node{Name: "de-netcup", Alerts: model.Alerts{Throttle: true}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 1, ThrottleHours: 1}}
 	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +98,7 @@ func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	node = views[0].Node
-	node.ThrottleMbps = 2
+	node.Line.ThrottleMbps = 2
 	if _, _, err = s.SaveNode(ctx, node, false); err != nil {
 		t.Fatal(err)
 	}

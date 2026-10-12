@@ -153,7 +153,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 11 {
+	if version > 12 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -247,6 +247,14 @@ func Open(path string) (*Store, error) {
 	if version < 11 {
 		// 任务改成 type + probe / unlock 的联合结构：旧的组合任务、单项任务与解锁任务就地转换。
 		if err = migrateTaskShape(db); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 12 {
+		// 节点配置按关注点分组（display / billing / line），服务端自记的创建时间与用量校正
+		// 从配置里搬到单独的列。
+		if err = migrateNodeShape(db); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -358,6 +366,125 @@ func migrateTaskShape(db *sql.DB) error {
 		}
 	}
 	if _, err = tx.Exec("PRAGMA user_version=11"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// legacyNode is a node config before version 12: one flat object that also
+// carried the server-kept creation time and cycle correction.
+type legacyNode struct {
+	ID                string       `json:"id"`
+	Name              string       `json:"name"`
+	Group             string       `json:"group"`
+	Region            string       `json:"region"`
+	Order             int          `json:"order"`
+	Public            bool         `json:"public"`
+	Representative    string       `json:"representative"`
+	LatencyRegion     string       `json:"latency_region"`
+	LatencyCarriers   []string     `json:"latency_carriers"`
+	TrafficLimit      int64        `json:"traffic_limit"`
+	TrafficMode       string       `json:"traffic_mode"`
+	BillingAt         string       `json:"billing_at"`
+	Free              bool         `json:"free"`
+	Price             float64      `json:"price"`
+	Currency          string       `json:"currency"`
+	PricePeriod       string       `json:"price_period"`
+	ExpiresAt         string       `json:"expires_at"`
+	LineMbps          int          `json:"line_mbps"`
+	ThrottleMbps      int          `json:"throttle_mbps"`
+	ThrottleHours     int          `json:"throttle_hours"`
+	ThrottleOn        string       `json:"throttle_on"`
+	Alerts            model.Alerts `json:"alerts"`
+	CreatedAt         int64        `json:"created_at"`
+	TrafficAdjustment int64        `json:"traffic_adjustment"`
+	AdjustmentCycle   int64        `json:"adjustment_cycle"`
+}
+
+func (l legacyNode) upgrade() model.Node {
+	return model.Node{
+		ID: l.ID, Name: l.Name, Group: l.Group, Region: l.Region, Order: l.Order, Public: l.Public,
+		Display: model.NodeDisplay{RouteRegion: l.Representative, LatencyRegion: l.LatencyRegion, LatencyCarriers: l.LatencyCarriers},
+		Billing: model.Billing{ResetAt: l.BillingAt, TrafficLimit: l.TrafficLimit, TrafficMode: l.TrafficMode, Free: l.Free,
+			Price: l.Price, Currency: l.Currency, PricePeriod: l.PricePeriod, ExpiresAt: l.ExpiresAt},
+		Line:   model.Line{Mbps: l.LineMbps, ThrottleMbps: l.ThrottleMbps, ThrottleHours: l.ThrottleHours, ThrottleOn: l.ThrottleOn},
+		Alerts: l.Alerts,
+	}
+}
+
+// migrateNodeShape adds the server-state columns, moves those values out of
+// every config and rewrites the config into the grouped version 12 shape.
+func migrateNodeShape(db *sql.DB) error {
+	rows, err := db.Query("SELECT id, config FROM nodes")
+	if err != nil {
+		return err
+	}
+	type change struct {
+		id, config                    string
+		created, adjustment, adjusted int64
+	}
+	var changes []change
+	for rows.Next() {
+		var id, config string
+		if err = rows.Scan(&id, &config); err != nil {
+			rows.Close()
+			return err
+		}
+		var shape struct {
+			Billing json.RawMessage `json:"billing"`
+		}
+		if err = json.Unmarshal([]byte(config), &shape); err != nil {
+			rows.Close()
+			return err
+		}
+		if shape.Billing != nil {
+			continue // 已经是分组后的形状
+		}
+		var legacy legacyNode
+		if err = json.Unmarshal([]byte(config), &legacy); err != nil {
+			rows.Close()
+			return err
+		}
+		changes = append(changes, change{id, encode(legacy.upgrade()), legacy.CreatedAt, legacy.TrafficAdjustment, legacy.AdjustmentCycle})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	existing := map[string]bool{}
+	columns, err := tx.Query("SELECT name FROM pragma_table_info('nodes')")
+	if err != nil {
+		return err
+	}
+	for columns.Next() {
+		var name string
+		if err = columns.Scan(&name); err != nil {
+			columns.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	columns.Close()
+	for _, column := range []string{"created_at", "traffic_adjustment", "adjustment_cycle"} {
+		if existing[column] {
+			continue
+		}
+		if _, err = tx.Exec("ALTER TABLE nodes ADD COLUMN " + column + " INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	for _, c := range changes {
+		if _, err = tx.Exec("UPDATE nodes SET config=?,created_at=?,traffic_adjustment=?,adjustment_cycle=? WHERE id=?", c.config, c.created, c.adjustment, c.adjusted, c.id); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec("PRAGMA user_version=12"); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -526,16 +653,20 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.query(ctx, "SELECT config,last_seen,metrics FROM nodes")
+	rows, err := s.query(ctx, "SELECT config,last_seen,metrics,created_at,traffic_adjustment,adjustment_cycle FROM nodes")
 	if err != nil {
 		return nil, err
 	}
 	views := []model.NodeView{}
+	// 用量校正（服务端自记的状态，不在配置里）：只在它记下的那个周期生效。
+	type correction struct{ amount, cycle int64 }
+	corrections := map[string]correction{}
 	for rows.Next() {
 		var v model.NodeView
 		var config string
 		var metrics sql.NullString
-		if err = rows.Scan(&config, &v.LastSeen, &metrics); err != nil {
+		var c correction
+		if err = rows.Scan(&config, &v.LastSeen, &metrics, &v.CreatedAt, &c.amount, &c.cycle); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -554,7 +685,8 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 		}
 		v.Online = v.LastSeen > 0 && now.Unix()-v.LastSeen < int64(model.OfflineAfter.Seconds())
 		v.ProbeTargets = plan[v.ID]
-		start, end := model.Cycle(now, model.BillingAnchor(v.BillingAt, now))
+		corrections[v.ID] = c
+		start, end := model.Cycle(now, model.BillingAnchor(v.Billing.ResetAt, now))
 		v.CycleStart = start.Unix()
 		v.CycleEnd = end.Unix()
 		views = append(views, v)
@@ -587,9 +719,9 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 	for i := range views {
 		v := &views[i]
 		d, e := dayTotals[v.ID], edgeTotals[v.ID]
-		v.TrafficUsed = model.Traffic(d.in+e.in, d.out+e.out, v.TrafficMode)
-		if v.AdjustmentCycle == v.CycleStart {
-			v.TrafficUsed = max(0, v.TrafficUsed+v.TrafficAdjustment)
+		v.TrafficUsed = model.Traffic(d.in+e.in, d.out+e.out, v.Billing.TrafficMode)
+		if c := corrections[v.ID]; c.cycle == v.CycleStart {
+			v.TrafficUsed = max(0, v.TrafficUsed+c.amount)
 		}
 	}
 	if err := s.attachWindow(ctx, views, now); err != nil {
@@ -693,7 +825,7 @@ func (s *Store) attachWindow(ctx context.Context, views []model.NodeView, now ti
 	startOf := func(hours int) int64 { return (now.Unix() - int64(hours)*3600) / 3600 * 3600 }
 	longest := 0
 	for i := range views {
-		views[i].WindowHours = views[i].Node.WindowHours()
+		views[i].WindowHours = views[i].Line.WindowHours()
 		longest = max(longest, views[i].WindowHours)
 	}
 	type bucket struct{ hour, in, out int64 }
@@ -739,7 +871,7 @@ func (s *Store) attachWindow(ctx context.Context, views []model.NodeView, now ti
 		if covered <= 0 {
 			continue
 		}
-		v.AvgBits = float64(model.Traffic(in, out, v.TrafficMode)) * 8 / float64(covered)
+		v.AvgBits = float64(model.Traffic(in, out, v.Billing.TrafficMode)) * 8 / float64(covered)
 		v.CoveredHours = int((covered + 3599) / 3600)
 		if covered >= span {
 			v.CoveredHours = hours
@@ -752,18 +884,15 @@ func (s *Store) attachWindow(ctx context.Context, views []model.NodeView, now ti
 // creation, the one-time Agent token.
 func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string, string, error) {
 	if err := n.Validate(); err != nil {
-		return "", "", err
+		return "", "", model.Invalid(err.Error())
 	}
 	n = n.Normalized()
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if create {
-		n.TrafficAdjustment = 0
-		n.AdjustmentCycle = 0
 		n.ID = model.Secret()[:16]
-		n.CreatedAt = time.Now().Unix()
 		token := model.Secret()
-		_, err := s.db.ExecContext(ctx, "INSERT INTO nodes(id,config,token_hash) VALUES(?,?,?)", n.ID, encode(n), model.Hash(token))
+		_, err := s.db.ExecContext(ctx, "INSERT INTO nodes(id,config,token_hash,created_at) VALUES(?,?,?,?)", n.ID, encode(n), model.Hash(token), time.Now().Unix())
 		return n.ID, token, err
 	}
 	var old string
@@ -776,14 +905,12 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 	if err := json.Unmarshal([]byte(old), &prior); err != nil {
 		return "", "", err
 	}
-	n.CreatedAt = prior.CreatedAt
-	n.TrafficAdjustment = prior.TrafficAdjustment
-	n.AdjustmentCycle = prior.AdjustmentCycle
-	if n.BillingAt != prior.BillingAt || n.TrafficMode != prior.TrafficMode {
-		n.TrafficAdjustment = 0
-		n.AdjustmentCycle = 0
+	// 用量校正按旧的周期与计费方向算出来的：两者一变，它就不再成立。
+	query := "UPDATE nodes SET config=? WHERE id=?"
+	if n.Billing.ResetAt != prior.Billing.ResetAt || n.Billing.TrafficMode != prior.Billing.TrafficMode {
+		query = "UPDATE nodes SET config=?,traffic_adjustment=0,adjustment_cycle=0 WHERE id=?"
 	}
-	_, err := s.db.ExecContext(ctx, "UPDATE nodes SET config=? WHERE id=?", encode(n), n.ID)
+	_, err := s.db.ExecContext(ctx, query, encode(n), n.ID)
 	return n.ID, "", err
 }
 

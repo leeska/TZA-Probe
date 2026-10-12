@@ -58,10 +58,10 @@ func renewalMessage(expiry, now time.Time) string {
 }
 
 func throttleMessage(n model.NodeView) string {
-	if n.ThrottlesOnQuota() {
-		return fmt.Sprintf("本周期用量已达 %s 额度，线路按商家规则降速到 %d Mbit/s", model.HumanBytes(n.TrafficLimit), n.ThrottleMbps)
+	if n.Line.ThrottlesOnQuota() {
+		return fmt.Sprintf("本周期用量已达 %s 额度，线路按商家规则降速到 %d Mbit/s", model.HumanBytes(n.Billing.TrafficLimit), n.Line.ThrottleMbps)
 	}
-	return fmt.Sprintf("近 %d 小时平均带宽 %.1f Mbit/s 达到降速阈值 %d Mbit/s，可能已被商家降速", n.CoveredHours, n.AvgBits/1e6, n.ThrottleMbps)
+	return fmt.Sprintf("近 %d 小时平均带宽 %.1f Mbit/s 达到降速阈值 %d Mbit/s，可能已被商家降速", n.CoveredHours, n.AvgBits/1e6, n.Line.ThrottleMbps)
 }
 
 type Engine struct {
@@ -82,8 +82,8 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 		}
 		renewal := false
 		var expiry time.Time
-		if n.ExpiresAt != "" {
-			expiry, _ = time.Parse(time.RFC3339, n.ExpiresAt)
+		if n.Billing.ExpiresAt != "" {
+			expiry, _ = time.Parse(time.RFC3339, n.Billing.ExpiresAt)
 			renewal = !now.Add(time.Duration(a.RenewalDays) * 24 * time.Hour).Before(expiry)
 		}
 		rules := []struct {
@@ -93,7 +93,7 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 		}{
 			{"offline", offlineMessage(n), a.Offline && !n.Online && now.Unix()-n.CreatedAt > int64(model.OfflineAfter.Seconds()), a.OfflineSeconds},
 			{"renewal", renewalMessage(expiry, now), a.Renewal && renewal, 0},
-			{"traffic", fmt.Sprintf("本计费周期用量达到 %.0f%% 阈值", a.TrafficPercent), a.Traffic && n.TrafficLimit > 0 && float64(n.TrafficUsed)/float64(n.TrafficLimit)*100 >= a.TrafficPercent, 0},
+			{"traffic", fmt.Sprintf("本计费周期用量达到 %.0f%% 阈值", a.TrafficPercent), a.Traffic && n.Billing.TrafficLimit > 0 && float64(n.TrafficUsed)/float64(n.Billing.TrafficLimit)*100 >= a.TrafficPercent, 0},
 			{"throttle", throttleMessage(n), a.Throttle && n.Throttled, 0},
 			{"load", "CPU 或内存持续超过设定阈值", a.Load && load, a.HoldSeconds},
 		}

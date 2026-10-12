@@ -164,43 +164,49 @@ func oneOf(value string, allowed ...string) bool {
 }
 
 func nodeSchema(withID bool) map[string]any {
+	object := func(description string, properties map[string]any) map[string]any {
+		return map[string]any{"type": "object", "additionalProperties": false, "description": description, "properties": properties}
+	}
 	properties := map[string]any{
-		"name":             map[string]any{"type": "string", "description": "节点名称，必填"},
-		"group":            map[string]any{"type": "string", "description": "分组，如 HK"},
-		"region":           map[string]any{"type": "string", "description": "节点地区"},
-		"representative":   map[string]any{"type": "string", "description": "卡片代表地区"},
-		"latency_region":   map[string]any{"type": "string", "description": "卡片延迟地区；留空沿用代表地区"},
-		"latency_carriers": carrierList(),
-		"public":           map[string]any{"type": "boolean", "description": "是否在公开面板展示"},
-		"order":            map[string]any{"type": "integer", "description": "排序，越小越靠前"},
-		"traffic_limit":    map[string]any{"type": "integer", "description": "周期流量额度（十进制字节），0 表示不限"},
-		"traffic_mode":     map[string]any{"type": "string", "enum": []string{"sum", "max", "in", "out"}, "description": "流量统计方式：双向合计 / 取较大方向 / 仅下载 / 仅上传"},
-		"line_mbps":        map[string]any{"type": "integer", "minimum": 0, "maximum": 1000000, "description": "线路带宽（Mbit/s），0 表示不标注"},
-		"throttle_mbps":    map[string]any{"type": "integer", "minimum": 0, "maximum": 1000000, "description": "降速后的速率（Mbit/s）：德国商家那类写「近 24 小时平均超过 100 Mbit/s 降速到 100 Mbit/s」，DMIT T1 那类写用满额度后限速的 50/100，0 表示不设"},
-		"throttle_hours":   map[string]any{"type": "integer", "minimum": 0, "maximum": 168, "description": "降速统计窗口（小时），0 或省略为默认 24；仅 throttle_on=bandwidth 时有效"},
-		"throttle_on":      map[string]any{"type": "string", "enum": []string{"bandwidth", "quota"}, "description": "降速触发条件：bandwidth=窗口平均带宽达到 throttle_mbps（省略即为此值）；quota=本周期用量用满 traffic_limit 后按商家规则降到 throttle_mbps（不计量但限速）"},
-		"billing_at":       map[string]any{"type": "string", "description": "计费周期锚点，RFC3339 精确到秒，如 2026-09-01T00:00:00Z；必填"},
-		"expires_at":       map[string]any{"type": "string", "description": "到期时间 RFC3339；留空表示不设"},
-		"free":             map[string]any{"type": "boolean", "description": "免费机器：卡片写「免费」，保存时价格与价格周期清空"},
-		"price":            map[string]any{"type": "number", "description": "价格，用于显示；free=true 时忽略"},
-		"currency":         map[string]any{"type": "string", "description": "币种，如 CNY"},
-		"price_period":     map[string]any{"type": "string", "description": "价格周期，如 月 / 年；不接受「免费」，免费请用 free"},
-		"alerts":           alertsSchema(),
+		"name":   map[string]any{"type": "string", "description": "节点名称，必填"},
+		"group":  map[string]any{"type": "string", "description": "分组，如 HK"},
+		"region": map[string]any{"type": "string", "description": "节点所在地区"},
+		"public": map[string]any{"type": "boolean", "description": "是否在公开面板展示"},
+		"order":  map[string]any{"type": "integer", "description": "排序，越小越靠前"},
+		"display": object("公开卡片显示哪些探测结果；地区须与所绑任务的目标地区逐字一致", map[string]any{
+			"route_region":     map[string]any{"type": "string", "description": "卡片回程显示的地区；留空不限地区"},
+			"latency_region":   map[string]any{"type": "string", "description": "卡片延迟显示的地区；留空沿用 route_region"},
+			"latency_carriers": carrierList(),
+		}),
+		"billing": object("价格与流量周期；新建时 reset_at 与 traffic_mode 必填", map[string]any{
+			"reset_at":      map[string]any{"type": "string", "description": "计费周期锚点，RFC3339 精确到秒，如 2026-09-01T00:00:00Z；其日与时分秒逐月顺延"},
+			"traffic_limit": map[string]any{"type": "integer", "description": "周期流量额度（十进制字节），0 表示不限"},
+			"traffic_mode":  map[string]any{"type": "string", "enum": []string{"sum", "max", "in", "out"}, "description": "流量统计方式：双向合计 / 取较大方向 / 仅下载 / 仅上传"},
+			"free":          map[string]any{"type": "boolean", "description": "免费机器：卡片写「免费」，保存时价格与价格周期清空"},
+			"price":         map[string]any{"type": "number", "description": "价格，用于显示；free=true 时忽略"},
+			"currency":      map[string]any{"type": "string", "description": "币种，如 CNY"},
+			"price_period":  map[string]any{"type": "string", "description": "价格周期，如 月 / 年；不接受「免费」，免费请用 free"},
+			"expires_at":    map[string]any{"type": "string", "description": "到期时间 RFC3339；留空表示不设"},
+		}),
+		"line": object("线路带宽与商家的降速规则", map[string]any{
+			"mbps":           map[string]any{"type": "integer", "minimum": 0, "maximum": 1000000, "description": "线路带宽（Mbit/s），0 表示不标注"},
+			"throttle_mbps":  map[string]any{"type": "integer", "minimum": 0, "maximum": 1000000, "description": "降速后的速率（Mbit/s）：德国商家那类写「近 24 小时平均超过 100 Mbit/s 降速到 100 Mbit/s」，DMIT T1 那类写用满额度后限速的 50/100，0 表示不设"},
+			"throttle_hours": map[string]any{"type": "integer", "minimum": 0, "maximum": 168, "description": "降速统计窗口（小时），0 或省略为默认 24；仅 throttle_on=bandwidth 时有效"},
+			"throttle_on":    map[string]any{"type": "string", "enum": []string{"bandwidth", "quota"}, "description": "降速触发条件：bandwidth=窗口平均带宽达到 throttle_mbps（省略即为此值）；quota=本周期用量用满 billing.traffic_limit 后按商家规则降到 throttle_mbps（不计量但限速）"},
+		}),
+		"alerts": alertsSchema(),
 	}
 	if withID {
 		properties["node_id"] = map[string]any{"type": "string", "description": "节点 id，来自 list_nodes"}
-	}
-	required := []string{"name", "billing_at", "traffic_mode"}
-	if withID {
 		return schema(properties, "node_id")
 	}
-	return schema(properties, required...)
+	return schema(properties, "name", "billing")
 }
 
 func carrierList() map[string]any {
 	return map[string]any{
 		"type": "array", "items": map[string]any{"type": "string", "enum": []string{"电信", "联通", "移动", "其他"}},
-		"description": "卡片展示哪些运营商的延迟，留空沿用代表地区",
+		"description": "卡片展示哪些运营商的延迟，留空显示全部",
 	}
 }
 

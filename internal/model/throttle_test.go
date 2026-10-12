@@ -2,12 +2,11 @@ package model
 
 import (
 	"testing"
-	"time"
 )
 
 func TestThrottleFieldsValidate(t *testing.T) {
 	base := func() Node {
-		return Node{Name: "n", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}
+		return Node{Name: "n", Billing: Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}
 	}
 	cases := []struct {
 		name string
@@ -15,15 +14,15 @@ func TestThrottleFieldsValidate(t *testing.T) {
 	}{
 		{"不设线路规格", func(*Node) {}},
 		{"德国线路：1 Gbit/s 端口、100 Mbit/s 阈值、24 小时窗口", func(n *Node) {
-			n.LineMbps, n.ThrottleMbps, n.ThrottleHours = 1000, 100, 24
+			n.Line.Mbps, n.Line.ThrottleMbps, n.Line.ThrottleHours = 1000, 100, 24
 		}},
-		{"只填阈值（窗口留 0 走默认 24）", func(n *Node) { n.ThrottleMbps = 100 }},
-		{"窗口上限 168 小时", func(n *Node) { n.ThrottleHours = 168 }},
-		{"启用降速告警且填了阈值", func(n *Node) { n.ThrottleMbps = 100; n.Alerts.Throttle = true }},
+		{"只填阈值（窗口留 0 走默认 24）", func(n *Node) { n.Line.ThrottleMbps = 100 }},
+		{"窗口上限 168 小时", func(n *Node) { n.Line.ThrottleHours = 168 }},
+		{"启用降速告警且填了阈值", func(n *Node) { n.Line.ThrottleMbps = 100; n.Alerts.Throttle = true }},
 		{"DMIT 那种：1000 GB 额度用满后不计量、限速 50 Mbit/s", func(n *Node) {
-			n.TrafficLimit, n.LineMbps, n.ThrottleMbps, n.ThrottleOn = 1_000_000_000_000, 4000, 50, "quota"
+			n.Billing.TrafficLimit, n.Line.Mbps, n.Line.ThrottleMbps, n.Line.ThrottleOn = 1_000_000_000_000, 4000, 50, "quota"
 		}},
-		{"显式写 bandwidth 触发条件", func(n *Node) { n.ThrottleMbps, n.ThrottleOn = 100, "bandwidth" }},
+		{"显式写 bandwidth 触发条件", func(n *Node) { n.Line.ThrottleMbps, n.Line.ThrottleOn = 100, "bandwidth" }},
 	}
 	for _, c := range cases {
 		n := base()
@@ -36,15 +35,15 @@ func TestThrottleFieldsValidate(t *testing.T) {
 		name string
 		edit func(*Node)
 	}{
-		{"窗口越界", func(n *Node) { n.ThrottleHours = 169 }},
-		{"窗口为负", func(n *Node) { n.ThrottleHours = -1 }},
-		{"线路带宽为负", func(n *Node) { n.LineMbps = -1 }},
-		{"阈值超过 1 Tbit/s", func(n *Node) { n.ThrottleMbps = 1_000_001 }},
-		{"阈值高于线路带宽", func(n *Node) { n.LineMbps, n.ThrottleMbps = 1000, 2000 }},
+		{"窗口越界", func(n *Node) { n.Line.ThrottleHours = 169 }},
+		{"窗口为负", func(n *Node) { n.Line.ThrottleHours = -1 }},
+		{"线路带宽为负", func(n *Node) { n.Line.Mbps = -1 }},
+		{"阈值超过 1 Tbit/s", func(n *Node) { n.Line.ThrottleMbps = 1_000_001 }},
+		{"阈值高于线路带宽", func(n *Node) { n.Line.Mbps, n.Line.ThrottleMbps = 1000, 2000 }},
 		{"开了降速告警却没填阈值", func(n *Node) { n.Alerts.Throttle = true }},
-		{"未知的降速触发条件", func(n *Node) { n.ThrottleMbps, n.ThrottleOn = 100, "volume" }},
-		{"按额度降速但没填额度", func(n *Node) { n.ThrottleMbps, n.ThrottleOn = 50, "quota" }},
-		{"按额度降速但没填速率", func(n *Node) { n.TrafficLimit, n.ThrottleOn = 1_000_000_000_000, "quota" }},
+		{"未知的降速触发条件", func(n *Node) { n.Line.ThrottleMbps, n.Line.ThrottleOn = 100, "volume" }},
+		{"按额度降速但没填额度", func(n *Node) { n.Line.ThrottleMbps, n.Line.ThrottleOn = 50, "quota" }},
+		{"按额度降速但没填速率", func(n *Node) { n.Billing.TrafficLimit, n.Line.ThrottleOn = 1_000_000_000_000, "quota" }},
 	}
 	for _, c := range bad {
 		n := base()
@@ -56,18 +55,18 @@ func TestThrottleFieldsValidate(t *testing.T) {
 }
 
 func TestThrottleWindowDefaults(t *testing.T) {
-	if got := (Node{}).WindowHours(); got != DefaultThrottleHours {
+	if got := (Line{}).WindowHours(); got != DefaultThrottleHours {
 		t.Fatalf("默认窗口 = %d, want %d", got, DefaultThrottleHours)
 	}
-	if got := (Node{ThrottleHours: 6}).ThrottleWindow(); got != 6*time.Hour {
-		t.Fatalf("窗口 = %v, want 6h", got)
+	if got := (Line{ThrottleHours: 6}).WindowHours(); got != 6 {
+		t.Fatalf("窗口 = %d, want 6", got)
 	}
 }
 
 // ThrottleActive 是两条规则的唯一判据（面板与告警都用它），按规则读不同的事实：
 // 带宽口径读窗口均值，额度口径读本周期用量。
 func TestThrottleActiveReadsTheRightFact(t *testing.T) {
-	quota := NodeView{Node: Node{TrafficLimit: 1_000, ThrottleMbps: 50, ThrottleOn: "quota"}}
+	quota := NodeView{Node: Node{Billing: Billing{TrafficLimit: 1_000}, Line: Line{ThrottleMbps: 50, ThrottleOn: "quota"}}}
 	quota.TrafficUsed = 999
 	if quota.ThrottleActive() {
 		t.Fatal("数额度没到额度不该算降速")
@@ -82,7 +81,7 @@ func TestThrottleActiveReadsTheRightFact(t *testing.T) {
 	if quota.ThrottleActive() {
 		t.Fatal("额度口径下不该看窗口均值")
 	}
-	bw := NodeView{Node: Node{TrafficLimit: 1, ThrottleMbps: 100}}
+	bw := NodeView{Node: Node{Billing: Billing{TrafficLimit: 1}, Line: Line{ThrottleMbps: 100}}}
 	bw.TrafficUsed = 1
 	if bw.ThrottleActive() {
 		t.Fatal("带宽口径下不该看本周期用量")
@@ -91,7 +90,7 @@ func TestThrottleActiveReadsTheRightFact(t *testing.T) {
 	if !bw.ThrottleActive() {
 		t.Fatal("均值达到阈值该算降速")
 	}
-	if (NodeView{Node: Node{ThrottleOn: "quota"}}).ThrottleActive() {
+	if (NodeView{Node: Node{Line: Line{ThrottleOn: "quota"}}}).ThrottleActive() {
 		t.Fatal("没填速率就没有降速这回事")
 	}
 }

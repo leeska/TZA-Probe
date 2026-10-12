@@ -69,40 +69,45 @@ type Alerts struct {
 	MemoryPercent float64 `json:"memory_percent"`
 	HoldSeconds   int     `json:"hold_seconds"`
 }
+
+// Node is a host's configuration as the panel and MCP edit it, grouped by
+// concern: what the public card shows (Display), what the line costs and how
+// its cycle counts (Billing), the line's own bandwidth rule (Line), and when to
+// alert (Alerts). Server-kept state — creation time and the cycle correction —
+// is not part of it (see storage).
 type Node struct {
-	// TrafficAdjustment / AdjustmentCycle / CreatedAt are server-kept state: a
-	// save never takes them from the request (storage.SaveNode keeps the stored
-	// ones) and the public view drops them (NodeView.Redact).
-	TrafficAdjustment int64  `json:"traffic_adjustment,omitempty"`
-	AdjustmentCycle   int64  `json:"adjustment_cycle,omitempty"`
-	ID                string `json:"id"`
-	Name              string `json:"name"`
-	Group             string `json:"group"`
-	Region            string `json:"region"`
-	Order             int    `json:"order"`
-	Public            bool   `json:"public"`
-	Representative    string `json:"representative"`
-	// LatencyRegion picks which region's TCP latency the public card shows.
-	// Empty falls back to Representative, then to every region.
-	LatencyRegion   string   `json:"latency_region"`
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Group   string      `json:"group"`
+	Region  string      `json:"region"`
+	Order   int         `json:"order"`
+	Public  bool        `json:"public"`
+	Display NodeDisplay `json:"display"`
+	Billing Billing     `json:"billing"`
+	Line    Line        `json:"line"`
+	Alerts  Alerts      `json:"alerts"`
+}
+
+// NodeDisplay picks which probe results the public card shows. Both regions
+// must match the target regions of the tasks bound to the node.
+type NodeDisplay struct {
+	// RouteRegion is the region whose route results the card shows; empty
+	// matches every region.
+	RouteRegion string `json:"route_region"`
+	// LatencyRegion picks which region's TCP latency the card shows. Empty
+	// falls back to RouteRegion, then to every region.
+	LatencyRegion string `json:"latency_region"`
+	// LatencyCarriers narrows the latency cells; empty shows every carrier.
 	LatencyCarriers []string `json:"latency_carriers,omitempty"`
-	TrafficLimit    int64    `json:"traffic_limit"`
-	TrafficMode     string   `json:"traffic_mode"`
-	// LineMbps / ThrottleMbps / ThrottleHours / ThrottleOn describe a line's own
-	// throttling rule — two shapes are common:
-	//   · 按窗口平均带宽（德国商家）：1 Gbit/s 端口、近 24 小时平均超过 100 Mbit/s
-	//     即临时降到 100 Mbit/s → ThrottleOn=bandwidth（默认）+ ThrottleHours；
-	//   · 按周期额度（DMIT T1 这类）：1000 GB（出/入取高值）@ 4 Gbps 突发，用满后
-	//     不计量但降到 50/100 Mbit/s → ThrottleOn=quota + LineMbps 记突发峰值。
-	// ThrottleMbps=0 means "not declared": the panel then shows no bandwidth row and
-	// keeps no alert for it.
-	LineMbps      int    `json:"line_mbps"`
-	ThrottleMbps  int    `json:"throttle_mbps"`
-	ThrottleHours int    `json:"throttle_hours"`
-	ThrottleOn    string `json:"throttle_on"`
-	// BillingAt is the cycle anchor: its day and time of day repeat every month
+}
+
+// Billing is the line's price and its traffic cycle.
+type Billing struct {
+	// ResetAt is the cycle anchor: its day and time of day repeat every month
 	// (RFC3339, second precision). See Cycle.
-	BillingAt string `json:"billing_at"`
+	ResetAt      string `json:"reset_at"`
+	TrafficLimit int64  `json:"traffic_limit"`
+	TrafficMode  string `json:"traffic_mode"`
 	// Free marks a machine that costs nothing: the card says 免费 instead of a
 	// price, and a save drops price and period (see Normalized). Without it a
 	// zero price reads as 未设置价格.
@@ -111,59 +116,97 @@ type Node struct {
 	Currency    string  `json:"currency"`
 	PricePeriod string  `json:"price_period"`
 	ExpiresAt   string  `json:"expires_at"`
-	Alerts      Alerts  `json:"alerts"`
-	CreatedAt   int64   `json:"created_at,omitempty"`
+}
+
+// Line is the line's bandwidth and its own throttling rule. Two shapes are
+// common:
+//   - 按窗口平均带宽（德国商家）：1 Gbit/s 端口、近 24 小时平均超过 100 Mbit/s
+//     即临时降到 100 Mbit/s → ThrottleOn=bandwidth（默认）+ ThrottleHours；
+//   - 按周期额度（DMIT T1 这类）：1000 GB（出/入取高值）@ 4 Gbps 突发，用满后
+//     不计量但降到 50/100 Mbit/s → ThrottleOn=quota + Mbps 记突发峰值。
+//
+// ThrottleMbps=0 means "not declared": the panel then shows no bandwidth row and
+// keeps no alert for it.
+type Line struct {
+	Mbps          int    `json:"mbps"`
+	ThrottleMbps  int    `json:"throttle_mbps"`
+	ThrottleHours int    `json:"throttle_hours"`
+	ThrottleOn    string `json:"throttle_on"`
 }
 
 func (n Node) Validate() error {
-	if strings.TrimSpace(n.Name) == "" || len(n.Name) > 100 || len(n.Group) > 100 || len(n.Region) > 60 || len(n.Representative) > 60 || len(n.LatencyRegion) > 60 {
+	d := n.Display
+	if strings.TrimSpace(n.Name) == "" || len(n.Name) > 100 || len(n.Group) > 100 || len(n.Region) > 60 || len(d.RouteRegion) > 60 || len(d.LatencyRegion) > 60 {
 		return errors.New("名称必填且不超过 100 字节；分组、地区过长")
 	}
 	seenCarriers := map[string]bool{}
-	for _, carrier := range n.LatencyCarriers {
+	for _, carrier := range d.LatencyCarriers {
 		if (carrier != "电信" && carrier != "联通" && carrier != "移动" && carrier != "其他") || seenCarriers[carrier] {
 			return errors.New("延迟展示运营商无效或重复")
 		}
 		seenCarriers[carrier] = true
 	}
-	if _, err := parseUTC(n.BillingAt); err != nil {
-		return errors.New("重置时间须为 RFC3339（精确到秒）")
+	if err := n.Billing.Validate(); err != nil {
+		return err
 	}
-	if n.TrafficLimit < 0 || n.Price < 0 || !finite(n.Price) || len(n.Currency) > 12 || len(n.PricePeriod) > 30 {
-		return errors.New("计费配置无效")
+	if err := n.Line.Validate(); err != nil {
+		return err
 	}
-	if strings.Contains(n.PricePeriod, "免费") {
-		return errors.New("价格周期不能写「免费」，免费机器请勾选免费（free）")
-	}
-	if n.TrafficMode != "sum" && n.TrafficMode != "max" && n.TrafficMode != "in" && n.TrafficMode != "out" {
-		return errors.New("流量方式须为 sum/max/in/out")
-	}
-	if n.LineMbps < 0 || n.LineMbps > MaxLineMbps || n.ThrottleMbps < 0 || n.ThrottleMbps > MaxLineMbps {
-		return errors.New("带宽须为 0–1000000 Mbit/s")
-	}
-	if n.ThrottleHours < 0 || n.ThrottleHours > MaxThrottleHours {
-		return errors.New("降速统计窗口须为 0–168 小时")
-	}
-	if n.ThrottleMbps > 0 && n.LineMbps > 0 && n.ThrottleMbps > n.LineMbps {
-		return errors.New("降速阈值不能高于线路带宽")
-	}
-	if n.ThrottleOn != "" && n.ThrottleOn != "bandwidth" && n.ThrottleOn != "quota" {
-		return errors.New("降速触发条件须为 bandwidth 或 quota")
-	}
-	if n.ThrottleOn == "quota" && n.TrafficLimit <= 0 {
+	if n.Line.ThrottleOn == "quota" && n.Billing.TrafficLimit <= 0 {
 		return errors.New("按周期额度降速需先填写流量额度")
 	}
-	if n.ThrottleOn == "quota" && n.ThrottleMbps <= 0 {
-		return errors.New("按周期额度降速需填写用满后的速率")
+	if err := n.Alerts.Validate(); err != nil {
+		return err
 	}
-	if n.ExpiresAt != "" {
-		if _, err := parseUTC(n.ExpiresAt); err != nil {
+	if n.Alerts.Throttle && n.Line.ThrottleMbps == 0 {
+		return errors.New("启用降速告警需先填写降速阈值")
+	}
+	return nil
+}
+
+func (b Billing) Validate() error {
+	if _, err := parseUTC(b.ResetAt); err != nil {
+		return errors.New("重置时间须为 RFC3339（精确到秒）")
+	}
+	if b.TrafficLimit < 0 || b.Price < 0 || !finite(b.Price) || len(b.Currency) > 12 || len(b.PricePeriod) > 30 {
+		return errors.New("计费配置无效")
+	}
+	if strings.Contains(b.PricePeriod, "免费") {
+		return errors.New("价格周期不能写「免费」，免费机器请勾选免费（free）")
+	}
+	if b.TrafficMode != "sum" && b.TrafficMode != "max" && b.TrafficMode != "in" && b.TrafficMode != "out" {
+		return errors.New("流量方式须为 sum/max/in/out")
+	}
+	if b.ExpiresAt != "" {
+		if _, err := parseUTC(b.ExpiresAt); err != nil {
 			return errors.New("到期时间须为 RFC3339（精确到秒）")
 		}
 	}
-	a := n.Alerts
-	if a.OfflineSeconds < 0 || a.OfflineSeconds > 86400 || a.RepeatSeconds < 0 || a.RepeatSeconds > 604800 || (a.RepeatSeconds > 0 && a.RepeatSeconds < 300) || n.TrafficAdjustment < -1e16 || n.TrafficAdjustment > 1e16 {
-		return errors.New("离线等待须为 0–86400 秒，重复间隔为 0 或 300–604800 秒，用量校正超出范围")
+	return nil
+}
+
+func (l Line) Validate() error {
+	if l.Mbps < 0 || l.Mbps > MaxLineMbps || l.ThrottleMbps < 0 || l.ThrottleMbps > MaxLineMbps {
+		return errors.New("带宽须为 0–1000000 Mbit/s")
+	}
+	if l.ThrottleHours < 0 || l.ThrottleHours > MaxThrottleHours {
+		return errors.New("降速统计窗口须为 0–168 小时")
+	}
+	if l.ThrottleMbps > 0 && l.Mbps > 0 && l.ThrottleMbps > l.Mbps {
+		return errors.New("降速阈值不能高于线路带宽")
+	}
+	if l.ThrottleOn != "" && l.ThrottleOn != "bandwidth" && l.ThrottleOn != "quota" {
+		return errors.New("降速触发条件须为 bandwidth 或 quota")
+	}
+	if l.ThrottleOn == "quota" && l.ThrottleMbps <= 0 {
+		return errors.New("按周期额度降速需填写用满后的速率")
+	}
+	return nil
+}
+
+func (a Alerts) Validate() error {
+	if a.OfflineSeconds < 0 || a.OfflineSeconds > 86400 || a.RepeatSeconds < 0 || a.RepeatSeconds > 604800 || (a.RepeatSeconds > 0 && a.RepeatSeconds < 300) {
+		return errors.New("离线等待须为 0–86400 秒，重复间隔为 0 或 300–604800 秒")
 	}
 	if a.RenewalDays < 0 || a.RenewalDays > 365 || !percent(a.TrafficPercent) || !percent(a.CPUPercent) || !percent(a.MemoryPercent) || a.HoldSeconds < 0 || a.HoldSeconds > 86400 {
 		return errors.New("告警阈值须在 0–100，持续时间须在 0–86400 秒")
@@ -171,17 +214,14 @@ func (n Node) Validate() error {
 	if (a.Traffic && a.TrafficPercent == 0) || (a.Load && (a.CPUPercent == 0 || a.MemoryPercent == 0 || a.HoldSeconds < 30)) {
 		return errors.New("启用告警需设置有效阈值；负载持续时间至少 30 秒")
 	}
-	if a.Throttle && n.ThrottleMbps == 0 {
-		return errors.New("启用降速告警需先填写降速阈值")
-	}
 	return nil
 }
 
 // Normalized is the node as it is stored: a free machine keeps no price or
 // price period, whatever the form or a partial MCP edit still carried.
 func (n Node) Normalized() Node {
-	if n.Free {
-		n.Price, n.PricePeriod = 0, ""
+	if n.Billing.Free {
+		n.Billing.Price, n.Billing.PricePeriod = 0, ""
 	}
 	return n
 }
@@ -195,35 +235,30 @@ const (
 )
 
 // WindowHours is the throttle window actually used: 0 falls back to the default.
-func (n Node) WindowHours() int {
-	if n.ThrottleHours <= 0 {
+func (l Line) WindowHours() int {
+	if l.ThrottleHours <= 0 {
 		return DefaultThrottleHours
 	}
-	return n.ThrottleHours
-}
-
-// ThrottleWindow is WindowHours as a duration.
-func (n Node) ThrottleWindow() time.Duration {
-	return time.Duration(n.WindowHours()) * time.Hour
+	return l.ThrottleHours
 }
 
 // ThrottlesOnQuota reports whether this line's rule is the cycle volume running
 // out (unmetered afterwards but rate-capped) instead of the window average
 // reaching a bandwidth threshold.
-func (n Node) ThrottlesOnQuota() bool { return n.ThrottleOn == "quota" }
+func (l Line) ThrottlesOnQuota() bool { return l.ThrottleOn == "quota" }
 
 // ThrottleActive reports whether the line's own rule is in effect right now.
 // The two shapes read different facts: the bandwidth rule compares the window
 // average, the quota rule the cycle total — both are already on the view, so a
 // node with no hourly buckets can still be throttled by volume.
 func (v NodeView) ThrottleActive() bool {
-	if v.ThrottleMbps <= 0 {
+	if v.Line.ThrottleMbps <= 0 {
 		return false
 	}
-	if v.ThrottlesOnQuota() {
-		return v.TrafficLimit > 0 && v.TrafficUsed >= v.TrafficLimit
+	if v.Line.ThrottlesOnQuota() {
+		return v.Billing.TrafficLimit > 0 && v.TrafficUsed >= v.Billing.TrafficLimit
 	}
-	return v.AvgBits >= float64(v.ThrottleMbps)*1e6
+	return v.AvgBits >= float64(v.Line.ThrottleMbps)*1e6
 }
 
 // HumanBytes renders a byte figure the way the notes do (decimal, 3 significant
@@ -387,7 +422,7 @@ type NodeView struct {
 	// AvgBits / CoveredHours / Throttled describe the throttle window: the average
 	// transfer rate over that window (bits per second, computed the same way as
 	// TrafficUsed, i.e. by the node's traffic_mode), how many hours of it the host
-	// actually reported, and whether the rate has reached ThrottleMbps.
+	// actually reported, and whether the line's rule is in effect.
 	AvgBits      float64 `json:"avg_bps"`
 	CoveredHours int     `json:"covered_hours"`
 	WindowHours  int     `json:"window_hours"`
@@ -403,13 +438,15 @@ type NodeView struct {
 	// when it has never run the check. The panel draws the score from it and the
 	// detail panel the per-service list.
 	Unlock *UnlockSummary `json:"unlock,omitempty"`
+	// CreatedAt is server-kept (the offline alert waits for a new node's first
+	// report); it never leaves the Server.
+	CreatedAt int64 `json:"-"`
 }
 
-// Redact is the view an anonymous visitor gets: alert rules and the
-// server-kept bookkeeping fields stay with the administrator.
+// Redact is the view an anonymous visitor gets: alert rules stay with the
+// administrator.
 func (v NodeView) Redact() NodeView {
 	v.Alerts = Alerts{}
-	v.TrafficAdjustment, v.AdjustmentCycle, v.CreatedAt = 0, 0, 0
 	return v
 }
 

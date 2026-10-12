@@ -29,7 +29,7 @@
 | GET /agent/jobs | 获取有限租约任务：报了 `parallel_jobs` 能力的 Agent 最多 8 个 TCP + 1 个回程 + 1 个解锁，其余最多两个 |
 | POST /agent/results | 上传与租约绑定的结果 |
 
-准确字段由 `internal/model` 中的 JSON 标签定义。未登录请求拿到的节点不含提醒规则（`alerts` 全为零值）与服务端记账字段（`traffic_adjustment`、`adjustment_cycle`、`created_at`）；这三项写入时也会被忽略。解锁结论只随 `/nodes` 的 `unlock` 字段下发。未知 JSON 字段、超大请求、额外 JSON 值会被拒绝。非公开节点对未登录请求返回 404。任务为空绑定不执行，不表示所有节点。
+准确字段由 `internal/model` 中的 JSON 标签定义。未登录请求拿到的节点不含提醒规则（`alerts` 全为零值）。解锁结论只随 `/nodes` 的 `unlock` 字段下发。
 
 ## Model Context Protocol（`POST /mcp`）
 
@@ -51,6 +51,25 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 
 管理员创建的探测目标允许内网地址，便于自托管网络监控；仅管理员可配置目标和通知出口。该权限不提供给公开页面或 Agent。
 
+
+## 节点结构
+
+节点配置按关注点分组，运行状态平铺在节点视图上：
+
+```json
+{"id":"…","name":"东京","group":"JP","region":"日本","order":0,"public":true,
+ "display":{"route_region":"上海","latency_region":"","latency_carriers":["电信"]},
+ "billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_limit":2000000000000,"traffic_mode":"max",
+            "free":false,"price":9.9,"currency":"USD","price_period":"月","expires_at":""},
+ "line":{"mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"bandwidth"},
+ "alerts":{…}}
+```
+
+- `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区（原 `representative`），`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。
+- `billing`：`reset_at` 是周期锚点（原 `billing_at`）；`free` 见下文。
+- `line`：线路带宽 `mbps`（原 `line_mbps`）与商家降速规则。
+- 节点视图另带运行状态：`online`、`last_seen`、`metrics`、`cycle_start` / `cycle_end`、`traffic_used`、`avg_bps`、`covered_hours`、`window_hours`、`throttled`、`probe_targets`、`unlock`。
+- 创建时间与用量校正是服务端自记的状态，存在单独的列里，不在节点配置与任何响应中。数据库 v12 启动时把旧的平铺配置就地分组并搬出这三项，值不变。
 
 ## 任务结构
 
@@ -77,9 +96,9 @@ Server 把任务展开为单项探测（checks × targets，解锁任务一项�
 
 - `GET /api/v1/nodes/{id}/network-history?hours=24`：按 TCP 目标和 IP 协议返回历史序列，范围 1–168 小时、每个目标约 240 个时间桶。沿用节点详情的公开/管理员权限；失败连接不伪造零延迟，连接失败率按发送/成功次数加权。编辑或删除任务会清除其已有任务结果：面板与调度立刻按新状态显示，历史行由后台分批删除（每批持写锁约 0.1 秒，进程重启后接着删），删完之前已删任务的结果不再出现在这里。删除节点同理。
 - `POST /api/v1/admin/nodes/{id}/traffic`：管理员提交 `{"used":5000000000,"cycle":<cycle_start>}`，将当前周期已用总量校正为指定字节数。周期已变化返回 409。校正保留原始计数，后续增量继续累计，下周期失效；更改重置时间或计费方向会清除校正。
-- 节点配置的重置时间与到期时间都是 RFC3339（精确到秒）：`billing_at` 是周期锚点，只取它的「日 + 时分秒」逐月顺延，短月取月末；`expires_at` 留空表示不设。旧的 `billing_day`（每月第几天）不再接受。
+- 节点配置的重置时间与到期时间都是 RFC3339（精确到秒）：`billing.reset_at` 是周期锚点，只取它的「日 + 时分秒」逐月顺延，短月取月末；`billing.expires_at` 留空表示不设。旧的 `billing_day`（每月第几天）不再接受。
 - 后台表单的重置/到期时间填 `YYYY-MM-DD HH:MM:SS`（UTC），提交前转成 RFC3339；格式不符或日期不存在（如 2 月 31 日）在本地就报错。数字输入不再画步进箭头，滚轮经过数字、日期时间与下拉框时先失焦，滚动页面不会误改已填好的值。
-- 节点的 `free`（布尔）标记免费机器：公开卡片写「免费」，保存时 `price` 与 `price_period` 清空；`price_period` 不再接受「免费」。数据库 v10 启动时把旧的「免费」周期就地转成 `free: true`；升级后旧版二进制不能打开该数据库，回滚需恢复升级前备份。
+- 节点的 `billing.free`（布尔）标记免费机器：公开卡片写「免费」，保存时 `price` 与 `price_period` 清空；`price_period` 不再接受「免费」。数据库 v10 启动时把旧的「免费」周期就地转成 `free: true`；升级后旧版二进制不能打开该数据库，回滚需恢复升级前备份。
 - 节点告警新增 `offline_seconds`（判定离线后额外等待 0–86400 秒）与 `repeat_seconds`（0 为仅触发/恢复各一次；非零范围 300–604800 秒）。旧配置缺省为 0，不改变其通知频率。
 - 告警事件新增 `last_error`：最近一次通知投递错误；成功投递后清空。不保存 Telegram Token、请求 URL 或响应正文。
 

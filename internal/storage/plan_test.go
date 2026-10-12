@@ -72,10 +72,10 @@ func TestBatchedTrafficMatchesPerNodeQueries(t *testing.T) {
 	s := openTest(t)
 	now := time.Date(2026, 9, 18, 12, 30, 0, 0, time.UTC)
 	configs := []model.Node{
-		{Name: "a", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", ThrottleHours: 1},
-		{Name: "b", BillingAt: "2026-08-17T15:17:42Z", TrafficMode: "max", ThrottleHours: 6},
-		{Name: "c", BillingAt: "2026-09-18T09:00:00Z", TrafficMode: "in", ThrottleHours: 48},
-		{Name: "d", BillingAt: "2026-09-05T00:00:00Z", TrafficMode: "out"}, // 默认 24 小时，没有任何桶
+		{Name: "a", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, Line: model.Line{ThrottleHours: 1}},
+		{Name: "b", Billing: model.Billing{ResetAt: "2026-08-17T15:17:42Z", TrafficMode: "max"}, Line: model.Line{ThrottleHours: 6}},
+		{Name: "c", Billing: model.Billing{ResetAt: "2026-09-18T09:00:00Z", TrafficMode: "in"}, Line: model.Line{ThrottleHours: 48}},
+		{Name: "d", Billing: model.Billing{ResetAt: "2026-09-05T00:00:00Z", TrafficMode: "out"}}, // 默认 24 小时，没有任何桶
 	}
 	var ids []string
 	for i, n := range configs {
@@ -122,11 +122,11 @@ func TestBatchedTrafficMatchesPerNodeQueries(t *testing.T) {
 			}
 			in, out = in+ein, out+eout
 		}
-		if want := model.Traffic(in, out, v.TrafficMode); v.TrafficUsed != want {
+		if want := model.Traffic(in, out, v.Billing.TrafficMode); v.TrafficUsed != want {
 			t.Errorf("%s traffic_used = %d, want %d", v.Name, v.TrafficUsed, want)
 		}
 		// 旧算法：按本节点窗口单独 GROUP BY。
-		hours := v.Node.WindowHours()
+		hours := v.Line.WindowHours()
 		start := (now.Unix() - int64(hours)*3600) / 3600 * 3600
 		span := now.Unix() - start
 		var win, wout int64
@@ -138,7 +138,7 @@ func TestBatchedTrafficMatchesPerNodeQueries(t *testing.T) {
 		covered := 0
 		if first.Valid {
 			c := min(span, now.Unix()-first.Int64)
-			avg = float64(model.Traffic(win, wout, v.TrafficMode)) * 8 / float64(c)
+			avg = float64(model.Traffic(win, wout, v.Billing.TrafficMode)) * 8 / float64(c)
 			covered = int((c + 3599) / 3600)
 			if c >= span {
 				covered = hours

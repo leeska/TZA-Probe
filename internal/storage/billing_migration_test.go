@@ -66,8 +66,8 @@ func TestBillingDayMigratesToAnchor(t *testing.T) {
 		t.Fatalf("节点数 = %d, want %d", len(views), len(want))
 	}
 	for _, v := range views {
-		if v.BillingAt != want[v.ID] {
-			t.Errorf("%s: billing_at = %q, want %q", v.ID, v.BillingAt, want[v.ID])
+		if v.Billing.ResetAt != want[v.ID] {
+			t.Errorf("%s: billing_at = %q, want %q", v.ID, v.Billing.ResetAt, want[v.ID])
 		}
 	}
 	// 周期边界与旧规则一致：31 日的锚点在 9 月被钳到 9 月 30 日。
@@ -83,7 +83,7 @@ func TestBillingDayMigratesToAnchor(t *testing.T) {
 	}
 
 	var version int
-	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 11 {
+	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 12 {
 		t.Fatalf("user_version = %d (%v)", version, err)
 	}
 	var raw string
@@ -97,7 +97,9 @@ func TestBillingDayMigratesToAnchor(t *testing.T) {
 	if _, stale := fields["billing_day"]; stale {
 		t.Errorf("billing_day 应已移除: %s", raw)
 	}
-	if fields["currency"] != "USD" || fields["name"] != "a" {
+	// v12 之后计费字段在 billing 分组里。
+	billing, _ := fields["billing"].(map[string]any)
+	if billing["currency"] != "USD" || fields["name"] != "a" {
 		t.Errorf("其他字段被改动: %s", raw)
 	}
 	// 再开一次不应重复迁移（config 里已有 billing_at）。
@@ -111,8 +113,8 @@ func TestBillingDayMigratesToAnchor(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, v := range views {
-			if v.BillingAt != want[v.ID] {
-				t.Errorf("二次打开后 %s: billing_at = %q", v.ID, v.BillingAt)
+			if v.Billing.ResetAt != want[v.ID] {
+				t.Errorf("二次打开后 %s: billing_at = %q", v.ID, v.Billing.ResetAt)
 			}
 		}
 	}

@@ -60,11 +60,11 @@ func TestUnlockCatalogAndNodeVerdicts(t *testing.T) {
 	}
 
 	start := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
-	public, token, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
+	public, token, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	private, _, err := s.SaveNode(ctx, model.Node{Name: "私有", Public: false, BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}, true)
+	private, _, err := s.SaveNode(ctx, model.Node{Name: "私有", Public: false, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,8 +147,7 @@ func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
 	admin := model.Secret()
 	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
 	defer server.Close()
-	id, _, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum",
-		Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}}, true)
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,9 +180,10 @@ func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
 			t.Fatalf("anonymous list leaks %s: %s", leak, public)
 		}
 	}
+	// 服务端自记的校正与创建时间不在节点配置里，管理员视图也不带；提醒规则只给管理员。
 	_, _, private := call("GET", "/api/v1/admin/nodes", "", true)
-	if !strings.Contains(string(private), "traffic_adjustment") || !strings.Contains(string(private), `"offline":true`) {
-		t.Fatalf("admin list lost its fields: %s", private)
+	if strings.Contains(string(private), "traffic_adjustment") || strings.Contains(string(private), "created_at") || !strings.Contains(string(private), `"offline":true`) {
+		t.Fatalf("admin list: %s", private)
 	}
 	code, obj, _ := call("POST", "/api/v1/admin/nodes/"+id+"/traffic", `{"used":1,"cycle":1}`, true)
 	if code != 409 || obj["error"] != "计费周期已变化，请刷新后重新校正" {
@@ -217,7 +217,7 @@ func TestResourceRoutes(t *testing.T) {
 		raw, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, string(raw)
 	}
-	node := model.Node{Name: "甲", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}
+	node := model.Node{Name: "甲", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}
 	a, _, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)

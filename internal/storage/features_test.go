@@ -41,8 +41,8 @@ func TestCycleCorrectionPreservesCountersAndExpires(t *testing.T) {
 		t.Fatal(nodes[0].TrafficUsed)
 	}
 	n := nodes[0].Node
+	// 校正值不在配置里，保存节点（改名）无从清掉它。
 	n.Name = "renamed"
-	n.TrafficAdjustment = 0
 	if _, _, err := s.SaveNode(ctx, n, false); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestCycleAddsTheFirstPartialDayFromHourBuckets(t *testing.T) {
 	anchor := time.Date(2026, 9, 23, 12, 36, 0, 0, time.UTC)
 	now := time.Date(2026, 9, 25, 6, 0, 0, 0, time.UTC)
 	add := func(name, billing string, mode string) string {
-		_, token, err := s.SaveNode(ctx, model.Node{Name: name, BillingAt: billing, TrafficMode: mode}, true)
+		_, token, err := s.SaveNode(ctx, model.Node{Name: name, Billing: model.Billing{ResetAt: billing, TrafficMode: mode}}, true)
 		if err != nil {
 			t.Fatal(err)
 		}
