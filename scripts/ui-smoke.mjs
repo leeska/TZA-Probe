@@ -322,7 +322,7 @@ $(".close").click();
 const zeroAlerts = {
   name: "UI 零阈值 " + Date.now(), group: "", region: "", order: 0, public: false,
   representative: "", traffic_limit: 0, traffic_mode: "sum", billing_at: "2026-09-01T00:00:00Z", price: 0,
-  currency: "", price_period: "免费", expires_at: "",
+  currency: "", free: true, price_period: "", expires_at: "",
   alerts: { offline: false, offline_seconds: 0, repeat_seconds: 0, renewal: false, renewal_days: 0, traffic: false, traffic_percent: 0, load: false, cpu_percent: 0, memory_percent: 0, hold_seconds: 0 },
 };
 const zeroResponse = await fetch(base + "/api/v1/admin/nodes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json" }, body: JSON.stringify(zeroAlerts) });
@@ -339,13 +339,18 @@ for (const field of ["traffic_percent", "cpu_percent", "memory_percent", "hold_s
   assert(Number(el.value) >= Number(el.min), `${field}=${el.value} is below min=${el.min}: the node could never be saved`);
 }
 assert.equal(form.elements.traffic_percent.value, "80");
-// 选项表里没有的现值要补成一条额外选项：这台机器没填过货币、周期写着「免费」，打开表单
-// 保存一遍不能把它悄悄换成「人民币 / 月」（现值必须原样出现在下拉里）。
-assert.equal(form.elements.price_period.value, "免费", "「免费」要作为一条选项保留");
+// 免费是单独的勾选：勾上时价格、货币、周期都禁用；周期里不再有「免费」这一项，
+// 取消勾选时周期从「月」起。
+assert(form.elements.free.checked, "免费机器要回填勾选");
+for (const name of ["price", "currency", "price_period"])
+  assert(form.elements[name].disabled, `免费机器的 ${name} 要禁用`);
 assert(
-  [...form.elements.price_period.options].some((o) => o.value === "免费"),
-  "免费机的周期要能在下拉里再选到",
+  ![...form.elements.price_period.options].some((o) => o.value === "免费"),
+  "「免费」不是价格周期",
 );
+assert.equal(form.elements.price_period.value, "月", "免费机器取消勾选时周期从「月」起");
+// 选项表里没有的现值要补成一条额外选项：这台机器没填过货币，打开表单保存一遍不能把它
+// 悄悄换成人民币（现值必须原样出现在下拉里）。
 assert.equal(form.elements.currency.value, "", "没填货币的节点不能被改成人民币");
 assert(
   [...form.elements.currency.options].some((o) => o.value === "" && /未设置/.test(o.textContent)),
@@ -2224,7 +2229,7 @@ await fetch(base + "/api/v1/admin/nodes/" + created.id, {
 });
 dom.window.close();
 // 长期（按量付费）与免费机器：到期日填到十年以外要写「长期」而不是「剩余 72965 天」，
-// 0 价且周期写着「免费」要写「免费」而不是「未设置价格」。
+// 勾了免费（free）要写「免费」而不是「未设置价格」。
 const longName = "长期免费验收 " + Date.now();
 const madeLong = await fetch(base + "/api/v1/admin/nodes", {
   method: "POST",
@@ -2234,8 +2239,7 @@ const madeLong = await fetch(base + "/api/v1/admin/nodes", {
     region: "香港",
     public: true,
     currency: "CNY",
-    price: 0,
-    price_period: "免费",
+    free: true,
     billing_at: "2026-09-01T00:00:00Z",
     traffic_mode: "max",
     expires_at: "2226-07-04T00:00:00Z",
@@ -2263,7 +2267,7 @@ await until(
   assert.equal(
     long.querySelector(".price-label").textContent,
     "免费",
-    "0 价且周期写着免费就是「免费」",
+    "勾了免费就是「免费」",
   );
   // 这台机器没填线路带宽：信息带里不许出现这一项（也不许留一个空占位）。
   assert(!long.querySelector(".line-pill"), "没填线路带宽的机器不显示这一项");

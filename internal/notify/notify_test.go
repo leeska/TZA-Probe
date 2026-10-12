@@ -48,7 +48,7 @@ func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	events, err := s.Events(ctx, false, now.Add(time.Minute))
+	events, err := s.Events(ctx, model.EventQuery{})
 	if err != nil || len(events) != 1 || count != 1 || !events[0].Active || !events[0].Delivered {
 		t.Fatal(events, count, err)
 	}
@@ -59,7 +59,7 @@ func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 	if err = engine.Tick(ctx, now.Add(40*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	events, _ = s.Events(ctx, false, now.Add(time.Minute))
+	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 2 || events[0].Active || count != 2 {
 		t.Fatal("recovery not delivered exactly once", events, count)
 	}
@@ -104,7 +104,7 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	if err = engine.Tick(ctx, now.Add(60*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	events, err := s.Events(ctx, false, now.Add(time.Minute))
+	events, err := s.Events(ctx, model.EventQuery{})
 	if err != nil || len(events) != 3 {
 		t.Fatalf("expected renewal, traffic, offline: %+v %v", events, err)
 	}
@@ -117,7 +117,7 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	if err = engine.Tick(ctx, now.Add(75*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	events, _ = s.Events(ctx, false, now.Add(2*time.Minute))
+	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 6 {
 		t.Fatal("disabled rules did not clear state", events)
 	}
@@ -149,7 +149,7 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	events, _ := s.Events(ctx, false, now)
+	events, _ := s.Events(ctx, model.EventQuery{})
 	if len(events) != 0 {
 		t.Fatal("alert during grace")
 	}
@@ -158,7 +158,7 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	events, _ = s.Events(ctx, false, now)
+	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 1 || !events[0].Active {
 		t.Fatal(events)
 	}
@@ -171,7 +171,7 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 	if err = engine.Tick(ctx, now.Add(150*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	events, _ = s.Events(ctx, false, now)
+	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 2 || events[0].Active {
 		t.Fatal("recovery must occur once", events)
 	}

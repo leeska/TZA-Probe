@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -100,7 +101,7 @@ func TestPerfProfile(t *testing.T) {
 	measure("History 720h", 5, func() error { _, err := s.History(ctx, node, 720, now); return err })
 	measure("TaskRuns", 5, func() error { _, err := s.TaskRuns(ctx, taskID, now); return err })
 	measure("Tasks", 20, func() error { _, err := s.Tasks(ctx); return err })
-	measure("Events", 20, func() error { _, err := s.Events(ctx, true, now); return err })
+	measure("Events", 20, func() error { _, err := s.PendingEvents(ctx, now); return err })
 
 	tick := now
 	m := capableMetrics()
@@ -125,7 +126,7 @@ func TestPerfProfile(t *testing.T) {
 			r = model.Result{JobID: j.ID, Status: "ok", Unlocks: []model.UnlockResult{{Service: "reddit", Status: model.UnlockYes}}}
 		}
 		err := s.Finish(ctx, node, r, tick)
-		if err == ErrConflict {
+		if errors.Is(err, ErrConflict) {
 			return nil
 		}
 		return err

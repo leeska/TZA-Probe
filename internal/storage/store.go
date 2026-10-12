@@ -153,7 +153,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 9 {
+	if version > 10 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -232,6 +232,14 @@ func Open(path string) (*Store, error) {
 	if version < 9 {
 		// 后台分批删除的队列（见 purge.go）：改任务、删任务、删节点时要删的大批历史行。
 		if _, err = db.Exec("BEGIN; CREATE TABLE IF NOT EXISTS purges(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, target TEXT NOT NULL, cutoff INTEGER NOT NULL); PRAGMA user_version=9; COMMIT;"); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 10 {
+		// 「免费」以前写在价格周期里（price_period 含「免费」），现在是单独的 free 字段：
+		// 就地改成 free=true，并清掉价格与周期，之后周期里不再接受「免费」。
+		if _, err = db.Exec(`BEGIN; UPDATE nodes SET config=json_set(config,'$.free',json('true'),'$.price',0,'$.price_period','') WHERE instr(coalesce(json_extract(config,'$.price_period'),''),'免费')>0; PRAGMA user_version=10; COMMIT;`); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -637,6 +645,7 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 	if err := n.Validate(); err != nil {
 		return "", "", err
 	}
+	n = n.Normalized()
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if create {
@@ -858,7 +867,7 @@ func (s *Store) Report(ctx context.Context, id string, m model.Metrics, now time
 		return err
 	}
 	if now.Unix()-seen < 3 {
-		return ErrConflict
+		return model.Conflict("上报过于频繁")
 	}
 	var in, out int64
 	if previous.Valid {
@@ -1330,7 +1339,7 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 	var taskJSON sql.NullString
 	if err = tx.QueryRowContext(ctx, "SELECT issued,task FROM jobs WHERE id=? AND node_id=? AND finished IS NULL", r.JobID, node).Scan(&issued, &taskJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrConflict
+			return model.Conflict("任务已失效或结果已上报")
 		}
 		return err
 	}
@@ -1341,7 +1350,7 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 		}
 	}
 	if issued < now.Add(-finishWindow(task.Kind)).Unix() {
-		return ErrConflict
+		return model.Conflict("任务已超时，结果不再接收")
 	}
 	result, err := tx.ExecContext(ctx, "UPDATE jobs SET finished=?,result=? WHERE id=? AND node_id=? AND finished IS NULL", now.Unix(), encode(r), r.JobID, node)
 	if err != nil {
@@ -1349,7 +1358,7 @@ func (s *Store) Finish(ctx context.Context, node string, r model.Result, now tim
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return ErrConflict
+		return model.Conflict("结果已上报")
 	}
 	// 回程「未知」多半是一次抖动：一条没走到目标的 trace 就会把那条探针写成未知，而正常
 	// 周期要等一整个 interval（本机 1 小时）才重测，面板上于是挂着整整一轮的未知。所以只要
@@ -1625,18 +1634,36 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind, message stri
 	}
 	return tx.Commit()
 }
-func (s *Store) Events(ctx context.Context, pending bool, now time.Time) ([]model.Event, error) {
-	where := ""
-	order := "DESC"
-	if pending {
-		where = "WHERE delivered=0 AND next_attempt<=? AND attempts<10 AND at>=?"
-		order = "ASC"
+
+// Events pages the event log newest first for the panel and MCP: q.Before is
+// the id cursor (0 = from the newest), NodeID / Kind narrow it.
+func (s *Store) Events(ctx context.Context, q model.EventQuery) ([]model.Event, error) {
+	q = q.Normalize()
+	where, args := []string{}, []any{}
+	if q.Before > 0 {
+		where, args = append(where, "id<?"), append(args, q.Before)
 	}
-	args := []any{}
-	if pending {
-		args = append(args, now.Unix(), now.Add(-model.EventDeliveryWindow).Unix())
+	if q.NodeID != "" {
+		where, args = append(where, "node_id=?"), append(args, q.NodeID)
 	}
-	rows, err := s.query(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts,last_error FROM events "+where+" ORDER BY id "+order+" LIMIT 100", args...)
+	if q.Kind != "" {
+		where, args = append(where, "kind=?"), append(args, q.Kind)
+	}
+	clause := ""
+	if len(where) > 0 {
+		clause = "WHERE " + strings.Join(where, " AND ")
+	}
+	return s.events(ctx, clause+" ORDER BY id DESC LIMIT ?", append(args, q.Limit)...)
+}
+
+// PendingEvents is the delivery queue: undelivered events due for another
+// attempt and still inside model.EventDeliveryWindow, oldest first.
+func (s *Store) PendingEvents(ctx context.Context, now time.Time) ([]model.Event, error) {
+	return s.events(ctx, "WHERE delivered=0 AND next_attempt<=? AND attempts<10 AND at>=? ORDER BY id ASC LIMIT 100", now.Unix(), now.Add(-model.EventDeliveryWindow).Unix())
+}
+
+func (s *Store) events(ctx context.Context, tail string, args ...any) ([]model.Event, error) {
+	rows, err := s.query(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts,last_error FROM events "+tail, args...)
 	if err != nil {
 		return nil, err
 	}

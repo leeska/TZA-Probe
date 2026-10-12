@@ -107,9 +107,17 @@ function enhance(select) {
     e.preventDefault();
     pick(b);
   });
+  // 原生 select 被禁用（例如勾了「免费」时的货币与周期）时触发器也不能点；
+  // 变淡交给外层 label 的样式（styles.css 的 label:has(… select:disabled)）。
+  const syncDisabled = () => {
+    trigger.disabled = select.disabled;
+    if (select.disabled) close();
+  };
   sync();
-  // 选项列表被外部重建时同步触发器文字
+  syncDisabled();
+  // 选项列表被外部重建时同步触发器文字，disabled 变化时同步可用状态
   new MutationObserver(sync).observe(select, { childList: true });
+  new MutationObserver(syncDisabled).observe(select, { attributes: true, attributeFilter: ["disabled"] });
 }
 
 function sweep(root) {

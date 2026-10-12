@@ -34,7 +34,7 @@ func (s *Store) CorrectTraffic(ctx context.Context, id string, used int64, cycle
 	}
 	start, end := model.Cycle(now, model.BillingAnchor(n.BillingAt, now))
 	if cycle != start.Unix() {
-		return model.ErrConflict
+		return model.Conflict("计费周期已变化，请刷新后重新校正")
 	}
 	var incoming, outgoing int64
 	if err = tx.QueryRowContext(ctx, "SELECT coalesce(sum(incoming),0),coalesce(sum(outgoing),0) FROM traffic WHERE node_id=? AND day>=? AND day<?", id, start.Unix(), end.Unix()).Scan(&incoming, &outgoing); err != nil {

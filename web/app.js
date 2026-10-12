@@ -793,7 +793,7 @@ const LONG_TERM_DAYS = 3650;
 
 // 计费两块：到期与价格。列表视图竖排在计费格；卡片视图把这两样跟实时速率一起压进卡底那一带
 // 的一行（见 statsBand），所以这里拆成两个片段函数供两边复用，文本完全一样。
-// 价格：0 价且周期写着「免费」就写「免费」，不再说成「未设置价格」。
+// 价格：勾了免费（free）就写「免费」；没勾又是 0 价才是「未设置价格」。
 function expiryPill(n, expiry) {
   return expiry == null
     ? `<span class="expiry-pill">未设到期</span>`
@@ -805,10 +805,10 @@ function expiryPill(n, expiry) {
 }
 
 function priceLabel(n) {
-  const price = n.price
-    ? `${esc(n.currency || "CNY")} ${n.price.toFixed(2)} / ${esc(n.price_period || "月")}`
-    : /免费/.test(n.price_period || "")
-      ? "免费"
+  const price = n.free
+    ? "免费"
+    : n.price
+      ? `${esc(n.currency || "CNY")} ${n.price.toFixed(2)} / ${esc(n.price_period || "月")}`
       : "未设置价格";
   return `<span class="price-label">${price}</span>`;
 }

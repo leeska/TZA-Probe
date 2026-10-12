@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,10 +15,9 @@ import (
 	"github.com/leeska/TZA-Probe/web"
 )
 
-// TestUnlockCatalogAndNodeVerdicts covers the two public unlock endpoints: the
-// catalogue the panel groups by, and one node's verdicts — including that a
-// node which never ran the check answers with an empty summary rather than 404,
-// and that a private node stays invisible to an anonymous caller.
+// TestUnlockCatalogAndNodeVerdicts covers the public unlock data: the catalogue
+// the panel groups by, and each node's verdicts on /nodes — empty before the
+// check ran, private nodes invisible to an anonymous caller.
 func TestUnlockCatalogAndNodeVerdicts(t *testing.T) {
 	s, err := storage.Open(filepath.Join(t.TempDir(), "unlock.db"))
 	if err != nil {
@@ -26,7 +26,8 @@ func TestUnlockCatalogAndNodeVerdicts(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 	admin := model.Secret()
-	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	api := &API{Store: s, AdminToken: admin, Assets: web.Handler()}
+	server := httptest.NewServer(api.Handler())
 	defer server.Close()
 	get := func(path string) (int, []byte) {
 		t.Helper()
@@ -72,23 +73,29 @@ func TestUnlockCatalogAndNodeVerdicts(t *testing.T) {
 		t.Fatalf("authenticate: %s %v", nodeID, err)
 	}
 
-	// 未检测：空摘要，不是 404 —— 面板要能把「没跑过」和「无权查看」分开。
-	code, body = get("/api/v1/nodes/" + public + "/unlocks")
-	if code != 200 {
-		t.Fatalf("empty summary: %d", code)
+	// 解锁结论只随 /nodes 下发（unlock 字段），单独的 /nodes/{id}/unlocks 已经去掉。
+	if code, _ = get("/api/v1/nodes/" + public + "/unlocks"); code != 404 {
+		t.Fatalf("removed endpoint still answers: %d", code)
 	}
-	var summary model.UnlockSummary
-	if err = json.Unmarshal(body, &summary); err != nil {
+	// 未检测：unlock 字段为空；私有节点不出现在匿名列表里。
+	code, body = get("/api/v1/nodes")
+	if code != 200 {
+		t.Fatalf("nodes: %d", code)
+	}
+	var before []model.NodeView
+	if err = json.Unmarshal(body, &before); err != nil {
 		t.Fatal(err)
 	}
-	if summary.Score != 0 || summary.Total != len(model.UnlockCatalog) || len(summary.Services) != 0 {
-		t.Fatalf("summary=%+v", summary)
-	}
-	if code, _ = get("/api/v1/nodes/" + private + "/unlocks"); code != 404 {
-		t.Fatalf("private node leaked: %d", code)
+	for _, n := range before {
+		if n.ID == private {
+			t.Fatalf("private node leaked: %s", body)
+		}
+		if n.ID == public && n.Unlock != nil {
+			t.Fatalf("untested node has a summary: %+v", n.Unlock)
+		}
 	}
 
-	// 真跑一轮（直接走存储，等价于 Agent 上报）：结论出现在 /nodes 与 /unlocks 上。
+	// 真跑一轮（直接走存储，等价于 Agent 上报）：结论出现在 /nodes 上。
 	m := model.Metrics{CPU: 5, MemoryUsed: 10, MemoryTotal: 100, DiskUsed: 10, DiskTotal: 100, Capabilities: []string{model.CapabilityUnlock}}
 	if err = s.Report(ctx, public, m, start); err != nil {
 		t.Fatal(err)
@@ -106,16 +113,8 @@ func TestUnlockCatalogAndNodeVerdicts(t *testing.T) {
 	}}, start.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	code, body = get("/api/v1/nodes/" + public + "/unlocks")
-	if code != 200 {
-		t.Fatalf("summary: %d", code)
-	}
-	if err = json.Unmarshal(body, &summary); err != nil {
-		t.Fatal(err)
-	}
-	if summary.Score != 2 || len(summary.Services) != 2 {
-		t.Fatalf("summary=%+v", summary)
-	}
+	// 匿名列表走 1 秒快照，上面那次读已经缓存了未检测的结果。
+	api.nodesSnap = snapshot[[]model.NodeView]{}
 	code, body = get("/api/v1/nodes")
 	if code != 200 {
 		t.Fatalf("nodes: %d", code)
@@ -132,5 +131,62 @@ func TestUnlockCatalogAndNodeVerdicts(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("public node lost its unlock summary: %s", body)
+	}
+}
+
+// The anonymous node list keeps alert rules and the server-kept bookkeeping
+// fields (traffic correction, creation time) with the administrator, and a 409
+// says which conflict it is instead of one catch-all line.
+func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "redact.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum",
+		Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	start, _ := model.Cycle(now, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	if err = s.CorrectTraffic(ctx, id, 5e9, start.Unix(), now); err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path, body string, asAdmin bool) (int, map[string]any, []byte) {
+		t.Helper()
+		req := httptest.NewRequest(method, server.URL+path, strings.NewReader(body))
+		req.RequestURI = ""
+		req.Header.Set("Content-Type", "application/json")
+		if asAdmin {
+			req.Header.Set("Authorization", "Bearer "+admin)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		var obj map[string]any
+		json.Unmarshal(raw, &obj)
+		return resp.StatusCode, obj, raw
+	}
+	_, _, public := call("GET", "/api/v1/nodes", "", false)
+	for _, leak := range []string{"traffic_adjustment", "adjustment_cycle", "created_at", `"offline":true`} {
+		if strings.Contains(string(public), leak) {
+			t.Fatalf("anonymous list leaks %s: %s", leak, public)
+		}
+	}
+	_, _, private := call("GET", "/api/v1/admin/nodes", "", true)
+	if !strings.Contains(string(private), "traffic_adjustment") || !strings.Contains(string(private), `"offline":true`) {
+		t.Fatalf("admin list lost its fields: %s", private)
+	}
+	code, obj, _ := call("POST", "/api/v1/admin/nodes/"+id+"/traffic", `{"used":1,"cycle":1}`, true)
+	if code != 409 || obj["error"] != "计费周期已变化，请刷新后重新校正" {
+		t.Fatalf("conflict: %d %v", code, obj)
 	}
 }

@@ -34,7 +34,7 @@ func (s *Store) ControlTask(ctx context.Context, id string, action model.TaskAct
 		task.Enabled = action.Action == "resume"
 	case "run":
 		if !task.Enabled || len(task.NodeIDs) == 0 {
-			return model.ErrConflict
+			return model.Conflict("任务已暂停或未绑定节点，无法立即执行")
 		}
 		// Requests share one timestamp rather than a queue. Use the next second
 		// so a lease issued earlier in this second cannot swallow the request.

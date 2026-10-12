@@ -18,6 +18,17 @@ var ErrNotFound = errors.New("not found")
 var ErrConflict = errors.New("conflict")
 var ErrInvalid = errors.New("invalid input")
 
+// conflictError is an ErrConflict that says which conflict it is: the 409 body
+// carries Error() as is, so the panel and MCP can tell the admin what to do
+// instead of one catch-all line.
+type conflictError struct{ msg string }
+
+func (e conflictError) Error() string        { return e.msg }
+func (e conflictError) Is(target error) bool { return target == ErrConflict }
+
+// Conflict returns an error that matches ErrConflict and reads as msg.
+func Conflict(msg string) error { return conflictError{msg} }
+
 // Version is overridden at release time with -ldflags "-X …/internal/model.Version=v2.0.0".
 var Version = "2.0.0-dev"
 
@@ -41,8 +52,11 @@ type Alerts struct {
 	HoldSeconds   int     `json:"hold_seconds"`
 }
 type Node struct {
-	TrafficAdjustment int64  `json:"traffic_adjustment"`
-	AdjustmentCycle   int64  `json:"adjustment_cycle"`
+	// TrafficAdjustment / AdjustmentCycle / CreatedAt are server-kept state: a
+	// save never takes them from the request (storage.SaveNode keeps the stored
+	// ones) and the public view drops them (NodeView.Redact).
+	TrafficAdjustment int64  `json:"traffic_adjustment,omitempty"`
+	AdjustmentCycle   int64  `json:"adjustment_cycle,omitempty"`
 	ID                string `json:"id"`
 	Name              string `json:"name"`
 	Group             string `json:"group"`
@@ -70,13 +84,17 @@ type Node struct {
 	ThrottleOn    string `json:"throttle_on"`
 	// BillingAt is the cycle anchor: its day and time of day repeat every month
 	// (RFC3339, second precision). See Cycle.
-	BillingAt   string  `json:"billing_at"`
+	BillingAt string `json:"billing_at"`
+	// Free marks a machine that costs nothing: the card says 免费 instead of a
+	// price, and a save drops price and period (see Normalized). Without it a
+	// zero price reads as 未设置价格.
+	Free        bool    `json:"free,omitempty"`
 	Price       float64 `json:"price"`
 	Currency    string  `json:"currency"`
 	PricePeriod string  `json:"price_period"`
 	ExpiresAt   string  `json:"expires_at"`
 	Alerts      Alerts  `json:"alerts"`
-	CreatedAt   int64   `json:"created_at"`
+	CreatedAt   int64   `json:"created_at,omitempty"`
 }
 
 func (n Node) Validate() error {
@@ -95,6 +113,9 @@ func (n Node) Validate() error {
 	}
 	if n.TrafficLimit < 0 || n.Price < 0 || !finite(n.Price) || len(n.Currency) > 12 || len(n.PricePeriod) > 30 {
 		return errors.New("计费配置无效")
+	}
+	if strings.Contains(n.PricePeriod, "免费") {
+		return errors.New("价格周期不能写「免费」，免费机器请勾选免费（free）")
 	}
 	if n.TrafficMode != "sum" && n.TrafficMode != "max" && n.TrafficMode != "in" && n.TrafficMode != "out" {
 		return errors.New("流量方式须为 sum/max/in/out")
@@ -136,6 +157,15 @@ func (n Node) Validate() error {
 		return errors.New("启用降速告警需先填写降速阈值")
 	}
 	return nil
+}
+
+// Normalized is the node as it is stored: a free machine keeps no price or
+// price period, whatever the form or a partial MCP edit still carried.
+func (n Node) Normalized() Node {
+	if n.Free {
+		n.Price, n.PricePeriod = 0, ""
+	}
+	return n
 }
 
 // 达量降速（bandwidth-based throttling）的边界：阈值与线路带宽都以 Mbit/s 记，
@@ -355,6 +385,14 @@ type NodeView struct {
 	// when it has never run the check. The panel draws the score from it and the
 	// detail panel the per-service list.
 	Unlock *UnlockSummary `json:"unlock,omitempty"`
+}
+
+// Redact is the view an anonymous visitor gets: alert rules and the
+// server-kept bookkeeping fields stay with the administrator.
+func (v NodeView) Redact() NodeView {
+	v.Alerts = Alerts{}
+	v.TrafficAdjustment, v.AdjustmentCycle, v.CreatedAt = 0, 0, 0
+	return v
 }
 
 // ProbeTarget is one probe entry a node is bound to, without the address: the card only needs
@@ -606,6 +644,30 @@ type Event struct {
 	At        int64  `json:"at"`
 	Delivered bool   `json:"delivered"`
 	Attempts  int    `json:"attempts"`
+}
+
+// EventQuery pages the event log: newest first, ids below Before (0 = from the
+// newest), optionally one node or one kind.
+type EventQuery struct {
+	Before int64
+	Limit  int
+	NodeID string
+	Kind   string
+}
+
+const (
+	DefaultEventPage = 100
+	MaxEventPage     = 500
+)
+
+// Normalize clamps the page size so a caller cannot ask for the whole log.
+func (q EventQuery) Normalize() EventQuery {
+	if q.Limit <= 0 {
+		q.Limit = DefaultEventPage
+	}
+	q.Limit = min(q.Limit, MaxEventPage)
+	q.Before = max(q.Before, 0)
+	return q
 }
 
 func Secret() string {

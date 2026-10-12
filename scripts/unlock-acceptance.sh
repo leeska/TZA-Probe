@@ -91,7 +91,10 @@ status, err = call("POST", "/api/v1/agent/results", {
     "unlocks": [{"service": s, "status": st, "region": r} for s, st, r in verdicts]}, token=node_key)
 assert status == 204, err
 
-unlocks = call("GET", "/api/v1/nodes/%s/unlocks" % node_id, token="")[1]
+# 解锁结论只随 /nodes 的 unlock 字段下发；匿名列表是 1 秒快照，等它过期再读。
+time.sleep(1.1)
+nodes = call("GET", "/api/v1/nodes", token="")[1]
+unlocks = next(n for n in nodes if n["id"] == node_id)["unlock"]
 assert unlocks["total"] == 24 and len(unlocks["services"]) == 24, unlocks
 assert unlocks["score"] == 19, "分数应为 19，实际 %s" % unlocks["score"]
 cats = {c: [0, 0] for c in catalog["categories"]}
@@ -106,7 +109,6 @@ print("unlocks: %d/%d · %s · tested_at=%s" % (
     " · ".join("%s %d/%d" % (c, cats[c][0], cats[c][1]) for c in catalog["categories"]),
     unlocks["tested_at"]))
 
-nodes = call("GET", "/api/v1/nodes", token="")[1]
 view = next(n for n in nodes if n["id"] == node_id)
 assert view["unlock"]["score"] == 19 and view["unlock"]["total"] == 24, view.get("unlock")
 plain = next(n for n in nodes if n["id"] == plain_id)

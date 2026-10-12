@@ -131,7 +131,7 @@ export async function detail(id, focus = null) {
       ? `<div><span>线路带宽</span><strong>${bandwidth(n.line_mbps)}</strong><small>商家标称的端口 / 峰值速率</small></div>`
       : "";
   // 解锁检测：这台机器跑过检测才有这一块（没跑过就不画，不留占位）。数据取节点自带的
-  // unlock 字段（/nodes 已经带上），与详情接口 /nodes/{id}/unlocks 是同一份。
+  // unlock 字段（/nodes 已经带上）。
   const unlockSection =
     !focused && n.unlock?.total
       ? `<div class="unlock-block">${unlockPanel(n.unlock, catalog, { tested: true })}</div>`

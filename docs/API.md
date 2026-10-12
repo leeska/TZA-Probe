@@ -16,7 +16,7 @@
 | GET、POST /admin/tasks | 列表、创建探测任务 |
 | PUT、DELETE /admin/tasks/{id} | 编辑、删除任务 |
 | GET /admin/catalog | 内置离线目标目录 |
-| GET /admin/events | 最近 100 条告警与发送结果 |
+| GET /admin/events?before=&limit=&node_id=&kind= | 告警与发送结果，按 id 倒序分页：`limit` 默认 100、上限 500，`before` 传上一页最后一条的 id 续读，`node_id` / `kind` 筛选 |
 | GET、PUT /admin/settings | 查询是否配置通知、设置 webhook |
 | PUT /admin/panel | 面板显示项：延迟色带时间窗（`latency_window_minutes`，1–10080 分钟；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
 | POST /admin/settings/test | 显式测试已配置 Webhook |
@@ -25,7 +25,7 @@
 | GET /agent/jobs | 获取有限租约任务：报了 `parallel_jobs` 能力的 Agent 最多 8 个 TCP + 1 个回程 + 1 个解锁，其余最多两个 |
 | POST /agent/results | 上传与租约绑定的结果 |
 
-准确字段由 `internal/model` 中的 JSON 标签定义。未知 JSON 字段、超大请求、额外 JSON 值会被拒绝。非公开节点对未登录请求返回 404。任务为空绑定不执行，不表示所有节点。
+准确字段由 `internal/model` 中的 JSON 标签定义。未登录请求拿到的节点不含提醒规则（`alerts` 全为零值）与服务端记账字段（`traffic_adjustment`、`adjustment_cycle`、`created_at`）；这三项写入时也会被忽略。解锁结论只随 `/nodes` 的 `unlock` 字段下发。未知 JSON 字段、超大请求、额外 JSON 值会被拒绝。非公开节点对未登录请求返回 404。任务为空绑定不执行，不表示所有节点。
 
 ## Model Context Protocol（`POST /mcp`）
 
@@ -36,14 +36,14 @@
 - `2026-07-28`（无握手）：每个请求在 `_meta` 里声明版本，并在头部镜像 `MCP-Protocol-Version`、`Mcp-Method`（`tools/call` 还有 `Mcp-Name`，非 ASCII 用 `=?base64?…?=`），三者必须与请求体一致，缺失或不符返回 400 与 `-32020 HeaderMismatch`；版本不认识返回 400 与 `-32022 UnsupportedProtocolVersionError`（`data.supported` 列出支持版本）；方法不认识返回 404 与 `-32601`。结果带 `resultType: "complete"` 与 `_meta["io.modelcontextprotocol/serverInfo"]`，`server/discover` 与 `tools/list` 带 `ttlMs` / `cacheScope`。
 - `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
 
-工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`）、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`alerts`）按字段合并。
+工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`）、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`alerts`）按字段合并。
 `create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（两者另外回面板显示项：延迟色带时间窗 `latency_window_minutes`、访客默认明暗 `default_theme` 与皮肤 `default_skin`）。`update_settings` 只改传了的项：不传 `channel` 沿用当前渠道，Telegram 的 `bot_token` / `chat_id` 留空沿用已存的，只传显示项时不动通知配置；关闭通知须显式传 `channel: "none"`，一项都不传返回 `-32602`；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
 
 ## 通知渠道
 
 `GET /admin/settings` 返回当前渠道状态，不返回凭据。`PUT /admin/settings` 支持 Telegram、Webhook 或关闭通知；`POST /admin/settings/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项与通知出口分开保存：`GET /admin/settings` 会带上生效值（`latency_window_minutes`，未设置时 60 分钟），改动走 `PUT /admin/panel`，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
 
-HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：报告过频、租约失效、重复结果；400：无效输入；500：内部错误（详细内容仅记录服务日志）。成功变更通常返回 204；创建节点/轮换令牌返回 200 JSON。
+HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：冲突，`error` 写明是哪一种（如报告过频、租约失效、重复结果、计费周期已变化、任务暂停或未绑定节点时立即执行）；400：无效输入；500：内部错误（详细内容仅记录服务日志）。错误正文统一为 `{"error":"<中文说明>"}`。成功变更通常返回 204；创建节点/轮换令牌返回 200 JSON。
 
 管理员创建的探测目标允许内网地址，便于自托管网络监控；仅管理员可配置目标和通知出口。该权限不提供给公开页面或 Agent。
 
@@ -67,6 +67,7 @@ kind / host / port / family / region / carrier 快照，不依赖后台表单。
 - `POST /api/v1/admin/nodes/{id}/traffic`：管理员提交 `{"used":5000000000,"cycle":<cycle_start>}`，将当前周期已用总量校正为指定字节数。周期已变化返回 409。校正保留原始计数，后续增量继续累计，下周期失效；更改重置时间或计费方向会清除校正。
 - 节点配置的重置时间与到期时间都是 RFC3339（精确到秒）：`billing_at` 是周期锚点，只取它的「日 + 时分秒」逐月顺延，短月取月末；`expires_at` 留空表示不设。旧的 `billing_day`（每月第几天）不再接受。
 - 后台表单的重置/到期时间填 `YYYY-MM-DD HH:MM:SS`（UTC），提交前转成 RFC3339；格式不符或日期不存在（如 2 月 31 日）在本地就报错。数字输入不再画步进箭头，滚轮经过数字、日期时间与下拉框时先失焦，滚动页面不会误改已填好的值。
+- 节点的 `free`（布尔）标记免费机器：公开卡片写「免费」，保存时 `price` 与 `price_period` 清空；`price_period` 不再接受「免费」。数据库 v10 启动时把旧的「免费」周期就地转成 `free: true`；升级后旧版二进制不能打开该数据库，回滚需恢复升级前备份。
 - 节点告警新增 `offline_seconds`（判定离线后额外等待 0–86400 秒）与 `repeat_seconds`（0 为仅触发/恢复各一次；非零范围 300–604800 秒）。旧配置缺省为 0，不改变其通知频率。
 - 告警事件新增 `last_error`：最近一次通知投递错误；成功投递后清空。不保存 Telegram Token、请求 URL 或响应正文。
 

@@ -188,8 +188,15 @@ input[type="number"]::-webkit-inner-spin-button {
 
 /* 被禁用的输入（未启用的提醒规则、未勾选的检测类型）整体变淡 */
 label:has(> input:disabled),
-label:has(> select:disabled) {
+label:has(> select:disabled),
+label:has(> .select-shell > select:disabled) {
   opacity: 0.5;
+}
+
+/* 自定义下拉的触发器随原生 select 禁用；变淡已由外层 label 负责，别再叠一层按钮的 0.45。 */
+.select-trigger:disabled {
+  opacity: 1;
+  cursor: not-allowed;
 }
 
 input:disabled,
@@ -1781,6 +1788,30 @@ dialog .form-footer {
   grid-template-columns: 2fr 1fr 1fr;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+/* 事件记录的筛选：两个下拉，不占满整行。 */
+.catalog-filters.event-filters {
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  padding: 16px 24px 0;
+}
+
+.event-more {
+  padding: 12px 24px 16px;
+  margin: 0;
+}
+
+.event-more:has(> [hidden]) {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .catalog-filters.event-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+  .catalog-filters.event-filters > :first-child {
+    grid-column: auto;
+  }
 }
 
 .catalog-toolbar {

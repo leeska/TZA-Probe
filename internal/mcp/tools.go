@@ -77,8 +77,13 @@ var readTools = []tool{
 	{
 		Name:        "recent_events",
 		Annotations: annotations("Recent alerts", true, false, true),
-		Description: "读取最近的告警事件与通知投递结果：离线、续费、流量、负载的触发与恢复。",
-		InputSchema: schema(map[string]any{}),
+		Description: "读取告警事件与通知投递结果（离线、续费、流量、负载的触发与恢复），新的在前。事件保存 90 天：翻页时把上一页最后一条的 id 作为 before 传入。",
+		InputSchema: schema(map[string]any{
+			"before":  map[string]any{"type": "integer", "description": "只取 id 小于它的事件（翻页游标），不传从最新开始"},
+			"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": model.MaxEventPage, "description": "条数，默认 100"},
+			"node_id": map[string]any{"type": "string", "description": "只看这个节点"},
+			"kind":    map[string]any{"type": "string", "description": "只看这类事件，如 offline / renewal / traffic / throttle / load"},
+		}),
 	},
 	{
 		Name:        "latency_samples",
@@ -139,10 +144,16 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 		return toolResult(map[string]any{"tasks": tasks, "count": len(tasks)}), nil, 0
 
 	case "recent_events":
-		if e := arguments(params.Arguments, &struct{}{}); e != nil {
+		var args struct {
+			Before int64  `json:"before"`
+			Limit  int    `json:"limit"`
+			NodeID string `json:"node_id"`
+			Kind   string `json:"kind"`
+		}
+		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		events, err := s.Source.Events(ctx, false, time.Now())
+		events, err := s.Source.Events(ctx, model.EventQuery{Before: args.Before, Limit: args.Limit, NodeID: args.NodeID, Kind: args.Kind})
 		if err != nil {
 			return toolFailure("读取告警事件失败", err)
 		}

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"testing"
 	"time"
@@ -37,7 +38,7 @@ func TestTaskControlsPreserveHistoryAndSchedule(t *testing.T) {
 	if err != nil || len(jobs) != 0 {
 		t.Fatal("paused leased", err)
 	}
-	if err = control("run", nil, now); err != model.ErrConflict {
+	if err = control("run", nil, now); !errors.Is(err, model.ErrConflict) {
 		t.Fatal(err)
 	}
 	if err = control("resume", nil, now); err != nil {

@@ -482,13 +482,49 @@ func TestPendingEventsExpire(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	pending, err := s.Events(ctx, true, now)
+	pending, err := s.PendingEvents(ctx, now)
 	if err != nil || len(pending) != 1 || pending[0].At != now.Add(-time.Hour).Unix() {
 		t.Fatalf("pending=%+v %v", pending, err)
 	}
-	all, err := s.Events(ctx, false, now)
+	all, err := s.Events(ctx, model.EventQuery{})
 	if err != nil || len(all) != 2 {
 		t.Fatalf("history must keep expired events: %+v %v", all, err)
+	}
+}
+
+// The panel pages the 90-day event log by id cursor and can narrow it to one
+// node or one kind; a page never exceeds model.MaxEventPage.
+func TestEventsPageAndFilter(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	for i := 0; i < 150; i++ {
+		node, kind := "a", "offline"
+		if i%3 == 0 {
+			node, kind = "b", "load"
+		}
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO events(node_id,node_name,kind,message,active,at) VALUES(?,?,?,'m',1,?)", node, node, kind, 1000+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := s.Events(ctx, model.EventQuery{})
+	if err != nil || len(first) != model.DefaultEventPage || first[0].At != 1149 {
+		t.Fatalf("first page: %d %v", len(first), err)
+	}
+	rest, err := s.Events(ctx, model.EventQuery{Before: first[len(first)-1].ID})
+	if err != nil || len(rest) != 50 || rest[0].ID >= first[len(first)-1].ID {
+		t.Fatalf("second page: %d %v", len(rest), err)
+	}
+	only, err := s.Events(ctx, model.EventQuery{NodeID: "b", Kind: "load", Limit: 1000})
+	if err != nil || len(only) != 50 {
+		t.Fatalf("filtered: %d %v", len(only), err)
+	}
+	for _, e := range only {
+		if e.NodeID != "b" || e.Kind != "load" {
+			t.Fatalf("filter leaked %+v", e)
+		}
+	}
+	if q := (model.EventQuery{Limit: 1 << 20}).Normalize(); q.Limit != model.MaxEventPage {
+		t.Fatalf("limit not clamped: %d", q.Limit)
 	}
 }
 
@@ -497,7 +533,7 @@ func TestPendingEventsExpire(t *testing.T) {
 func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 	s := openTest(t)
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 9 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 10 {
 		t.Fatalf("user_version=%d %v", version, err)
 	}
 	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "events_rule_time", "jobs_latest_insert"} {
@@ -510,6 +546,62 @@ func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 		var n int
 		if err := s.db.QueryRow("SELECT count(*) FROM pragma_table_info(?) WHERE name=?", table, column).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("%s.%s missing (%d, %v)", table, column, n, err)
+		}
+	}
+}
+
+// Version 10 moves 免费 out of the price period into the free flag: an old free
+// machine comes back free with no price or period, paid machines are untouched,
+// and the period no longer accepts 免费 at all.
+func TestFreeFlagMigrationAndSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "free.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for id, period := range map[string]string{"free": "免费", "paid": "月"} {
+		config := `{"name":"` + id + `","billing_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","currency":"CNY","price_period":"` + period + `"}`
+		if _, err = s.db.ExecContext(ctx, "INSERT INTO nodes(id,config,token_hash) VALUES(?,?,?)", id, config, model.Hash(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = s.db.Exec("PRAGMA user_version=9"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	nodes, err := s.Nodes(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range nodes {
+		if n.ID == "free" && (!n.Free || n.PricePeriod != "" || n.Currency != "CNY") {
+			t.Fatalf("free node after migration: %+v", n.Node)
+		}
+		if n.ID == "paid" && (n.Free || n.PricePeriod != "月") {
+			t.Fatalf("paid node touched: %+v", n.Node)
+		}
+	}
+	base := model.Node{Name: "x", BillingAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}
+	legacy := base
+	legacy.PricePeriod = "免费"
+	if _, _, err = s.SaveNode(ctx, legacy, true); err == nil {
+		t.Fatal("price period 免费 accepted")
+	}
+	free := base
+	free.Free, free.Price, free.PricePeriod = true, 9.9, "月"
+	id, _, err := s.SaveNode(ctx, free, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, _ = s.Nodes(ctx, time.Now())
+	for _, n := range nodes {
+		if n.ID == id && (!n.Free || n.Price != 0 || n.PricePeriod != "") {
+			t.Fatalf("free save kept a price: %+v", n.Node)
 		}
 	}
 }

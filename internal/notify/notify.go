@@ -21,7 +21,7 @@ import (
 type Repository interface {
 	Nodes(context.Context, time.Time) ([]model.NodeView, error)
 	Transition(context.Context, model.Node, string, string, bool, int, time.Time) error
-	Events(context.Context, bool, time.Time) ([]model.Event, error)
+	PendingEvents(context.Context, time.Time) ([]model.Event, error)
 	Delivery(context.Context, model.Event, bool, time.Time) error
 	Setting(context.Context, string) (string, error)
 }
@@ -107,7 +107,7 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 	if err != nil || endpoint == "" {
 		return err
 	}
-	pending, err := e.Repository.Events(ctx, true, now)
+	pending, err := e.Repository.PendingEvents(ctx, now)
 	if err != nil {
 		return err
 	}

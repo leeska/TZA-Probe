@@ -174,9 +174,10 @@ func nodeSchema(withID bool) map[string]any {
 		"throttle_on":      map[string]any{"type": "string", "enum": []string{"bandwidth", "quota"}, "description": "降速触发条件：bandwidth=窗口平均带宽达到 throttle_mbps（省略即为此值）；quota=本周期用量用满 traffic_limit 后按商家规则降到 throttle_mbps（不计量但限速）"},
 		"billing_at":       map[string]any{"type": "string", "description": "计费周期锚点，RFC3339 精确到秒，如 2026-09-01T00:00:00Z；必填"},
 		"expires_at":       map[string]any{"type": "string", "description": "到期时间 RFC3339；留空表示不设"},
-		"price":            map[string]any{"type": "number", "description": "价格，用于显示"},
+		"free":             map[string]any{"type": "boolean", "description": "免费机器：卡片写「免费」，保存时价格与价格周期清空"},
+		"price":            map[string]any{"type": "number", "description": "价格，用于显示；free=true 时忽略"},
 		"currency":         map[string]any{"type": "string", "description": "币种，如 CNY"},
-		"price_period":     map[string]any{"type": "string", "description": "价格周期，如 月"},
+		"price_period":     map[string]any{"type": "string", "description": "价格周期，如 月 / 年；不接受「免费」，免费请用 free"},
 		"alerts":           alertsSchema(),
 	}
 	if withID {

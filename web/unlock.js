@@ -1,6 +1,6 @@
 // 解锁检测面板的共用渲染。公开卡片的徽标 / 分类浮层与节点详情的「解锁检测」块都从这里出，
-// 两处的分数、分类统计与服务列表因此永远同源。数据来自 /api/v1/nodes 的 unlock 字段
-// （或 /api/v1/nodes/{id}/unlocks），目录（名称 / 分类 / 是否只报地区）来自
+// 两处的分数、分类统计与服务列表因此永远同源。数据来自 /api/v1/nodes 的 unlock 字段，
+// 目录（名称 / 分类 / 是否只报地区）来自
 // /api/v1/unlock-catalog——目录是固定的 24 项，前后端共用同一份 id 与名称。
 import { api, esc } from "./api.js";
 import { date } from "./format.js";

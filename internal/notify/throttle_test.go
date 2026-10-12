@@ -42,7 +42,7 @@ func TestThrottleRuleOnQuota(t *testing.T) {
 	if err = engine.Tick(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-	events, err := s.Events(ctx, false, now.Add(time.Minute))
+	events, err := s.Events(ctx, model.EventQuery{})
 	if err != nil || len(events) != 1 || events[0].Kind != "throttle" || !events[0].Active {
 		t.Fatalf("expected one 降速事件: %+v %v", events, err)
 	}
@@ -85,7 +85,7 @@ func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 	if err = engine.Tick(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-	events, err := s.Events(ctx, false, now.Add(time.Minute))
+	events, err := s.Events(ctx, model.EventQuery{})
 	if err != nil || len(events) != 1 || events[0].Kind != "throttle" || !events[0].Active {
 		t.Fatalf("expected one 降速事件: %+v %v", events, err)
 	}
@@ -106,7 +106,7 @@ func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 	if err = engine.Tick(ctx, now.Add(15*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	events, err = s.Events(ctx, false, now.Add(time.Minute))
+	events, err = s.Events(ctx, model.EventQuery{})
 	if err != nil || len(events) != 2 || events[0].Active {
 		t.Fatalf("expected one recovery: %+v %v", events, err)
 	}

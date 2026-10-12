@@ -45,11 +45,10 @@ type Repository interface {
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
 	Observations(context.Context, string, time.Time) ([]model.Observation, error)
-	Unlocks(context.Context, string) (*model.UnlockSummary, error)
 	RecentLatencySamples(context.Context, []string, int, time.Time) ([]model.LatencySample, error)
 	Setting(context.Context, string) (string, error)
 	SetSetting(context.Context, string, string) error
-	Events(context.Context, bool, time.Time) ([]model.Event, error)
+	Events(context.Context, model.EventQuery) ([]model.Event, error)
 }
 type API struct {
 	Store         Repository
@@ -138,7 +137,6 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/observations", a.allObservations)
 	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
 	mux.HandleFunc("GET /api/v1/unlock-catalog", a.unlockCatalog)
-	mux.HandleFunc("GET /api/v1/nodes/{id}/unlocks", a.unlocks)
 	mux.HandleFunc("GET /api/v1/admin/nodes", a.admin(a.nodes))
 	mux.HandleFunc("POST /api/v1/admin/nodes", a.admin(a.saveNode))
 	mux.HandleFunc("POST /api/v1/admin/nodes/order", a.admin(a.saveNodeOrder))
@@ -197,7 +195,11 @@ func (a *API) Handler() http.Handler {
 		w.Write(catalog.JSON)
 	}))
 	mux.HandleFunc("GET /api/v1/admin/events", a.admin(func(w http.ResponseWriter, r *http.Request) {
-		events, err := a.Store.Events(r.Context(), false, time.Now())
+		// 事件保存 90 天，一页放不下：before 是上一页最后一条的 id，node_id / kind 用来筛选。
+		q := r.URL.Query()
+		before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
+		limit, _ := strconv.Atoi(q.Get("limit"))
+		events, err := a.Store.Events(r.Context(), model.EventQuery{Before: before, Limit: limit, NodeID: q.Get("node_id"), Kind: q.Get("kind")})
 		if err != nil {
 			fail(w, err)
 			return
@@ -316,7 +318,7 @@ func (a *API) Handler() http.Handler {
 			return
 		}
 		if a.Notifier == nil {
-			write(w, 503, map[string]string{"error": "notification sender unavailable"})
+			write(w, 503, map[string]string{"error": "通知发送组件不可用"})
 			return
 		}
 		err = a.Notifier.Send(r.Context(), value, model.Event{Kind: "test", Message: "TZA Probe 通知测试", At: time.Now().Unix()})
@@ -364,7 +366,9 @@ func (a *API) Handler() http.Handler {
 		}
 		respond(w, a.Store.Finish(r.Context(), id, v, time.Now()))
 	}))
-	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { write(w, 404, map[string]string{"error": "not found"}) })
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		write(w, 404, map[string]string{"error": "接口不存在"})
+	})
 	// Model Context Protocol: the same administrator key as the API, sent as a
 	// bearer token by the AI client. The tools cover what the panel does, reads
 	// and writes both.
@@ -454,7 +458,7 @@ func (a *API) admin(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if r.Method != "GET" && !sameOrigin(r) {
-			write(w, 403, map[string]string{"error": "origin rejected"})
+			write(w, 403, map[string]string{"error": "请求来源不受信任"})
 			return
 		}
 		next(w, r)
@@ -481,7 +485,7 @@ const maxSessions = 100
 
 func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	if !sameOrigin(r) {
-		write(w, 403, map[string]string{"error": "origin rejected"})
+		write(w, 403, map[string]string{"error": "请求来源不受信任"})
 		return
 	}
 	var v struct {
@@ -549,7 +553,7 @@ func (a *API) nodes(w http.ResponseWriter, r *http.Request) {
 	for _, n := range nodes {
 		if n.Public || admin {
 			if !admin {
-				n.Alerts = model.Alerts{}
+				n = n.Redact()
 			}
 			out = append(out, n)
 		}
@@ -569,7 +573,7 @@ func (a *API) visible(r *http.Request) bool {
 
 func (a *API) history(w http.ResponseWriter, r *http.Request) {
 	if !a.visible(r) {
-		write(w, 404, map[string]string{"error": "not found"})
+		write(w, 404, map[string]string{"error": "对象不存在"})
 		return
 	}
 	hours, _ := strconv.Atoi(r.URL.Query().Get("hours"))
@@ -612,7 +616,7 @@ func (a *API) history(w http.ResponseWriter, r *http.Request) {
 // asks for them without the flag.
 func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 	if !a.visible(r) {
-		write(w, 404, map[string]string{"error": "not found"})
+		write(w, 404, map[string]string{"error": "对象不存在"})
 		return
 	}
 	slim := r.URL.Query().Get("slim") != ""
@@ -679,25 +683,6 @@ func (a *API) allObservations(w http.ResponseWriter, r *http.Request) {
 // the admin one, and the list is the same for every node.
 func (a *API) unlockCatalog(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"categories": model.UnlockCategories, "services": model.UnlockCatalog})
-}
-
-// unlocks returns one node's stored verdicts. A node that simply never ran the
-// check answers with an empty summary instead of 404: the panel has to tell
-// 未检测 apart from 无权查看, and an empty summary says exactly that.
-func (a *API) unlocks(w http.ResponseWriter, r *http.Request) {
-	if !a.visible(r) {
-		write(w, 404, map[string]string{"error": "not found"})
-		return
-	}
-	summary, err := a.Store.Unlocks(r.Context(), r.PathValue("id"))
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	if summary == nil {
-		summary = &model.UnlockSummary{Services: []model.UnlockResult{}, Total: len(model.UnlockCatalog)}
-	}
-	write(w, 200, summary)
 }
 
 // latencyWindow is the configured look-back for the public latency bands
@@ -835,18 +820,18 @@ func (a *API) saveTask(w http.ResponseWriter, r *http.Request) {
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		write(w, 415, map[string]string{"error": "application/json required"})
+		write(w, 415, map[string]string{"error": "请求须为 application/json"})
 		return false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
-		write(w, 400, map[string]string{"error": "invalid JSON"})
+		write(w, 400, map[string]string{"error": "请求体不是有效的 JSON"})
 		return false
 	}
 	if err := d.Decode(&struct{}{}); err != io.EOF {
-		write(w, 400, map[string]string{"error": "one JSON value required"})
+		write(w, 400, map[string]string{"error": "请求体只能包含一个 JSON 值"})
 		return false
 	}
 	return true
@@ -863,9 +848,13 @@ func fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, model.ErrInvalid):
 		write(w, 400, map[string]string{"error": err.Error()})
 	case errors.Is(err, model.ErrNotFound):
-		write(w, 404, map[string]string{"error": "not found"})
+		write(w, 404, map[string]string{"error": "对象不存在"})
 	case errors.Is(err, model.ErrConflict):
-		write(w, 409, map[string]string{"error": "stale job, duplicate result, or report too frequent"})
+		msg := err.Error()
+		if err == model.ErrConflict {
+			msg = "操作冲突，请刷新后重试"
+		}
+		write(w, 409, map[string]string{"error": msg})
 	default:
 		slog.Error("request failed", "error", err)
 		write(w, 500, map[string]string{"error": "服务器处理失败"})
@@ -881,7 +870,7 @@ func write(w http.ResponseWriter, status int, v any) {
 
 func (a *API) networkHistory(w http.ResponseWriter, r *http.Request) {
 	if !a.visible(r) {
-		write(w, 404, map[string]string{"error": "not found"})
+		write(w, 404, map[string]string{"error": "对象不存在"})
 		return
 	}
 	hours, _ := strconv.Atoi(r.URL.Query().Get("hours"))

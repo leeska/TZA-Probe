@@ -52,7 +52,7 @@ func (f *fakeSource) NetworkHistory(_ context.Context, _ string, hours int, _ ti
 func (f *fakeSource) Observations(context.Context, string, time.Time) ([]model.Observation, error) {
 	return f.observations, nil
 }
-func (f *fakeSource) Events(context.Context, bool, time.Time) ([]model.Event, error) {
+func (f *fakeSource) Events(context.Context, model.EventQuery) ([]model.Event, error) {
 	return f.events, nil
 }
 func (f *fakeSource) RecentLatencySamples(_ context.Context, ids []string, limit int, since time.Time) ([]model.LatencySample, error) {

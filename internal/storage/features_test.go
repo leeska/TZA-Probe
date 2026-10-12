@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"path/filepath"
 	"sync"
@@ -24,7 +25,7 @@ func TestCycleCorrectionPreservesCountersAndExpires(t *testing.T) {
 		t.Fatal(err)
 	}
 	start, _ := model.Cycle(now, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
-	if err := s.CorrectTraffic(ctx, id, 500, start.Unix()-1, now); err != model.ErrConflict {
+	if err := s.CorrectTraffic(ctx, id, 500, start.Unix()-1, now); !errors.Is(err, model.ErrConflict) {
 		t.Fatal(err)
 	}
 	if err := s.CorrectTraffic(ctx, id, 500, start.Unix(), now); err != nil {
@@ -198,14 +199,14 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	events, _ := s.Events(ctx, false, now)
+	events, _ := s.Events(ctx, model.EventQuery{})
 	if len(events) != 1 {
 		t.Fatal("repeat before cooldown", len(events))
 	}
 	if err := s.Transition(ctx, n, "offline", "offline", true, 30, now.Add(330*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	events, _ = s.Events(ctx, false, now)
+	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 2 {
 		t.Fatal(len(events))
 	}
@@ -214,14 +215,14 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 	if err := s.Delivery(ctx, e, false, now); err != nil {
 		t.Fatal(err)
 	}
-	events, _ = s.Events(ctx, false, now)
+	events, _ = s.Events(ctx, model.EventQuery{})
 	if events[0].LastError != e.LastError || events[0].Attempts != 1 {
 		t.Fatal(events)
 	}
 	if err := s.Transition(ctx, n, "offline", "offline", false, 30, now.Add(340*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	events, _ = s.Events(ctx, false, now)
+	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 3 || events[0].Active {
 		t.Fatal("missing recovery")
 	}
@@ -242,7 +243,7 @@ func TestUpgradeVersionOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err = s.Events(context.Background(), false, time.Now()); err != nil {
+	if _, err = s.Events(context.Background(), model.EventQuery{}); err != nil {
 		t.Fatal(err)
 	}
 }
