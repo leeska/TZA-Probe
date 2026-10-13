@@ -220,6 +220,20 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		_, err := a.svc.ReplaceNotification(r.Context(), v)
 		respond(w, err)
 	})
+	// PATCH 只改传了的项（与 MCP 的 update_settings 同一套规则）：不传 channel 沿用当前渠道，
+	// 留空的凭据沿用已存的；关闭通知要显式传 channel=none。
+	route("PATCH /api/v1/admin/notification", func(w http.ResponseWriter, r *http.Request) {
+		var v notify.Config
+		if !decode(w, r, &v) {
+			return
+		}
+		config, err := a.svc.PatchNotification(r.Context(), v)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, config.Public())
+	})
 	route("POST /api/v1/admin/notification/test", func(w http.ResponseWriter, r *http.Request) {
 		_, err := a.svc.TestNotification(r.Context())
 		respond(w, err)

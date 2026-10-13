@@ -1441,7 +1441,7 @@ button.node-name {
 
 .admin-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -1459,6 +1459,20 @@ button.node-name {
   font-size: 12px;
   color: var(--muted);
   font-weight: 500;
+}
+
+/* 「正在告警」那格可以点：点进告警页的「当前告警」。有告警时数字标橙。 */
+.admin-stats > .stat-link {
+  cursor: pointer;
+}
+
+.admin-stats > .stat-link:hover,
+.admin-stats > .stat-link:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.45);
+}
+
+.admin-stats > .stat-warn strong {
+  color: var(--orange, #f97316);
 }
 
 .admin-stats strong {

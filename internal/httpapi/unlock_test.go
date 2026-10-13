@@ -280,6 +280,13 @@ func TestResourceRoutes(t *testing.T) {
 	if code, body := call("GET", "/api/v1/admin/notification", ""); code != 200 || !strings.Contains(body, `"channel"`) || strings.Contains(body, "latency_window") {
 		t.Fatalf("notification: %d %s", code, body)
 	}
+	// PATCH 通知出口只改传了的项（与 MCP update_settings 同规则）：一项都不传是 400，关闭要显式传 none。
+	if code, body := call("PATCH", "/api/v1/admin/notification", `{}`); code != 400 || !strings.Contains(body, "channel=none") {
+		t.Fatalf("empty notification patch: %d %s", code, body)
+	}
+	if code, body := call("PATCH", "/api/v1/admin/notification", `{"channel":"none"}`); code != 200 || !strings.Contains(body, `"channel":"none"`) {
+		t.Fatalf("notification patch: %d %s", code, body)
+	}
 	if code, body := call("GET", "/api/v1/admin/panel", ""); code != 200 || !strings.Contains(body, "latency_window_minutes") || strings.Contains(body, "channel") {
 		t.Fatalf("panel: %d %s", code, body)
 	}

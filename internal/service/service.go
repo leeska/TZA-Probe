@@ -520,6 +520,21 @@ func (s *Service) writePanel(ctx context.Context, patch model.PanelPatch) error 
 	return nil
 }
 
+// PatchNotification changes only the fields given — the rule MCP's
+// update_settings uses — so a script can switch the channel or rotate one
+// credential without resubmitting the rest. Closing notifications takes an
+// explicit channel "none".
+func (s *Service) PatchNotification(ctx context.Context, patch notify.Config) (notify.Config, error) {
+	if patch == (notify.Config{}) {
+		return notify.Config{}, model.Invalid("至少给一项通知设置；关闭通知请传 channel=none")
+	}
+	config, err := s.resolveNotificationPatch(ctx, patch)
+	if err != nil {
+		return notify.Config{}, err
+	}
+	return config, notify.Persist(ctx, s.Store, config)
+}
+
 // UpdateSettings is the combined partial update the MCP tool offers: a nil
 // notification leaves the channel alone. Everything is validated before
 // anything is written, so a bad panel value cannot leave the channel changed.
