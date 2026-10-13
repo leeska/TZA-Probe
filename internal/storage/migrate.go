@@ -377,6 +377,10 @@ func migrateAlertRules(db *sql.DB) error {
 // one node-scoped rule listing them, so nothing changes about who is alerted
 // and a fleet with one common setting sees one rule per kind. Rules never widen
 // to 全部节点 here: a node added later must not start alerting by itself.
+//
+// Every rule written here must pass Validate, or the panel could show it but
+// never save it again: a shared rule splits at model.MaxRuleList nodes, and a
+// percentage below 1 (version 13 took anything above 0) is raised to 1.
 func migrateAlertScopes(db *sql.DB) error {
 	rows, err := db.Query("SELECT id, config FROM nodes ORDER BY rowid")
 	if err != nil {
@@ -398,9 +402,12 @@ func migrateAlertScopes(db *sql.DB) error {
 			return err
 		}
 		for _, r := range node.Alerts {
+			if (r.Kind == model.AlertTraffic || r.Kind == model.AlertCPU || r.Kind == model.AlertMemory) && r.Threshold < 1 {
+				r.Threshold = 1
+			}
 			key := encode(model.AlertRule{Kind: r.Kind, Threshold: r.Threshold, HoldSeconds: r.HoldSeconds, RepeatSeconds: r.RepeatSeconds})
 			i, seen := index[key]
-			if !seen {
+			if !seen || len(rules[i].NodeIDs) >= model.MaxRuleList {
 				i = len(rules)
 				index[key] = i
 				rules = append(rules, model.AlertRule{ID: model.Secret()[:16], Kind: r.Kind, Threshold: r.Threshold,

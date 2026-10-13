@@ -279,3 +279,17 @@ func TestPerRuleRepeatAndSplitLoad(t *testing.T) {
 type fixedChannel Config
 
 func (c fixedChannel) NotificationConfig(context.Context) (Config, error) { return Config(c), nil }
+
+// 面板与接口都能存 85.5% 这样的阈值，提醒文案要写原值，不能四舍五入成 86%。
+func TestAlertMessagesKeepFractionalThreshold(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	n := model.NodeView{Online: true, Metrics: &model.Metrics{CPU: 86, MemoryUsed: 86, MemoryTotal: 100}}
+	n.Billing.TrafficLimit = 100
+	n.TrafficUsed = 86
+	for _, kind := range []string{model.AlertCPU, model.AlertMemory, model.AlertTraffic} {
+		on, message := evaluate(n, model.AlertRule{Kind: kind, Threshold: 85.5, HoldSeconds: 60}, now)
+		if !on || !strings.Contains(message, "85.5%") {
+			t.Fatalf("%s: on=%v message=%q", kind, on, message)
+		}
+	}
+}

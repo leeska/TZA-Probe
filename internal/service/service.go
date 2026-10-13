@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -319,6 +320,26 @@ func (s *Service) PatchAlertRule(ctx context.Context, id string, patch json.RawM
 		}
 	}
 	return merged, s.ReplaceAlertRule(ctx, id, merged)
+}
+
+// EmptyGroups lists the rule's groups that no node is in. Saving such a rule is
+// allowed (a group can be filled later), but a misspelled or renamed group
+// covers nothing without any error, so MCP answers with a warning naming them.
+func (s *Service) EmptyGroups(ctx context.Context, r model.AlertRule) ([]string, error) {
+	if r.Scope != model.ScopeGroup {
+		return nil, nil
+	}
+	nodes, err := s.Store.Nodes(ctx, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	var empty []string
+	for _, g := range r.Groups {
+		if !slices.ContainsFunc(nodes, func(n model.NodeView) bool { return n.Group == g }) {
+			empty = append(empty, g)
+		}
+	}
+	return empty, nil
 }
 
 func (s *Service) DeleteAlertRule(ctx context.Context, id string) error {

@@ -78,6 +78,8 @@ function covered(r) {
     return r.scope === "all" || (r.groups || []).includes(n.group || "");
   });
 }
+// 分组规则里已经没有节点的分组：分组改名或节点都移走后，规则不报错但一台都不覆盖。
+const emptyGroups = (r) => (r.scope === "group" ? (r.groups || []).filter((g) => !state.nodes.some((n) => (n.group || "") === g)) : []);
 // 规则列表：按类型排，同类型里范围从宽到窄，正好是优先级从低到高的顺序。
 function rulesPanel(rules) {
   const sorted = [...rules].sort((a, b) => RULE_SPECS.indexOf(specOf(a.kind)) - RULE_SPECS.indexOf(specOf(b.kind)) || scopeRank(a.scope) - scopeRank(b.scope));
@@ -86,7 +88,9 @@ function rulesPanel(rules) {
       const hits = covered(r).length;
       const live = state.nodes.filter((n) => ruleOf(n.alerts, r.kind)?.id === r.id).length;
       const note = live < hits ? `<small>生效 ${live} 台，另 ${hits - live} 台以更具体的规则为准</small>` : `<small>生效 ${live} 台</small>`;
-      return `<tr><td data-label="类型">${esc(specOf(r.kind).label)}</td><td data-label="条件">${esc(ruleParams(r))}</td><td data-label="范围">${esc(scopeText(r))}${note}</td><td data-label="操作"><div class="row-actions"><button data-edit-rule="${esc(r.id)}">编辑</button><button class="danger" data-delete-rule="${esc(r.id)}">删除</button></div></td></tr>`;
+      const empty = emptyGroups(r);
+      const warn = empty.length ? `<small class="warn-text">分组 ${esc(names(empty.map(groupLabel)))} 下没有节点，分组改名后请改这条规则</small>` : "";
+      return `<tr><td data-label="类型">${esc(specOf(r.kind).label)}</td><td data-label="条件">${esc(ruleParams(r))}</td><td data-label="范围">${esc(scopeText(r))}${note}${warn}</td><td data-label="操作"><div class="row-actions"><button data-edit-rule="${esc(r.id)}">编辑</button><button class="danger" data-delete-rule="${esc(r.id)}">删除</button></div></td></tr>`;
     })
     .join("");
   return `<section class="panel"><div class="panel-head"><div><h3>提醒规则</h3><span class="muted">同一台节点同一种提醒只生效一条：指定节点 &gt; 分组 &gt; 全部节点</span></div><button id="new-rule" class="primary">新建规则</button></div><div class="table-scroll"><table class="stack"><thead><tr><th>类型</th><th>条件</th><th>范围</th><th>操作</th></tr></thead><tbody>${rows || `<tr><td colspan="4" class="empty-cell">还没有提醒规则。新建一条并选好作用范围；选「全部节点」时，以后新加的节点也会自动套用。</td></tr>`}</tbody></table></div></section>`;
@@ -118,7 +122,7 @@ function ruleEditor(rule, rules) {
       <div class="form-section"><h3>提醒什么</h3><div class="form-grid">${select("类型", "kind", RULE_SPECS.map((s) => [s.kind, s.label]), r.kind)}<div id="rule-params" class="rule-params"></div>${field("重复间隔（分钟）", "repeat", (r.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="any" placeholder="0 只提醒一次"')}</div><p class="hint" id="rule-hint"></p><p class="hint">重复间隔填 0 只在触发与恢复时各通知一次，否则至少 5 分钟。</p></div>
       <div class="form-section"><h3>作用于</h3>
         <div class="option-tiles" role="radiogroup">${SCOPES.map(([v, label]) => `<label class="checkbox"><input type="radio" name="scope" value="${v}" ${r.scope === v ? "checked" : ""}>${label}</label>`).join("")}</div>
-        <div data-part="group"><span class="option-label">分组</span><div class="node-checkboxes">${groups.map((g) => tick(groupLabel(g), "data-group", g, (r.groups || []).includes(g))).join("")}</div></div>
+        <div data-part="group"><span class="option-label">分组</span><div class="node-checkboxes">${groups.map((g) => tick(state.nodes.some((n) => (n.group || "") === g) ? groupLabel(g) : `${groupLabel(g)}（没有节点）`, "data-group", g, (r.groups || []).includes(g))).join("")}</div></div>
         <div data-part="nodes"><div class="catalog-toolbar"><button type="button" data-pick="all">全选节点</button><button type="button" data-pick="none">清空节点</button></div><div class="node-checkboxes">${nodeTicks("data-node", r.node_ids || [])}</div></div>
         <details data-part="exclude" ${r.exclude_node_ids?.length ? "open" : ""}><summary>排除节点（可选）</summary><div class="node-checkboxes">${nodeTicks("data-exclude", r.exclude_node_ids || [])}</div></details>
         <p class="hint" id="rule-preview"></p>

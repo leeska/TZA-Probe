@@ -1616,6 +1616,11 @@ td small {
   margin-top: 4px;
 }
 
+/* 表格里需要处理的说明（如提醒规则里已经没有节点的分组）。 */
+td small.warn-text {
+  color: var(--orange);
+}
+
 .text-button,
 td .text-button {
   display: inline;

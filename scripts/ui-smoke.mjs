@@ -955,6 +955,23 @@ const pickKind = (form, kind) => {
   const saved = (await (await fetch(base + "/api/v1/admin/alert-rules", { headers: adminHeaders })).json()).find((r) => r.id === made.id);
   assert(saved.threshold === 85.5 && saved.repeat_seconds === 420, "原样存回: " + JSON.stringify(saved));
   await fetch(base + "/api/v1/admin/alert-rules/" + made.id, { method: "DELETE", headers: adminHeaders });
+  // 分组改名或写错后，分组规则存得下但一台都不覆盖：列表与编辑框都要标出来。
+  const ghost = await (
+    await fetch(base + "/api/v1/admin/alert-rules", {
+      method: "POST",
+      headers: { ...adminHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "offline", hold_seconds: 0, scope: "group", groups: ["已改名的分组"] }),
+    })
+  ).json();
+  $("#refresh-events").click();
+  await until(() => $(`[data-edit-rule="${ghost.id}"]`), "group rule listed");
+  const ghostRow = $(`[data-edit-rule="${ghost.id}"]`).closest("tr");
+  assert(ghostRow.querySelector(".warn-text")?.textContent.includes("已改名的分组"), "没有节点的分组要在列表里标出: " + ghostRow.textContent);
+  $(`[data-edit-rule="${ghost.id}"]`).click();
+  form = $("#rule-form");
+  assert(form.textContent.includes("已改名的分组（没有节点）"), "编辑框要标出没有节点的分组");
+  $("#dialog").close();
+  await fetch(base + "/api/v1/admin/alert-rules/" + ghost.id, { method: "DELETE", headers: adminHeaders });
 }
 // 面板显示项（延迟色带 / 默认外观）在单独的「面板设置」页，不再挂在告警页里。
 assert(!$("#latency-window"), "告警页不该再出现面板显示项");

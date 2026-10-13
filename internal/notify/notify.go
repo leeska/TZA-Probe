@@ -95,17 +95,17 @@ func evaluate(n model.NodeView, r model.AlertRule, now time.Time) (bool, string)
 		return !now.Add(time.Duration(r.Threshold) * 24 * time.Hour).Before(expiry), renewalMessage(expiry, now)
 	case model.AlertTraffic:
 		limit := n.Billing.TrafficLimit
-		return limit > 0 && float64(n.TrafficUsed)/float64(limit)*100 >= r.Threshold, fmt.Sprintf("本计费周期用量达到 %.0f%% 阈值", r.Threshold)
+		return limit > 0 && float64(n.TrafficUsed)/float64(limit)*100 >= r.Threshold, fmt.Sprintf("本计费周期用量达到 %g%% 阈值", r.Threshold)
 	case model.AlertThrottle:
 		return n.Throttled, throttleMessage(n)
 	case model.AlertCPU:
-		return n.Online && n.Metrics != nil && n.Metrics.CPU >= r.Threshold, fmt.Sprintf("CPU 使用率持续 %d 秒超过 %.0f%%", r.HoldSeconds, r.Threshold)
+		return n.Online && n.Metrics != nil && n.Metrics.CPU >= r.Threshold, fmt.Sprintf("CPU 使用率持续 %d 秒超过 %g%%", r.HoldSeconds, r.Threshold)
 	case model.AlertMemory:
 		if !n.Online || n.Metrics == nil || n.Metrics.MemoryTotal == 0 {
 			return false, ""
 		}
 		used := float64(n.Metrics.MemoryUsed) / float64(n.Metrics.MemoryTotal) * 100
-		return used >= r.Threshold, fmt.Sprintf("内存使用率持续 %d 秒超过 %.0f%%", r.HoldSeconds, r.Threshold)
+		return used >= r.Threshold, fmt.Sprintf("内存使用率持续 %d 秒超过 %g%%", r.HoldSeconds, r.Threshold)
 	}
 	return false, ""
 }

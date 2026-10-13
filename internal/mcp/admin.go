@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -251,6 +252,22 @@ func alertRuleSchema(withID bool) map[string]any {
 	return schema(properties, "kind", "scope")
 }
 
+// withGroupWarning adds a warning when a group rule names a group with no
+// nodes: a typo or a renamed group is saved without error and covers nothing.
+// The rule is already saved; a failed lookup only drops the warning.
+func withGroupWarning(ctx context.Context, svc *service.Service, rule model.AlertRule, payload map[string]any) map[string]any {
+	empty, err := svc.EmptyGroups(ctx, rule)
+	if err != nil || len(empty) == 0 {
+		return payload
+	}
+	names := make([]string, len(empty))
+	for i, g := range empty {
+		names[i] = "「" + cmp.Or(g, "默认（未分组）") + "」"
+	}
+	payload["warning"] = "分组" + strings.Join(names, "、") + "下目前没有节点，这条规则暂时不覆盖任何节点；请核对分组名（list_nodes 的 group）。"
+	return payload
+}
+
 func taskSchema(withID bool) map[string]any {
 	properties := map[string]any{
 		"name": map[string]any{"type": "string", "description": "任务名称，必填"},
@@ -395,7 +412,7 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if err != nil {
 			return failure("新建提醒规则失败", err)
 		}
-		return toolResult(map[string]any{"id": id, "created": true}), nil, 0
+		return toolResult(withGroupWarning(ctx, svc, rule, map[string]any{"id": id, "created": true})), nil, 0
 
 	case "update_alert_rule", "delete_alert_rule":
 		var args struct {
@@ -419,7 +436,7 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if err != nil {
 			return failure("修改提醒规则失败", err)
 		}
-		return toolResult(map[string]any{"rule": rule, "updated": true}), nil, 0
+		return toolResult(withGroupWarning(ctx, svc, rule, map[string]any{"rule": rule, "updated": true})), nil, 0
 
 	case "list_catalog":
 		return listCatalog(params)

@@ -38,6 +38,9 @@ const (
 // MaxAlertRules bounds the rule list; a fleet needs a handful per kind.
 const MaxAlertRules = 200
 
+// MaxRuleList bounds each of a rule's groups / node_ids / exclude_node_ids.
+const MaxRuleList = 500
+
 // AlertRule is one alert rule and the nodes it covers. Which of Threshold /
 // HoldSeconds a kind takes is listed on the kind constants; RepeatSeconds
 // re-sends a still-active alert every that many seconds (0 sends it once).
@@ -173,7 +176,7 @@ func (r AlertRule) Validate() error {
 			}
 			seen[v] = true
 		}
-		return len(list) <= 500
+		return len(list) <= MaxRuleList
 	}
 	if !unique(r.Groups, 100) || !unique(r.NodeIDs, 64) || !unique(r.Exclude, 64) {
 		return errors.New("分组或节点列表有重复、过长的项")

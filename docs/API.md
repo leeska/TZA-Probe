@@ -86,7 +86,7 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 ```
 
 - 提醒规则的参数：`offline` 用 `hold_seconds`（判定离线后再等 0–86400 秒；从没上报过的新节点自创建起先给 15 分钟装 Agent，过了才算离线）；`renewal` 用 `threshold`（到期前 0–365 天）；`traffic` 用 `threshold`（额度百分比 1–100）；`throttle` 无参数（按线路降速规则，节点须填 `line.throttle_mbps`）；`cpu` / `memory` 用 `threshold`（1–100%）与 `hold_seconds`（持续 30–86400 秒）。`repeat_seconds` 每条规则各自设置：0 为触发 / 恢复各一次，非零 300–604800 秒。不属于该种规则的参数会被拒绝。
-- 规则范围 `scope`：`all` 全部节点（含以后新加的）；`group` 作用于 `groups` 列出的分组（空串是未分组的节点）；`nodes` 作用于 `node_ids` 列出的节点。`all` / `group` 可用 `exclude_node_ids` 排除个别节点。同一台节点同一种类型只生效一条，优先级 `nodes` > `group` > `all`；所以同类型、同范围的两条规则不能覆盖同一台节点（两条 `all`、共用一个分组、共用一台节点），保存时 400。节点不存在时 400。删除节点会把它从所有规则的列表里去掉，只指定了它的规则一并删除。
+- 规则范围 `scope`：`all` 全部节点（含以后新加的）；`group` 作用于 `groups` 列出的分组（空串是未分组的节点）；`nodes` 作用于 `node_ids` 列出的节点。`all` / `group` 可用 `exclude_node_ids` 排除个别节点。同一台节点同一种类型只生效一条，优先级 `nodes` > `group` > `all`；所以同类型、同范围的两条规则不能覆盖同一台节点（两条 `all`、共用一个分组、共用一台节点），保存时 400。节点不存在时 400。分组不做存在性检查（分组可以以后再建），所列分组下没有节点时照样保存，但 MCP 的 `create_alert_rule` / `update_alert_rule` 结果带 `warning`，面板规则列表也会标出——分组改名后规则不会跟着改，要手动改。删除节点会把它从所有规则的列表里去掉，只指定了它的规则一并删除。
 - 达量降速、续费、流量规则分别依赖节点的 `line.throttle_mbps`、`billing.expires_at`、`billing.traffic_limit`；没填的节点即使在范围内也不会触发。
 
 ## 任务结构

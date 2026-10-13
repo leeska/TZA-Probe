@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -752,6 +753,13 @@ func TestAlertRuleTools(t *testing.T) {
 	}
 	if deleted := structured(t, invoke(t, env, "delete_alert_rule", `{"rule_id":"r1"}`)); deleted["deleted"] != true || len(env.source.rules) != 1 {
 		t.Fatalf("delete_alert_rule: %v %+v", deleted, env.source.rules)
+	}
+	// 分组名写错或分组改了名，规则照样存下但一台都不覆盖：结果里要提醒。测试节点都未分组。
+	if created := structured(t, invoke(t, env, "create_alert_rule", `{"kind":"cpu","threshold":90,"hold_seconds":60,"scope":"group","groups":["HK",""]}`)); !strings.Contains(fmt.Sprint(created["warning"]), "「HK」") || strings.Contains(fmt.Sprint(created["warning"]), "默认") {
+		t.Fatalf("empty group warning: %v", created)
+	}
+	if created := structured(t, invoke(t, env, "create_alert_rule", `{"kind":"memory","threshold":90,"hold_seconds":60,"scope":"group","groups":[""]}`)); created["warning"] != nil {
+		t.Fatalf("a group with nodes must not warn: %v", created)
 	}
 	if _, out := env.modern(t, "1", "tools/call", "update_alert_rule", `{"rule_id":"new-rule","treshold":1}`); codeOf(t, out) != codeInvalidParams {
 		t.Fatalf("misspelled rule field: %v", out)

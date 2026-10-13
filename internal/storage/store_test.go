@@ -858,3 +858,58 @@ func TestAlertScopesMigration(t *testing.T) {
 		t.Fatalf("configs still carry alerts: %d %v", left, err)
 	}
 }
+
+// 迁移出来的规则都要能在面板里原样存回去：共用一条规则的节点超过 MaxRuleList 台时拆成
+// 几条，版本 13 允许的 0–1% 阈值抬到 1%。
+func TestAlertScopesMigrationKeepsRulesSavable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "savable.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := model.MaxRuleList + 1
+	for i := range total {
+		id := fmt.Sprintf("n%04d", i)
+		alerts := `[{"kind":"offline","hold_seconds":60}]`
+		if i == 0 {
+			alerts = `[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":0.5,"hold_seconds":300}]`
+		}
+		config := `{"id":"` + id + `","name":"` + id + `","group":"","billing":{"reset_at":"2026-09-01T00:00:00Z"},"alerts":` + alerts + `}`
+		if _, err = s.db.Exec("INSERT INTO nodes(id,config,token_hash) VALUES(?,?,?)", id, config, "h"+id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = s.db.Exec("DROP TABLE alert_rules; PRAGMA user_version=13"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	rules, err := s.AlertRules(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offline := 0
+	for _, r := range rules {
+		if err = r.Validate(); err != nil {
+			t.Fatalf("migrated %s rule (%d nodes, threshold %g) cannot be saved again: %v", r.Kind, len(r.NodeIDs), r.Threshold, err)
+		}
+		if _, err = s.SaveAlertRule(ctx, r, false); err != nil {
+			t.Fatalf("resave %s: %v", r.Kind, err)
+		}
+		switch r.Kind {
+		case model.AlertOffline:
+			offline += len(r.NodeIDs)
+		case model.AlertCPU:
+			if r.Threshold != 1 {
+				t.Fatalf("cpu threshold: %+v", r)
+			}
+		}
+	}
+	if len(rules) != 3 || offline != total {
+		t.Fatalf("rules=%d offline nodes=%d", len(rules), offline)
+	}
+}
