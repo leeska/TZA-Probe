@@ -46,6 +46,10 @@ func (s *Store) startPurger() {
 	s.wakePurger()
 	go func() {
 		defer close(s.purgeDone)
+		// 升级上来的库先把网络历史格子补齐（每批持锁几十毫秒），再处理删除队列。
+		if err := s.backfillTCPBuckets(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("network history backfill failed; older ranges keep the slow path until the next start", "error", err)
+		}
 		for {
 			select {
 			case <-ctx.Done():
@@ -121,14 +125,24 @@ func (s *Store) runPurges(ctx context.Context) error {
 func (s *Store) runPurge(ctx context.Context, kind, target string, cutoff int64) (int64, error) {
 	switch kind {
 	case purgeTaskJobs:
-		return s.deleteChunks(ctx, "jobs", "task_id=? AND rowid<=?", target, cutoff)
+		// 格子先删：含旧结果的格子（job_min 不超过截止）整格去掉，见 tcp_buckets.go。
+		buckets, err := s.deleteChunks(ctx, "tcp_buckets", "task_id=? AND job_min<=?", target, cutoff)
+		if err != nil {
+			return buckets, err
+		}
+		jobs, err := s.deleteChunks(ctx, "jobs", "task_id=? AND rowid<=?", target, cutoff)
+		return buckets + jobs, err
 	case purgeNodeRows:
 		jobs, err := s.deleteChunks(ctx, "jobs", "node_id=?", target)
 		if err != nil {
 			return jobs, err
 		}
+		buckets, err := s.deleteChunks(ctx, "tcp_buckets", "node_id=?", target)
+		if err != nil {
+			return jobs + buckets, err
+		}
 		samples, err := s.deleteChunks(ctx, "samples", "node_id=?", target)
-		return jobs + samples, err
+		return jobs + buckets + samples, err
 	default:
 		slog.Warn("unknown purge kind dropped", "kind", kind)
 		return 0, nil
@@ -239,7 +253,7 @@ func (s *Store) Clean(ctx context.Context, now time.Time) error {
 	for _, q := range []struct {
 		table, column string
 		age           time.Duration
-	}{{"samples", "at", samplesRetention}, {"traffic", "day", trafficRetention}, {"traffic_hour", "hour", trafficHourRetention}, {"jobs", "issued", JobsRetention}, {"events", "at", eventsRetention}, {"retries", "at", retryRetention}} {
+	}{{"samples", "at", samplesRetention}, {"traffic", "day", trafficRetention}, {"traffic_hour", "hour", trafficHourRetention}, {"jobs", "issued", JobsRetention}, {"tcp_buckets", "bucket", JobsRetention + tcpBucketSeconds*time.Second}, {"events", "at", eventsRetention}, {"retries", "at", retryRetention}} {
 		if _, err := s.deleteChunks(ctx, q.table, q.column+"<?", now.Add(-q.age).Unix()); err != nil {
 			return err
 		}

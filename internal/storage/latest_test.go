@@ -249,7 +249,7 @@ func TestLatestMigrationBackfillsExistingJobs(t *testing.T) {
 	ctx := context.Background()
 	node, _ := makeNode(t, s)
 	now := time.Now().Truncate(time.Second)
-	if _, err = s.db.Exec(`DROP TABLE latest; DROP TRIGGER jobs_latest_insert; DROP TRIGGER jobs_latest_update; DROP TRIGGER jobs_latest_delete; ALTER TABLE jobs DROP COLUMN probe_key; PRAGMA user_version=3;`); err != nil {
+	if _, err = s.db.Exec(`DROP TABLE latest; DROP TRIGGER jobs_latest_insert; DROP TRIGGER jobs_latest_update; DROP TRIGGER jobs_latest_delete; DROP TRIGGER jobs_tcp_bucket_insert; DROP TRIGGER jobs_tcp_bucket_finish; DROP TABLE tcp_buckets; DROP TABLE tcp_buckets_state; ALTER TABLE jobs DROP COLUMN probe_key; PRAGMA user_version=3;`); err != nil {
 		t.Fatal(err)
 	}
 	for i, host := range []string{"one.example.com", "two.example.com"} {
@@ -267,7 +267,7 @@ func TestLatestMigrationBackfillsExistingJobs(t *testing.T) {
 	}
 	defer s.Close()
 	var version int
-	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 14 {
+	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 15 {
 		t.Fatalf("user_version = %d (%v)", version, err)
 	}
 	assertSameSelection(t, s, node, now)

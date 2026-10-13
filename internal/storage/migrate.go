@@ -20,7 +20,7 @@ func migrate(db *sql.DB) (err error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 14 {
+	if version > 15 {
 		return errors.New("database version is newer than this binary")
 	}
 	if version == 0 {
@@ -120,6 +120,12 @@ func migrate(db *sql.DB) (err error) {
 	if version < 14 {
 		// 提醒规则从每台节点各存一份改成单独的规则表，按范围（全部 / 分组 / 指定节点）作用。
 		if err = migrateAlertScopes(db); err != nil {
+			return err
+		}
+	}
+	if version < 15 {
+		// 网络历史的 6 分钟预聚合格子（见 tcp_buckets.go）。已有的结果在后台分批回填。
+		if err = migrateTCPBuckets(db, nowFunc()); err != nil {
 			return err
 		}
 	}

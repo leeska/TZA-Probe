@@ -38,6 +38,14 @@ func TestPerfProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	// 由旧版本造的种子库会在 Open 后台回填网络历史格子（见 tcp_buckets.go）；量之前等它完成。
+	if s.tcpBucketsFrom.Load() != 0 {
+		began := time.Now()
+		for s.tcpBucketsFrom.Load() != 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Logf("%-34s total %9v", "tcp_buckets backfill", time.Since(began).Round(time.Millisecond))
+	}
 	var ids []string
 	rows, err := s.db.Query("SELECT id FROM nodes ORDER BY json_extract(config,'$.name')")
 	if err != nil {

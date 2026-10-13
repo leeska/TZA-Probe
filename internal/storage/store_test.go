@@ -540,10 +540,10 @@ func TestEventsPageAndFilter(t *testing.T) {
 func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 	s := openTest(t)
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 14 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 15 {
 		t.Fatalf("user_version=%d %v", version, err)
 	}
-	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "alert_rules", "events_rule_time", "jobs_latest_insert"} {
+	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "alert_rules", "events_rule_time", "jobs_latest_insert", "tcp_buckets", "tcp_buckets_state", "jobs_tcp_bucket_insert", "jobs_tcp_bucket_finish"} {
 		var n int
 		if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name=?", name).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("%s missing (%d, %v)", name, n, err)

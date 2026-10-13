@@ -19,7 +19,7 @@ cmd/server and cmd/agent: composition roots and lifecycle
 ```
 
 - `model` 仅依赖标准库，不导入数据库、HTTP、UI。按领域分文件：`node.go`、`alert.go`、`billing.go`、`task.go`、`result.go`、`metrics.go`（Agent 上报与能力）、`event.go`、`unlock.go`、`route.go`、`settings.go`、`errors.go`。
-- `storage` 实现持久化，没有服务端路由和探测逻辑。`store.go` 只管打开与连接池，`schema.go` / `migrate.go` 是表结构与版本迁移，其余按调用方分文件：`nodes.go`、`billing.go`、`agent.go`（上报、租约、结果）、`tasks.go`、`task_controls.go`、`observations.go`、`history.go`、`network_history.go`、`samples.go`、`unlocks.go`、`events.go`、`settings.go`、`purge.go`（保留期与分批删除）、`backup.go`。
+- `storage` 实现持久化，没有服务端路由和探测逻辑。`store.go` 只管打开与连接池，`schema.go` / `migrate.go` 是表结构与版本迁移，其余按调用方分文件：`nodes.go`、`billing.go`、`agent.go`（上报、租约、结果）、`tasks.go`、`task_controls.go`、`observations.go`、`history.go`、`network_history.go`、`tcp_buckets.go`（网络历史的 6 分钟预聚合）、`samples.go`、`unlocks.go`、`events.go`、`settings.go`、`purge.go`（保留期与分批删除）、`backup.go`。
 - `service` 是后台与 MCP 共用的管理操作：节点、任务、设置的校验，部分更新的合并（PATCH / `update_*`），时间窗夹取，以及错误的种类与中文说明（`model.Invalid` / `NotFound` / `Conflict`）都只在这里定一次。适配层只负责解码请求、把错误翻成各自的形式（HTTP 状态码 / JSON-RPC 错误或工具结果）。
 - `httpapi` 只依赖持久化接口；从 `cmd/server` 注入 SQLite 实现。管理路由在 `httpapi/admin.go`，全部调用 `service`；公开读取与 Agent 协议在 `httpapi/api.go`。
 - `mcp` 调用同一个 `service`，读工具与写工具都走面板那套校验、脱敏与合并语义；它不知道路由与鉴权，由 `httpapi` 挂在管理密钥后面，因此 AI 客户端与面板看到同一份数据、同一套规则。需要接入命令时按请求的 Host 与 `X-Forwarded-Proto` 拼出与面板「接入」弹窗相同的那条命令。
@@ -38,6 +38,8 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 
 任务（`model.Task`，type = probe / unlock 的联合）由 model 展开为单项探测（`model.Probe`），storage 按单项最近签发时间独立调度；`Probe` 也是下发给 Agent 的租约内容与观测里的任务快照。
 调度键包含父任务、检测类型、IP 协议、地址、端口、地区和运营商。
+
+网络历史 24 小时以上的三档（24 小时 / 3 天 / 7 天，分组步长都是 6 分钟的倍数）读 `tcp_buckets`：TCP 结果写入时由 jobs 上的触发器累加进「节点 × 探针 × 6 分钟」的格子，查询只在格子上再聚合一次，结果与逐行聚合一致（7 天从约 1.3 秒降到约 50 毫秒）。格子随保留期、改任务、删节点各自删除，不靠逐行回减。1 小时 / 6 小时仍逐行聚合。
 结果按相同维度取最新记录，双栈及延迟/回程不互相覆盖。
 后台 task-editor 模块独立处理目录搜索、筛选、多选和自定义目标；Agent 无需了解目录或表单。
 
