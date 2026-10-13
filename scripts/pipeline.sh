@@ -48,6 +48,8 @@ FAILED=0
 say()  { printf '\n== %s\n' "$*"; }
 note() { printf '   %s\n' "$*"; }
 now()  { date +%s; }
+# 没有 sha256sum 的 macOS 用 shasum -a 256，输出格式相同。
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 dur()  { echo "$(( $(now) - $1 ))s"; }
 
 # ---------------------------------------------------------------- check
@@ -166,14 +168,15 @@ run_build() {
     cp README.md LICENSE NOTICE "$stage/"
     cp -r deploy docs "$stage/"
     ( cd "$stage" && tar -czf "$OUT/tza-probe-linux-$arch.tar.gz" . ) || { FAILED=1; return; }
-    ( cd "$OUT" && sha256sum "tza-probe-linux-$arch.tar.gz" > "tza-probe-linux-$arch.tar.gz.sha256" ) || { FAILED=1; return; }
-    if [ "$arch" = "$("$GO" env GOARCH)" ]; then
+    ( cd "$OUT" && sha256 "tza-probe-linux-$arch.tar.gz" > "tza-probe-linux-$arch.tar.gz.sha256" ) || { FAILED=1; return; }
+    # 只有 Linux 主机能直接运行这个二进制（macOS 上交叉编出的 Linux 程序跑不起来）。
+    if [ "$arch" = "$("$GO" env GOARCH)" ] && [ "$(uname -s)" = Linux ]; then
       note "server --version: $("$stage/tza-server" --version 2>&1 | tail -1)"
     fi
   done
   note "server amd64+arm64 与打包: $(dur $t1)"
 
-  ( cd "$OUT" && sha256sum tza-probe-linux-*.tar.gz > SHA256SUMS )
+  ( cd "$OUT" && sha256 tza-probe-linux-*.tar.gz > SHA256SUMS )
   echo "$V" > "$OUT/VERSION"
   say "产物 $OUT"
   ( cd "$OUT" && ls -l | awk 'NR>1{printf "   %-38s %8.1f MB\n", $9, $5/1048576}' )

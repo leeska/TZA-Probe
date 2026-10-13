@@ -4,6 +4,10 @@
 #
 #   GITHUB_TOKEN=... bash scripts/release.sh <tag> <dist 目录> [目标 sha]
 #   例：GITHUB_TOKEN=ghp_... bash scripts/release.sh v1.0.0 dist
+#   没设 GITHUB_TOKEN 时用 gh 的登录凭据（gh auth token）。
+#
+# Linux 与 macOS 都能跑：只用 bash 3.2 语法（macOS 自带），sha256 校验在没有
+# sha256sum 时改用 shasum -a 256，计时不用 GNU date 的 %N。
 #
 # 做四件事：校验产物 sha256 → tag 指到目标提交（已存在则不动）→ 建 release（GitHub 自动生成说明）
 # → 上传 tarball 与 .sha256（同名资产先删后传）→ 读回核对。
@@ -12,18 +16,26 @@ set -euo pipefail
 TAG=${1:?用法: bash scripts/release.sh <tag> <dist 目录> [目标 sha]}
 DIST=${2:?缺少 dist 目录}
 REPO=${REPO:-leeska/TZA-Probe}
-TOKEN=${GITHUB_TOKEN:?需要 GITHUB_TOKEN}
+TOKEN=${GITHUB_TOKEN:-}
+if [ -z "$TOKEN" ] && command -v gh >/dev/null; then TOKEN=$(gh auth token 2>/dev/null || true); fi
+[ -n "$TOKEN" ] || { echo "!! 需要 GITHUB_TOKEN（或先 gh auth login）" >&2; exit 1; }
 SHA=${3:-$(git rev-parse HEAD)}
-API=https://api.github.com/repos/$REPO
-UPLOADS=https://uploads.github.com/repos/$REPO
+# 两个地址可覆盖，只为了对着本地假服务测试这个脚本。
+API=${GITHUB_API:-https://api.github.com}/repos/$REPO
+UPLOADS=${GITHUB_UPLOADS:-https://uploads.github.com}/repos/$REPO
 
 gh_json() { curl -sS -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $TOKEN" "$@"; }
+# 毫秒时间戳：macOS 的 date 不支持 %N。
+now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
+sha256_check() {
+  if command -v sha256sum >/dev/null; then sha256sum -c "$@"; else shasum -a 256 -c "$@"; fi
+}
 
 case "$TAG" in v*) ;; *) echo "!! tag 要以 v 开头（install.sh --version 按 vX.Y.Z 下载）：$TAG" >&2; exit 1;; esac
 [ -f "$DIST/SHA256SUMS" ] || { echo "!! $DIST 里没有 SHA256SUMS，先跑 scripts/pipeline.sh build" >&2; exit 1; }
 
 echo "== 校验产物"
-( cd "$DIST" && sha256sum -c SHA256SUMS )
+( cd "$DIST" && sha256_check SHA256SUMS )
 ASSETS=()
 for f in "$DIST"/tza-probe-linux-*.tar.gz "$DIST"/tza-probe-linux-*.tar.gz.sha256; do ASSETS+=("$f"); done
 printf '   %s\n' "${ASSETS[@]##*/}"
@@ -59,11 +71,11 @@ for f in "${ASSETS[@]}"; do
 n=sys.argv[1]
 print(next((a['id'] for a in json.load(sys.stdin) if a['name']==n), ''))" "$n")
   [ -n "$old" ] && { gh_json -X DELETE "$API/releases/assets/$old" >/dev/null; echo "   删掉同名旧资产 $n (id $old)"; }
-  t0=$(date +%s%3N)
+  t0=$(now_ms)
   gh_json -X POST "$UPLOADS/releases/$rid/assets?name=$n" \
     -H "Content-Type: application/octet-stream" --data-binary "@$f" \
     | python3 -c "import json,sys; d=json.load(sys.stdin); print('   %-40s %8.2f MB  state=%s' % (d['name'], d['size']/1048576, d['state']))"
-  echo "      上传耗时 $(( $(date +%s%3N) - t0 ))ms"
+  echo "      上传耗时 $(( $(now_ms) - t0 ))ms"
 done
 
 echo "== 读回核对"
