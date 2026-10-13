@@ -9,9 +9,9 @@ import (
 // 面板显示项：与通知出口分开存放（settings 表里一个键一个值），所以用 sqlite3 就能读，
 // 也不需要改表结构。
 const (
-	// SettingLatencyWindowMinutes 是公开面板延迟色带往回取多久的分钟数。
-	// 色带每格一次探测，取多了只是白扫历史（线上 17 台实测：1 小时约 0.05s、
-	// 24 小时约 1.25s），取少了老目标就只剩空格。
+	// SettingLatencyWindowMinutes 是公开面板延迟色带最早显示多久以前的探测（分钟）。
+	// 色带固定画最近若干次探测，这一项只是年龄上限：早于它的探测不画，那几格留空。
+	// 查询开销不随它变大（见 storage.RecentLatencySamples）。
 	SettingLatencyWindowMinutes = "latency_window_minutes"
 
 	DefaultLatencyWindowMinutes = 60

@@ -109,7 +109,7 @@ export async function detail(id, focus = null) {
   const networkPanel = !probePlan.length
     ? `<p class="hint probe-none">仅主机指标</p>`
     : !hasIPv4 && !hasIPv6
-      ? `<p class="hint">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`
+      ? `<p class="hint">${n.last_seen ? "未检测到可用的公网 IP 地址，已跳过网络探测。" : "等待 Agent 接入，接入后开始网络探测。"}</p>`
       : focused
         ? focusKind === "route"
           ? `<div id="route-details"></div>`

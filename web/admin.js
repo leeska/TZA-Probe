@@ -164,8 +164,8 @@ function renderNodes() {
       (b) =>
         (b.onclick = () =>
           confirmAction(
-            "重新生成节点密钥",
-            "旧 Agent 密钥会立即失效。生成后请更新该节点配置。",
+            `重新生成密钥 · ${nodeName(b.dataset.token)}`,
+            `「${nodeName(b.dataset.token)}」的旧 Agent 密钥会立即失效，生成后请用新的安装命令更新这台机器。`,
             async () => {
               const result = await send(
                 `/admin/nodes/${b.dataset.token}/token`,
@@ -181,8 +181,8 @@ function renderNodes() {
       (b) =>
         (b.onclick = () =>
           confirmAction(
-            "删除节点",
-            "删除节点及其历史、绑定和探测结果。此操作无法撤销。",
+            `删除节点 · ${nodeName(b.dataset.delete)}`,
+            `删除「${nodeName(b.dataset.delete)}」及其历史、绑定和探测结果。此操作无法撤销。`,
             async () => {
               await send(`/admin/nodes/${b.dataset.delete}`, "DELETE");
               await render();
@@ -353,7 +353,7 @@ function nodeForm(existing) {
   const period = n.billing.free ? "月" : n.billing.price_period || "";
   const d = modal(
     existing ? "编辑节点" : "添加节点",
-    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionCombobox("节点所在地区", "region", n.region, options)}${regionCombobox("卡片回程地区（与回程任务一致）", "representative", n.display.route_region, cardOptions, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("卡片延迟地区（留空沿用回程地区）", "latency_region", n.display.latency_region, cardOptions, { placeholder: "沿用回程地区" })}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.display.latency_carriers?.length || n.display.latency_carriers.includes(carrier))).join("")}</div><small class="hint">空配置会显示全部延迟分组。</small></div><div class="field-wide"><span class="field-label">公开卡片显示回程</span><div class="checkbox-row">${["电信", "联通", "移动"].map((carrier) => check(carrier, "route_carrier:" + carrier, !n.display.route_carriers?.length || n.display.route_carriers.includes(carrier))).join("")}</div><small class="hint">回程只有三网；空配置会显示全部。</small></div>${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.billing.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
+    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionCombobox("节点所在地区", "region", n.region, options)}${regionCombobox("卡片回程地区（与回程任务一致）", "representative", n.display.route_region, cardOptions, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("卡片延迟地区（留空沿用回程地区）", "latency_region", n.display.latency_region, cardOptions, { placeholder: "沿用回程地区" })}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.display.latency_carriers?.length || n.display.latency_carriers.includes(carrier))).join("")}</div><small class="hint">只在这台机器实际有探测的运营商里筛选，至少勾一项。</small></div><div class="field-wide"><span class="field-label">公开卡片显示回程</span><div class="checkbox-row">${["电信", "联通", "移动"].map((carrier) => check(carrier, "route_carrier:" + carrier, !n.display.route_carriers?.length || n.display.route_carriers.includes(carrier))).join("")}</div><small class="hint">回程只有三网，至少勾一项。</small></div>${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.billing.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
       "流量计费方式",
       "traffic_mode",
       [
@@ -369,9 +369,28 @@ function nodeForm(existing) {
   const form = d.querySelector("form"),
     el = (name) => form.elements.namedItem(name);
   wireComboboxes(form);
+  // 运营商筛选至少留一项：接口里空列表的意思是「不筛选、全部显示」，全部取消勾选存下去
+  // 就成了全显示，正好和勾选框表达的相反。
+  for (const prefix of ["latency_carrier:", "route_carrier:"]) {
+    const boxes = [...form.querySelectorAll(`input[name^="${prefix}"]`)];
+    const sync = () => boxes[0].setCustomValidity(boxes.some((b) => b.checked) ? "" : "至少勾选一个运营商");
+    boxes.forEach((b) => b.addEventListener("change", sync));
+    sync();
+  }
+  // 「去设置提醒规则」会关掉这张表单：改过东西时先在按钮上说清楚会丢掉修改，再点一次才走。
+  // 弹窗是单例，没法在上面再叠一个确认框。
+  let dirty = false;
+  form.addEventListener("input", () => (dirty = true));
+  form.addEventListener("change", () => (dirty = true));
   const goto = d.querySelector("#goto-alerts");
   if (goto)
     goto.onclick = guard(async () => {
+      if (dirty && !goto.dataset.armed) {
+        goto.dataset.armed = "1";
+        goto.classList.add("danger");
+        goto.textContent = "放弃未保存的修改并前往 →";
+        return;
+      }
       d.close();
       tab = "alerts";
       await render();
@@ -454,6 +473,9 @@ function nodeForm(existing) {
     else toast("节点已保存");
   });
 }
+// 确认框写明对象：连着处理几台机器时，只写「删除节点」很容易点错行。
+const nodeName = (id) => nodes.find((n) => n.id === id)?.name || id;
+const taskName = (id) => tasks.find((t) => t.id === id)?.name || id;
 function confirmAction(title, message, action) {
   const d = modal(
     title,
@@ -498,8 +520,8 @@ function renderTasks() {
       (b) =>
         (b.onclick = () =>
           confirmAction(
-            "删除任务",
-            "将同时清除此任务的探测结果。",
+            `删除任务 · ${taskName(b.dataset.deleteTask)}`,
+            `删除「${taskName(b.dataset.deleteTask)}」，并清除它的全部探测结果。此操作无法撤销。`,
             async () => {
               await send("/admin/tasks/" + b.dataset.deleteTask, "DELETE");
               await render();
@@ -768,14 +790,15 @@ async function renderSettings() {
   // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
   const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
   const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : "glass";
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>公开面板对所有访客生效的显示选项。</p></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片上延迟色带回看的时间范围，每格代表一次探测。</p><small>探测结果保留 7 天；范围越大，面板加载越慢。</small></div><div class="webhook-actions"><label class="window-field">时间范围<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以他自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${s.id}"${s.id === skinNow ? " selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>公开面板对所有访客生效的显示选项。</p></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片的延迟色带每格一次探测，固定画最近 10 次；早于这个范围的探测不再显示，那几格留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以他自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${s.id}"${s.id === skinNow ? " selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section>`;
   // 面板显示项走 /admin/panel：通知那个出口的语义是「空值即清空」，
   // 用同一个 PUT 保存显示项会顺手把 webhook 或 Bot Token 清掉。
   content().querySelector("#save-window").onclick = guard(async () => {
     const minutes = Number(content().querySelector("#latency-window").value);
     await send("/admin/panel", "PUT", { latency_window_minutes: minutes });
     await renderSettings();
-    toast(`延迟色带时间窗已设为 ${minutes} 分钟`);
+    const label = (content().querySelector("#latency-window").selectedOptions[0]?.textContent || `${minutes} 分钟`).replace(/（.*）/, "");
+    toast(`延迟色带只显示最近 ${label}内的探测`);
   });
   // 前台默认外观：访客还没自己选过时的第一屏。保存后即写进 /theme-default.js，
   // 下一次打开（包括别的访客）就是新值；当前这份重渲染一遍让人当场看到。

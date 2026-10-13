@@ -177,12 +177,15 @@ function overviewInner() {
 
 function metricsInner(n) {
   const m = n.metrics,
-    hasMetrics = !!m;
+    hasMetrics = !!m,
+    // CPU 与内存是瞬时值：离线后最后一次上报的数字不再代表现在，照写会像实时数据（实时速率
+    // 离线时早就是「—」）。磁盘是存量，离线时仍按最后一次上报显示。
+    live = hasMetrics && n.online;
   // CPU 那格的副标给核心数（Agent 报的 runtime.NumCPU），老 Agent 没报就退回原来的说明文字。
-  const cpuSub = hasMetrics ? (m.cpu_cores ? `${m.cpu_cores} 核` : "系统计算负载") : "等待采集";
+  const cpuSub = !hasMetrics ? "等待采集" : !n.online ? "离线" : m.cpu_cores ? `${m.cpu_cores} 核` : "系统计算负载";
   // 内存与磁盘按 1024 换算（gib）：这两个量商家按 GiB 卖、`df -h` / `free -h` 也给 GiB；
   // 速率与流量仍按十进制（bytes），与商家的流量口径一致。
-  const memSub = hasMetrics ? `${gib(m.memory_used)} / ${gib(m.memory_total)}` : "未报告";
+  const memSub = !hasMetrics ? "未报告" : !n.online ? "离线" : `${gib(m.memory_used)} / ${gib(m.memory_total)}`;
   const diskSub = hasMetrics ? `${gib(m.disk_used)} / ${gib(m.disk_total)}` : "未报告";
   const trafficSub = n.billing.traffic_limit ? `${bytes(n.billing.traffic_limit)} 额度 · ${esc({ sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.billing.traffic_mode])}` : "无限制额度";
   // 达量降速：线路自带的两条规则都可能——按窗口平均带宽（德国商家）或按周期额度用满后
@@ -202,7 +205,7 @@ function metricsInner(n) {
               } · 阈值 ${n.line.throttle_mbps} Mbit/s`
         }</small>`
       : "";
-  return `${meter("CPU", hasMetrics ? m.cpu : null, cpuSub)}${meter("内存", hasMetrics ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.billing.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
+  return `${meter("CPU", live ? m.cpu : null, cpuSub)}${meter("内存", live ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.billing.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
 }
 
 // 实时速率：两个视图都是「一行一个方向」（小图标 + 数值靠右，标签收进 title）。
@@ -863,11 +866,18 @@ const PROBE_NOTES = {
 const probeNote = (state) =>
   `<div class="probe-none">${PROBE_NOTES[state] || PROBE_NOTES.none}</div>`;
 
+// 没有可用地址族时的那一行：Agent 从没上报过，就还不知道它有哪些地址——写「未检测到公网 IP」
+// 会让人以为网络配置出了问题。报过、但报的是空列表，才是真没有公网地址。
+function noFamilyNote(n) {
+  return n.last_seen
+    ? `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`
+    : `<p class="hint network-unavailable">等待 Agent 接入，接入后开始网络探测。</p>`;
+}
+
 function networkSections(n, f) {
   // 一个探测项都没有的机器（按设计不挂任务）：不管它报没报地址族，都只写这一行。
   if (f.probeState === "none") return probeNote("none");
-  if (!f.hasIPv4 && !f.hasIPv6)
-    return `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`;
+  if (!f.hasIPv4 && !f.hasIPv6) return noFamilyNote(n);
   if (!f.hasProbe) return probeNote(f.probeState);
   // 延迟与回程在这里各占一段：延迟是一家运营商一块（文字在上、延迟与丢包两条色带并排在下），
   // 回程仍是三个并排的胶囊。
@@ -992,7 +1002,7 @@ function listInner(n) {
     f.probeState === "none"
       ? probeNote("none")
       : !detected
-        ? `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`
+        ? noFamilyNote(n)
         : f.latencies.length
           ? head("TCP 延迟", f.latencyRegion) + latencyLines(n, f)
           : f.hasProbe
