@@ -891,7 +891,7 @@ const pickKind = (form, kind) => {
     return cpu?.scope === "all" && cpu.threshold === 90 && cpu.repeat_seconds === 3600;
   }), "all-nodes CPU rule reaches every node");
   // 再给其中一台单独设一条：这台以单独的为准，其余仍按全部节点那条。
-  await until(() => $("#new-rule") && !$("#dialog").open, "rule list re-rendered");
+  await until(() => $("#new-rule") && !$("#dialog").open && w.document.querySelectorAll("[data-delete-rule]").length === 1, "rule list re-rendered with the all-nodes rule");
   $("#new-rule").click();
   form = $("#rule-form");
   pickKind(form, "cpu");
@@ -908,7 +908,10 @@ const pickKind = (form, kind) => {
     const theirs = list.find((n) => n.id === other.id).alerts.find((r) => r.kind === "cpu");
     return mine?.scope === "nodes" && mine.threshold === 70 && theirs?.scope === "all" && theirs.threshold === 90;
   }, "node rule overrides the all-nodes rule on that node only");
-  await until(() => $("[data-delete-rule]") && !$("#dialog").open, "rule list with both rules");
+  await until(
+    () => !$("#dialog").open && w.document.querySelectorAll("[data-delete-rule]").length === 2 && /另 1 台以更具体的规则为准/.test($("#admin-content").textContent),
+    "rule list with both rules",
+  );
   assert(/另 1 台以更具体的规则为准/.test($("#admin-content").textContent), "宽规则要写明有几台被更具体的规则盖过");
   assert($("#admin-content").textContent.includes("单独"), "生效总览要写明规则来自哪一级");
   // 同类型同范围不能重叠：第二条全部节点的 CPU 规则被拒，弹窗留着、规则不增加。
