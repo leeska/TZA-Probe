@@ -10,7 +10,7 @@ go vet ./...
 go test -race ./...        # 没有 gcc 的机器去掉 -race
 ```
 
-`bash scripts/pipeline.sh check` 会一次跑完以上三项，外加 `web/*.js` 语法检查、`scripts/presentation-test.mjs` 和一次性 Server 上的前端集成检查（需要 Node ≥ 20.19）。
+`bash scripts/pipeline.sh check` 会一次跑完以上三项，外加 `web/*.js` 语法检查、`scripts/presentation-test.mjs` 和一次性 Server 上的前端集成检查（需要 Node ≥ 20.19 或 Bun；没有 Node 时自动用 Bun，jsdom 与 esbuild 也由它安装）。
 
 ## 前端集成检查（ui-smoke）
 
@@ -27,7 +27,7 @@ TZA_TEST_ADMIN_FILE=/tmp/tza-ui-data/admin-token \
 node scripts/ui-smoke.mjs
 ```
 
-这些 Node 依赖只用于验收，生产构建与运行不依赖它们。
+用 Bun 时把安装换成在依赖目录里 `bun add jsdom@26.1.0 esbuild@0.25.10`（目录里先放一个只含 `{}` 的 package.json），把 `node` 换成 `bun`。这些依赖只用于验收，生产构建与运行不依赖它们。
 
 ## 需要真实浏览器的检查
 

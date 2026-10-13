@@ -1,6 +1,6 @@
 # TZA Probe
 
-一个独立重建的主机与网络探针：**一个仓库、Server / Agent 两个程序、一个 SQLite 数据库**。后台与公开页随 Server 嵌入发布，没有 Node 构建依赖。
+一个主机与网络探针：**一个仓库、Server / Agent 两个程序、一个 SQLite 数据库**。后台与公开页随 Server 嵌入发布，没有 Node 构建依赖。
 
 当前版本 `v1.0.0`，首个公开版本。
 
@@ -124,7 +124,7 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 - [组件边界](docs/ARCHITECTURE.md)、[HTTP 协议](docs/API.md)、[项目范围](docs/SCOPE.md)。
 - [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为只能在真实环境验证。
 
-检查与构建用自建流水线（不依赖 GitHub Actions），需要 Go 1.27 与 Node ≥ 20.19 的 Linux：
+检查与构建用自带的流水线（不依赖 GitHub Actions），Linux 与 macOS 都能跑。需要 Go 1.27；`check` 的前端部分另需 Node ≥ 20.19 或 Bun（没有 Node 时自动用 Bun）：
 
 ```sh
 bash scripts/pipeline.sh check   # gofmt / go vet / go test（有 gcc 时加 -race）/ web/*.js 语法 / 前端集成检查
@@ -133,7 +133,7 @@ bash scripts/pipeline.sh all     # 默认：check 后 build
 GITHUB_TOKEN=... bash scripts/release.sh vX.Y.Z dist   # 打 tag、建 Release、上传发行包
 ```
 
-`UI_SMOKE=0` 跳过前端集成检查，`OUT=<目录>` 换产物目录，`TZA_NODE` / `TZA_NPM` 指定 Node 与 npm。
+`UI_SMOKE=0` 跳过前端集成检查，`OUT=<目录>` 换产物目录，`TZA_NODE` / `TZA_NPM` 指定 Node 与 npm，`TZA_BUN` 指定 Bun。
 
 本项目不做插件市场、远程终端、任意命令、文件管理、多数据库和自动更新。
 

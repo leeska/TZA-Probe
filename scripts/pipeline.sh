@@ -13,6 +13,7 @@
 #   OUT=<目录>          产物目录（默认 <仓库>/dist）
 #   UI_SMOKE=0          跳过 ui-smoke（只跑纯 Go 与纯前端部分）
 #   TZA_NODE / TZA_NPM  指定 Node / npm（默认取 PATH 里的）
+#   TZA_BUN             指定 Bun；没有 Node 时用它跑前端检查（默认 PATH 里的 bun 或 ~/.bun/bin/bun）
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -24,8 +25,12 @@ case "$STAGE" in check|build|all) ;; *) echo "用法: bash scripts/pipeline.sh [
 export PATH=$PATH:/usr/local/go/bin
 GO=${TZA_GO:-go}
 command -v "$GO" >/dev/null || { echo "!! 找不到 go（试 TZA_GO=/path/to/go）" >&2; exit 1; }
+# 前端检查的 JS 运行时：优先 Node（TZA_NODE 或 PATH），没有就用 Bun。两者跑同一批脚本。
 NODE=${TZA_NODE:-$(command -v node || true)}
 NPM=${TZA_NPM:-$(command -v npm || true)}
+BUN=${TZA_BUN:-$(command -v bun || true)}
+if [ -z "$BUN" ] && [ -x "$HOME/.bun/bin/bun" ]; then BUN=$HOME/.bun/bin/bun; fi
+if [ -n "$NODE" ]; then JS=$NODE; JS_KIND=node; elif [ -n "$BUN" ]; then JS=$BUN; JS_KIND=bun; else JS=""; JS_KIND=""; fi
 SHA=${SHA:-$(git rev-parse --short HEAD)}
 OUT=${OUT:-$ROOT/dist}
 export GOFLAGS=${GOFLAGS:--mod=mod}
@@ -48,6 +53,16 @@ FAILED=0
 say()  { printf '\n== %s\n' "$*"; }
 note() { printf '   %s\n' "$*"; }
 now()  { date +%s; }
+# 打发行包。macOS 的 bsdtar 默认把扩展属性（com.apple.provenance 等）写进 pax 头、
+# 再给每个文件配一个 ._ 元数据文件：Linux 的 GNU tar 解压时逐个告警，手工解压还会落下
+# 一堆 ._ 文件。所以在 bsdtar 上关掉这两样（COPYFILE_DISABLE 管 ._ 文件）。
+pack() {
+  if tar --version 2>/dev/null | grep -q bsdtar; then
+    COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf "$@"
+  else
+    tar -czf "$@"
+  fi
+}
 # 没有 sha256sum 的 macOS 用 shasum -a 256，输出格式相同。
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 dur()  { echo "$(( $(now) - $1 ))s"; }
@@ -83,16 +98,20 @@ check_go() {
 
 check_web() {
   local t0 rc f
-  say "web/*.js 语法（node --input-type=module --check）"
-  if [ -z "$NODE" ]; then note "!! 没有 node，跳过"; FAILED=1; return; fi
+  say "web/*.js 语法（$JS_KIND）"
   rc=0
   for f in web/*.js; do
-    "$NODE" --input-type=module --check < "$f" || { note "!! 语法错误: $f"; rc=1; }
+    if [ "$JS_KIND" = node ]; then
+      "$JS" --input-type=module --check < "$f" || { note "!! 语法错误: $f"; rc=1; }
+    else
+      # Bun 没有 --check：只转译不打包，语法错误同样会报出来。
+      "$JS" build --no-bundle "$f" > /dev/null || { note "!! 语法错误: $f"; rc=1; }
+    fi
   done
-  note "node $("$NODE" -v)  文件数 $(ls web/*.js | wc -l)  rc=$rc"; [ "$rc" = 0 ] || FAILED=1
+  note "$JS_KIND $("$JS" --version)  文件数 $(ls web/*.js | wc -l)  rc=$rc"; [ "$rc" = 0 ] || FAILED=1
 
   say "scripts/presentation-test.mjs"
-  t0=$(now); "$NODE" scripts/presentation-test.mjs; rc=$?
+  t0=$(now); "$JS" scripts/presentation-test.mjs; rc=$?
   note "presentation-test $(dur $t0) rc=$rc"; [ "$rc" = 0 ] || FAILED=1
 }
 
@@ -112,21 +131,27 @@ check_ui_smoke() {
   done
   note "healthz=$code pid=$SRV_PID data=$TMP/data"
   if [ "$code" != 200 ]; then tail -5 "$TMP/server.log" | sed 's/^/   /'; FAILED=1; return; fi
-  if [ ! -d "$deps/node_modules/jsdom" ]; then
-    note "装 jsdom@26.1.0 + esbuild@0.25.10 到 $deps"
-    "$NPM" install --prefix "$deps" --no-audit --no-fund jsdom@26.1.0 esbuild@0.25.10 > "$TMP/npm.log" 2>&1 \
-      || { tail -5 "$TMP/npm.log" | sed 's/^/   /'; FAILED=1; return; }
+  if [ ! -d "$deps/node_modules/jsdom" ] || [ ! -d "$deps/node_modules/esbuild" ]; then
+    note "装 jsdom@26.1.0 + esbuild@0.25.10 到 $deps（$JS_KIND）"
+    mkdir -p "$deps"
+    if [ "$JS_KIND" = node ]; then
+      [ -n "$NPM" ] || { note "!! 找不到 npm（试 TZA_NPM=/path/to/npm）"; FAILED=1; return; }
+      "$NPM" install --prefix "$deps" --no-audit --no-fund jsdom@26.1.0 esbuild@0.25.10 > "$TMP/npm.log" 2>&1
+    else
+      [ -f "$deps/package.json" ] || echo '{"name":"tza-ui-deps","private":true}' > "$deps/package.json"
+      (cd "$deps" && "$JS" add jsdom@26.1.0 esbuild@0.25.10) > "$TMP/npm.log" 2>&1
+    fi || { tail -5 "$TMP/npm.log" | sed 's/^/   /'; FAILED=1; return; }
   fi
   t0=$(now)
   TZA_UI_DEPS="$deps" TZA_TEST_URL="http://127.0.0.1:$port" TZA_TEST_ADMIN_FILE="$TMP/data/admin-token" \
-    "$NODE" scripts/ui-smoke.mjs 2>&1 | tail -20 | sed 's/^/   /'
+    "$JS" scripts/ui-smoke.mjs 2>&1 | tail -20 | sed 's/^/   /'
   rc=${PIPESTATUS[0]}
   note "ui-smoke $(dur $t0) rc=$rc"; [ "$rc" = 0 ] || FAILED=1
   kill "$SRV_PID" 2>/dev/null; SRV_PID=""
 }
 
 run_check() {
-  [ -n "$NODE" ] || { echo "!! 找不到 node（试 TZA_NODE=/path/to/node）" >&2; exit 1; }
+  [ -n "$JS" ] || { echo "!! 找不到 node 或 bun（试 TZA_NODE=/path/to/node 或 TZA_BUN=/path/to/bun）" >&2; exit 1; }
   check_go
   check_web
   check_ui_smoke
@@ -167,7 +192,7 @@ run_build() {
     cp "internal/agentdist/bin/tza-agent-linux-$arch" "$stage/tza-agent"
     cp README.md LICENSE NOTICE "$stage/"
     cp -r deploy docs "$stage/"
-    ( cd "$stage" && tar -czf "$OUT/tza-probe-linux-$arch.tar.gz" . ) || { FAILED=1; return; }
+    ( cd "$stage" && pack "$OUT/tza-probe-linux-$arch.tar.gz" . ) || { FAILED=1; return; }
     ( cd "$OUT" && sha256 "tza-probe-linux-$arch.tar.gz" > "tza-probe-linux-$arch.tar.gz.sha256" ) || { FAILED=1; return; }
     # 只有 Linux 主机能直接运行这个二进制（macOS 上交叉编出的 Linux 程序跑不起来）。
     if [ "$arch" = "$("$GO" env GOARCH)" ] && [ "$(uname -s)" = Linux ]; then
