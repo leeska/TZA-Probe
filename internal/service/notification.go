@@ -149,7 +149,7 @@ func (s *Service) TestNotification(ctx context.Context) (string, error) {
 	if s.Notifier == nil {
 		return "", ErrNoSender
 	}
-	if err = s.Notifier.Send(ctx, channel, model.Event{Kind: "test", Message: "TZA Probe 通知测试", At: time.Now().Unix()}); err != nil {
+	if err = s.Notifier.Send(ctx, channel, model.Event{Kind: "test", Message: "这是一条通知连接测试消息，用于验证当前通知渠道。", At: time.Now().Unix()}); err != nil {
 		return "", SendError{err}
 	}
 	return channel.Channel, nil

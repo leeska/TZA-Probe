@@ -46,7 +46,7 @@ func TestThrottleRuleOnQuota(t *testing.T) {
 	if err != nil || len(events) != 1 || events[0].Kind != "throttle" || !events[0].Active {
 		t.Fatalf("expected one 降速事件: %+v %v", events, err)
 	}
-	if !strings.Contains(events[0].Message, "1.0 GB 额度") || !strings.Contains(events[0].Message, "50 Mbit/s") {
+	if !strings.Contains(events[0].Message, "1.0 GB") || !strings.Contains(events[0].Message, "50 Mbit/s") {
 		t.Fatalf("message without the quota numbers: %q", events[0].Message)
 	}
 	if strings.Contains(events[0].Message, "小时平均带宽") {
@@ -90,7 +90,7 @@ func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 	if err != nil || len(events) != 1 || events[0].Kind != "throttle" || !events[0].Active {
 		t.Fatalf("expected one 降速事件: %+v %v", events, err)
 	}
-	if !strings.Contains(events[0].Message, "1.0 Mbit/s") || !strings.Contains(events[0].Message, "阈值 1 Mbit/s") {
+	if !strings.Contains(events[0].Message, "1.0 Mbit/s") || !strings.Contains(events[0].Message, "触发阈值：1 Mbit/s") {
 		t.Fatalf("message without the numbers: %q", events[0].Message)
 	}
 

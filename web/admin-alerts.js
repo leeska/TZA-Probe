@@ -205,7 +205,7 @@ function eventsURL(before = 0) {
   return "/admin/events?" + q;
 }
 function eventRows(events, configured) {
-  return events.map((e) => `<tr><td data-label="时间">${date(e.at)}</td><td data-label="节点">${esc(e.node_name)}</td><td data-label="类型">${esc(kindName[e.kind] || e.kind)}</td><td data-label="状态"><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td data-label="内容">${esc(e.message)}</td><td data-label="通知">${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : Date.now() / 1000 - e.at > 86400 ? "超过 24 小时，不再发送" : configured ? "待发送 / 重试" : "未配置渠道"}${e.attempts > 0 ? `<small>${e.attempts} 次尝试</small>` : ""}${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("");
+  return events.map((e) => `<tr><td data-label="时间">${date(e.at)}</td><td data-label="节点">${esc(e.node_name)}</td><td data-label="类型">${esc(kindName[e.kind] || e.kind)}</td><td data-label="状态"><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td data-label="内容" class="event-message">${esc(e.message)}</td><td data-label="通知">${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : Date.now() / 1000 - e.at > 86400 ? "超过 24 小时，不再发送" : configured ? "待发送 / 重试" : "未配置渠道"}${e.attempts > 0 ? `<small>${e.attempts} 次尝试</small>` : ""}${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("");
 }
 const ALERT_VIEWS = [
   ["active", "当前告警"],

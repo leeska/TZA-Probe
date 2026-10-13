@@ -51,18 +51,7 @@ func (s Telegram) Send(ctx context.Context, c Config, e model.Event) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
-	state := "已恢复"
-	if e.Active {
-		state = "告警触发"
-	}
-	if e.Kind == "test" {
-		state = "连接测试"
-	}
-	kind := telegramTitles[e.Kind]
-	if kind == "" {
-		kind = e.Kind
-	}
-	message := fmt.Sprintf("TZA Probe · %s\n%s\n节点：%s\n%s\n时间：%s\n事件：%d", state, kind, e.NodeName, e.Message, time.Unix(e.At, 0).UTC().Format(time.RFC3339), e.ID)
+	message := telegramMessage(e)
 	payload, _ := json.Marshal(map[string]any{"chat_id": c.ChatID, "text": message, "link_preview_options": map[string]bool{"is_disabled": true}})
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

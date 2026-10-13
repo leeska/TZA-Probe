@@ -41,7 +41,7 @@ func TestTelegramTransport(t *testing.T) {
 				t.Fatal(payload)
 			}
 			text := payload["text"].(string)
-			state := "已恢复"
+			state := "告警解除"
 			if active {
 				state = "告警触发"
 			}

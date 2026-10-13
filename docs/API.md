@@ -52,6 +52,8 @@
 
 ## 通知渠道
 
+Telegram 消息格式与各类事件字段见 [通知模板说明](NOTIFICATIONS.md)。事件正文保存触发或解除当时的数据快照，重试投递不会用最新指标改写；Webhook 的 JSON 字段结构保持不变。
+
 `GET /admin/notification` 返回当前渠道状态，不返回凭据。`PUT /admin/notification` 支持 Telegram、Webhook 或关闭通知（整份提交，空值即清空；Bot Token 留空保留已存的）；`PATCH /admin/notification` 只改传了的项，与 MCP `update_settings` 的通知部分同一套规则（不传 `channel` 沿用当前渠道，留空的凭据沿用已存的，关闭须显式传 `channel: "none"`，一项都不传返回 400），返回改后的渠道状态；`POST /admin/notification/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项是另一个资源：`GET /admin/panel` 返回生效值（`latency_window_minutes` 未设置时 60 分钟），`PUT /admin/panel` 只改传了的项。两者分开，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
 
 HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：冲突，`error` 写明是哪一种（如报告过频、租约失效、重复结果、计费周期已变化、任务暂停或未绑定节点时立即执行）；400：无效输入；500：内部错误（详细内容仅记录服务日志）。错误正文统一为 `{"error":"<中文说明>"}`。成功变更通常返回 204；创建节点/轮换令牌返回 200 JSON。

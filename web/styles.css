@@ -3972,3 +3972,10 @@ td .due.expired + small {
   text-underline-offset: 3px;
   overflow-wrap: anywhere;
 }
+
+/* 事件与推送使用同一份分行快照，后台保留换行便于核对。 */
+.table-scroll td.event-message {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  min-width: 220px;
+}

@@ -18,7 +18,7 @@ import (
 // changes nothing; those end as a read and write nothing, so a quiet fleet adds
 // no commits (and no fsyncs) next to the Agents' reports. A missing row is the
 // quiet state (since 0, inactive), so a kind that never fired needs none.
-func (s *Store) Transition(ctx context.Context, n model.Node, kind, message string, condition bool, hold, repeat int, now time.Time) error {
+func (s *Store) Transition(ctx context.Context, n model.Node, kind, message, recovery string, condition bool, hold, repeat int, now time.Time) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -60,7 +60,21 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind, message stri
 	}
 	if active != previous || again {
 		if !active {
-			message = "条件已解除或提醒已关闭"
+			message = recovery
+			if message == "" {
+				message = "条件已解除或提醒已关闭"
+			}
+			if previousSince > 0 {
+				message += "\n本次条件持续：" + model.HumanDuration(time.Duration(max(now.Unix()-previousSince, 0))*time.Second)
+			}
+		}
+		if active {
+			if again {
+				message = "提醒状态：异常仍持续（重复提醒）\n" + message
+			}
+			if elapsed := now.Unix() - since; elapsed > 0 {
+				message += "\n本次条件持续：" + model.HumanDuration(time.Duration(elapsed)*time.Second)
+			}
 		}
 		if _, err = tx.ExecContext(ctx, "INSERT INTO events(node_id,node_name,kind,message,active,at) VALUES(?,?,?,?,?,?)", n.ID, n.Name, kind, message, active, now.Unix()); err != nil {
 			return err
