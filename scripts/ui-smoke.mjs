@@ -587,8 +587,10 @@ assert(
   "the one-second tick must compare before writing so untouched numbers never hit the DOM",
 );
 // 每秒那层与 10 秒那层都不再因滚动而暂停：取数回来直接写（写入本身是补丁式的，不动元素）。
+// 每秒那层只取 /nodes/live（会动的那部分），并进已有节点后直接写；10 秒那层取完整的 /nodes。
 assert(
-  /const next = await api\("\/nodes"\);\n\s*nodes = next;/.test(appSource) &&
+  /const live = await api\("\/nodes\/live"\);\n\s*for \(const update of live\) \{/.test(appSource) &&
+    /const next = await api\("\/nodes"\);/.test(appSource) &&
     /if \(liveBusy\) return;/.test(appSource),
   "both refresh loops must write straight after the fetch, with no scroll pause left",
 );

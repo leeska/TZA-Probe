@@ -456,6 +456,26 @@ type NodeView struct {
 	CreatedAt int64 `json:"-"`
 }
 
+// LiveView is the part of a node view that moves every second: what the
+// public panel's one-second tick redraws. Everything else on NodeView changes
+// only when a node or task is edited.
+type LiveView struct {
+	ID           string   `json:"id"`
+	Online       bool     `json:"online"`
+	LastSeen     int64    `json:"last_seen"`
+	Metrics      *Metrics `json:"metrics"`
+	TrafficUsed  int64    `json:"traffic_used"`
+	AvgBits      float64  `json:"avg_bps"`
+	CoveredHours int      `json:"covered_hours"`
+	WindowHours  int      `json:"window_hours"`
+	Throttled    bool     `json:"throttled"`
+}
+
+func (v NodeView) Live() LiveView {
+	return LiveView{ID: v.ID, Online: v.Online, LastSeen: v.LastSeen, Metrics: v.Metrics, TrafficUsed: v.TrafficUsed,
+		AvgBits: v.AvgBits, CoveredHours: v.CoveredHours, WindowHours: v.WindowHours, Throttled: v.Throttled}
+}
+
 // Redact is the view an anonymous visitor gets: alert rules stay with the
 // administrator.
 func (v NodeView) Redact() NodeView {

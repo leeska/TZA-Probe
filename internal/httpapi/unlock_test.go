@@ -289,3 +289,47 @@ func TestResourceRoutes(t *testing.T) {
 		}
 	}
 }
+
+// /nodes/live carries only the per-second state of the same nodes /nodes
+// shows: no configuration, no probe plan, and no private node for a visitor.
+func TestLiveNodes(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "live.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	server := httptest.NewServer((&API{Store: s, AdminToken: model.Secret(), Assets: web.Handler()}).Handler())
+	defer server.Close()
+	billing := model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum", Price: 9.9}
+	public, token, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, Billing: billing}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.SaveNode(ctx, model.Node{Name: "私有", Billing: billing}, true); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := s.Authenticate(ctx, token)
+	if err = s.Report(ctx, id, model.Metrics{CPU: 7, MemoryUsed: 1, MemoryTotal: 2, DiskTotal: 1}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := server.Client().Get(server.URL + "/api/v1/nodes/live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var live []map[string]any
+	if err = json.NewDecoder(resp.Body).Decode(&live); err != nil || len(live) != 1 {
+		t.Fatalf("live: %v %v", live, err)
+	}
+	got := live[0]
+	if got["id"] != public || got["online"] != true || got["metrics"].(map[string]any)["cpu"] != 7.0 {
+		t.Fatalf("live entry: %v", got)
+	}
+	want := map[string]bool{"id": true, "online": true, "last_seen": true, "metrics": true, "traffic_used": true, "avg_bps": true, "covered_hours": true, "window_hours": true, "throttled": true}
+	for key := range got {
+		if !want[key] {
+			t.Fatalf("live view carries %q: %v", key, got)
+		}
+	}
+}

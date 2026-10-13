@@ -249,8 +249,13 @@ async function liveTick() {
   if (liveBusy) return; // 上一拍还没回来就跳过这一拍，别把请求叠起来
   liveBusy = true;
   try {
-    const next = await api("/nodes");
-    nodes = next;
+    // 每秒只取会动的那部分（在线、指标、用量、降速窗口），并进上一轮完整列表里的节点；
+    // 配置、探测计划与解锁结论跟着 10 秒一轮的 /nodes 走。新增或消失的节点也等那一轮。
+    const live = await api("/nodes/live");
+    for (const update of live) {
+      const n = nodes.find((x) => x.id === update.id);
+      if (n) Object.assign(n, update);
+    }
     setHTML(document.querySelector("#overview"), overviewInner());
     for (const el of document.querySelectorAll("#nodes .node-card")) {
       const n = nodes.find((x) => x.id === el.dataset.node);

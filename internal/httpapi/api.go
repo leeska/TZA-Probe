@@ -119,6 +119,7 @@ func (a *API) Handler() http.Handler {
 	}))
 	mux.HandleFunc("GET /api/v1/session", a.admin(func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]bool{"authenticated": true}) }))
 	mux.HandleFunc("GET /api/v1/nodes", a.nodes)
+	mux.HandleFunc("GET /api/v1/nodes/live", a.liveNodes)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/history", a.history)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/network-history", a.networkHistory)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/observations", a.observations)
@@ -354,12 +355,14 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: "tza_session", Value: token, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: 43200})
 	w.WriteHeader(204)
 }
-func (a *API) nodes(w http.ResponseWriter, r *http.Request) {
+
+// visibleNodes is the node list the caller may see, in panel order: every node
+// for the administrator, the public ones (redacted) for everyone else.
+func (a *API) visibleNodes(r *http.Request) ([]model.NodeView, error) {
 	admin := a.isAdmin(r)
 	nodes, err := a.panelNodes(r, admin)
 	if err != nil {
-		fail(w, err)
-		return
+		return nil, err
 	}
 	out := []model.NodeView{}
 	for _, n := range nodes {
@@ -376,8 +379,35 @@ func (a *API) nodes(w http.ResponseWriter, r *http.Request) {
 		}
 		return out[i].Name < out[j].Name
 	})
+	return out, nil
+}
+
+func (a *API) nodes(w http.ResponseWriter, r *http.Request) {
+	out, err := a.visibleNodes(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
 	write(w, 200, out)
 }
+
+// liveNodes is what the public panel polls every second: only the state that
+// moves (online, metrics, cycle usage, throttle window) of the same nodes
+// /nodes returns. Configuration, the probe plan and unlock verdicts change on
+// an edit, not a second, and come with the 10-second /nodes refresh.
+func (a *API) liveNodes(w http.ResponseWriter, r *http.Request) {
+	nodes, err := a.visibleNodes(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	out := make([]model.LiveView, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, n.Live())
+	}
+	write(w, 200, out)
+}
+
 func (a *API) visible(r *http.Request) bool {
 	public, err := a.Store.IsPublic(r.Context(), r.PathValue("id"))
 	return err == nil && (public || a.isAdmin(r))

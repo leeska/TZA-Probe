@@ -5,6 +5,7 @@
 | 方法与路径（均以 /api/v1 开头） | 用途 |
 | --- | --- |
 | GET /nodes | 公开节点；登录管理员可见全部 |
+| GET /nodes/live | 与 /nodes 同一批节点，只带每秒会变的部分：`id`、`online`、`last_seen`、`metrics`、`traffic_used`、`avg_bps`、`covered_hours`、`window_hours`、`throttled`。公开页每秒取它，配置、探测计划与解锁结论随 10 秒一轮的 /nodes 更新 |
 | GET /nodes/{id}/history?hours=24 | 1–720 小时，最多约 240 桶的主机曲线 ；`slim=1` 只带 cpu / memory_used / memory_total / rate_in / rate_out |
 | GET /observations | 所有可见节点的最新观测，按节点 id 分组，不带跳表（首页卡片用） |
 | GET /nodes/{id}/observations | 每个检测项最新网络结果，带 stale 状态 |
