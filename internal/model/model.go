@@ -17,6 +17,12 @@ const Protocol = 1
 
 const OfflineAfter = 45 * time.Second
 
+// FirstReportGrace is how long a node that has never reported may stay silent
+// before the offline rule counts it: creating the node and installing its Agent
+// are minutes apart, and a rule covering 全部节点 applies from the moment the
+// node exists.
+const FirstReportGrace = 15 * time.Minute
+
 func Secret() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

@@ -213,14 +213,14 @@ func TestBindTasksIsAtomic(t *testing.T) {
 func TestAlertRuleStore(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
-	node := func(group string) string {
-		id, _, err := s.SaveNode(ctx, model.Node{Name: "n", Group: group, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
+	node := func(name, group string) string {
+		id, _, err := s.SaveNode(ctx, model.Node{Name: name, Group: group, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return id
 	}
-	hk, jp, db := node("HK"), node("JP"), node("HK")
+	hk, jp, db := node("香港", "HK"), node("东京", "JP"), node("数据库", "HK")
 	save := func(r model.AlertRule) (string, error) { return s.SaveAlertRule(ctx, r, true) }
 	all, err := save(model.AlertRule{Kind: model.AlertCPU, Threshold: 90, HoldSeconds: 300, Scope: model.ScopeAll, Exclude: []string{jp}})
 	if err != nil {
@@ -244,6 +244,10 @@ func TestAlertRuleStore(t *testing.T) {
 		if _, err := save(bad); !errors.Is(err, model.ErrInvalid) {
 			t.Fatalf("%s: %v", name, err)
 		}
+	}
+	// The conflict names the node the way the panel shows it, not by its id.
+	if _, err := save(model.AlertRule{Kind: model.AlertCPU, Threshold: 50, HoldSeconds: 300, Scope: model.ScopeNodes, NodeIDs: []string{db}}); err == nil || !strings.Contains(err.Error(), "「数据库」") || strings.Contains(err.Error(), db) {
+		t.Fatalf("conflict message: %v", err)
 	}
 	// Editing a rule does not collide with itself.
 	if _, err = s.SaveAlertRule(ctx, model.AlertRule{ID: all, Kind: model.AlertCPU, Threshold: 95, HoldSeconds: 300, Scope: model.ScopeAll, Exclude: []string{jp}}, false); err != nil {

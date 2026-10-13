@@ -8,7 +8,7 @@ const RULE_SPECS = [
   {
     kind: "offline", label: "离线提醒", column: "离线",
     fields: [{ key: "hold_seconds", label: "等待秒数", def: 60, attrs: 'min="0" max="86400"' }],
-    hint: "节点 45 秒未上报即判定离线，「等待秒数」是判定之后再等多久才提醒；恢复时通知一次。",
+    hint: "节点 45 秒未上报即判定离线，「等待秒数」是判定之后再等多久才提醒；恢复时通知一次。新加的节点 15 分钟内还没接入不算离线。",
     cell: (r) => `等 ${r.hold_seconds || 0} 秒`,
   },
   {
@@ -19,7 +19,7 @@ const RULE_SPECS = [
   },
   {
     kind: "traffic", label: "流量警告", column: "流量",
-    fields: [{ key: "threshold", label: "额度百分比", def: 80, attrs: 'min="1" max="100"' }],
+    fields: [{ key: "threshold", label: "额度百分比", def: 80, attrs: 'min="1" max="100" step="any"' }],
     hint: "本计费周期用量达到额度的这个比例时提醒；没填流量额度的节点不会触发。",
     cell: (r) => `${r.threshold}%`,
   },
@@ -31,7 +31,7 @@ const RULE_SPECS = [
   {
     kind: "cpu", label: "CPU 警告", column: "CPU",
     fields: [
-      { key: "threshold", label: "CPU %", def: 90, attrs: 'min="1" max="100"' },
+      { key: "threshold", label: "CPU %", def: 90, attrs: 'min="1" max="100" step="any"' },
       { key: "hold_seconds", label: "持续秒数", def: 300, attrs: 'min="30" max="86400"' },
     ],
     cell: (r) => `${r.threshold}% · ${r.hold_seconds} 秒`,
@@ -39,12 +39,14 @@ const RULE_SPECS = [
   {
     kind: "memory", label: "内存警告", column: "内存",
     fields: [
-      { key: "threshold", label: "内存 %", def: 90, attrs: 'min="1" max="100"' },
+      { key: "threshold", label: "内存 %", def: 90, attrs: 'min="1" max="100" step="any"' },
       { key: "hold_seconds", label: "持续秒数", def: 300, attrs: 'min="30" max="86400"' },
     ],
     cell: (r) => `${r.threshold}% · ${r.hold_seconds} 秒`,
   },
 ];
+// 百分比与重复间隔的输入不卡步长（step="any"）：MCP / 接口可以存下 85.5%、7 分钟这样的值，
+// 卡着步长时这样的规则在面板里打开就存不回去。取值范围仍由服务端把关。
 const specOf = (kind) => RULE_SPECS.find((s) => s.kind === kind);
 const ruleOf = (list, kind) => (list || []).find((r) => r.kind === kind);
 const SCOPES = [
@@ -106,14 +108,14 @@ function overviewPanel() {
 }
 const tick = (label, attr, value, checked) => `<label class="checkbox"><input type="checkbox" ${attr}="${esc(value)}" ${checked ? "checked" : ""}>${esc(label)}</label>`;
 // 新建或编辑一条规则。范围切换时只显示那一种范围要填的列表；底部实时写出会生效在几台节点上。
-function ruleEditor(rule, rules, refresh) {
+function ruleEditor(rule, rules) {
   const r = rule || { kind: "offline", scope: "all", repeat_seconds: 0 };
   const groups = [...new Set([...state.nodes.map((n) => n.group || ""), ...(r.groups || [])])].sort();
   const nodeTicks = (attr, picked) => state.nodes.map((n) => tick(`${n.name}（${groupLabel(n.group)}）`, attr, n.id, picked.includes(n.id))).join("") || "<p>请先创建节点</p>";
   const d = modal(
     rule ? `编辑提醒规则 · ${specOf(r.kind).label}` : "新建提醒规则",
     `<form id="rule-form">
-      <div class="form-section"><h3>提醒什么</h3><div class="form-grid">${select("类型", "kind", RULE_SPECS.map((s) => [s.kind, s.label]), r.kind)}<div id="rule-params" class="rule-params"></div>${field("重复间隔（分钟）", "repeat", (r.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="0 只提醒一次"')}</div><p class="hint" id="rule-hint"></p><p class="hint">重复间隔填 0 只在触发与恢复时各通知一次，否则至少 5 分钟。</p></div>
+      <div class="form-section"><h3>提醒什么</h3><div class="form-grid">${select("类型", "kind", RULE_SPECS.map((s) => [s.kind, s.label]), r.kind)}<div id="rule-params" class="rule-params"></div>${field("重复间隔（分钟）", "repeat", (r.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="any" placeholder="0 只提醒一次"')}</div><p class="hint" id="rule-hint"></p><p class="hint">重复间隔填 0 只在触发与恢复时各通知一次，否则至少 5 分钟。</p></div>
       <div class="form-section"><h3>作用于</h3>
         <div class="option-tiles" role="radiogroup">${SCOPES.map(([v, label]) => `<label class="checkbox"><input type="radio" name="scope" value="${v}" ${r.scope === v ? "checked" : ""}>${label}</label>`).join("")}</div>
         <div data-part="group"><span class="option-label">分组</span><div class="node-checkboxes">${groups.map((g) => tick(groupLabel(g), "data-group", g, (r.groups || []).includes(g))).join("")}</div></div>
@@ -167,25 +169,22 @@ function ruleEditor(rule, rules, refresh) {
     if (rule) await send(`/admin/alert-rules/${encodeURIComponent(rule.id)}`, "PUT", body);
     else await send("/admin/alert-rules", "POST", body);
     d.close();
-    await refresh();
+    await renderAlerts();
     toast(rule ? "提醒规则已保存" : "提醒规则已创建");
   });
 }
+// 保存、删除之后重画用 renderAlerts：它在规则页会连节点一起重读（生效台数来自节点的 alerts）。
 function wireRulesPanel(rules) {
-  const refresh = async () => {
-    state.nodes = await api("/admin/nodes");
-    await renderAlerts();
-  };
-  content().querySelector("#new-rule").onclick = () => ruleEditor(null, rules, refresh);
+  content().querySelector("#new-rule").onclick = () => ruleEditor(null, rules);
   content().querySelectorAll("[data-edit-rule]").forEach(
-    (b) => (b.onclick = () => ruleEditor(rules.find((r) => r.id === b.dataset.editRule), rules, refresh)),
+    (b) => (b.onclick = () => ruleEditor(rules.find((r) => r.id === b.dataset.editRule), rules)),
   );
   content().querySelectorAll("[data-delete-rule]").forEach((b) => {
     const r = rules.find((x) => x.id === b.dataset.deleteRule);
     b.onclick = () =>
       confirmAction("删除提醒规则", `删除「${specOf(r.kind).label} · ${scopeText(r)}」？被它覆盖的节点改由范围更宽的同类规则接管，没有就不再提醒这一项。`, async () => {
         await send(`/admin/alert-rules/${encodeURIComponent(r.id)}`, "DELETE");
-        await refresh();
+        await renderAlerts();
         toast("提醒规则已删除");
       }, { label: "删除" });
   });
@@ -213,11 +212,19 @@ function eventTable(rows, empty) {
   return `<div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody id="event-rows">${rows || `<tr><td colspan="6" class="empty-cell">${empty}</td></tr>`}</tbody></table></div>`;
 }
 export async function renderAlerts() {
-  const [settings, firing, rules] = await Promise.all([
+  // 规则页的「生效 N 台」与逐台表格读的是节点上服务端算好的 alerts，必须和规则同一时刻读：
+  // 只重读规则的话，MCP 那边刚改过的规则会显示成生效 0 台，直到手动刷新。
+  const rulesView = state.alertView === "rules";
+  const [settings, firing, rules, nodes] = await Promise.all([
     api("/admin/notification"),
     api("/admin/events?active=1&limit=500"),
-    state.alertView === "rules" ? api("/admin/alert-rules") : [],
+    rulesView ? api("/admin/alert-rules") : [],
+    rulesView ? api("/admin/nodes") : null,
   ]);
+  if (nodes) {
+    state.nodes = nodes;
+    fleetStatus();
+  }
   const configured = settings.channel !== "none";
   const channelName = settings.telegram_configured
     ? "Telegram 机器人"
@@ -250,12 +257,15 @@ export async function renderAlerts() {
       })),
   );
   content().querySelector("#refresh-events").onclick = guard(async () => {
-    state.nodes = await api("/admin/nodes");
-    fleetStatus();
+    // 规则页的 renderAlerts 自己会重读节点。
+    if (!rulesView) {
+      state.nodes = await api("/admin/nodes");
+      fleetStatus();
+    }
     await renderAlerts();
   });
   if (state.alertView === "events") wireEvents(events, configured);
-  if (state.alertView === "rules") wireRules(settings, configured, rules);
+  if (rulesView) wireRules(settings, configured, rules);
 }
 function wireEvents(events, configured) {
   let last = events.at(-1)?.id || 0;

@@ -647,6 +647,9 @@ func TestAlertRules(t *testing.T) {
 		"offline threshold": {Kind: AlertOffline, Threshold: 5, Scope: ScopeAll},
 		"renewal fraction":  {Kind: AlertRenewal, Threshold: 1.5, Scope: ScopeAll},
 		"traffic zero":      {Kind: AlertTraffic, Scope: ScopeAll},
+		"traffic under 1":   {Kind: AlertTraffic, Threshold: 0.5, Scope: ScopeAll},
+		"cpu under 1":       {Kind: AlertCPU, Threshold: 0.5, HoldSeconds: 60, Scope: ScopeAll},
+		"group with nodes":  {Kind: AlertOffline, Scope: ScopeGroup, Groups: []string{"HK"}, NodeIDs: []string{"a"}},
 		"throttle param":    {Kind: AlertThrottle, Threshold: 1, Scope: ScopeAll},
 		"cpu short hold":    {Kind: AlertCPU, Threshold: 90, HoldSeconds: 10, Scope: ScopeAll},
 		"memory over 100":   {Kind: AlertMemory, Threshold: 101, HoldSeconds: 60, Scope: ScopeAll},
@@ -655,6 +658,11 @@ func TestAlertRules(t *testing.T) {
 		if bad.Validate() == nil {
 			t.Fatalf("%s accepted", name)
 		}
+	}
+	// A group rule that does name a group but also carries nodes is told about
+	// the nodes, not asked for a group it already has.
+	if err := (AlertRule{Kind: AlertOffline, Scope: ScopeGroup, Groups: []string{"HK"}, NodeIDs: []string{"a"}}).Validate(); err == nil || strings.Contains(err.Error(), "至少选一个分组") {
+		t.Fatalf("group rule with nodes: %v", err)
 	}
 	if data, _ := json.Marshal(NodeView{}); !strings.Contains(string(data), `"alerts":[]`) {
 		t.Fatalf("empty alerts must be []: %s", data)
@@ -698,16 +706,16 @@ func TestEffectiveAlerts(t *testing.T) {
 	}
 	// Two rules of a kind may not share a scope over the same node; across
 	// scopes they may, the narrower one wins.
-	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeAll}).Overlaps(rules); err == nil {
+	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeAll}).Overlaps(rules, nil); err == nil {
 		t.Fatal("second all-nodes CPU rule accepted")
 	}
-	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeGroup, Groups: []string{"JP", "HK"}}).Overlaps(rules); err == nil {
+	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeGroup, Groups: []string{"JP", "HK"}}).Overlaps(rules, nil); err == nil {
 		t.Fatal("second HK CPU rule accepted")
 	}
-	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeNodes, NodeIDs: []string{"web"}}).Overlaps(rules); err != nil {
+	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeNodes, NodeIDs: []string{"web"}}).Overlaps(rules, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := (AlertRule{ID: "all", Kind: AlertCPU, Scope: ScopeAll}).Overlaps(rules); err != nil {
+	if err := (AlertRule{ID: "all", Kind: AlertCPU, Scope: ScopeAll}).Overlaps(rules, nil); err != nil {
 		t.Fatalf("a rule overlaps itself: %v", err)
 	}
 }

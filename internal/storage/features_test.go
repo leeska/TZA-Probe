@@ -229,6 +229,49 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 	}
 }
 
+// The engine calls Transition for every node and kind every 15 seconds; a call
+// that changes nothing must not write (each write is a commit under the lock
+// the Agents' reports wait on).
+func TestQuietTransitionWritesNothing(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, _ := makeNode(t, s)
+	n := model.Node{ID: id, Name: "test"}
+	now := time.Now()
+	changes := func() (c int64) {
+		if err := s.db.QueryRowContext(ctx, "SELECT total_changes()").Scan(&c); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	at := func(sec int) time.Time { return now.Add(time.Duration(sec) * time.Second) }
+	before := changes()
+	for _, sec := range []int{0, 15, 30} {
+		if err := s.Transition(ctx, n, "cpu", "", false, 30, 0, at(sec)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var rows int
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM alert_state").Scan(&rows); err != nil || rows != 0 || changes() != before {
+		t.Fatalf("a kind that never fired wrote state: rows=%d changes=%d→%d %v", rows, before, changes(), err)
+	}
+	// The condition starting is a change (since is recorded); holding below the
+	// hold time is not.
+	if err := s.Transition(ctx, n, "cpu", "", true, 300, 0, at(45)); err != nil {
+		t.Fatal(err)
+	}
+	started := changes()
+	if started == before {
+		t.Fatal("the start of a condition was not recorded")
+	}
+	if err := s.Transition(ctx, n, "cpu", "", true, 300, 0, at(60)); err != nil {
+		t.Fatal(err)
+	}
+	if changes() != started {
+		t.Fatal("a condition still inside its hold time wrote again")
+	}
+}
+
 func TestUpgradeVersionOne(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "upgrade.db")
 	s, err := Open(path)

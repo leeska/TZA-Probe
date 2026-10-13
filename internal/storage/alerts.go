@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -67,15 +68,19 @@ func (s *Store) SaveAlertRule(ctx context.Context, r model.AlertRule, create boo
 	} else if !slices.ContainsFunc(rules, func(o model.AlertRule) bool { return o.ID == r.ID }) {
 		return "", ErrNotFound
 	}
+	// The names are for the conflict message: the panel shows it as is, and a
+	// bare node id means nothing to the administrator.
+	names := map[string]string{}
 	for _, id := range append(slices.Clone(r.NodeIDs), r.Exclude...) {
-		var one int
-		if err = tx.QueryRowContext(ctx, "SELECT 1 FROM nodes WHERE id=?", id).Scan(&one); errors.Is(err, sql.ErrNoRows) {
+		var name string
+		if err = tx.QueryRowContext(ctx, "SELECT coalesce(json_extract(config,'$.name'),'') FROM nodes WHERE id=?", id).Scan(&name); errors.Is(err, sql.ErrNoRows) {
 			return "", model.Invalid("节点不存在：" + id)
 		} else if err != nil {
 			return "", err
 		}
+		names[id] = name
 	}
-	if err = r.Overlaps(rules); err != nil {
+	if err = r.Overlaps(rules, func(id string) string { return cmp.Or(names[id], id) }); err != nil {
 		return "", model.Invalid(err.Error())
 	}
 	if create {

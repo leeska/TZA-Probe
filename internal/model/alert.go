@@ -120,8 +120,12 @@ func EffectiveAlerts(rules []AlertRule, n Node) Alerts {
 // Overlaps reports the first other rule that would compete with r on the same
 // footing: same kind and same scope covering a common node. Different scopes
 // never compete — the narrower one wins — so this is what keeps "one rule per
-// kind per node" unambiguous.
-func (r AlertRule) Overlaps(others []AlertRule) error {
+// kind per node" unambiguous. name turns a node id into what the panel shows
+// (nil: the id itself); the message goes to the administrator as is.
+func (r AlertRule) Overlaps(others []AlertRule, name func(string) string) error {
+	if name == nil {
+		name = func(id string) string { return id }
+	}
 	for _, o := range others {
 		if o.ID == r.ID || o.Kind != r.Kind || o.Scope != r.Scope {
 			continue
@@ -139,7 +143,7 @@ func (r AlertRule) Overlaps(others []AlertRule) error {
 		case ScopeNodes:
 			for _, id := range r.NodeIDs {
 				if slices.Contains(o.NodeIDs, id) {
-					return errors.New("所选节点里有的已单独设置了" + label + "规则：" + id)
+					return errors.New("节点「" + name(id) + "」已单独设置了一条" + label + "规则")
 				}
 			}
 		}
@@ -180,12 +184,18 @@ func (r AlertRule) Validate() error {
 			return errors.New("作用于全部节点的规则不需要分组或节点列表")
 		}
 	case ScopeGroup:
-		if len(r.Groups) == 0 || len(r.NodeIDs) > 0 {
+		if len(r.Groups) == 0 {
 			return errors.New("按分组的规则须至少选一个分组")
 		}
+		if len(r.NodeIDs) > 0 {
+			return errors.New("按分组的规则不需要节点列表；要去掉个别节点请用排除列表")
+		}
 	case ScopeNodes:
-		if len(r.NodeIDs) == 0 || len(r.Groups) > 0 || len(r.Exclude) > 0 {
-			return errors.New("指定节点的规则须至少选一个节点，且不需要排除列表")
+		if len(r.NodeIDs) == 0 {
+			return errors.New("指定节点的规则须至少选一个节点")
+		}
+		if len(r.Groups) > 0 || len(r.Exclude) > 0 {
+			return errors.New("指定节点的规则不需要分组或排除列表")
 		}
 	default:
 		return errors.New("规则范围须为 all / group / nodes")
@@ -210,7 +220,7 @@ func (r AlertRule) validateParams() error {
 			return errors.New("续费提醒的提前天数须为 0–365 的整数")
 		}
 	case AlertTraffic:
-		if r.HoldSeconds != 0 || r.Threshold <= 0 || r.Threshold > 100 {
+		if r.HoldSeconds != 0 || r.Threshold < 1 || r.Threshold > 100 {
 			return errors.New("流量提醒的阈值须为 1–100%")
 		}
 	case AlertThrottle:
@@ -218,7 +228,7 @@ func (r AlertRule) validateParams() error {
 			return errors.New("达量降速提醒没有阈值，按线路的降速规则触发")
 		}
 	case AlertCPU, AlertMemory:
-		if r.Threshold <= 0 || r.Threshold > 100 || r.HoldSeconds < 30 || r.HoldSeconds > 86400 {
+		if r.Threshold < 1 || r.Threshold > 100 || r.HoldSeconds < 30 || r.HoldSeconds > 86400 {
 			return errors.New("CPU / 内存提醒的阈值须为 1–100%，持续时间 30–86400 秒")
 		}
 	default:

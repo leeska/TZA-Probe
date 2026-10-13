@@ -15,6 +15,17 @@ import (
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Every alert kind has a title of its own; a kind missing here went out as the
+// bare "cpu" / "memory" after the load rule was split.
+func TestTelegramTitlesCoverEveryKind(t *testing.T) {
+	for _, kind := range model.AlertKinds {
+		if telegramTitles[kind] == "" {
+			t.Fatalf("no Telegram title for %q", kind)
+		}
+	}
+}
+
 func TestTelegramTransport(t *testing.T) {
 	c := Config{Channel: "telegram", BotToken: "123456:abcdefghijklmnopqrstuvwxyz", ChatID: "-100123456"}
 	for _, active := range []bool{true, false} {

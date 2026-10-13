@@ -29,6 +29,16 @@ func (s Transport) Send(ctx context.Context, c Config, event model.Event) error 
 	}
 }
 
+// telegramTitles names each event kind on the second line of a Telegram
+// message. Every model.AlertKinds entry needs one (a test holds them together),
+// otherwise the message falls back to the raw kind; load is the retired
+// combined rule, kept for its events still in the log.
+var telegramTitles = map[string]string{
+	model.AlertOffline: "节点离线", model.AlertRenewal: "到期续费", model.AlertTraffic: "流量额度",
+	model.AlertThrottle: "达量降速", model.AlertCPU: "CPU 使用率", model.AlertMemory: "内存使用率",
+	"load": "系统负载", "test": "测试通知",
+}
+
 type Telegram struct {
 	// HTTP transport is injectable for offline contract tests; the destination is fixed.
 	RoundTripper http.RoundTripper
@@ -48,8 +58,7 @@ func (s Telegram) Send(ctx context.Context, c Config, e model.Event) error {
 	if e.Kind == "test" {
 		state = "连接测试"
 	}
-	names := map[string]string{"offline": "节点离线", "renewal": "到期续费", "traffic": "流量额度", "throttle": "达量降速", "load": "系统负载", "test": "测试通知"}
-	kind := names[e.Kind]
+	kind := telegramTitles[e.Kind]
 	if kind == "" {
 		kind = e.Kind
 	}

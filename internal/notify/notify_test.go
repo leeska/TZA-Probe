@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,6 +193,42 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 	}
 	if firing, _ := s.Events(ctx, model.EventQuery{Active: true}); len(firing) != 0 {
 		t.Fatal("a recovered alert is no longer active", firing)
+	}
+}
+
+// A node that has never reported gets model.FirstReportGrace before the
+// offline rule counts it: a rule covering 全部节点 applies to a node from the
+// moment it is created, minutes before its Agent can be installed.
+func TestNeverReportedNodeGetsInstallGrace(t *testing.T) {
+	ctx := context.Background()
+	s, err := storage.Open(filepath.Join(t.TempDir(), "install.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	addRules(t, s, model.AlertRule{Kind: model.AlertOffline, HoldSeconds: 60})
+	now := time.Now()
+	if _, _, err = s.SaveNode(ctx, model.Node{Name: "fresh", Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}}, true); err != nil {
+		t.Fatal(err)
+	}
+	engine := Engine{Repository: s}
+	grace := int(model.FirstReportGrace.Seconds())
+	for _, sec := range []int{60, 120, 300, grace - 15} {
+		if err = engine.Tick(ctx, now.Add(time.Duration(sec)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if events, _ := s.Events(ctx, model.EventQuery{}); len(events) != 0 {
+		t.Fatal("a node still inside its install grace was reported", events)
+	}
+	for _, sec := range []int{grace + 15, grace + 90} {
+		if err = engine.Tick(ctx, now.Add(time.Duration(sec)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, _ := s.Events(ctx, model.EventQuery{})
+	if len(events) != 1 || !events[0].Active || !strings.Contains(events[0].Message, "一直未接入") {
+		t.Fatal("a node never installed past its grace must be reported once", events)
 	}
 }
 

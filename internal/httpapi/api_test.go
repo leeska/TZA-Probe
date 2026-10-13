@@ -318,6 +318,7 @@ func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 			{"PUT", "/api/v1/admin/tasks/bindings", map[string]any{"task_ids": []string{"example"}, "node_ids": []string{}}},
 			{"GET", "/api/v1/admin/alert-rules", nil},
 			{"POST", "/api/v1/admin/alert-rules", map[string]any{"kind": "offline", "scope": "all"}},
+			{"PATCH", "/api/v1/admin/alert-rules/example", map[string]any{"repeat_seconds": 600}},
 			{"DELETE", "/api/v1/admin/alert-rules/example", nil},
 			{"GET", "/api/v1/admin/notification", nil},
 			{"GET", "/api/v1/admin/panel", nil},

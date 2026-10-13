@@ -296,6 +296,16 @@ func TestResourceRoutes(t *testing.T) {
 	if code, _ := call("PUT", "/api/v1/admin/alert-rules/nope", `{"kind":"offline","scope":"all"}`); code != 404 {
 		t.Fatalf("replace missing rule: %d", code)
 	}
+	// PATCH 与 MCP 的 update_alert_rule 同一个合并：只改提交的字段。
+	if code, body := call("PATCH", "/api/v1/admin/alert-rules/"+created.ID, `{"repeat_seconds":600}`); code != 200 || !strings.Contains(body, `"repeat_seconds":600`) || !strings.Contains(body, `"hold_seconds":120`) || !strings.Contains(body, `"groups":["HK"]`) {
+		t.Fatalf("patch rule: %d %s", code, body)
+	}
+	if code, _ := call("PATCH", "/api/v1/admin/alert-rules/nope", `{"repeat_seconds":600}`); code != 404 {
+		t.Fatalf("patch missing rule: %d", code)
+	}
+	if code, body := call("PATCH", "/api/v1/admin/alert-rules/"+created.ID, `{"repaet_seconds":600}`); code != 400 {
+		t.Fatalf("patch rule typo: %d %s", code, body)
+	}
 	// PATCH 只改提交的字段，与 MCP 的 update_node / update_task 是同一个合并；规则不再写在节点上。
 	if code, body := call("PATCH", "/api/v1/admin/nodes/"+b, `{"group":"HK"}`); code != 200 || !strings.Contains(body, `"group":"HK"`) {
 		t.Fatalf("patch node: %d %s", code, body)

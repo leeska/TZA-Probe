@@ -37,7 +37,7 @@ type Sender interface {
 
 // throttleMessage 是降速告警文案。两种规则读的不是同一个事实：窗口平均带宽的线路
 // 报的是「近 N 小时均值」，按额度降速的线路报的是「本周期用量顶到额度、之后限速多少」。
-// 离线提醒对「添加后从没上报过」的节点同样会触发（按创建时间算宽限），那种情况说「已离线」
+// 离线提醒对「添加后从没上报过」的节点同样会触发（按创建时间算 model.FirstReportGrace 宽限），那种情况说「已离线」
 // 会让人以为机器掉线了，实际是 Agent 还没装好或连不上面板。
 func offlineMessage(n model.NodeView) string {
 	if n.LastSeen == 0 {
@@ -75,7 +75,15 @@ func throttleMessage(n model.NodeView) string {
 func evaluate(n model.NodeView, r model.AlertRule, now time.Time) (bool, string) {
 	switch r.Kind {
 	case model.AlertOffline:
-		return !n.Online && now.Unix()-n.CreatedAt > int64(model.OfflineAfter.Seconds()), offlineMessage(n)
+		if n.Online {
+			return false, ""
+		}
+		// 从没上报过的节点按创建时间给足装 Agent 的时间，否则一条「全部节点」的离线规则
+		// 会在每台新节点建好一两分钟后就报「一直未接入」。
+		if n.LastSeen == 0 {
+			return now.Unix()-n.CreatedAt > int64(model.FirstReportGrace.Seconds()), offlineMessage(n)
+		}
+		return true, offlineMessage(n)
 	case model.AlertRenewal:
 		if n.Billing.ExpiresAt == "" {
 			return false, ""

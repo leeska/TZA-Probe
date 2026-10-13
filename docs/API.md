@@ -14,7 +14,7 @@
 | GET、POST /admin/nodes | 列表、新建节点（返回一次性 token） |
 | PUT、PATCH、DELETE /admin/nodes/{id} | 编辑（PUT 整份替换；PATCH 只改提交的字段、嵌套对象按字段合并，返回合并后的节点）、删除节点 |
 | GET、POST /admin/alert-rules | 提醒规则列表、新建一条（返回 `{"id":…}`）；同类型同范围覆盖同一台节点时 400 并说明冲突在哪 |
-| PUT、DELETE /admin/alert-rules/{id} | 整份替换、删除一条提醒规则 |
+| PUT、PATCH、DELETE /admin/alert-rules/{id} | 整份替换、只改提交的字段（返回改后的规则）、删除一条提醒规则；PATCH 与 MCP 的 `update_alert_rule` 同一套合并规则 |
 | POST /admin/nodes/{id}/token | 撤销旧令牌，返回新令牌 |
 | GET、POST /admin/tasks | 列表、创建探测任务（返回 `{"id":…}`） |
 | PUT、PATCH、DELETE /admin/tasks/{id} | 编辑（PUT 整份替换；PATCH 同上合并语义）、删除任务 |
@@ -43,7 +43,7 @@
 - `2026-07-28`（无握手）：每个请求在 `_meta` 里声明版本，并在头部镜像 `MCP-Protocol-Version`、`Mcp-Method`（`tools/call` 还有 `Mcp-Name`，非 ASCII 用 `=?base64?…?=`），三者必须与请求体一致，缺失或不符返回 400 与 `-32020 HeaderMismatch`；版本不认识返回 400 与 `-32022 UnsupportedProtocolVersionError`（`data.supported` 列出支持版本）；方法不认识返回 404 与 `-32601`。结果带 `resultType: "complete"` 与 `_meta["io.modelcontextprotocol/serverInfo"]`，`server/discover` 与 `tools/list` 带 `ttlMs` / `cacheScope`。
 - `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
 
-工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`list_alert_rules`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`create_alert_rule` / `update_alert_rule`（`rule_id` + 要改的字段，合并语义）/ `delete_alert_rule`、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`（`rule_id` 缺失按工具错误返回）、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` / `update_alert_rule` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`billing` 等）按字段合并，列表整份替换；`update_alert_rule` 改了 `scope` 时，旧范围用的列表没重新提交就清掉。
+工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`list_alert_rules`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`create_alert_rule` / `update_alert_rule`（`rule_id` + 要改的字段，合并语义）/ `delete_alert_rule`、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`（`rule_id` 缺失按工具错误返回）、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` / `update_alert_rule` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`billing` 等）按字段合并，列表整份替换；`update_alert_rule` 改了 `scope` 时，新范围用不上的列表没重新提交就清掉（`exclude_node_ids` 在 `all` 与 `group` 之间切换时保留，被排除的节点不会因为换了范围就开始告警）。
 `create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（两者另外回面板显示项：延迟色带时间窗 `latency_window_minutes`、访客默认明暗 `default_theme` 与皮肤 `default_skin`）。`update_settings` 只改传了的项：不传 `channel` 沿用当前渠道，Telegram 的 `bot_token` / `chat_id` 留空沿用已存的，只传显示项时不动通知配置；关闭通知须显式传 `channel: "none"`，一项都不传返回 `-32602`；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
 
 ## 通知渠道
@@ -85,7 +85,7 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
  "scope":"group","groups":["HK",""],"exclude_node_ids":["…"]}
 ```
 
-- 提醒规则的参数：`offline` 用 `hold_seconds`（判定离线后再等 0–86400 秒）；`renewal` 用 `threshold`（到期前 0–365 天）；`traffic` 用 `threshold`（额度百分比 1–100）；`throttle` 无参数（按线路降速规则，节点须填 `line.throttle_mbps`）；`cpu` / `memory` 用 `threshold`（1–100%）与 `hold_seconds`（持续 30–86400 秒）。`repeat_seconds` 每条规则各自设置：0 为触发 / 恢复各一次，非零 300–604800 秒。不属于该种规则的参数会被拒绝。
+- 提醒规则的参数：`offline` 用 `hold_seconds`（判定离线后再等 0–86400 秒；从没上报过的新节点自创建起先给 15 分钟装 Agent，过了才算离线）；`renewal` 用 `threshold`（到期前 0–365 天）；`traffic` 用 `threshold`（额度百分比 1–100）；`throttle` 无参数（按线路降速规则，节点须填 `line.throttle_mbps`）；`cpu` / `memory` 用 `threshold`（1–100%）与 `hold_seconds`（持续 30–86400 秒）。`repeat_seconds` 每条规则各自设置：0 为触发 / 恢复各一次，非零 300–604800 秒。不属于该种规则的参数会被拒绝。
 - 规则范围 `scope`：`all` 全部节点（含以后新加的）；`group` 作用于 `groups` 列出的分组（空串是未分组的节点）；`nodes` 作用于 `node_ids` 列出的节点。`all` / `group` 可用 `exclude_node_ids` 排除个别节点。同一台节点同一种类型只生效一条，优先级 `nodes` > `group` > `all`；所以同类型、同范围的两条规则不能覆盖同一台节点（两条 `all`、共用一个分组、共用一台节点），保存时 400。节点不存在时 400。删除节点会把它从所有规则的列表里去掉，只指定了它的规则一并删除。
 - 达量降速、续费、流量规则分别依赖节点的 `line.throttle_mbps`、`billing.expires_at`、`billing.traffic_limit`；没填的节点即使在范围内也不会触发。
 

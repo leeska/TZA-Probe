@@ -112,6 +112,20 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		respond(w, a.svc.ReplaceAlertRule(r.Context(), r.PathValue("id"), rule))
 	})
+	// PATCH 只改提交了的字段（与 MCP 的 update_alert_rule 同一套规则）：改 scope 时新范围
+	// 用不上的列表没重新提交就清掉，排除列表在全部节点与分组之间切换时保留。
+	route("PATCH /api/v1/admin/alert-rules/{id}", func(w http.ResponseWriter, r *http.Request) {
+		patch, ok := rawBody(w, r)
+		if !ok {
+			return
+		}
+		rule, err := a.svc.PatchAlertRule(r.Context(), r.PathValue("id"), patch)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, rule)
+	})
 	route("DELETE /api/v1/admin/alert-rules/{id}", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, a.svc.DeleteAlertRule(r.Context(), r.PathValue("id")))
 	})

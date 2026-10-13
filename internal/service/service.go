@@ -288,8 +288,10 @@ func (s *Service) ReplaceAlertRule(ctx context.Context, id string, r model.Alert
 
 // PatchAlertRule overlays only the submitted fields onto the stored rule; a
 // submitted list (groups, node_ids, exclude_node_ids) replaces the old one.
-// Changing the scope drops the lists the old scope used unless the patch
-// gives them again, so 「改成全部节点」 needs no explicit node_ids: [].
+// Changing the scope drops, unless the patch gives them again, only the lists
+// the new scope cannot take: 「改成全部节点」 needs no explicit node_ids: [],
+// and an exclusion survives a switch between 全部节点 and 分组 (both use it),
+// so a node the administrator took out does not quietly start alerting.
 func (s *Service) PatchAlertRule(ctx context.Context, id string, patch json.RawMessage) (model.AlertRule, error) {
 	current, err := s.AlertRule(ctx, id)
 	if err != nil {
@@ -302,9 +304,17 @@ func (s *Service) PatchAlertRule(ctx context.Context, id string, patch json.RawM
 	if merged.Scope != current.Scope {
 		sent := map[string]json.RawMessage{}
 		_ = json.Unmarshal(patch, &sent)
-		for key, list := range map[string]*[]string{"groups": &merged.Groups, "node_ids": &merged.NodeIDs, "exclude_node_ids": &merged.Exclude} {
-			if _, ok := sent[key]; !ok {
-				*list = nil
+		for _, l := range []struct {
+			key  string
+			list *[]string
+			used bool
+		}{
+			{"groups", &merged.Groups, merged.Scope == model.ScopeGroup},
+			{"node_ids", &merged.NodeIDs, merged.Scope == model.ScopeNodes},
+			{"exclude_node_ids", &merged.Exclude, merged.Scope != model.ScopeNodes},
+		} {
+			if _, ok := sent[l.key]; !ok && !l.used {
+				*l.list = nil
 			}
 		}
 	}

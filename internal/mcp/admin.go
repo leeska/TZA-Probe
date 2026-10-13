@@ -71,7 +71,7 @@ var adminTools = []tool{
 	},
 	{
 		Name:        "update_alert_rule",
-		Description: "修改提醒规则：只提交要改的字段，其余沿用当前值；提交的列表整份替换。改了 scope 时，旧范围用的列表若没重新提交会被清掉。",
+		Description: "修改提醒规则：只提交要改的字段，其余沿用当前值；提交的列表整份替换。改了 scope 时，新范围用不上的列表若没重新提交会被清掉；exclude_node_ids 在 all 与 group 之间切换时保留。",
 		InputSchema: alertRuleSchema(true),
 		Annotations: annotations("Update alert rule", false, false, true),
 	},

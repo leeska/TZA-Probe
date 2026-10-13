@@ -930,6 +930,31 @@ const pickKind = (form, kind) => {
   for (const r of await (await fetch(base + "/api/v1/admin/alert-rules", { headers: adminHeaders })).json())
     await fetch(base + "/api/v1/admin/alert-rules/" + r.id, { method: "DELETE", headers: adminHeaders });
   await until(() => !$("#dialog").open, "dialog closed");
+  // 从接口（MCP 同理）建的规则：回到规则页时节点要一起重读，否则读的还是旧节点上的 alerts，
+  // 列表会写成「生效 0 台」；值不在面板步长上（85.5%、7 分钟）也要能在面板里原样存回去。
+  const made = await (
+    await fetch(base + "/api/v1/admin/alert-rules", {
+      method: "POST",
+      headers: { ...adminHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "memory", threshold: 85.5, hold_seconds: 60, repeat_seconds: 420, scope: "all" }),
+    })
+  ).json();
+  $('[data-alert-view="active"]').click();
+  await until(() => $('[data-alert-view="active"]').classList.contains("active"), "active view");
+  $('[data-alert-view="rules"]').click();
+  await until(() => $(`[data-edit-rule="${made.id}"]`), "rule made through the API is listed");
+  const madeRow = $(`[data-edit-rule="${made.id}"]`).closest("tr").textContent;
+  assert(madeRow.includes(`生效 ${fleet.length} 台`), "规则页要按刚读的节点算生效台数: " + madeRow);
+  $(`[data-edit-rule="${made.id}"]`).click();
+  form = $("#rule-form");
+  assert.equal(form.elements.threshold.value, "85.5");
+  assert.equal(form.elements.repeat.value, "7");
+  assert(form.checkValidity(), "接口存下的值在面板里要能原样保存: " + [...form.elements].filter((el) => el.validity && !el.validity.valid).map((el) => el.name).join(","));
+  submit(form);
+  await until(() => !$("#dialog").open && /提醒规则已保存/.test($("#toast").textContent), "rule re-saved unchanged: " + $("#toast").textContent);
+  const saved = (await (await fetch(base + "/api/v1/admin/alert-rules", { headers: adminHeaders })).json()).find((r) => r.id === made.id);
+  assert(saved.threshold === 85.5 && saved.repeat_seconds === 420, "原样存回: " + JSON.stringify(saved));
+  await fetch(base + "/api/v1/admin/alert-rules/" + made.id, { method: "DELETE", headers: adminHeaders });
 }
 // 面板显示项（延迟色带 / 默认外观）在单独的「面板设置」页，不再挂在告警页里。
 assert(!$("#latency-window"), "告警页不该再出现面板显示项");

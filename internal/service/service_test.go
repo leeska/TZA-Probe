@@ -52,7 +52,8 @@ func TestPatchNodeMerges(t *testing.T) {
 }
 
 // A partial rule edit keeps what it does not mention; switching the scope
-// drops the lists of the old one unless they are sent again.
+// drops the lists the new one cannot take unless they are sent again, and keeps
+// an exclusion across 全部节点 ↔ 分组.
 func TestPatchAlertRule(t *testing.T) {
 	svc := open(t)
 	ctx := context.Background()
@@ -70,6 +71,15 @@ func TestPatchAlertRule(t *testing.T) {
 	}
 	if r, err = svc.PatchAlertRule(ctx, id, json.RawMessage(`{"scope":"all"}`)); err != nil || r.Scope != model.ScopeAll || r.NodeIDs != nil {
 		t.Fatalf("scope patch: %+v %v", r, err)
+	}
+	if r, err = svc.PatchAlertRule(ctx, id, json.RawMessage(`{"scope":"group","groups":[""],"exclude_node_ids":["`+node+`"]}`)); err != nil || len(r.Exclude) != 1 {
+		t.Fatalf("group with exclusion: %+v %v", r, err)
+	}
+	if r, err = svc.PatchAlertRule(ctx, id, json.RawMessage(`{"scope":"all"}`)); err != nil || r.Groups != nil || len(r.Exclude) != 1 || r.Exclude[0] != node {
+		t.Fatalf("group → all must keep the exclusion and drop the groups: %+v %v", r, err)
+	}
+	if r, err = svc.PatchAlertRule(ctx, id, json.RawMessage(`{"scope":"nodes","node_ids":["`+node+`"]}`)); err != nil || r.Exclude != nil {
+		t.Fatalf("all → nodes must drop the exclusion: %+v %v", r, err)
 	}
 	if _, err = svc.PatchAlertRule(ctx, id, json.RawMessage(`{"treshold":1}`)); !errors.Is(err, model.ErrInvalid) {
 		t.Fatalf("misspelled field: %v", err)

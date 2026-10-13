@@ -13,6 +13,11 @@ import (
 // Transition persists debounce and edge state atomically with its durable
 // notification event. hold is how long the condition must last before it fires;
 // repeat re-sends a still-active alert every that many seconds (0: once).
+//
+// The engine calls it for every node and kind every tick, and almost every call
+// changes nothing; those end as a read and write nothing, so a quiet fleet adds
+// no commits (and no fsyncs) next to the Agents' reports. A missing row is the
+// quiet state (since 0, inactive), so a kind that never fired needs none.
 func (s *Store) Transition(ctx context.Context, n model.Node, kind, message string, condition bool, hold, repeat int, now time.Time) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -27,7 +32,7 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind, message stri
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	previous := active
+	previous, previousSince := active, since
 	if condition {
 		if since == 0 {
 			since = now.Unix()
@@ -39,9 +44,6 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind, message stri
 		since = 0
 		active = false
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO alert_state VALUES(?,?,?,?) ON CONFLICT(node_id,kind) DO UPDATE SET since=excluded.since,active=excluded.active", n.ID, kind, since, active); err != nil {
-		return err
-	}
 	again := false
 	if active && previous && repeat > 0 {
 		var last int64
@@ -49,6 +51,12 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind, message stri
 			return err
 		}
 		again = now.Unix()-last >= int64(repeat)
+	}
+	if since == previousSince && active == previous && !again {
+		return nil
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO alert_state VALUES(?,?,?,?) ON CONFLICT(node_id,kind) DO UPDATE SET since=excluded.since,active=excluded.active", n.ID, kind, since, active); err != nil {
+		return err
 	}
 	if active != previous || again {
 		if !active {
