@@ -290,6 +290,10 @@ func TestResourceRoutes(t *testing.T) {
 	if code, body := call("GET", "/api/v1/admin/notification", ""); code != 200 || !strings.Contains(body, `"channel"`) || strings.Contains(body, "latency_window") {
 		t.Fatalf("notification: %d %s", code, body)
 	}
+	// 备份是一份完整的 SQLite 文件（整份下载，不用停服）。
+	if code, body := call("GET", "/api/v1/admin/backup", ""); code != 200 || !strings.HasPrefix(body, "SQLite format 3\x00") {
+		t.Fatalf("backup: %d %q", code, body[:min(len(body), 32)])
+	}
 	// PATCH 通知出口只改传了的项（与 MCP update_settings 同规则）：一项都不传是 400，关闭要显式传 none。
 	if code, body := call("PATCH", "/api/v1/admin/notification", `{}`); code != 400 || !strings.Contains(body, "channel=none") {
 		t.Fatalf("empty notification patch: %d %s", code, body)

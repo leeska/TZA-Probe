@@ -10,7 +10,7 @@
 | GET /observations | 所有可见节点的最新观测，按节点 id 分组，不带跳表（首页卡片用） |
 | GET /nodes/{id}/observations | 每个检测项最新网络结果，带 stale 状态 |
 | GET /latency-samples?limit=20 | 卡片延迟格用：每个「节点 / 运营商 / 协议 / 地区」最近 N 次逐次 TCP 结果（范围 1–60），只含调用者可见的节点 |
-| POST /login、POST /logout、GET /session | 管理会话 |
+| POST /login、POST /logout、GET /session | 管理会话；`GET /session` 另回服务端版本 `version`（内置 Agent 安装包同版本，后台据此标出该升级的 Agent） |
 | GET、POST /admin/nodes | 列表、新建节点（返回一次性 token） |
 | PUT、PATCH、DELETE /admin/nodes/{id} | 编辑（PUT 整份替换；PATCH 只改提交的字段、嵌套对象按字段合并，返回合并后的节点）、删除节点 |
 | PUT /admin/nodes/alerts | `{"node_ids":[…],"alerts":[…]}`：把同一份提醒规则写给所选节点，一个事务；任何一台不合规整批不改，错误里写明是哪台 |
@@ -24,6 +24,7 @@
 | GET /admin/events?before=&limit=&node_id=&kind=&active= | 告警与发送结果，按 id 倒序分页：`limit` 默认 100、上限 500，`before` 传上一页最后一条的 id 续读，`node_id` / `kind` 筛选；`active=1` 只列正在告警的项目，每项取最近一次事件（MCP `recent_events` 的 `active: true` 同义） |
 | GET、PUT、PATCH /admin/notification | 通知出口：查询渠道状态（不回凭据）、设置 Telegram / Webhook / 关闭；PUT 整份提交，PATCH 只改传了的项 |
 | POST /admin/notification/test | 向已配置的渠道发送测试通知 |
+| GET /admin/backup | 下载整个数据库的一致快照（SQLite 文件，`VACUUM INTO` 生成，不用停服）；文件名 `tza-backup-YYYYMMDD-HHMMSS.db` |
 | GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |

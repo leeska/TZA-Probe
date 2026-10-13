@@ -167,6 +167,10 @@ func (f *fakeSource) SetNodeAlerts(_ context.Context, ids []string, _ model.Aler
 	return nil
 }
 
+func (f *fakeSource) Backup(context.Context) (string, func(), error) {
+	return "", func() {}, f.failure
+}
+
 func (f *fakeSource) ChangeBindings(context.Context, []string, []string, []string) error {
 	return f.failure
 }

@@ -1461,6 +1461,13 @@ button.node-name {
   font-weight: 500;
 }
 
+/* 节点列表里 Agent 版本与面板不一致时的「需更新」。 */
+.agent-stale {
+  color: var(--orange, #f97316);
+  font-weight: 600;
+  cursor: help;
+}
+
 /* 「正在告警」那格可以点：点进告警页的「当前告警」。有告警时数字标橙。 */
 .admin-stats > .stat-link {
   cursor: pointer;

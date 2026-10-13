@@ -117,7 +117,10 @@ func (a *API) Handler() http.Handler {
 		http.SetCookie(w, &http.Cookie{Name: "tza_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		w.WriteHeader(204)
 	}))
-	mux.HandleFunc("GET /api/v1/session", a.admin(func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]bool{"authenticated": true}) }))
+	// version 是服务端（也是它内置的 Agent 安装包）的版本：后台据此标出该升级的 Agent。
+	mux.HandleFunc("GET /api/v1/session", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		write(w, 200, map[string]any{"authenticated": true, "version": model.Version})
+	}))
 	mux.HandleFunc("GET /api/v1/nodes", a.nodes)
 	mux.HandleFunc("GET /api/v1/nodes/live", a.liveNodes)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/history", a.history)

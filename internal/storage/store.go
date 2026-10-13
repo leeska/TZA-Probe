@@ -24,6 +24,7 @@ var ErrNotFound = model.ErrNotFound
 var ErrConflict = model.ErrConflict
 
 type Store struct {
+	path   string // the database file; Backup writes its snapshot next to it
 	db     *sql.DB
 	read   *sql.DB
 	writes sync.Mutex
@@ -143,7 +144,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
+	s := &Store{path: path, db: db}
 	if _, err = db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
 		db.Close()
 		return nil, err

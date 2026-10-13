@@ -1402,13 +1402,6 @@ input[type="checkbox"]:disabled {
   border-color: rgba(255, 255, 255, 0.55);
 }
 
-/* ==========================================================================
-   Alert Rule Grouping (node form)
-   ========================================================================== */
-.rules-grid {
-  gap: 10px;
-}
-
 /* Page heading sits on the same inner grid as panel content */
 .page-heading {
   padding: 0 24px;
@@ -1479,27 +1472,67 @@ input[type="checkbox"]:disabled {
   }
 }
 
+/* 提醒规则：四列网格（规则 | 阈值 | 持续 / 等待 | 重复提醒），表头与每行同一套列宽。 */
+.rule-head,
 .rule-row {
-  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 150px repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 8px 14px;
+}
+
+.rule-head {
+  padding: 0 14px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.rules-list {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 16px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rule-row {
   padding: 10px 14px 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
 }
 
 .rule-row > label.checkbox {
-  flex: 0 0 auto;
-  min-width: 170px;
+  align-self: center;
   font-weight: 600;
 }
 
 .rule-row > label:not(.checkbox) {
-  flex: 1 1 150px;
-  min-width: 140px;
   margin: 0;
+}
+
+.rule-empty {
+  align-self: center;
+  color: var(--muted);
+  padding-left: 4px;
+}
+
+.rule-row > .rule-hint {
+  grid-column: 2 / -1;
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .rule-head {
+    display: none;
+  }
+  .rule-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .rule-row > label.checkbox,
+  .rule-row > .rule-hint {
+    grid-column: 1 / -1;
+  }
+  .rule-empty {
+    display: none;
+  }
 }
 
 /* ==========================================================================

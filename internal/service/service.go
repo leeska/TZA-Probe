@@ -39,6 +39,7 @@ type Store interface {
 	RunTask(context.Context, string, time.Time) error
 	BindTasks(context.Context, []string, []string) error
 	ChangeBindings(context.Context, []string, []string, []string) error
+	Backup(context.Context) (string, func(), error)
 	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
 	TaskHealth(context.Context, time.Time) (map[string]model.TaskHealth, error)
 
@@ -320,6 +321,12 @@ func (s *Service) BindTasks(ctx context.Context, taskIDs, nodeIDs []string) erro
 		return model.Invalid("一次最多 500 个任务")
 	}
 	return s.Store.BindTasks(ctx, taskIDs, nodeIDs)
+}
+
+// Backup snapshots the database for download; the caller removes the file
+// with the returned cleanup once it has been sent.
+func (s *Service) Backup(ctx context.Context) (string, func(), error) {
+	return s.Store.Backup(ctx)
 }
 
 // ChangeBindings adds and removes nodes on every listed task, keeping each

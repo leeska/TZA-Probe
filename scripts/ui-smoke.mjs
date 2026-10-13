@@ -868,7 +868,10 @@ form = $("#alerts-form");
   const text = form.textContent;
   for (const d of ["（默认 60）", "（默认 7）", "（默认 80）", "（默认 90）", "（默认 300）"])
     assert(text.includes(d), "提醒规则缺少默认值提示: " + d);
-  assert(text.includes("阈值默认值：离线等待 60 秒"), "提示行要列出各项默认值");
+  assert(text.includes("重复间隔填 0 只提醒一次"), "提示行要说明重复间隔的规则");
+  // 四列对齐：每行都是「规则 + 阈值 + 持续 + 重复」四格，没有的那一格是占位。
+  for (const row of form.querySelectorAll(".rule-row"))
+    assert.equal([...row.children].filter((c) => !c.classList.contains("rule-hint")).length, 4, "每条规则一行四格: " + row.textContent);
 }
 // 每条规则各有自己的重复间隔。
 for (const rule of ["offline", "renewal", "traffic", "throttle", "cpu", "memory"])

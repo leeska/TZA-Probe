@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
+	"time"
 
 	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -248,6 +250,30 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 	route("POST /api/v1/admin/notification/test", func(w http.ResponseWriter, r *http.Request) {
 		_, err := a.svc.TestNotification(r.Context())
 		respond(w, err)
+	})
+	// 数据库备份：VACUUM INTO 出一份一致的快照再整份下载，不用停服（快照是读事务，
+	// 面板与 Agent 上报照常）。快照写在数据目录旁边的临时目录里，发完即删。
+	route("GET /api/v1/admin/backup", func(w http.ResponseWriter, r *http.Request) {
+		path, cleanup, err := a.svc.Backup(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		defer cleanup()
+		f, err := os.Open(path)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		defer f.Close()
+		name := "tza-backup-" + time.Now().UTC().Format("20060102-150405") + ".db"
+		w.Header().Set("Content-Type", "application/vnd.sqlite3")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+		w.Header().Set("Cache-Control", "no-store")
+		if info, err := f.Stat(); err == nil {
+			w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+		}
+		io.Copy(w, f)
 	})
 	route("GET /api/v1/admin/panel", func(w http.ResponseWriter, r *http.Request) {
 		panel, err := a.svc.Panel(r.Context())

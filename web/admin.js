@@ -14,6 +14,8 @@ let container,
   nodes = [],
   tasks = [],
   regions = [],
+  // 服务端版本（/session）：它内置的 Agent 安装包与它同一个版本，节点上报的版本不一样就该升级。
+  serverVersion = "",
   catalog;
 const defaults = {
   name: "",
@@ -40,7 +42,7 @@ export async function mountAdmin(root, brand) {
   container = root;
   brandHTML = brand;
   try {
-    await api("/session");
+    serverVersion = (await api("/session")).version || "";
     shell();
     await render();
   } catch (e) {
@@ -58,6 +60,7 @@ function login() {
       await send("/login", "POST", {
         token: new FormData(e.target).get("token"),
       });
+      serverVersion = (await api("/session")).version || "";
       shell();
       await render();
     } finally {
@@ -139,8 +142,20 @@ function dueCell(expiresAt) {
   const note = left < 0 ? `<small>已过期 ${-left} 天</small>` : left === 0 ? "<small>今天到期</small>" : left <= 7 ? `<small>剩余 ${left} 天</small>` : "";
   return `<span class="${cls}">${esc(expiresAt.slice(0, 10))}</span>${note}`;
 }
+// 这台机器正在告警就在状态旁挂一枚橙色胶囊，悬停看是哪几类（详情在告警页的「当前告警」）。
+function firingPill(n, firing) {
+  const kinds = (firing || []).filter((e) => e.node_id === n.id).map((e) => kindName[e.kind] || e.kind);
+  return kinds.length ? ` <span class="pill warn" title="${esc(kinds.join("、"))}">告警 ${kinds.length}</span>` : "";
+}
+// Agent 版本与服务端不一致：服务端内置的安装包就是它自己的版本，在那台机器上不带 --token
+// 重新执行一次安装命令即可升级（命令见「接入 / 重置密钥」弹窗，升级不必换密钥）。
+function agentStale(n) {
+  const v = n.metrics?.version;
+  if (!v || !serverVersion || v === serverVersion) return "";
+  return ` <span class="agent-stale" title="面板版本 ${esc(serverVersion)}。在这台机器上不带 --token 重新执行安装命令即可升级，不用换密钥。">需更新</span>`;
+}
 function renderNodes(firing) {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div><div id="goto-firing" class="stat-link${firing?.length ? " stat-warn" : ""}" role="button" tabindex="0" title="查看当前告警"><span>正在告警</span><strong>${firing ? firing.length : "—"}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${nodes.map((n) => `<tr data-node="${n.id}"><td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 回程地区 ${esc(n.display.route_region || "未设置")}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><small>Agent ${n.metrics ? [n.metrics.version, n.metrics.arch].filter(Boolean).map(esc).join(" · ") : "未接入"}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div><div id="goto-firing" class="stat-link${firing?.length ? " stat-warn" : ""}" role="button" tabindex="0" title="查看当前告警"><span>正在告警</span><strong>${firing ? firing.length : "—"}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${nodes.map((n) => `<tr data-node="${n.id}"><td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 回程地区 ${esc(n.display.route_region || "未设置")}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span>${firingPill(n, firing)}<small>Agent ${n.metrics ? [n.metrics.version, n.metrics.arch].filter(Boolean).map(esc).join(" · ") : "未接入"}${agentStale(n)}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
   content().querySelectorAll("[data-billing]").forEach((b) => {
     b.onclick = () => {
       const n = nodes.find((x) => x.id === b.dataset.billing);
@@ -630,54 +645,57 @@ async function taskForm(existing) {
 const RULE_SPECS = [
   {
     kind: "offline", label: "离线提醒", column: "离线",
-    fields: [{ key: "hold_seconds", name: "offline_seconds", label: "离线后额外等待秒数（默认 60）", def: 60, attrs: 'min="0" max="86400"' }],
+    fields: [{ key: "hold_seconds", col: "hold", name: "offline_seconds", label: "等待秒数（默认 60）", def: 60, attrs: 'min="0" max="86400"' }],
     cell: (r) => `等 ${r.hold_seconds || 0} 秒`,
   },
   {
     kind: "renewal", label: "续费提醒", column: "续费",
-    fields: [{ key: "threshold", name: "renewal_days", label: "提前多少天提醒续费（默认 7）", def: 7, attrs: 'min="0" max="365" step="1"' }],
+    fields: [{ key: "threshold", col: "threshold", name: "renewal_days", label: "提前天数（默认 7）", def: 7, attrs: 'min="0" max="365" step="1"' }],
     cell: (r) => `提前 ${r.threshold || 0} 天`,
   },
   {
     kind: "traffic", label: "流量警告", column: "流量",
-    fields: [{ key: "threshold", name: "traffic_percent", label: "流量达到额度百分比（默认 80）", def: 80, attrs: 'min="1" max="100"' }],
+    fields: [{ key: "threshold", col: "threshold", name: "traffic_percent", label: "额度百分比（默认 80）", def: 80, attrs: 'min="1" max="100"' }],
     cell: (r) => `${r.threshold}%`,
   },
   {
     kind: "throttle", label: "达量降速警告", column: "降速", fields: [],
-    hint: "按节点编辑里的降速规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（节点需先填降速速率）。",
+    hint: "按节点的降速规则触发（节点需先填降速速率）。",
     cell: () => "开",
   },
   {
     kind: "cpu", label: "CPU 警告", column: "CPU",
     fields: [
-      { key: "threshold", name: "cpu_percent", label: "CPU 阈值 %（默认 90）", def: 90, attrs: 'min="1" max="100"' },
-      { key: "hold_seconds", name: "cpu_hold", label: "持续秒数（默认 300）", def: 300, attrs: 'min="30" max="86400"' },
+      { key: "threshold", col: "threshold", name: "cpu_percent", label: "CPU %（默认 90）", def: 90, attrs: 'min="1" max="100"' },
+      { key: "hold_seconds", col: "hold", name: "cpu_hold", label: "持续秒数（默认 300）", def: 300, attrs: 'min="30" max="86400"' },
     ],
     cell: (r) => `${r.threshold}% · ${r.hold_seconds} 秒`,
   },
   {
     kind: "memory", label: "内存警告", column: "内存",
     fields: [
-      { key: "threshold", name: "memory_percent", label: "内存阈值 %（默认 90）", def: 90, attrs: 'min="1" max="100"' },
-      { key: "hold_seconds", name: "memory_hold", label: "持续秒数（默认 300）", def: 300, attrs: 'min="30" max="86400"' },
+      { key: "threshold", col: "threshold", name: "memory_percent", label: "内存 %（默认 90）", def: 90, attrs: 'min="1" max="100"' },
+      { key: "hold_seconds", col: "hold", name: "memory_hold", label: "持续秒数（默认 300）", def: 300, attrs: 'min="30" max="86400"' },
     ],
     cell: (r) => `${r.threshold}% · ${r.hold_seconds} 秒`,
   },
 ];
 const ruleOf = (list, kind) => (list || []).find((r) => r.kind === kind);
+// 每条规则一行、固定四列：规则 | 阈值 | 持续 / 等待 | 重复提醒。规则没有的那一列留一个占位，
+// 同一种输入在每行都落在同一列——以前按各自的输入个数排，「重复提醒」在每行的位置都不一样。
 function alertFields(list) {
   const rows = RULE_SPECS.map((spec) => {
     const rule = ruleOf(list, spec.kind);
     // 开着的规则原样回填（接口省略 0，没写就是 0）；关着的回填默认值，勾上就能直接存。
     const value = (f) => (rule ? rule[f.key] ?? 0 : f.def);
-    const inputs = spec.fields
-      .map((f) => field(f.label, f.name, value(f), "number", `${f.attrs} placeholder="默认 ${f.def}"`))
-      .join("");
-    const repeat = field("重复提醒间隔（分钟，0 为只提醒一次）", spec.kind + "_repeat", rule ? (rule.repeat_seconds || 0) / 60 : 0, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"');
-    return `<div class="rule-row">${check(spec.label, spec.kind, !!rule)}${inputs}${repeat}${spec.hint ? `<small class="hint">${spec.hint}</small>` : ""}</div>`;
+    const slot = (col) => {
+      const f = spec.fields.find((x) => x.col === col);
+      return f ? field(f.label, f.name, value(f), "number", `${f.attrs} placeholder="默认 ${f.def}"`) : '<span class="rule-empty" aria-hidden="true">—</span>';
+    };
+    const repeat = field("重复间隔（分钟）", spec.kind + "_repeat", rule ? (rule.repeat_seconds || 0) / 60 : 0, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"');
+    return `<div class="rule-row">${check(spec.label, spec.kind, !!rule)}${slot("threshold")}${slot("hold")}${repeat}${spec.hint ? `<small class="hint rule-hint">${spec.hint}</small>` : ""}</div>`;
   }).join("");
-  return `<div class="form-section"><div class="form-grid rules-grid">${rows}</div><p class="hint">阈值默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU / 内存 90% 并持续 300 秒、重复间隔 0（只提醒一次）。未勾选的规则不生效；节点 45 秒未上报即判定离线，恢复时通知一次；重复间隔至少 5 分钟，每条规则各自设置。</p></div>`;
+  return `<div class="form-section"><div class="rule-head" aria-hidden="true"><span>规则</span><span>阈值</span><span>持续 / 等待</span><span>重复提醒</span></div><div class="rules-list">${rows}</div><p class="hint">未勾选的规则不生效。节点 45 秒未上报即判定离线，「等待秒数」是判定之后再等多久才提醒；恢复时通知一次。重复间隔填 0 只提醒一次，否则至少 5 分钟。</p></div>`;
 }
 // 规则未勾选时禁用它的输入：既表明这些值当前不生效，也让浏览器跳过它们的 min 校验。
 function wireAlerts(form) {
@@ -922,7 +940,7 @@ async function renderSettings() {
   // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
   const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
   const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : "glass";
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>公开面板对所有访客生效的显示选项。</p></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片的延迟色带每格一次探测，固定画最近 10 次；早于这个范围的探测不再显示，那几格留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以他自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${s.id}"${s.id === skinNow ? " selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>公开面板的全站显示选项，以及数据备份。</p></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片的延迟色带每格一次探测，固定画最近 10 次；早于这个范围的探测不再显示，那几格留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以他自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${s.id}"${s.id === skinNow ? " selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>数据备份</h3><p>下载整个数据库的一份快照：节点、任务、历史与设置都在里面。不用停服，面板和 Agent 上报照常。</p><small>升级到会改数据库结构的版本之前先下载一份。恢复时先停服，用它替换数据目录里的 tza-v2.db，并删掉同目录的 tza-v2.db-wal 与 tza-v2.db-shm，再启动。</small></div><div class="webhook-actions"><a id="download-backup" class="button primary" href="/api/v1/admin/backup" download>下载备份</a></div></section>`;
   // 面板显示项走 /admin/panel：通知那个出口的语义是「空值即清空」，
   // 用同一个 PUT 保存显示项会顺手把 webhook 或 Bot Token 清掉。
   content().querySelector("#save-window").onclick = guard(async () => {

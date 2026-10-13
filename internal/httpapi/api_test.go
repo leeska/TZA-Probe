@@ -319,6 +319,7 @@ func TestHTTPBoundariesAndAgentFlow(t *testing.T) {
 			{"PUT", "/api/v1/admin/nodes/alerts", map[string]any{"node_ids": []string{"example"}, "alerts": model.Alerts{}}},
 			{"GET", "/api/v1/admin/notification", nil},
 			{"GET", "/api/v1/admin/panel", nil},
+			{"GET", "/api/v1/admin/backup", nil},
 		} {
 			if code, _ := request(route.method, route.path, token, route.body); code != 401 {
 				t.Fatal("authentication", route.path, code)
