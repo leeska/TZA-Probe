@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 发布 GitHub Release（替代原 .github/workflows/check.yml 里的 release job，2026-10-09 起自建）。
+# 发布 GitHub Release。
 # 只写 tag 与 release，不碰 main；发行包由 scripts/pipeline.sh build 产出。
 #
 #   GITHUB_TOKEN=... bash scripts/release.sh <tag> <dist 目录> [目标 sha]
-#   例：GITHUB_TOKEN=$(grep ^GITHUB_TOKEN /root/.hermes/.env | cut -d= -f2) bash scripts/release.sh v2.0.0 dist
+#   例：GITHUB_TOKEN=ghp_... bash scripts/release.sh v1.0.0 dist
 #
 # 做四件事：校验产物 sha256 → tag 指到目标提交（已存在则不动）→ 建 release（GitHub 自动生成说明）
 # → 上传 tarball 与 .sha256（同名资产先删后传）→ 读回核对。

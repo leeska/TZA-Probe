@@ -92,3 +92,63 @@ func UnlockServiceIDs() []string {
 	}
 	return out
 }
+
+// Unlock verdicts. yes/no are the plain answers, originals_only is Netflix's
+// region-limited catalogue (the IP is recognised, the full library is not),
+// banned is an outright block of the address, failed is "the check itself could
+// not complete" and must never be read as a verdict about the IP.
+const (
+	UnlockYes           = "yes"
+	UnlockNo            = "no"
+	UnlockOriginalsOnly = "originals_only"
+	UnlockBanned        = "banned"
+	UnlockFailed        = "failed"
+)
+
+// UnlockResult is one service's verdict from one node.
+type UnlockResult struct {
+	Service string `json:"service"`
+	Status  string `json:"status"`
+	Region  string `json:"region,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+// Unlocked reports whether the verdict counts as unlocked. originals_only
+// counts: 妙妙屋 scores Netflix's limited catalogue as a hit too, so the two
+// panels agree on the same machine.
+func (u UnlockResult) Unlocked() bool {
+	return u.Status == UnlockYes || u.Status == UnlockOriginalsOnly
+}
+
+// UnlockSummary is what the panel needs: the score, the catalogue size and the
+// per-service verdicts behind it.
+type UnlockSummary struct {
+	Services []UnlockResult `json:"services"`
+	Score    int            `json:"score"`
+	Total    int            `json:"total"`
+	TestedAt int64          `json:"tested_at"`
+}
+
+// SummarizeUnlocks fills in the score. Total is the catalogue size (24), not
+// the number of services the node reported: a node that answered 20 of 24 is
+// scored out of 24, exactly like the panel it was ported from.
+func SummarizeUnlocks(services []UnlockResult, testedAt int64) *UnlockSummary {
+	if len(services) == 0 {
+		return nil
+	}
+	sum := &UnlockSummary{Services: services, Total: len(UnlockCatalog), TestedAt: testedAt}
+	for _, u := range services {
+		if u.Unlocked() {
+			sum.Score++
+		}
+	}
+	return sum
+}
+
+func ValidUnlockStatus(status string) bool {
+	switch status {
+	case UnlockYes, UnlockNo, UnlockOriginalsOnly, UnlockBanned, UnlockFailed:
+		return true
+	}
+	return false
+}

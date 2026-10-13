@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-Probe/internal/notify"
 )
 
 type fakeSource struct {
@@ -240,7 +241,7 @@ func fixture() *fakeSource {
 
 type stubSender struct{ sent []model.Event }
 
-func (s *stubSender) Send(_ context.Context, _ string, event model.Event) error {
+func (s *stubSender) Send(_ context.Context, _ notify.Config, event model.Event) error {
 	s.sent = append(s.sent, event)
 	return nil
 }
@@ -255,7 +256,7 @@ func newEnv(t *testing.T) *testEnv {
 	t.Helper()
 	source := fixture()
 	sender := &stubSender{}
-	server := httptest.NewServer(&Server{Source: source, Notifier: sender, Version: "2.0.0-test"})
+	server := httptest.NewServer(&Server{Source: source, Notifier: sender, Version: "1.0.0-test"})
 	t.Cleanup(server.Close)
 	return &testEnv{server: server, source: source, sender: sender}
 }
@@ -399,7 +400,7 @@ func TestModernRevisionRoundTrip(t *testing.T) {
 	}
 	meta, _ := discover["_meta"].(map[string]any)
 	info, _ := meta[serverInfoKey].(map[string]any)
-	if info["name"] != "tza-probe" || info["version"] != "2.0.0-test" {
+	if info["name"] != "tza-probe" || info["version"] != "1.0.0-test" {
 		t.Fatalf("serverInfo: %v", meta)
 	}
 

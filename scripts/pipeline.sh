@@ -9,7 +9,7 @@
 #
 # 环境变量：
 #   SHA=<短 sha>        写进版本号（默认 git rev-parse --short HEAD）
-#   VERSION=<字符串>    覆盖版本号（默认：HEAD 正好在 tag 上就用 tag，否则 2.0.0-dev+<sha>）
+#   VERSION=<字符串>    覆盖版本号（默认：HEAD 正好在 tag 上就用 tag，否则 1.0.0-dev+<sha>）
 #   OUT=<目录>          产物目录（默认 <仓库>/dist）
 #   UI_SMOKE=0          跳过 ui-smoke（只跑纯 Go 与纯前端部分）
 #   TZA_NODE / TZA_NPM  指定 Node / npm（本机 Hermes 自带的那份 npm 是坏的，要用 /usr/bin/npm）
@@ -138,7 +138,7 @@ version() {
   local tag
   tag=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
   [ -n "$tag" ] && { echo "$tag"; return; }
-  echo "2.0.0-dev+$SHA"
+  echo "1.0.0-dev+$SHA"
 }
 
 run_build() {

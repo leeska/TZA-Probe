@@ -1692,7 +1692,7 @@ td .text-button:hover {
 }
 
 /* 行内「更多」菜单。summary 长得和行内链接一样（同时挂 .more，皮肤给 details 画的卡片外观
-   都排除了 .more）。展开时菜单挪到 <body> 下 fixed 定位（位置由 admin.js 算）：表格外的
+   都排除了 .more）。展开时菜单挪到 <body> 下 fixed 定位（位置由 admin-state.js 算）：表格外的
    .table-scroll 会裁掉浮层，带 backdrop-filter 的面板又会把 fixed 变成相对它定位。 */
 details.row-more.more {
   display: flex;
@@ -3821,7 +3821,7 @@ tr.row-dragging td {
   opacity: 0.7;
 }
 
-/* 编辑节点 · 提醒规则：没勾选的规则，它的阈值输入已由 admin.js 设为 disabled，
+/* 编辑节点 · 提醒规则：没勾选的规则，它的阈值输入已由 admin-alerts.js 设为 disabled，
    这里把整格调暗，一眼看出「当前不生效」，不再像可编辑的普通输入框。 */
 .rule-row > label:not(.checkbox):has(input:disabled) {
   opacity: 0.45;
@@ -3830,7 +3830,7 @@ tr.row-dragging td {
   cursor: not-allowed;
 }
 
-/* 编辑节点里 UTC 时间输入框下方的本地时间换算（admin.js）。 */
+/* 编辑节点里 UTC 时间输入框下方的本地时间换算（admin-nodes.js）。 */
 label .local-time {
   font-size: 11px;
   color: var(--muted);
@@ -3901,7 +3901,7 @@ html[data-skin][data-theme] .expiry-pill.expired {
   border-color: color-mix(in srgb, var(--red) 40%, transparent);
 }
 
-/* 后台节点表的到期时间列（admin.js dueCell）。 */
+/* 后台节点表的到期时间列（admin-nodes.js dueCell）。 */
 td .due.soon,
 td .due.soon + small {
   color: var(--orange);

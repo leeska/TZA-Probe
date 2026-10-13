@@ -3,7 +3,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-ARG VERSION=2.0.0-dev
+ARG VERSION=1.0.0-dev
 # Embed Agents for both architectures so the image can serve the one-line installer.
 RUN for arch in amd64 arm64; do \
       CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="-s -w -X github.com/leeska/TZA-Probe/internal/model.Version=$VERSION" -o internal/agentdist/bin/tza-agent-linux-$arch ./cmd/agent || exit 1; \

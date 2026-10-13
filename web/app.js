@@ -1,7 +1,6 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
 import { bytes, bandwidth, date, days, gib, mbps, osLabel, percent, statusName } from "./format.js";
 import { detail } from "./detail.js";
-import { mountAdmin } from "./admin.js";
 import { applyTheme, themeButton } from "./theme.js";
 import { applySkin, skinButton } from "./skins.js";
 import { searchMatch } from "./search.js";
@@ -50,11 +49,25 @@ function noWheelStepping() {
   );
 }
 
+// 后台模块只在 /admin 才下载：公开页的访客用不到它们。依赖一次性声明成 modulepreload，
+// 并行下载，不等 admin.js 解析完再一层层发现。
+const ADMIN_MODULES = ["admin.js", "admin-state.js", "admin-nodes.js", "admin-tasks.js", "admin-alerts.js", "admin-settings.js", "task-controls.js", "task-editor.js", "agent-setup.js", "regions.js", "region-picker.js"];
+function loadAdmin() {
+  for (const name of ADMIN_MODULES) {
+    const link = document.createElement("link");
+    link.rel = "modulepreload";
+    link.href = "/" + name;
+    document.head.append(link);
+  }
+  return import("./admin.js");
+}
+
 async function start() {
   applyTheme();
   applySkin();
   noWheelStepping();
   if (adminPage) {
+    const { mountAdmin } = await loadAdmin();
     await mountAdmin(app, brand);
     return;
   }

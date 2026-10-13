@@ -39,10 +39,7 @@ func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 	count := 0
 	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { count++; w.WriteHeader(204) }))
 	defer receiver.Close()
-	if err = s.SetSetting(ctx, "webhook", receiver.URL); err != nil {
-		t.Fatal(err)
-	}
-	engine := Engine{Repository: s, Sender: Webhook{}}
+	engine := Engine{Repository: s, Channels: fixedChannel{Channel: "webhook", Webhook: receiver.URL}, Sender: Transport{}}
 	for _, seconds := range []int{0, 15, 30, 35} {
 		if err = engine.Tick(ctx, now.Add(time.Duration(seconds)*time.Second)); err != nil {
 			t.Fatal(err)
@@ -100,7 +97,7 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	if err = s.Report(ctx, id, m, now.Add(5*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	engine := Engine{Repository: s, Sender: Webhook{}}
+	engine := Engine{Repository: s, Sender: Transport{}}
 	if err = engine.Tick(ctx, now.Add(60*time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -224,3 +221,8 @@ func TestPerRuleRepeatAndSplitLoad(t *testing.T) {
 		t.Fatalf("repeat: cpu=%d (want 2) memory=%d (want 1)", count(model.AlertCPU), count(model.AlertMemory))
 	}
 }
+
+// fixedChannel is a Channels that always answers with the same configuration.
+type fixedChannel Config
+
+func (c fixedChannel) NotificationConfig(context.Context) (Config, error) { return Config(c), nil }

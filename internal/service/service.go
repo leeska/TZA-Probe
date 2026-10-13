@@ -68,6 +68,7 @@ var ErrNoSender = errors.New("通知发送组件不可用")
 type SendError struct{ Err error }
 
 func (e SendError) Error() string { return "测试通知发送失败：" + e.Err.Error() }
+
 func (e SendError) Unwrap() error { return e.Err }
 
 // ---------------------------------------------------------------- nodes
@@ -415,76 +416,6 @@ func (s *Service) Events(ctx context.Context, q model.EventQuery) ([]model.Event
 
 // ---------------------------------------------------------------- settings
 
-// Notification is the stored channel configuration; callers show only
-// Config.Public(), never the credentials.
-func (s *Service) Notification(ctx context.Context) (notify.Config, error) {
-	return notify.Status(ctx, s.Store)
-}
-
-// ReplaceNotification is the panel form: the whole configuration is
-// submitted, an empty field clears it (except a blank Telegram token, which
-// the form never echoes and therefore keeps).
-func (s *Service) ReplaceNotification(ctx context.Context, next notify.Config) (notify.Config, error) {
-	normalized, err := notify.Normalize(ctx, s.Store, next)
-	if err != nil {
-		return notify.Config{}, model.Invalid(err.Error())
-	}
-	return normalized, notify.Persist(ctx, s.Store, normalized)
-}
-
-// resolveNotificationPatch turns a partial change into a full configuration:
-// no channel keeps the current one (or, when notifications are off, the one
-// whose credentials were given), and blank credentials keep the stored ones.
-func (s *Service) resolveNotificationPatch(ctx context.Context, patch notify.Config) (notify.Config, error) {
-	current, err := s.Notification(ctx)
-	if err != nil {
-		return notify.Config{}, err
-	}
-	if patch.Channel == "" {
-		patch.Channel = current.Channel
-		if patch.Channel == "none" || patch.Channel == "" {
-			patch.Channel = "webhook"
-			if patch.BotToken != "" || patch.ChatID != "" {
-				patch.Channel = "telegram"
-			}
-		}
-	}
-	if patch.Channel == "telegram" && patch.ChatID == "" && current.Channel == "telegram" {
-		patch.ChatID = current.ChatID
-	}
-	if patch.Channel == "webhook" && patch.Webhook == "" && current.Channel == "webhook" {
-		stored, err := notify.Destination(ctx, s.Store)
-		if err != nil {
-			return notify.Config{}, err
-		}
-		patch.Webhook = notify.ReadConfig(stored).Webhook
-	}
-	normalized, err := notify.Normalize(ctx, s.Store, patch)
-	if err != nil {
-		return notify.Config{}, model.Invalid(err.Error())
-	}
-	return normalized, nil
-}
-
-// TestNotification sends a test message through the configured channel and
-// returns the channel it used.
-func (s *Service) TestNotification(ctx context.Context) (string, error) {
-	value, err := notify.Destination(ctx, s.Store)
-	if err != nil {
-		return "", err
-	}
-	if value == "" {
-		return "", model.Invalid("请先配置通知渠道")
-	}
-	if s.Notifier == nil {
-		return "", ErrNoSender
-	}
-	if err = s.Notifier.Send(ctx, value, model.Event{Kind: "test", Message: "TZA Probe 通知测试", At: time.Now().Unix()}); err != nil {
-		return "", SendError{err}
-	}
-	return notify.ReadConfig(value).Channel, nil
-}
-
 // Panel reads the visitor-facing display settings, normalized: an unset or
 // hand-edited value falls back to the built-in default.
 func (s *Service) Panel(ctx context.Context) (model.PanelSettings, error) {
@@ -540,21 +471,6 @@ func (s *Service) writePanel(ctx context.Context, patch model.PanelPatch) error 
 	return nil
 }
 
-// PatchNotification changes only the fields given — the rule MCP's
-// update_settings uses — so a script can switch the channel or rotate one
-// credential without resubmitting the rest. Closing notifications takes an
-// explicit channel "none".
-func (s *Service) PatchNotification(ctx context.Context, patch notify.Config) (notify.Config, error) {
-	if patch == (notify.Config{}) {
-		return notify.Config{}, model.Invalid("至少给一项通知设置；关闭通知请传 channel=none")
-	}
-	config, err := s.resolveNotificationPatch(ctx, patch)
-	if err != nil {
-		return notify.Config{}, err
-	}
-	return config, notify.Persist(ctx, s.Store, config)
-}
-
 // UpdateSettings is the combined partial update the MCP tool offers: a nil
 // notification leaves the channel alone. Everything is validated before
 // anything is written, so a bad panel value cannot leave the channel changed.
@@ -573,7 +489,7 @@ func (s *Service) UpdateSettings(ctx context.Context, notification *notify.Confi
 		if config, err = s.resolveNotificationPatch(ctx, *notification); err != nil {
 			return notify.Config{}, model.PanelSettings{}, err
 		}
-		if err = notify.Persist(ctx, s.Store, config); err != nil {
+		if err = s.saveNotification(ctx, config); err != nil {
 			return notify.Config{}, model.PanelSettings{}, err
 		}
 	}

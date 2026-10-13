@@ -210,3 +210,41 @@ func (s *Store) withoutCascade(ctx context.Context, fn func(*sql.Tx) error) erro
 
 // noCutoff purges every row of the target.
 const noCutoff = math.MaxInt64
+
+const (
+	// unlockFinishWindow is how late an unlock round may report. One round is
+	// minutes, not seconds (see probe.unlockBudget).
+	unlockFinishWindow = 15 * time.Minute
+	samplesRetention   = 30 * 24 * time.Hour
+	trafficRetention   = 400 * 24 * time.Hour
+	// 小时桶服务窗口内平均带宽（窗口上限 168 小时），也用来补周期首日那一段
+	// （锚点不在 00:00 时，日桶整天算会把首日整段丢掉，见 cycleStartSlice）——
+	// 月周期最长 31 天，留 45 天保证周期第一天的小时桶还在。
+	trafficHourRetention = 45 * 24 * time.Hour
+	JobsRetention        = 7 * 24 * time.Hour
+	eventsRetention      = 90 * 24 * time.Hour
+	// routeRetryDelay 是一次回程补测的等待时长：抖动通常就是十几秒到一两分钟的事，
+	// 等两分钟既避开正在过境的那一段，又不至于让面板把「未知」挂成常态。
+	routeRetryDelay = 2 * time.Minute
+	// retryRetention 只兜底：补测在 Lease 领走时就删了，留下来的都是节点离线时排下的
+	// 死行（也可能是已删任务的），一天之后一律清掉。
+	retryRetention = 24 * time.Hour
+)
+
+// Clean applies the retention periods. Each table is deleted a chunk of rows
+// at a time with the write lock released in between: an hour of expired jobs
+// is a quarter of a million rows on ten nodes, 11s under one lock, long enough
+// for every Agent's report to time out.
+func (s *Store) Clean(ctx context.Context, now time.Time) error {
+	for _, q := range []struct {
+		table, column string
+		age           time.Duration
+	}{{"samples", "at", samplesRetention}, {"traffic", "day", trafficRetention}, {"traffic_hour", "hour", trafficHourRetention}, {"jobs", "issued", JobsRetention}, {"events", "at", eventsRetention}, {"retries", "at", retryRetention}} {
+		if _, err := s.deleteChunks(ctx, q.table, q.column+"<?", now.Add(-q.age).Unix()); err != nil {
+			return err
+		}
+	}
+	// 后台删除的兜底：上次唤醒时失败的那条也在这里再试一次。
+	s.wakePurger()
+	return nil
+}

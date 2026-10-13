@@ -1,8 +1,8 @@
-# TZA Probe v2
+# TZA Probe
 
 一个独立重建的主机与网络探针：**一个仓库、Server / Agent 两个程序、一个 SQLite 数据库**。后台与公开页随 Server 嵌入发布，没有 Node 构建依赖。
 
-当前为 `2.0.0-dev`，与旧版本独立部署：不接受旧数据库，不迁移旧数据。
+当前版本 `v1.0.0`，首个公开版本。
 
 ## 功能
 
@@ -116,13 +116,13 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 
 ## 升级顺序
 
-**先升 Server，再升节点 Agent。** Agent 在上报里声明能力（`capabilities`），Server 只把对方能执行的任务派给它；而新 Agent 报给旧 Server 会因为不认识的能力字段被拒（HTTP 400），节点显示离线。
+以后升级时**先升 Server，再升节点 Agent。** Agent 在上报里声明能力（`capabilities`），Server 只把对方能执行的任务派给它；反过来新 Agent 报给旧 Server 会因为不认识的能力字段被拒（HTTP 400），节点显示离线。
 
 ## 部署与维护
 
-- [部署说明](docs/DEPLOYMENT.md)：手工安装、反代、备份与恢复。
+- [部署说明](docs/DEPLOYMENT.md)：手工安装、反代、升级、备份与恢复。
 - [组件边界](docs/ARCHITECTURE.md)、[HTTP 协议](docs/API.md)、[项目范围](docs/SCOPE.md)。
-- [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为还没有在真实环境验证。
+- [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为只能在真实环境验证。
 
 检查与构建用自建流水线（不依赖 GitHub Actions），需要 Go 1.27 与 Node ≥ 20.19 的 Linux：
 
@@ -135,7 +135,7 @@ GITHUB_TOKEN=... bash scripts/release.sh vX.Y.Z dist   # 打 tag、建 Release�
 
 `UI_SMOKE=0` 跳过前端集成检查，`OUT=<目录>` 换产物目录，`TZA_NODE` / `TZA_NPM` 指定 Node 与 npm。
 
-本项目不做插件市场、远程终端、任意命令、文件管理、多数据库、自动更新和旧协议适配。
+本项目不做插件市场、远程终端、任意命令、文件管理、多数据库和自动更新。
 
 ## License
 

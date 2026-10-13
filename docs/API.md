@@ -28,7 +28,7 @@
 | GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |
-| GET /agent/jobs | 获取有限租约任务：报了 `parallel_jobs` 能力的 Agent 最多 8 个 TCP + 1 个回程 + 1 个解锁，其余最多两个 |
+| GET /agent/jobs | 获取有限租约任务：按种类分别领取，最多 8 个 TCP + 1 个回程 + 1 个解锁（Agent 须报 `parallel_jobs` 能力，否则整批最多两个） |
 | POST /agent/results | 上传与租约绑定的结果 |
 
 准确字段由 `internal/model` 中的 JSON 标签定义。未登录请求拿到的节点不含提醒规则（`alerts` 全为零值）。解锁结论只随 `/nodes` 的 `unlock` 字段下发。
@@ -53,7 +53,6 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 
 管理员创建的探测目标允许内网地址，便于自托管网络监控；仅管理员可配置目标和通知出口。该权限不提供给公开页面或 Agent。
 
-
 ## 节点结构
 
 节点配置按关注点分组，运行状态平铺在节点视图上：
@@ -67,12 +66,12 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
  "alerts":[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":90,"hold_seconds":300,"repeat_seconds":1800}]}
 ```
 
-- `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区（原 `representative`），`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。保存时去掉首尾空白，新填或改动的地区必须出现在内置目录或某个任务的目标地区里，否则 400 并指出是哪个地区（节点原有的值不受影响，照常可编辑）。`latency_carriers` / `route_carriers` 只在这台机器真有的探测项里再筛一道，留空显示全部；回程只有电信、联通、移动三网。
+- `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区，`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。保存时去掉首尾空白，新填或改动的地区必须出现在内置目录或某个任务的目标地区里，否则 400 并指出是哪个地区（节点原有的值不受影响，照常可编辑）。`latency_carriers` / `route_carriers` 只在这台机器真有的探测项里再筛一道，留空显示全部；回程只有电信、联通、移动三网。
 - `region`（节点所在地区）只做展示，不参与匹配，不做这项检查。
-- `billing`：`reset_at` 是周期锚点（原 `billing_at`）；`free` 见下文。
-- `line`：线路带宽 `mbps`（原 `line_mbps`）与商家降速规则。
+- `billing`：`reset_at` 是周期锚点；`free` 见下文。
+- `line`：线路带宽 `mbps` 与商家降速规则。
 - 节点视图另带运行状态：`online`、`last_seen`、`metrics`、`cycle_start` / `cycle_end`、`traffic_used`、`avg_bps`、`covered_hours`、`window_hours`、`throttled`、`probe_targets`、`unlock`。
-- 创建时间与用量校正是服务端自记的状态，存在单独的列里，不在节点配置与任何响应中。数据库 v12 启动时把旧的平铺配置就地分组并搬出这三项，值不变。
+- 创建时间与用量校正是服务端自记的状态，存在单独的列里，不在节点配置与任何响应中。
 
 ## 任务结构
 
@@ -91,21 +90,18 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 - `unlock.family` 留空即自动：IPv4，纯 IPv6 的机器改派 IPv6。间隔最短 3600 秒。
 - `node_ids` 是明确节点列表，空列表不执行。
 
-Server 把任务展开为单项探测（checks × targets，解锁任务一项）。Agent 领到的 `job.task` 与观测里的 `task` 是这一项探测：`id`（所属任务）、`name`、`kind`（tcp / route / unlock）、`host`、`port`、`family`、`region`、`carrier`、`interval`——与协议 1 的单项任务字段相同，已部署的 Agent 不需要升级。每项独立计时与保留最近结果；排队时优先最早到期项。
+Server 把任务展开为单项探测（checks × targets，解锁任务一项）。Agent 领到的 `job.task` 与观测里的 `task` 是这一项探测：`id`（所属任务）、`name`、`kind`（tcp / route / unlock）、`host`、`port`、`family`、`region`、`carrier`、`interval`。每项独立计时与保留最近结果；排队时优先最早到期项。
 
-编辑任务时，只有「探测什么」变了（检测项、目标、解锁出口协议）才清掉该任务的旧结果与在途租约；只改名称、间隔、启停或绑定节点会保留结果，与专用的启停、绑定接口一致。数据库 v11 启动时把旧的组合任务、单项任务与解锁任务就地转换成这个结构，各探测的键不变，结果与历史照常衔接。
+编辑任务时，只有「探测什么」变了（检测项、目标、解锁出口协议）才清掉该任务的旧结果与在途租约；只改名称、间隔、启停或绑定节点会保留结果，与专用的启停、绑定接口一致。
 
-## 周期校正、告警与历史补充
+## 周期校正、告警与历史
 
 - `GET /api/v1/nodes/{id}/network-history?hours=24`：按 TCP 目标和 IP 协议返回历史序列，范围 1–168 小时、每个目标约 240 个时间桶。沿用节点详情的公开/管理员权限；失败连接不伪造零延迟，连接失败率按发送/成功次数加权。编辑或删除任务会清除其已有任务结果：面板与调度立刻按新状态显示，历史行由后台分批删除（每批持写锁约 0.1 秒，进程重启后接着删），删完之前已删任务的结果不再出现在这里。删除节点同理。
 - `POST /api/v1/admin/nodes/{id}/traffic`：管理员提交 `{"used":5000000000,"cycle":<cycle_start>}`，将当前周期已用总量校正为指定字节数。周期已变化返回 409。校正保留原始计数，后续增量继续累计，下周期失效；更改重置时间或计费方向会清除校正。
-- 节点配置的重置时间与到期时间都是 RFC3339（精确到秒）：`billing.reset_at` 是周期锚点，只取它的「日 + 时分秒」逐月顺延，短月取月末；`billing.expires_at` 留空表示不设。旧的 `billing_day`（每月第几天）不再接受。
-- 后台表单的重置/到期时间填 `YYYY-MM-DD HH:MM:SS`（UTC），提交前转成 RFC3339；格式不符或日期不存在（如 2 月 31 日）在本地就报错。数字输入不再画步进箭头，滚轮经过数字、日期时间与下拉框时先失焦，滚动页面不会误改已填好的值。
-- 节点的 `billing.free`（布尔）标记免费机器：公开卡片写「免费」，保存时 `price` 与 `price_period` 清空；`price_period` 不再接受「免费」。数据库 v10 启动时把旧的「免费」周期就地转成 `free: true`；升级后旧版二进制不能打开该数据库，回滚需恢复升级前备份。
-- 提醒规则 `alerts` 是列表，列出的规则开启，每种至多一条：`{"kind", "threshold", "hold_seconds", "repeat_seconds"}`。`offline` 用 `hold_seconds`（判定离线后再等 0–86400 秒）；`renewal` 用 `threshold`（到期前 0–365 天）；`traffic` 用 `threshold`（额度百分比 1–100）；`throttle` 无参数（按线路降速规则，节点须填 `line.throttle_mbps`）；`cpu` / `memory` 用 `threshold`（1–100%）与 `hold_seconds`（持续 30–86400 秒）。`repeat_seconds` 每条规则各自设置：0 为触发 / 恢复各一次，非零 300–604800 秒。不属于该种规则的参数会被拒绝。数据库 v13 把旧的开关对象就地转成列表：开着的规则连同阈值保留，旧的统一重复间隔写进每一条，负载规则拆成 cpu 与 memory 两条；关着的规则不再保留记住的阈值。旧的 `load` 事件照常显示，告警去抖状态随拆分重置。
-- 告警事件新增 `last_error`：最近一次通知投递错误；成功投递后清空。不保存 Telegram Token、请求 URL 或响应正文。
-
-数据库版本升级为 3，启动时自动完成两段迁移：v1 数据库补通知错误列和事件索引，v2 数据库把节点的 `billing_day`（每月第几天）改写成 `billing_at`（带秒的锚点时刻，取锚点日确实存在的最近一个月，避免被短月钳掉后逐月跑偏）。旧版二进制不能打开新版数据库，回滚时需恢复升级前备份。
+- 节点配置的重置时间与到期时间都是 RFC3339（精确到秒）：`billing.reset_at` 是周期锚点，只取它的「日 + 时分秒」逐月顺延，短月取月末；`billing.expires_at` 留空表示不设。
+- 后台表单的重置/到期时间填 `YYYY-MM-DD HH:MM:SS`（UTC），提交前转成 RFC3339；格式不符或日期不存在（如 2 月 31 日）在本地就报错。- 节点的 `billing.free`（布尔）标记免费机器：公开卡片写「免费」，保存时 `price` 与 `price_period` 清空。
+- 提醒规则 `alerts` 是列表，列出的规则开启，每种至多一条：`{"kind", "threshold", "hold_seconds", "repeat_seconds"}`。`offline` 用 `hold_seconds`（判定离线后再等 0–86400 秒）；`renewal` 用 `threshold`（到期前 0–365 天）；`traffic` 用 `threshold`（额度百分比 1–100）；`throttle` 无参数（按线路降速规则，节点须填 `line.throttle_mbps`）；`cpu` / `memory` 用 `threshold`（1–100%）与 `hold_seconds`（持续 30–86400 秒）。`repeat_seconds` 每条规则各自设置：0 为触发 / 恢复各一次，非零 300–604800 秒。不属于该种规则的参数会被拒绝。
+- 告警事件带 `last_error`：最近一次通知投递错误；成功投递后清空。不保存 Telegram Token、请求 URL 或响应正文。
 
 ## 网络任务管理
 

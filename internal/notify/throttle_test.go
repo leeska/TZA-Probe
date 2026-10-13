@@ -37,7 +37,7 @@ func TestThrottleRuleOnQuota(t *testing.T) {
 	if err = s.Report(ctx, id, m, now); err != nil {
 		t.Fatal(err)
 	}
-	engine := Engine{Repository: s, Sender: Webhook{}}
+	engine := Engine{Repository: s, Sender: Transport{}}
 	if err = engine.Tick(ctx, now); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 	if err = s.Report(ctx, id, m, now); err != nil {
 		t.Fatal(err)
 	}
-	engine := Engine{Repository: s, Sender: Webhook{}}
+	engine := Engine{Repository: s, Sender: Transport{}}
 	if err = engine.Tick(ctx, now); err != nil {
 		t.Fatal(err)
 	}

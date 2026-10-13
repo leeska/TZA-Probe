@@ -27,7 +27,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 ## 先选运行方式
 
-本地预览按 README 的“快速运行”启动。长期运行使用 Linux systemd；Docker 只用于 Server，Agent 直接运行在被监控主机。Server 和 Agent 可以在同一台或不同机器上，网页已嵌入 Server，不需要额外部署前端。
+本地预览按 README 的“本地运行”启动。长期运行使用 Linux systemd；Docker 只用于 Server，Agent 直接运行在被监控主机。Server 和 Agent 可以在同一台或不同机器上，网页已嵌入 Server，不需要额外部署前端。
 
 以下 Linux 命令从仓库根目录执行。需要 Go 1.27；目标机器使用编译好的二进制时不需要 Go、Node 或外部数据库。
 
@@ -49,7 +49,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v2.0.0"` 注入，不注入时为 `2.0.0-dev`。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为 `1.0.0-dev`。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -117,9 +117,9 @@ sudo systemctl enable --now tza-agent
 - 后台节点列表显示 Agent 版本和最后上报时间；网络任务的“执行记录”显示最近执行及失败原因。
 - 管理密钥丢失时停服，重新生成 `admin-token` 并维持服务账户所有权和 0600 权限后启动。Server 重启会使浏览器会话失效。
 
-## 更新与回滚
+## 升级与回滚
 
-先构建新二进制，保留旧二进制和数据备份，再替换；不要向正在运行的文件直接覆盖：
+一键安装的 Server 重新执行安装脚本即可升级。手工安装时先构建新二进制，保留旧二进制和数据备份，再替换；不要向正在运行的文件直接覆盖：
 
 ```sh
 sudo systemctl stop tza-server
@@ -129,13 +129,15 @@ sudo install -m 0755 bin/tza-server /usr/local/bin/tza-server
 sudo systemctl start tza-server
 ```
 
-Agent 更新使用相同的 stop → 保留旧二进制 → install → start 顺序，不需要重置密钥。协议版本不匹配时不会自动降级。
+先升 Server，再升 Agent。Agent 升级使用相同的 stop → 保留旧二进制 → install → start 顺序（或不带 `--token` 重新执行安装命令），不需要重置密钥。协议版本不匹配时不会自动降级。
 
-数据库当前版本为 2，Server 启动会自动升级本项目的 v1 数据库。回滚必须同时还原旧二进制和升级前数据备份，不能让旧程序读取新版数据库。旧版数据不导入本项目。
+新版本如果改了数据库结构，Server 启动时自动升级数据库。升级后的数据库旧程序打不开，因此回滚必须同时还原旧二进制和升级前的数据备份。
 
-## 简单备份与恢复
+## 备份与恢复
 
-采用停服复制完整数据目录，不增加后台备份系统。以下为 Server systemd 部署的备份命令：
+最简单的是后台“面板设置 → 数据备份”直接下载数据库快照（`GET /api/v1/admin/backup`，不用停服）；恢复时停服，把它放进数据目录、命名为 `tza-probe.db`（替换原文件），删掉同目录的 `tza-probe.db-wal` 与 `tza-probe.db-shm` 后启动。快照含通知凭据，按私密文件保管；它只含数据库，管理密钥 `admin-token` 需另外保存。
+
+要连同管理密钥一起备份，就停服复制完整数据目录。以下为 Server systemd 部署的备份命令：
 
 ```sh
 sudo systemctl stop tza-server
@@ -145,7 +147,7 @@ sudo cp -a /var/lib/tza-probe "$backup_dir/data"
 sudo systemctl start tza-server
 ```
 
-确认复制成功后再认为备份完成。备份包含管理密钥、通知凭据及 SQLite WAL/SHM 文件，保持私有权限。不能只复制运行中的 `tza-v2.db`。
+确认复制成功后再认为备份完成。备份包含管理密钥、通知凭据及 SQLite WAL/SHM 文件，保持私有权限。不能只复制运行中的 `tza-probe.db`。
 
 恢复时停止 Server，将当前目录移到另一个路径留作回退；把备份的 `data` 完整复制回 `/var/lib/tza-probe`，恢复 `tza-probe:tza-probe` 所有权后启动对应版本的 Server。Agent 配置位于各主机的 `/etc/tza-probe/agent.json`，单独保存。
 
@@ -159,5 +161,3 @@ docker run -d --name tza-server --restart unless-stopped \
 ```
 
 容器运行账户 UID 为 65532；使用宿主目录绑定时需授予对应权限。更新镜像仍需保留原数据卷，备份时停止容器后复制完整数据。Agent 在宿主机运行，避免把容器指标当成主机指标。
-
-以上是操作说明。本轮未执行真实节点、Telegram 或生产部署验收。

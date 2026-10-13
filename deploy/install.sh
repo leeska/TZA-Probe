@@ -4,7 +4,7 @@
 # 从源码构建 main 分支（需要 git 与 Go）：
 #   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
 # 从 GitHub Release 安装（免 Go 与 git，发布包同时带两种架构的 Agent）：
-#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --version v2.0.0
+#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --version v1.0.0
 #
 # 脚本只做四件事：取到 tza-server、装到 /usr/local/bin、建好数据目录、装 systemd 服务。
 # 重复执行即升级：旧二进制保留为 tza-server.previous，数据目录不动。
@@ -91,7 +91,7 @@ else
   need go
   echo "克隆 ${REPO} 并构建（需要能访问 github.com 与 Go 模块代理）"
   git clone --depth 1 "https://github.com/${REPO}.git" "${WORK}/src"
-  VERSION="2.0.0-dev+$(git -C "${WORK}/src" rev-parse --short HEAD)"
+  VERSION="1.0.0-dev+$(git -C "${WORK}/src" rev-parse --short HEAD)"
   LDFLAGS="-s -w -X github.com/${REPO}/internal/model.Version=${VERSION}"
   (cd "${WORK}/src" && CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" \
     -o "${WORK}/tza-server" ./cmd/server)

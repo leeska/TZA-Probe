@@ -157,7 +157,7 @@ func TestObservationsSlimDropsHopTables(t *testing.T) {
 	}
 
 	// 主机历史 slim 只留图表要的五个字段。
-	if err = s.Report(ctx, id, model.Metrics{CPU: 12.5, MemoryUsed: 1, MemoryTotal: 4, RateIn: 3, RateOut: 4, OS: "linux", Arch: "amd64", Distro: "Debian 13", Version: "2.0.0", IPFamilies: []string{"ipv4"}}, now); err != nil {
+	if err = s.Report(ctx, id, model.Metrics{CPU: 12.5, MemoryUsed: 1, MemoryTotal: 4, RateIn: 3, RateOut: 4, OS: "linux", Arch: "amd64", Distro: "Debian 13", Version: "1.0.0", IPFamilies: []string{"ipv4"}}, now); err != nil {
 		t.Fatal(err)
 	}
 	code, history := get("/api/v1/nodes/" + id + "/history?slim=1")

@@ -23,10 +23,16 @@ type Repository interface {
 	Transition(context.Context, model.Node, string, string, bool, int, int, time.Time) error
 	PendingEvents(context.Context, time.Time) ([]model.Event, error)
 	Delivery(context.Context, model.Event, bool, time.Time) error
-	Setting(context.Context, string) (string, error)
 }
+
+// Channels supplies the configured channel. A Channel of "none" means
+// notifications are off: events are still recorded, just not delivered.
+type Channels interface {
+	NotificationConfig(context.Context) (Config, error)
+}
+
 type Sender interface {
-	Send(context.Context, string, model.Event) error
+	Send(context.Context, Config, model.Event) error
 }
 
 // throttleMessage 是降速告警文案。两种规则读的不是同一个事实：窗口平均带宽的线路
@@ -98,6 +104,7 @@ func evaluate(n model.NodeView, r model.AlertRule, now time.Time) (bool, string)
 
 type Engine struct {
 	Repository Repository
+	Channels   Channels // nil: rules are evaluated, nothing is delivered
 	Sender     Sender
 }
 
@@ -119,8 +126,11 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 			}
 		}
 	}
-	endpoint, err := Destination(ctx, e.Repository)
-	if err != nil || endpoint == "" {
+	if e.Channels == nil {
+		return nil
+	}
+	channel, err := e.Channels.NotificationConfig(ctx)
+	if err != nil || channel.Channel == "none" {
 		return err
 	}
 	pending, err := e.Repository.PendingEvents(ctx, now)
@@ -129,7 +139,7 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 	}
 	// Bound work per tick; a failing destination cannot monopolize the scheduler.
 	for _, event := range pending[:min(len(pending), 5)] {
-		err = e.Sender.Send(ctx, endpoint, event)
+		err = e.Sender.Send(ctx, channel, event)
 		if err != nil {
 			slog.Warn("notification delivery failed", "event", event.ID)
 		}

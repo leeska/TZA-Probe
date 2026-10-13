@@ -18,6 +18,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/httpapi"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/service"
 	"github.com/leeska/TZA-Probe/internal/storage"
 	"github.com/leeska/TZA-Probe/web"
 )
@@ -68,10 +69,12 @@ func run() error {
 	if len(token) < 32 {
 		return errors.New("administrator key must contain at least 32 characters")
 	}
-	store, err := storage.Open(filepath.Join(*dir, "tza-v2.db"))
+	dbPath := databasePath(*dir)
+	store, err := storage.Open(dbPath)
 	if err != nil {
 		return err
 	}
+	slog.Info("database opened", "path", dbPath)
 	defer store.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -85,7 +88,11 @@ func run() error {
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); (notify.Engine{Repository: store, Sender: notify.Transport{}}).Run(ctx) }()
+	go func() {
+		defer wg.Done()
+		channels := &service.Service{Store: store}
+		(notify.Engine{Repository: store, Channels: channels, Sender: notify.Transport{}}).Run(ctx)
+	}()
 	go func() {
 		defer wg.Done()
 		ticker := time.NewTicker(time.Hour)
@@ -122,4 +129,24 @@ func run() error {
 		return nil
 	}
 	return err
+}
+
+// databasePath is the database file in dir. A data directory created before the
+// file was named tza-probe.db still holds tza-v2.db; that file keeps being used
+// in place rather than renamed, so rolling back to an older binary still finds
+// its data.
+func databasePath(dir string) string {
+	current := filepath.Join(dir, "tza-probe.db")
+	if fileExists(current) {
+		return current
+	}
+	if legacy := filepath.Join(dir, "tza-v2.db"); fileExists(legacy) {
+		return legacy
+	}
+	return current
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
