@@ -19,7 +19,7 @@
 硬数据，人物层要清的矩形、看板上沿的高度、收起时板留多高，全都由它推出来。
 
 用法（源图与闭眼帧先拷一份到 SRC，脚本可重复跑）：
-    python3 scripts/anime-split-layers.py [--src /root/work/anime-src] [--gen /tmp/layers] [--only jp]
+    python3 scripts/anime-split-layers.py --src <源图目录> [--gen /tmp/layers] [--only jp]
 """
 import argparse, os, sys
 import numpy as np
@@ -208,9 +208,9 @@ def split(pid, src, gen, out_dir, report):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default="/root/work/anime-src")
+    ap.add_argument("--src", required=True, help="源图与闭眼帧所在目录")
     ap.add_argument("--gen", default="/tmp/layers")
-    ap.add_argument("--out", default="/root/work/tza-probe/web/anime")
+    ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "anime"))
     ap.add_argument("--only", default="")
     ap.add_argument("--repair-only", action="store_true",
                     help="只就地补抹「牌子下沿倒角 + 描边线」那条残线（人物层 / 闭眼帧），不重跑拆层")

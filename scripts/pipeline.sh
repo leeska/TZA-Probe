@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# TZA-Probe 自建流水线（原 .github/workflows/check.yml 的等价物，2026-10-09 起不再依赖 GitHub Actions）：
-#   check  与 CI 同样的检查：gofmt / go vet / go test（有 gcc 时加 -race）/ web/*.js 语法 /
+# TZA-Probe 的检查与构建流水线（不依赖 GitHub Actions，任意 Linux 机器可跑）：
+#   check  gofmt / go vet / go test（有 gcc 时加 -race）/ web/*.js 语法 /
 #          presentation-test.mjs / 一次性 Server 上的 ui-smoke.mjs
-#   build  构建 linux amd64 的 Server（内含 amd64+arm64 两个 Agent）+ 两个发行包与 sha256
+#   build  构建 linux amd64 / arm64 的 Server（内含两个架构的 Agent）+ 两个发行包与 sha256
 #   all    check 后 build（默认）
 #
 #   bash scripts/pipeline.sh [check|build|all]
@@ -12,7 +12,7 @@
 #   VERSION=<字符串>    覆盖版本号（默认：HEAD 正好在 tag 上就用 tag，否则 1.0.0-dev+<sha>）
 #   OUT=<目录>          产物目录（默认 <仓库>/dist）
 #   UI_SMOKE=0          跳过 ui-smoke（只跑纯 Go 与纯前端部分）
-#   TZA_NODE / TZA_NPM  指定 Node / npm（本机 Hermes 自带的那份 npm 是坏的，要用 /usr/bin/npm）
+#   TZA_NODE / TZA_NPM  指定 Node / npm（默认取 PATH 里的）
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -35,10 +35,9 @@ SRV_PID=""
 BUILT_AGENTS=0
 cleanup() {
   [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null
-  # 编进 agentdist 的 Agent 二进制不能留在这个检出里：生产部署
-  # （tza-probe-deploy-netcup.sh）在编译机上直接 `go build ./cmd/server`，
-  # 而这些是**未跟踪**文件，git checkout --force 不会清掉它们——留着就会让
-  # 另一个 sha 的部署把这份旧 Agent 内嵌进去。构建时用过就删掉，恢复干净检出。
+  # 编进 agentdist 的 Agent 二进制不能留在这个检出里：它们是被忽略的未跟踪文件，
+  # git checkout --force 不会清掉，之后在同一检出里直接 `go build ./cmd/server`
+  # 就会把这份旧 Agent 内嵌进去。构建时用过就删掉，恢复干净检出。
   if [ "$BUILT_AGENTS" = 1 ]; then rm -f internal/agentdist/bin/tza-agent-linux-*; fi
   rm -rf "$TMP"
   return 0
@@ -76,7 +75,7 @@ check_go() {
     grep -E '^(FAIL|WARNING: DATA RACE)' "$TMP/race.log" | head -10 | sed 's/^/   /'
     note "go test -race $(dur $t0) rc=$rc"; [ "$rc" = 0 ] || FAILED=1
   else
-    note "本机没有 gcc，跳过 go test -race（-race 要 cgo）——CI 上这一步是过的"
+    note "本机没有 gcc，跳过 go test -race（-race 要 cgo）"
   fi
 }
 

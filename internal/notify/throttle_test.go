@@ -63,7 +63,7 @@ func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Date(2026, 9, 18, 12, 30, 0, 0, time.UTC)
-	node := model.Node{Name: "de-netcup", Alerts: model.Alerts{{Kind: model.AlertThrottle}}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 1, ThrottleHours: 1}}
+	node := model.Node{Name: "de-node", Alerts: model.Alerts{{Kind: model.AlertThrottle}}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 1, ThrottleHours: 1}}
 	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)

@@ -154,7 +154,7 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 			t.Errorf("anime.css 的 .anime-hands 少了 %q（要与人物层同一套几何，手才不会从手腕上错开）", want)
 		}
 	}
-	// 两态卡高必须**恒等**（2026-10-10 用户：「收起卡片卡片尺寸会有变化，要保证各个卡片尺寸固定」）。
+	// 两态卡高必须**恒等**：收起与展开不能改变卡片尺寸。
 	// 高度靠 CSS 保：收起态板内数据只 visibility:hidden（仍占位 → 板盒高度 = 展开态板高）；
 	// 展开 / 收起都收掉卡片下内边距（多一个 20px 会让收起态凭空高 20px）。
 	if !regexp.MustCompile(`\.node-card\[data-cast\]:not\(\[data-rolled="true"\]\)\s*\{[^}]*padding-bottom: 0`).MatchString(string(css)) &&

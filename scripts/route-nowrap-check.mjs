@@ -11,8 +11,8 @@
 // 再除以行高；同时用「标志顶边与值顶边之差」兜底（同一行里两者差约 3px，换行后差一整行）。
 //
 // 用法：
-//   node scripts/route-nowrap-check.mjs                              # 默认量线上 probe.tza.cc
-//   TZA_CHECK_URL=http://127.0.0.1:25911/ node scripts/route-nowrap-check.mjs
+//   node scripts/route-nowrap-check.mjs                              # 默认量本机 http://127.0.0.1:25774/
+//   TZA_CHECK_URL=https://probe.example.com/ node scripts/route-nowrap-check.mjs
 //   环境变量：WIDTH（默认 390，最窄的常用手机宽度）、PUPPETEER_CORE、
 //            CHROME_PATH（默认 /usr/bin/chromium）
 //   · 页面上没有回程格（例如回归用的合成库里那台机器没有探测任务）→ 打印 SKIP 并以 0 退出。
@@ -21,13 +21,13 @@
 // 为什么不做「把 styles.css 挂到空白页量」那种合成模式：同一段文字在那种环境里量出来比真实
 // 页面宽约 11px（字体回退差别），会误报折行——只有量真实页面才可信。
 //
-// 线上实测（2026-10-01，390px、17 台 21 格，圆点时代）：折行 0，最紧一格「10099 → 9929」需要 85.4px、可用 89px。
+// 实测（390px、17 台 21 格）：折行 0，最紧一格「10099 → 9929」需要 85.4px、可用 89px。
 import { existsSync } from "node:fs";
 
 const CORE = process.env.PUPPETEER_CORE ||
   "/tmp/pptr/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js";
 const CHROME = process.env.CHROME_PATH || "/usr/bin/chromium";
-const URL_ = process.env.TZA_CHECK_URL || "https://probe.tza.cc/";
+const URL_ = process.env.TZA_CHECK_URL || "http://127.0.0.1:25774/";
 const WIDTH = Number(process.env.WIDTH || 390);
 // 皮肤 / 明暗 / 视图都从环境变量来：回程格是三种皮肤里最紧的一格，任何一套都要过这一关。
 const SKIN = process.env.TZA_SKIN || "glass";

@@ -109,7 +109,7 @@ assert.equal(form.elements.billing_at.type, "text");
 assert.match(form.elements.billing_at.value, /^\d{4}-\d{2}-01 00:00:00$/, "重置时间默认值: " + form.elements.billing_at.value);
 assert.match(form.elements.billing_at.placeholder, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/, "输入框要给出带秒的格式示例");
 assert.match(form.elements.expires_at.placeholder, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
-// 价格周期与货币固定成下拉（2026-10-10 用户要求）：周期「周、月、季、半年、年、两年、三年」，
+// 价格周期与货币固定成下拉：周期「周、月、季、半年、年、两年、三年」，
 // 货币固定成常见几种。货币的 value 仍是 ISO 代码（卡片一直写 CNY / USD），中文名只做标签，
 // 免得把既有节点的显示改成「人民币」。
 assert.equal(form.elements.price_period.tagName, "SELECT", "价格周期要固定成选项");
@@ -1791,7 +1791,7 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     `信息带要有到期胶囊，实际「${pill?.textContent}」`,
   );
   assert(band.querySelector(".price-label"), "信息带要有价格");
-  // 线路带宽（2026-10-10 用户要求「前台要能显示线路带宽」）：后台填了才画，1000 Mbit/s 写
+  // 线路带宽：后台填了才画，1000 Mbit/s 写
   // 「1 Gbit/s」；没填的机器整块不出现（不留「未标注」这类占位）。
   assert.equal(
     band.querySelector(".line-pill")?.textContent.trim(),
@@ -1897,7 +1897,7 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
   assert(
     /\.route-label \{[^}]*flex-wrap: wrap/.test(styles) &&
       /\.route-label \{[^}]*align-items: center/.test(styles) &&
-      // 标志不是文字，没有基线可言；值与标志在同一行居中（用户：能居中还是居中）
+      // 标志不是文字，没有基线可言；值与标志在同一行居中
       !/\.route-label \{[^}]*align-items: baseline/.test(styles) &&
       /\.route-label \{[^}]*justify-content: center/.test(styles),
     "回程格是标志 + 值一行居中；更长的值整段落到第二行（不断在箭头上）",

@@ -12,8 +12,8 @@
 // 最后一格（计费）会顶出内容盒）。
 //
 // 用法：
-//   node scripts/card-overflow-check.mjs                     # 默认量线上 probe.tza.cc
-//   TZA_CHECK_URL=http://127.0.0.1:25911/ node scripts/card-overflow-check.mjs
+//   node scripts/card-overflow-check.mjs                     # 默认量本机 http://127.0.0.1:25774/
+//   TZA_CHECK_URL=https://probe.example.com/ node scripts/card-overflow-check.mjs
 //   环境变量：WIDTHS（逗号分隔，默认 320,344,360,375,390,414）、VIEWS（默认 card,list）、
 //            PUPPETEER_CORE、CHROME_PATH（默认 /usr/bin/chromium）、TZA_SKIN、TZA_THEME
 //   · 没有 puppeteer-core / chromium → 打印 SKIP 并以 0 退出。
@@ -22,7 +22,7 @@ import { existsSync } from "node:fs";
 const CORE = process.env.PUPPETEER_CORE ||
   "/tmp/pptr/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js";
 const CHROME = process.env.CHROME_PATH || "/usr/bin/chromium";
-const URL_ = process.env.TZA_CHECK_URL || "https://probe.tza.cc/";
+const URL_ = process.env.TZA_CHECK_URL || "http://127.0.0.1:25774/";
 const WIDTHS = (process.env.WIDTHS || "320,344,360,375,390,414").split(",").map((v) => Number(v.trim()));
 const VIEWS = (process.env.VIEWS || "card,list").split(",").map((v) => v.trim()).filter(Boolean);
 const SKIN = process.env.TZA_SKIN || "glass";
