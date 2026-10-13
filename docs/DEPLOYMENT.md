@@ -120,7 +120,7 @@ sudo systemctl enable --now tza-agent
 
 ## 升级与回滚
 
-一键安装的 Server 重新执行安装脚本即可升级。手工安装时先构建新二进制，保留旧二进制和数据备份，再替换；不要向正在运行的文件直接覆盖：
+一键安装的 Server 重新执行安装脚本即可升级：脚本替换二进制后自动 `systemctl restart tza-server`，并等到 `/healthz` 报出新版本号才结束；重启失败或 30 秒内仍是旧版本时会提示查看日志，旧二进制保留在 `tza-server.previous`。手工安装时先构建新二进制，保留旧二进制和数据备份，再替换；不要向正在运行的文件直接覆盖：
 
 ```sh
 sudo systemctl stop tza-server

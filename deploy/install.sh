@@ -8,7 +8,8 @@
 #
 # 脚本只做五件事：取到 tza-server、装到 /usr/local/bin、建好数据目录、生成管理密钥与
 # 后台账号、装 systemd 服务。
-# 重复执行即升级：旧二进制保留为 tza-server.previous，数据目录不动，已有的密钥与账号保留。
+# 重复执行即升级：旧二进制保留为 tza-server.previous，数据目录不动，已有的密钥与账号保留；
+# 服务已在运行时自动重启换上新版本，并等到新版本应答 /healthz 再结束。
 # 后台初始密码只在首次安装时显示一次；忘记密码执行 sudo tza-server reset-password --data 数据目录。
 set -eu
 
@@ -173,20 +174,41 @@ UNIT
     sed -i "s#^ReadWritePaths=.*#ReadWritePaths=${DATA}#" "$UNIT"
   fi
   systemctl daemon-reload
-  systemctl enable --now tza-server
-  started="yes"
-  for _ in $(seq 1 20); do
-    if command -v curl >/dev/null 2>&1 && curl -fsS "http://${LISTEN}/healthz" >/dev/null 2>&1; then break; fi
-    sleep 1
-  done
+  systemctl enable tza-server >/dev/null 2>&1
+  # 升级时服务还在跑旧进程，enable --now 不会换掉它：一律 restart（没在跑时等同 start）。
+  if systemctl is-active --quiet tza-server; then ACTION="重启"; else ACTION="启动"; fi
+  # 重启失败也要把后面的登录信息打印出来（首次安装的密码只显示这一次），最后再以失败退出。
+  if systemctl restart tza-server; then started="yes"; else started="failed"; fi
+  # 等到 /healthz 报出的正是刚装的版本，才算新进程起来了（旧进程退出前也可能还在应答）。
+  RUNNING=""
+  if [ "$started" = "yes" ] && command -v curl >/dev/null 2>&1; then
+    for _ in $(seq 1 30); do
+      RUNNING="$(curl -fsS -m 2 "http://${LISTEN}/healthz" 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+      [ "$RUNNING" = "$VERSION" ] && break
+      sleep 1
+    done
+  fi
 fi
 
 echo
 echo "已安装：${BIN}（版本 ${VERSION}）"
 echo "数据目录：${DATA}"
 if [ "$started" = "yes" ]; then
+  if [ "$RUNNING" = "$VERSION" ]; then
+    echo "服务已${ACTION}，正在运行版本 ${RUNNING}"
+  elif ! command -v curl >/dev/null 2>&1; then
+    echo "服务已${ACTION}（没有 curl，未核对运行版本）"
+  elif [ -n "$RUNNING" ]; then
+    echo "!! 服务已${ACTION}，但 30 秒内应答的仍是版本 ${RUNNING}，请查看服务日志" >&2
+  else
+    echo "!! 服务已${ACTION}，但 30 秒内没有应答 http://${LISTEN}/healthz，请查看服务日志" >&2
+  fi
   echo "服务状态：systemctl status tza-server"
   echo "服务日志：journalctl -u tza-server -n 100 --no-pager"
+elif [ "$started" = "failed" ]; then
+  echo "!! systemctl restart tza-server 失败，服务没有起来。查看原因：" >&2
+  echo "   journalctl -u tza-server -n 100 --no-pager" >&2
+  echo "   旧二进制保留在 ${BIN}.previous，可 cp -p 回去后再 systemctl restart tza-server" >&2
 else
   echo "未注册 systemd 服务，手动启动："
   echo "  sudo -u ${SERVICE_USER} ${BIN} --listen ${LISTEN} --data ${DATA}"
@@ -204,3 +226,4 @@ else
 fi
 echo
 echo "下一步：登录后台新增节点，“接入”弹窗会给出一条命令，在 Agent 主机执行即可装好 Agent。"
+[ "$started" != "failed" ] || exit 1
