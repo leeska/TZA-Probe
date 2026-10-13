@@ -38,6 +38,8 @@
 
 ## Model Context Protocol（`POST /mcp`）
 
+首次接入请先阅读 [MCP 接入指南](MCP.md)，其中包含 Key 生成、客户端配置、工具清单及可运行的 curl 示例。
+
 请求头携带 `Authorization: Bearer <MCP API Key>`，Key 在“面板设置”生成，初始未配置时端点拒绝访问。管理密钥、面板会话 Cookie 与节点密钥不通行，MCP Key 也不能登录后台或访问管理 HTTP API，跨源写入按原有规则拒绝。写工具与面板共用同一套持久化与校验，因此 AI 客户端改出来的状态和面板改出来的完全一致。只接受 POST 与 `application/json`，GET / DELETE 返回 405；响应默认为 `application/json`，客户端只接受 `text/event-stream` 时用一条 SSE 消息回复同一条 JSON-RPC 消息。没有会话状态，每个请求独立处理。
 
 同一个地址支持两代协议：

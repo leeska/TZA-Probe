@@ -109,13 +109,13 @@ chmod 600 agent.json
 
 ## MCP 接口
 
-Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextprotocol.io) 端点，用“面板设置 → MCP API Key”生成的独立 Key（`Authorization: Bearer <API Key>`）鉴权。Key 只在生成时显示一次，可重新生成或撤销，旧 Key 立即失效；管理密钥和面板 Cookie 无法访问 MCP。工具覆盖管理面板的全部操作，读写与面板走同一套校验；已存的 Bot Token / Webhook 不回显。**写工具立即生效、删除不可撤销**，接入前请确认客户端会在执行前征求你的同意。
+Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextprotocol.io) 端点，用“面板设置 → MCP API Key”生成的独立 Key（`Authorization: Bearer <API Key>`）鉴权。Key 只在生成时显示一次，可重新生成或撤销，旧 Key 立即失效；管理密钥和面板 Cookie 无法访问 MCP。工具覆盖节点、任务、提醒规则及通知和面板设置，读写与面板走同一套校验；已存的 Bot Token / Webhook 不回显。**写工具立即生效、删除不可撤销**，接入前请确认客户端会在执行前征求你的同意。
 
 ```json
 { "mcpServers": { "tza-probe": { "type": "http", "url": "https://probe.example.com/mcp", "headers": { "Authorization": "Bearer MCP_API_KEY" } } } }
 ```
 
-工具 21 个。读取：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`、`latency_samples`、`list_catalog`、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`、`update_settings`、`test_notification`。`update_*` 是合并语义，只提交要改的字段。支持 `2026-07-28` 与 `2025-11-25` / `2025-06-18` 两代协议，细节见 [HTTP 协议](docs/API.md)。
+共 25 个工具，包含查询和修改节点、任务、提醒规则、通知及面板设置。`update_*` 只修改提交的字段。完整的 Key 管理、客户端配置、工具清单、curl 自检和排错步骤见 [MCP 接入指南](docs/MCP.md)；协议字段见 [HTTP 协议](docs/API.md)。
 
 ## 升级顺序
 
@@ -124,6 +124,7 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 ## 部署与维护
 
 - [部署说明](docs/DEPLOYMENT.md)：手工安装、反代、升级、备份与恢复。
+- [MCP 接入指南](docs/MCP.md)：API Key、客户端配置、工具能力与连接排错。
 - [组件边界](docs/ARCHITECTURE.md)、[HTTP 协议](docs/API.md)、[项目范围](docs/SCOPE.md)。
 - [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为只能在真实环境验证。
 
