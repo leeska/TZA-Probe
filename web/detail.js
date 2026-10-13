@@ -199,26 +199,81 @@ export async function detail(id, focus = null) {
         renderRoutes(b.dataset.detailFamily);
       }),
   );
-  d.querySelector("#history-range")?.addEventListener("change", guard(async (e) => {
+  // 时间范围的数据按请求缓存在这次打开的弹窗里：主机历史按所选小时数，网络历史最多 7 天
+  // （30 天与 7 天是同一份）。碰到下拉框就把各档预取下来，选的时候多半已经在手里，
+  // 来回切换也不再发请求。缓存一分钟后作废，弹窗开着放久了不会一直画旧数据。
+  const rangeCache = new Map();
+  const cacheTTL = 60000;
+  const fetchOnce = (url) => {
+    const hit = rangeCache.get(url);
+    if (hit && Date.now() - hit.at < cacheTTL) return hit;
+    const entry = { at: Date.now(), settled: false };
+    entry.promise = api(url).finally(() => (entry.settled = true));
+    // 失败的不留在缓存里，下次选同一档会重新请求；预取的失败也不该变成未处理的拒绝。
+    entry.promise.catch(() => rangeCache.get(url) === entry && rangeCache.delete(url));
+    rangeCache.set(url, entry);
+    return entry;
+  };
+  const hostURL = (hours) => `/nodes/${id}/history?hours=${hours}&slim=1`;
+  const netURL = (hours) => `/nodes/${id}/network-history?hours=${Math.min(hours, 168)}`;
+  // 首屏的 24 小时已经取过了。
+  for (const [url, value] of [[hostURL(24), history], [netURL(24), network]]) {
+    rangeCache.set(url, { at: Date.now(), settled: true, promise: Promise.resolve(value) });
+  }
+  const rangeSelect = d.querySelector("#history-range");
+  const prefetch = () => {
+    // 最慢、最常选的 7 天排在最前面，免得浏览器的并发上限让它排在小请求后面。
+    const options = [...rangeSelect.options].map((o) => Number(o.value)).sort((a, b) => b - a);
+    for (const hours of options) {
+      if (focused) fetchOnce(netURL(hours));
+      else {
+        fetchOnce(netURL(hours));
+        fetchOnce(hostURL(hours));
+      }
+    }
+  };
+  // 鼠标移上去、键盘聚焦、手指按下：哪个先发生都算「要选了」。原生 select 会被 ui-select.js
+  // 包进自定义触发器（异步、且自身隐藏），所以在下拉框所在的标题栏上委托、认触发器外壳。
+  // 不挂在 #dialog 上：所有弹窗共用它，每打开一次详情就会多叠一份监听。
+  const nearRange = (e) => {
+    const shell = e.target.closest?.(".select-shell");
+    if (e.target === rangeSelect || shell?.contains(rangeSelect)) prefetch();
+  };
+  const rangeHead = rangeSelect?.closest(".section-head");
+  for (const type of ["pointerover", "focusin", "pointerdown"]) rangeHead?.addEventListener(type, nearRange);
+  // 正在等的那几块图调暗并标成忙；只有最后一次选择能撤掉，先发的慢请求回来不会提前撤。
+  // 调暗有短暂延迟（见 styles.css），预取命中时不闪一下。
+  let rangeTicket = 0;
+  const busyTargets = () => [d.querySelector("#charts"), d.querySelector("#network-overview")].filter(Boolean);
+  rangeSelect?.addEventListener("change", guard(async (e) => {
     const hours = Number(e.target.value);
-    const [samples, net] = await withDeadline(() =>
-      Promise.all([
-        api(`/nodes/${id}/history?hours=${hours}&slim=1`),
-        api(`/nodes/${id}/network-history?hours=${Math.min(hours, 168)}`),
-      ]),
-    );
-    if (
-      !d.open ||
-      d.dataset.nodeId !== id ||
-      Number(d.querySelector("#history-range")?.value) !== hours
-    )
-      return;
-    selectedHours = hours;
-    networkSeries = focused ? net.filter((x) => carrierOf(x.carrier) === focusCarrier) : net;
-    // 聚焦视图没有主机历史，只有网络曲线——那里没有 #charts，别把整段交互打断。
-    const hosts = d.querySelector("#charts");
-    if (hosts) hosts.innerHTML = hostCharts(samples, hours, n);
-    renderNetwork();
+    const ticket = ++rangeTicket;
+    const host = focused ? null : fetchOnce(hostURL(hours));
+    const net = fetchOnce(netURL(hours));
+    const waiting = !net.settled || (host && !host.settled);
+    if (waiting) {
+      for (const el of busyTargets()) {
+        el.classList.add("range-loading");
+        el.setAttribute("aria-busy", "true");
+      }
+    }
+    try {
+      const [samples, series] = await withDeadline(() => Promise.all([host ? host.promise : null, net.promise]));
+      if (!d.open || d.dataset.nodeId !== id || ticket !== rangeTicket) return;
+      selectedHours = hours;
+      networkSeries = focused ? series.filter((x) => carrierOf(x.carrier) === focusCarrier) : series;
+      // 聚焦视图没有主机历史，只有网络曲线——那里没有 #charts，别把整段交互打断。
+      const hosts = d.querySelector("#charts");
+      if (hosts && samples) hosts.innerHTML = hostCharts(samples, hours, n);
+      renderNetwork();
+    } finally {
+      if (ticket === rangeTicket) {
+        for (const el of busyTargets()) {
+          el.classList.remove("range-loading");
+          el.removeAttribute("aria-busy");
+        }
+      }
+    }
   }));
 }
 

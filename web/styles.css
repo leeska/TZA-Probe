@@ -3884,6 +3884,19 @@ label .local-time:empty {
   pointer-events: none;
 }
 
+/* 详情里切换时间范围、数据还在路上时（detail.js）：图表调暗、不可点。延迟 120ms 再暗，
+   预取命中或接口很快时不闪一下；恢复则立即。 */
+#charts,
+#network-overview {
+  transition: opacity 0.15s ease;
+}
+#charts.range-loading,
+#network-overview.range-loading {
+  opacity: 0.45;
+  pointer-events: none;
+  transition-delay: 0.12s;
+}
+
 /* 登录页左下角与后台侧栏底部的署名是一句短标签，窄一点的窗口里会折成两行
    （「TZA PROBE / CONTROL / PLANE」「TZA PROBE / V2」），锁成一行。 */
 .login-story-foot small,
