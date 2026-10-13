@@ -312,12 +312,19 @@ input[type="checkbox"] {
   padding: 0 32px;
 }
 
-/* Hero Section */
+/* Hero Section：一行标语 + 右侧「最近同步」。以前是眉题 + 40px 大标题 + 说明三行，在
+   1440×900 上占掉首屏约四分之一，节点卡片被压到下半屏；现在只留一行，首屏让给数据。 */
 .hero {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  padding: 36px 0 28px;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 0 16px;
+}
+
+.hero h1 {
+  font-size: 24px;
+  margin: 0;
 }
 
 .eyebrow {
@@ -344,15 +351,14 @@ h1 {
 
 .hero-meta {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-align: right;
-  padding: 12px 18px;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 16px;
   font-size: 11px;
 }
 
 .hero-meta strong {
-  font-size: 22px;
+  font-size: 16px;
   letter-spacing: 0.5px;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
