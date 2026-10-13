@@ -1613,9 +1613,15 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     /html\[data-skin="press"\] \.segmented button\.active \{[^}]*background: var\(--accent\)[^}]*color: var\(--press-surface\)/s.test(pressRules),
     "选中块是实心版色红章 + 纸面字（浅色 / 夜印各自翻色）",
   );
+  // 格间墨线是后一格左缘的内阴影：不占宽度、不随选中切换，三格（告警页子页）也落在真实分界上。
+  // 画成容器正中的背景线只对两格对得上；画成某一格的边框则点一下线就跟着挪。
   assert(
-    /\.segmented \{[^}]*background-image: linear-gradient\(var\(--glass-border\), var\(--glass-border\)\)[^}]*background-size: 2px 100%[^}]*background-position: center/s.test(pressRules),
-    "两半之间那条墨线要画成容器正中间的一条背景线，不能画成某一半的边框（画在按钮上，点一下线就跟着挪）",
+    /\.segmented button \+ button,\s*html\[data-skin="press"\] \.segmented button \+ button\.active \{[^}]*box-shadow: inset 2px 0 0 var\(--glass-border\)/s.test(pressRules),
+    "格间墨线要画成后一格左缘的内阴影（选中块也带上），不能是容器正中的背景线或某一格的边框",
+  );
+  assert(
+    !/html\[data-skin="press"\] \.segmented \{[^}]*background-position: center/s.test(pressRules),
+    "容器正中的背景线只对两格对得上，三格时会穿过中间那格的字",
   );
   assert(
     /\.segmented button \{[^}]*height: auto[^}]*align-self: stretch/s.test(pressRules),
