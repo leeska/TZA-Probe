@@ -113,8 +113,22 @@ function setView(next) {
 }
 
 function applyView() {
-  document.querySelector("#nodes")?.classList.toggle("node-list", view === "list");
+  const list = document.querySelector("#nodes");
+  if (!list) return;
+  list.classList.toggle("node-list", view === "list");
+  list.onscroll = markListOverflow;
+  markListOverflow();
 }
+
+// 列表视图在 1336px 以下整块横向滚动（styles.css 的媒体查询），右缘被切掉的那一格（计费）
+// 原来没有任何提示，看着像排版坏了。右边还有内容时挂 .more-right，CSS 据此在右缘渐隐。
+function markListOverflow() {
+  const list = document.querySelector("#nodes");
+  if (!list) return;
+  const more = list.classList.contains("node-list") && list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+  list.classList.toggle("more-right", more);
+}
+addEventListener("resize", markListOverflow);
 
 async function refresh() {
   const ticket = ++generation;
@@ -447,6 +461,7 @@ function renderCards() {
     [...list.querySelectorAll(".node-card")].forEach((el, i) => renderedHTML.set(el, wanted[i]));
   }
   if (atBottom) scroller.scrollTop = scroller.scrollHeight;
+  markListOverflow();
   // 单元格子只展示那一格的内容（延迟 / 回程），整张卡片才展示综合信息。
   for (const b of document.querySelectorAll("[data-detail]"))
     b.onclick = guard((e) => {

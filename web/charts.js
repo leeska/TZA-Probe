@@ -38,6 +38,15 @@ export function axisRow(first, last, count = 5) {
     .join("")}</div>`;
 }
 
+// 纵轴上限取「好读」的数：1 / 2 / 4 / 5 / 10 × 10^k。直接拿峰值当上限会得出「0 / 210 / 419 KB/s」
+// 这种刻度；进位到 500 之后半量程是 250，三格都是整数。4 而不是 2.5：半量程 2 比 1.25 好读。
+export function niceCeiling(value) {
+  if (!(value > 0)) return 1;
+  const exp = 10 ** Math.floor(Math.log10(value));
+  const m = value / exp;
+  return [1, 2, 4, 5, 10].find((step) => m <= step + 1e-9) * exp;
+}
+
 export function formatValue(value, unit) {
   if (value == null || !Number.isFinite(value)) return "—";
   if (unit === "%") return value.toFixed(0) + "%";
@@ -209,8 +218,8 @@ export function chart(samples, key, label, color = "teal", hours = 24, options =
   const unit = percent ? "%" : key.startsWith("rate_") ? "B/s" : "ms";
   const values = samples.map(valueOf).filter((v) => v != null && Number.isFinite(v));
   if (!values.length) return `<div class="chart-empty">${esc(label)} · 暂无有效样本</div>`;
-  const ceiling = percent ? 100 : Math.max(1, ...values);
-  // 纵坐标刻度：顶部是量程上限（百分比固定 100%，速率取峰值，延迟取历史峰值），
+  const ceiling = percent ? 100 : niceCeiling(Math.max(1, ...values));
+  // 纵坐标刻度：顶部是量程上限（百分比固定 100%，速率与延迟取峰值进位到 niceCeiling），
   // 中间是半量程，底部是 0。绘图区在 120 高的 viewBox 里，网格线固定在 8 / 59 / 110。
   const tick = (v) => formatValue(v, unit);
   const scaleLabel = tick(ceiling);

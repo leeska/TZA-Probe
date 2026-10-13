@@ -1467,8 +1467,9 @@ button.node-name {
   font-weight: 500;
 }
 
-/* 节点列表里 Agent 版本与面板不一致时的「需更新」。 */
-.agent-stale {
+/* 节点列表里 Agent 版本与面板不一致时的「需更新」，以及绑定的探测任务对不上卡片地区时的「卡片无探测」。 */
+.agent-stale,
+.region-miss {
   color: var(--orange, #f97316);
   font-weight: 600;
   cursor: help;
@@ -3017,6 +3018,9 @@ pre,
   }
   .login-story {
     padding: 28px 20px;
+    /* 桌面靠 space-between 把品牌 / 标语 / 署名撑开；手机上内容高度就是盒子高度，三块贴在一起，
+       品牌下沿正好压着「SMALL STACK」眉题。 */
+    gap: 28px;
   }
   .login-panel {
     padding: 30px 20px;
@@ -3155,6 +3159,32 @@ pre,
   }
   table.stack .select-all span {
     display: inline;
+  }
+  /* 勾选框不再单独占一行「选择 ☐」：和拖动手柄一样挪到卡片右上角（勾选框自带 aria-label）。 */
+  table.stack td[data-label="选择"] {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+  table.stack td[data-label="选择"]::before {
+    content: none;
+  }
+}
+
+/* 761~1100px：内容区还有 600px 上下，一格一行会把每台节点拉成八行高。改成两列「标签 : 值」，
+   行数减半；拖动手柄 / 勾选框是绝对定位，不占格子。手机（≤760）仍是一列。 */
+@media (min-width: 761px) and (max-width: 1100px) {
+  table.stack tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+    padding-right: 44px;
+  }
+  table.stack td.empty-cell {
+    grid-column: 1 / -1;
   }
 }
 
@@ -3448,6 +3478,13 @@ pre,
        （计费）会顶出内容盒、被 .node-card 的 overflow: hidden 切掉。 */
     min-width: calc(var(--row-min) + 5 * var(--row-gap) + 40px + 2px);
     margin-bottom: 12px;
+  }
+
+  /* 右边还有没露出来的格子（app.js 的 markListOverflow 挂 .more-right）：右缘 64px 渐隐，
+     让被切断的那一格读作「往右还有」，而不是行的描边和圆角坏了。滚到底就撤掉。 */
+  .node-grid.node-list.more-right {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent);
   }
 }
 
@@ -3843,6 +3880,17 @@ label .local-time:empty {
 }
 .login-story-foot small {
   flex-shrink: 0;
+}
+/* 手机上署名（锁一行）+ 两颗外观按钮加起来比屏宽多 30px，整页被撑出横向滚动、「跟随系统」切掉一半。
+   署名独占一行，按钮排到下一行。 */
+@media (max-width: 480px) {
+  .login-story-foot {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .login-story-foot small {
+    flex-basis: 100%;
+  }
 }
 
 /* 已过期：红色，与「7 天内到期」的橙色分开（以前两者同一个 warning 橙）。选择器带上

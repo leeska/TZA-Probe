@@ -23,6 +23,13 @@ const regionSuggestions = (catalog, existing) =>
     (existing?.probe?.targets || []).map((x) => x.region),
   );
 
+// 间隔按最自然的单位写：3600 秒写「1 小时」，90 秒照写「90 秒」——只在整除时进位。
+function every(seconds) {
+  if (seconds % 3600 === 0) return `每 ${seconds / 3600} 小时`;
+  if (seconds % 60 === 0 && seconds >= 120) return `每 ${seconds / 60} 分钟`;
+  return `每 ${seconds} 秒`;
+}
+
 export function taskSummary(t) {
   // 解锁检测没有目标与端口：它的对象是内置目录里的 24 项服务，列表里要一眼看出它是这一类任务，
   // 所以「检测内容」写「解锁检测」、目标写「内置目录」，不去算不存在的地址数。
@@ -35,7 +42,7 @@ export function taskSummary(t) {
       regions: 0,
       families: "",
       count: 0,
-      intervals: `${t.unlock.interval} 秒`,
+      intervals: every(t.unlock.interval),
     };
   }
   const p = t.probe;
@@ -68,7 +75,7 @@ export function taskSummary(t) {
     ].join(" / "),
     count: targets.length,
     intervals: p.checks
-      .map((k) => `${k === "route" ? "回程" : "延迟"} ${k === "route" ? p.route_interval : p.interval} 秒`)
+      .map((k) => `${k === "route" ? "回程" : "延迟"}${every(k === "route" ? p.route_interval : p.interval)}`)
       .join(" / "),
   };
 }

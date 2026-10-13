@@ -225,6 +225,15 @@ html[data-skin="press"] .login-story h1 span {
   -webkit-text-fill-color: transparent;
 }
 
+/* 暗色底（#0b0a08）上，上面那条渐变的尾端 #762019 对比度只有约 1.9:1，标语后半句几乎看不见。
+   换成同色相、提亮的一段：尾端 #c43a2e 约 3.7:1，满足大字号 3:1。 */
+html[data-skin="press"][data-theme="dark"] .hero h1 span,
+html[data-skin="press"][data-theme="dark"] .login-story h1 span {
+  background: linear-gradient(135deg, #ec5d4c 0%, #c43a2e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
 /* --------------------------------------------------------------------------
    5. 控件：按钮 2px 墨线 + 3px 硬阴影，主按钮红底纸字
    -------------------------------------------------------------------------- */

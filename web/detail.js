@@ -1,6 +1,6 @@
 import { api, esc, modal, guard } from "./api.js";
 import { bytes, bandwidth, date, mbps, osLabel, statusLabel, statusName, reasonName } from "./format.js";
-import { chart, wireCharts, colorClass, axisRow, formatValue, stamp } from "./charts.js";
+import { chart, wireCharts, colorClass, axisRow, formatValue, niceCeiling, stamp } from "./charts.js";
 import { unlockCatalog, unlockPanel } from "./unlock.js";
 // 详情页要发三个请求，任何一个失败或长时间无响应，弹窗都会停在“读取节点详情…”：
 // 每个请求都带截止时间，失败时把原因和重试按钮写进弹窗。
@@ -136,7 +136,7 @@ export async function detail(id, focus = null) {
     !focused && n.unlock?.total
       ? `<div class="unlock-block">${unlockPanel(n.unlock, catalog, { tested: true })}</div>`
       : "";
-  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期流量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)}（本地时间）</small></div><div><span>本次开机网卡累计</span><strong>↑ ${bytes(n.metrics?.net_out)} / ↓ ${bytes(n.metrics?.net_in)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(osLabel(n, "—"))} ${esc(n.metrics?.arch || "")}</small></div>${throttleTile}${bandwidthTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24, n)}</div>${unlockSection}`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}${routeHint}`;
+  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><span>最近上报 ${date(n.last_seen)}</span></div>${focused ? "" : `<div class="detail-stats"><div><span>本周期用量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)}（本地时间）</small></div><div><span>本次开机网卡累计</span><strong>↑ ${bytes(n.metrics?.net_out)} / ↓ ${bytes(n.metrics?.net_in)}</strong><small>运行 ${Math.floor((n.metrics?.uptime || 0) / 86400)} 天 · ${esc(osLabel(n, "—"))} ${esc(n.metrics?.arch || "")}</small></div>${throttleTile}${bandwidthTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24, n)}</div>${unlockSection}`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}${routeHint}`;
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
@@ -155,6 +155,11 @@ export async function detail(id, focus = null) {
     // 每个目标一条线，悬停就能读出任意时刻的延迟或丢包；单目标的「查看趋势」折叠图已删掉
     // ——同一份数据重复一遍，只会让人分不清哪条是延迟、哪条是回程。
     const series = networkSeries.filter((s) => s.family === selectedFamily);
+    // 这一族根本没有延迟探测项时，别写「样本不足，采样后自动显示」——那等于许诺一张永远不会来的图。
+    if (!series.length && !probePlan.some((t) => t.kind === "tcp" && t.family === selectedFamily)) {
+      overview.innerHTML = '<div class="chart-empty">此协议没有延迟探测任务</div>';
+      return;
+    }
     // 网络历史最多 7 天：下拉选到 30 天时，曲线和标题都按实际能查到的窗口说。
     overview.innerHTML = networkOverview(series, overviewMetric, Math.min(selectedHours, 168));
     d.querySelectorAll("[data-network-metric]").forEach((b) => (b.onclick = () => {
@@ -177,7 +182,9 @@ export async function detail(id, focus = null) {
               `<details class="trace"><summary><span><b>${esc(o.task.region || o.task.name)} · ${esc(o.task.carrier || "自定义")}</b><small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知")}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary><div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div></details>`,
           )
           .join("")}</section>`
-      : '<div class="chart-empty">此协议还没有回程结果</div>';
+      : probePlan.some((t) => t.kind === "route" && t.family === f)
+        ? '<div class="chart-empty">此协议还没有回程结果</div>'
+        : '<div class="chart-empty">此协议没有回程探测任务</div>';
   }
   d.querySelectorAll("[data-detail-family]").forEach(
     (x) => x.classList.toggle("active", x.dataset.detailFamily === selectedFamily),
@@ -256,7 +263,7 @@ function networkOverview(series, metric, hours) {
   const usable = series.map((s) => ({ ...s, samples: s.samples.filter((p) => p[metric] != null) })).filter((s) => s.samples.length > 1);
   if (!usable.length) return '<div class="chart-empty">网络历史样本不足，采样后自动显示折线图</div>';
   const all = usable.flatMap((s) => s.samples), first = Math.min(...all.map((p) => p.at)), last = Math.max(...all.map((p) => p.at));
-  const maxValue = metric === "failure" ? 100 : Math.max(100, ...all.map((p) => p.latency || 0));
+  const maxValue = metric === "failure" ? 100 : niceCeiling(Math.max(100, ...all.map((p) => p.latency || 0)));
   // 纵坐标：顶部是量程（丢包固定 100%，延迟取历史峰值，最低 100 ms），底部是 0。
   const tick = (v) => metric === "failure" ? v.toFixed(0) + "%" : (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " ms";
   const yAxis = `<div class="chart-y" aria-hidden="true"><span>${esc(tick(maxValue))}</span><span>${esc(tick(maxValue / 2))}</span><span>${esc(tick(0))}</span></div>`;

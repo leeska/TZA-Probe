@@ -432,6 +432,21 @@ h1 {
 [data-theme="dark"] .select-pop {
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.12);
 }
+
+/* 浮层压在别的文字上面：--glass-bg-elevated 的 85% 不透明会把底下的数字透出来（暗色下皮肤菜单
+   「现代极简」那一项叠着统计卡的「4.9 KB」）。浮层单独用几乎不透明的底，再糊一层模糊兜住。
+   只写低权重的通用选择器：其他皮肤各自用 html[data-skin=…] 重设了浮层底色，不受影响。 */
+.select-pop,
+.skin-menu {
+  background: rgba(255, 255, 255, 0.96);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+
+[data-theme="dark"] .select-pop,
+[data-theme="dark"] .skin-menu {
+  background: rgba(32, 39, 55, 0.97);
+}
 [data-theme="dark"] .select-opt:hover {
   background: rgba(255, 255, 255, 0.12);
 }
@@ -1600,6 +1615,45 @@ input[type="checkbox"]:disabled {
   }
   dialog {
     border-radius: 22px;
+  }
+}
+
+/* 375px 宽时品牌（118px）+ 导航（182px）正好塞满顶栏内宽，space-between 剩 0：
+   在线绿点贴死在「基础设施观测」的最后一个字上，读着像个标点。导航内部的间距让出 4px × 3，
+   换成品牌与导航之间 10px 的空隙。 */
+/* 手机后台：当前在哪一页已经由 2 × 2 导航的高亮和页面大标题各说了一遍，面包屑那一整条玻璃栏
+   是第三遍，还把第一个节点挤到首屏底部。面包屑藏掉，在线数那枚胶囊挪进侧栏品牌那一行的右侧空位
+   （品牌 margin-right: auto 留出来的）。选择器多带两层是为了压过各皮肤的
+   html[data-skin=…] :is(.admin-top, …) 边框 / 底色。 */
+@media (max-width: 760px) {
+  .admin-layout {
+    position: relative;
+  }
+  .admin-layout > .admin-main > .admin-top {
+    position: absolute;
+    top: 18px;
+    right: 28px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .admin-layout > .admin-main > .admin-top > span:first-child {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .public-header {
+    gap: 10px;
+  }
+  .public-header nav {
+    gap: 8px;
   }
 }
 
