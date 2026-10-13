@@ -193,9 +193,9 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 	ctx := context.Background()
 	id, _ := makeNode(t, s)
 	now := time.Now()
-	n := model.Node{ID: id, Name: "test", Alerts: model.Alerts{RepeatSeconds: 300}}
+	n := model.Node{ID: id, Name: "test"}
 	for _, sec := range []int{0, 30, 299, 300, 301} {
-		if err := s.Transition(ctx, n, "offline", "offline", true, 30, now.Add(time.Duration(sec)*time.Second)); err != nil {
+		if err := s.Transition(ctx, n, "offline", "offline", true, 30, 300, now.Add(time.Duration(sec)*time.Second)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -203,7 +203,7 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatal("repeat before cooldown", len(events))
 	}
-	if err := s.Transition(ctx, n, "offline", "offline", true, 30, now.Add(330*time.Second)); err != nil {
+	if err := s.Transition(ctx, n, "offline", "offline", true, 30, 300, now.Add(330*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	events, _ = s.Events(ctx, model.EventQuery{})
@@ -219,7 +219,7 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 	if events[0].LastError != e.LastError || events[0].Attempts != 1 {
 		t.Fatal(events)
 	}
-	if err := s.Transition(ctx, n, "offline", "offline", false, 30, now.Add(340*time.Second)); err != nil {
+	if err := s.Transition(ctx, n, "offline", "offline", false, 30, 300, now.Add(340*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	events, _ = s.Events(ctx, model.EventQuery{})

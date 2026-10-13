@@ -26,7 +26,7 @@ func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Now()
-	n := model.Node{Name: "test", Alerts: model.Alerts{Load: true, CPUPercent: 80, MemoryPercent: 80, HoldSeconds: 30}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}}
+	n := model.Node{Name: "test", Alerts: model.Alerts{{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 30}, {Kind: model.AlertMemory, Threshold: 80, HoldSeconds: 30}}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}}
 	_, token, err := s.SaveNode(ctx, n, true)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Now()
-	node := model.Node{Name: "billing", Alerts: model.Alerts{Offline: true, Renewal: true, RenewalDays: 7, Traffic: true, TrafficPercent: 80}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum", TrafficLimit: 1000, ExpiresAt: now.Add(2 * 24 * time.Hour).UTC().Format(time.RFC3339)}}
+	node := model.Node{Name: "billing", Alerts: model.Alerts{{Kind: model.AlertOffline}, {Kind: model.AlertRenewal, Threshold: 7}, {Kind: model.AlertTraffic, Threshold: 80}}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum", TrafficLimit: 1000, ExpiresAt: now.Add(2 * 24 * time.Hour).UTC().Format(time.RFC3339)}}
 	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	_, token, err := s.SaveNode(ctx, model.Node{Name: "grace", Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}, Billing: model.Billing{ResetAt: billingAt(time.Now()), TrafficMode: "sum"}}, true)
+	_, token, err := s.SaveNode(ctx, model.Node{Name: "grace", Alerts: model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 60}}, Billing: model.Billing{ResetAt: billingAt(time.Now()), TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,5 +174,47 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 2 || events[0].Active {
 		t.Fatal("recovery must occur once", events)
+	}
+}
+
+// Each rule carries its own repeat interval, and CPU and memory are separate
+// rules: here both fire, then only CPU (repeat 300s) is re-sent while memory
+// (repeat 0) is reported once.
+func TestPerRuleRepeatAndSplitLoad(t *testing.T) {
+	ctx := context.Background()
+	s, err := storage.Open(filepath.Join(t.TempDir(), "repeat.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now()
+	node := model.Node{Name: "busy", Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}, Alerts: model.Alerts{
+		{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 30, RepeatSeconds: 300},
+		{Kind: model.AlertMemory, Threshold: 50, HoldSeconds: 30},
+	}}
+	_, token, err := s.SaveNode(ctx, node, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := s.Authenticate(ctx, token)
+	engine := Engine{Repository: s}
+	count := func(kind string) int {
+		events, _ := s.Events(ctx, model.EventQuery{Kind: kind})
+		return len(events)
+	}
+	for _, seconds := range []int{0, 30, 200, 330} {
+		at := now.Add(time.Duration(seconds) * time.Second)
+		if err = s.Report(ctx, id, model.Metrics{CPU: 90, MemoryUsed: 60, MemoryTotal: 100}, at); err != nil {
+			t.Fatal(err)
+		}
+		if err = engine.Tick(ctx, at); err != nil {
+			t.Fatal(err)
+		}
+		if seconds == 30 && (count(model.AlertCPU) != 1 || count(model.AlertMemory) != 1) {
+			t.Fatalf("after hold: cpu=%d memory=%d", count(model.AlertCPU), count(model.AlertMemory))
+		}
+	}
+	if count(model.AlertCPU) != 2 || count(model.AlertMemory) != 1 {
+		t.Fatalf("repeat: cpu=%d (want 2) memory=%d (want 1)", count(model.AlertCPU), count(model.AlertMemory))
 	}
 }

@@ -33,20 +33,8 @@ const defaults = {
     expires_at: "",
   },
   line: { mbps: 0, throttle_mbps: 0, throttle_hours: 24, throttle_on: "bandwidth" },
-  alerts: {
-    offline: false,
-    offline_seconds: 60,
-    repeat_seconds: 0,
-    renewal: false,
-    renewal_days: 7,
-    traffic: false,
-    traffic_percent: 80,
-    throttle: false,
-    load: false,
-    cpu_percent: 90,
-    memory_percent: 90,
-    hold_seconds: 300,
-  },
+  // 提醒规则是一个列表，列出的规则开启；新节点默认一条都不开。
+  alerts: [],
 };
 export async function mountAdmin(root, brand) {
   container = root;
@@ -524,74 +512,101 @@ async function taskForm(existing) {
   taskEditor(existing, catalog, nodes, render);
 }
 
-// 提醒规则：告警页的规则总览与它的编辑弹窗共用这几样（单台编辑与批量设置是同一张表单）。
-const RULES = {
-  offline: ["offline_seconds"],
-  renewal: ["renewal_days"],
-  traffic: ["traffic_percent"],
-  load: ["cpu_percent", "memory_percent", "hold_seconds"],
-};
-function alertFields(a) {
-  // 未启用的规则允许存 0（服务端只在启用时要求有效阈值），但 0 不满足输入框的 min，
-  // 直接回填会让这些规则再也保存不了。对必须 ≥1 的阈值退回默认值。
-  const threshold = (key) => a[key] || defaults.alerts[key];
-  // 离线等待与续费提前天数允许 0（不等待 / 到期当天提醒），所以只有规则启用时才原样回填；
-  // 规则没开时库里的 0 多半只是没设过，显示「默认 60」却填着 0 让人分不清，这时回填默认值。
-  const ruleValue = (rule, key) => (a[rule] ? a[key] || 0 : threshold(key));
-  return `<div class="form-section"><div class="form-grid rules-grid"><div class="rule-row">${check("离线提醒", "offline", a.offline)}${field("离线后额外等待秒数（默认 60）", "offline_seconds", ruleValue("offline", "offline_seconds"), "number", 'min="0" max="86400" placeholder="默认 60"')}</div><div class="rule-row">${check("续费提醒", "renewal", a.renewal)}${field("提前多少天提醒续费（默认 7）", "renewal_days", ruleValue("renewal", "renewal_days"), "number", 'min="0" max="365" placeholder="默认 7"')}</div><div class="rule-row">${check("流量警告", "traffic", a.traffic)}${field("流量达到额度百分比（默认 80）", "traffic_percent", threshold("traffic_percent"), "number", 'min="1" max="100" placeholder="默认 80"')}</div><div class="rule-row">${check("达量降速警告", "throttle", a.throttle)}<small class="hint">按节点编辑里的降速规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（节点需先填降速速率）。</small></div><div class="rule-row">${check("负载警告（CPU 或内存）", "load", a.load)}${field("CPU 阈值 %（默认 90）", "cpu_percent", threshold("cpu_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("内存阈值 %（默认 90）", "memory_percent", threshold("memory_percent"), "number", 'min="1" max="100" placeholder="默认 90"')}${field("负载持续秒数（默认 300）", "hold_seconds", threshold("hold_seconds"), "number", 'min="30" max="86400" placeholder="默认 300"')}</div></div>${field("持续告警重复提醒间隔（分钟，0 为只提醒一次；默认 0）", "repeat_minutes", (a.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"')}<p class="hint">阈值默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU/内存 90%、负载持续 300 秒、重复间隔 0（只提醒一次）。未勾选的规则不生效；节点 45 秒未上报即判定离线，恢复时通知一次；重复间隔至少 5 分钟。</p></div>`;
+// 提醒规则：告警页的规则总览与它的编辑弹窗共用这一张表（单台编辑与批量设置是同一张表单）。
+// 每种规则一行：勾选即开启，参数是它自己的阈值 / 持续时间，外加它自己的重复提醒间隔。
+// 接口里规则是列表（{kind, threshold, hold_seconds, repeat_seconds}），列出的就是开着的。
+const RULE_SPECS = [
+  {
+    kind: "offline", label: "离线提醒", column: "离线",
+    fields: [{ key: "hold_seconds", name: "offline_seconds", label: "离线后额外等待秒数（默认 60）", def: 60, attrs: 'min="0" max="86400"' }],
+    cell: (r) => `等 ${r.hold_seconds || 0} 秒`,
+  },
+  {
+    kind: "renewal", label: "续费提醒", column: "续费",
+    fields: [{ key: "threshold", name: "renewal_days", label: "提前多少天提醒续费（默认 7）", def: 7, attrs: 'min="0" max="365" step="1"' }],
+    cell: (r) => `提前 ${r.threshold || 0} 天`,
+  },
+  {
+    kind: "traffic", label: "流量警告", column: "流量",
+    fields: [{ key: "threshold", name: "traffic_percent", label: "流量达到额度百分比（默认 80）", def: 80, attrs: 'min="1" max="100"' }],
+    cell: (r) => `${r.threshold}%`,
+  },
+  {
+    kind: "throttle", label: "达量降速警告", column: "降速", fields: [],
+    hint: "按节点编辑里的降速规则触发时提醒：窗口均值达到降速阈值，或本周期额度用满（节点需先填降速速率）。",
+    cell: () => "开",
+  },
+  {
+    kind: "cpu", label: "CPU 警告", column: "CPU",
+    fields: [
+      { key: "threshold", name: "cpu_percent", label: "CPU 阈值 %（默认 90）", def: 90, attrs: 'min="1" max="100"' },
+      { key: "hold_seconds", name: "cpu_hold", label: "持续秒数（默认 300）", def: 300, attrs: 'min="30" max="86400"' },
+    ],
+    cell: (r) => `${r.threshold}% · ${r.hold_seconds} 秒`,
+  },
+  {
+    kind: "memory", label: "内存警告", column: "内存",
+    fields: [
+      { key: "threshold", name: "memory_percent", label: "内存阈值 %（默认 90）", def: 90, attrs: 'min="1" max="100"' },
+      { key: "hold_seconds", name: "memory_hold", label: "持续秒数（默认 300）", def: 300, attrs: 'min="30" max="86400"' },
+    ],
+    cell: (r) => `${r.threshold}% · ${r.hold_seconds} 秒`,
+  },
+];
+const ruleOf = (list, kind) => (list || []).find((r) => r.kind === kind);
+function alertFields(list) {
+  const rows = RULE_SPECS.map((spec) => {
+    const rule = ruleOf(list, spec.kind);
+    // 开着的规则原样回填（接口省略 0，没写就是 0）；关着的回填默认值，勾上就能直接存。
+    const value = (f) => (rule ? rule[f.key] ?? 0 : f.def);
+    const inputs = spec.fields
+      .map((f) => field(f.label, f.name, value(f), "number", `${f.attrs} placeholder="默认 ${f.def}"`))
+      .join("");
+    const repeat = field("重复提醒间隔（分钟，0 为只提醒一次）", spec.kind + "_repeat", rule ? (rule.repeat_seconds || 0) / 60 : 0, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"');
+    return `<div class="rule-row">${check(spec.label, spec.kind, !!rule)}${inputs}${repeat}${spec.hint ? `<small class="hint">${spec.hint}</small>` : ""}</div>`;
+  }).join("");
+  return `<div class="form-section"><div class="form-grid rules-grid">${rows}</div><p class="hint">阈值默认值：离线等待 60 秒、续费提前 7 天、流量 80%、CPU / 内存 90% 并持续 300 秒、重复间隔 0（只提醒一次）。未勾选的规则不生效；节点 45 秒未上报即判定离线，恢复时通知一次；重复间隔至少 5 分钟，每条规则各自设置。</p></div>`;
 }
-// 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
+// 规则未勾选时禁用它的输入：既表明这些值当前不生效，也让浏览器跳过它们的 min 校验。
 function wireAlerts(form) {
   const el = (name) => form.elements.namedItem(name);
   const sync = () => {
-    for (const [rule, names] of Object.entries(RULES))
-      names.forEach((name) => (el(name).disabled = !el(rule).checked));
+    for (const spec of RULE_SPECS)
+      [...spec.fields.map((f) => f.name), spec.kind + "_repeat"].forEach((name) => (el(name).disabled = !el(spec.kind).checked));
   };
-  Object.keys(RULES).forEach((rule) => (el(rule).onchange = sync));
+  RULE_SPECS.forEach((spec) => (el(spec.kind).onchange = sync));
   sync();
 }
 function readAlerts(form) {
-  const f = new FormData(form),
-    // 从元素读取而非 FormData：禁用的阈值不出现在 FormData 里，但取消勾选不应清掉已设好的数值。
-    num = (k) => Number(form.elements.namedItem(k).value);
-  return {
-    offline: f.has("offline"),
-    offline_seconds: num("offline_seconds"),
-    repeat_seconds: num("repeat_minutes") * 60,
-    renewal: f.has("renewal"),
-    renewal_days: num("renewal_days"),
-    traffic: f.has("traffic"),
-    traffic_percent: num("traffic_percent"),
-    throttle: f.has("throttle"),
-    load: f.has("load"),
-    cpu_percent: num("cpu_percent"),
-    memory_percent: num("memory_percent"),
-    hold_seconds: num("hold_seconds"),
-  };
+  const el = (name) => form.elements.namedItem(name);
+  return RULE_SPECS.filter((spec) => el(spec.kind).checked).map((spec) => {
+    const rule = { kind: spec.kind };
+    for (const f of spec.fields) rule[f.key] = Number(el(f.name).value);
+    rule.repeat_seconds = Math.round(Number(el(spec.kind + "_repeat").value) * 60);
+    return rule;
+  });
 }
-// 规则总览每格的文字：开着写阈值，关着写「—」。
-function alertCells(a) {
-  return {
-    offline: a.offline ? `等 ${a.offline_seconds || 0} 秒` : "—",
-    renewal: a.renewal ? `提前 ${a.renewal_days || 0} 天` : "—",
-    traffic: a.traffic ? `${a.traffic_percent}%` : "—",
-    throttle: a.throttle ? "开" : "—",
-    load: a.load ? `CPU ${a.cpu_percent}% · 内存 ${a.memory_percent}% · ${a.hold_seconds} 秒` : "—",
-    repeat: a.repeat_seconds ? `每 ${a.repeat_seconds / 60} 分钟` : "只提醒一次",
-  };
+// 规则总览每格的文字：开着写参数（有重复间隔就附上），关着写「—」。
+function alertCells(list) {
+  const out = {};
+  for (const spec of RULE_SPECS) {
+    const rule = ruleOf(list, spec.kind);
+    out[spec.kind] = rule ? spec.cell(rule) + (rule.repeat_seconds ? ` · 每 ${rule.repeat_seconds / 60} 分钟` : "") : "—";
+  }
+  return out;
 }
-function alertSummary(a) {
-  const c = alertCells(a);
-  const on = [["离线", c.offline], ["续费", c.renewal], ["流量", c.traffic], ["降速", c.throttle], ["负载", c.load]].filter(([, v]) => v !== "—");
-  return on.length ? on.map(([k, v]) => `${k} ${v}`).join("，") : "未开启任何提醒";
+function alertSummary(list) {
+  const c = alertCells(list);
+  const on = RULE_SPECS.filter((spec) => c[spec.kind] !== "—").map((spec) => `${spec.column} ${c[spec.kind]}`);
+  return on.length ? on.join("，") : "未开启任何提醒";
 }
-// 编辑一台或一批节点的提醒规则：整份替换所选节点的 alerts，服务端一个事务里改完。
+// 编辑一台或一批节点的提醒规则：整份替换所选节点的规则列表，服务端一个事务里改完。
 function alertsEditor(targets, refresh) {
   const one = targets.length === 1;
-  const a = one ? targets[0].alerts : structuredClone(defaults.alerts);
+  const list = one ? targets[0].alerts : [];
   const d = modal(
     one ? `提醒规则 · ${targets[0].name}` : `批量设置提醒规则（${targets.length} 个节点）`,
-    `<form id="alerts-form">${one ? "" : `<p class="hint">保存后，所选 ${targets.length} 个节点的提醒规则都会换成下面这一份：${esc(targets.map((n) => n.name).join("、"))}。</p>`}${alertFields(a)}<div class="form-footer"><button type="submit" class="primary">保存规则</button></div></form>`,
+    `<form id="alerts-form">${one ? "" : `<p class="hint">保存后，所选 ${targets.length} 个节点的提醒规则都会换成下面这一份：${esc(targets.map((n) => n.name).join("、"))}。</p>`}${alertFields(list)}<div class="form-footer"><button type="submit" class="primary">保存规则</button></div></form>`,
   );
   const form = d.querySelector("form");
   wireAlerts(form);
@@ -623,10 +638,13 @@ function rulesPanel() {
   const rows = nodes
     .map((n) => {
       const c = alertCells(n.alerts);
-      return `<tr><td data-label="选择"><input type="checkbox" data-select-node="${esc(n.id)}" aria-label="选择 ${esc(n.name)}"></td><td data-label="节点">${esc(n.name)}<small>${esc(n.group || "默认")}</small></td><td data-label="离线">${c.offline}</td><td data-label="续费">${c.renewal}</td><td data-label="流量">${c.traffic}</td><td data-label="降速">${c.throttle}</td><td data-label="负载">${c.load}</td><td data-label="重复提醒">${c.repeat}</td><td data-label="操作"><div class="row-actions"><button data-alerts="${esc(n.id)}">编辑规则</button></div></td></tr>`;
+      const cells = RULE_SPECS.map((spec) => `<td data-label="${spec.column}">${c[spec.kind]}</td>`).join("");
+      return `<tr><td data-label="选择"><input type="checkbox" data-select-node="${esc(n.id)}" aria-label="选择 ${esc(n.name)}"></td><td data-label="节点">${esc(n.name)}<small>${esc(n.group || "默认")}</small></td>${cells}<td data-label="操作"><div class="row-actions"><button data-alerts="${esc(n.id)}">编辑规则</button></div></td></tr>`;
     })
     .join("");
-  return `<section class="panel"><div class="panel-head"><h3>提醒规则</h3><button id="bulk-alerts">批量设置</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-nodes" type="checkbox" aria-label="选择全部节点"><span>全选</span></label></th><th>节点</th><th>离线</th><th>续费</th><th>流量</th><th>降速</th><th>负载</th><th>重复提醒</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="9" class="empty-cell">还没有节点。</td></tr>'}</tbody></table></div></section>`;
+  const heads = RULE_SPECS.map((spec) => `<th>${spec.column}</th>`).join("");
+  const span = RULE_SPECS.length + 3;
+  return `<section class="panel"><div class="panel-head"><h3>提醒规则</h3><button id="bulk-alerts">批量设置</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-nodes" type="checkbox" aria-label="选择全部节点"><span>全选</span></label></th><th>节点</th>${heads}<th>操作</th></tr></thead><tbody>${rows || `<tr><td colspan="${span}" class="empty-cell">还没有节点。</td></tr>`}</tbody></table></div></section>`;
 }
 function wireRulesPanel() {
   const refresh = async () => {

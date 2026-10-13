@@ -212,20 +212,19 @@ func TestSetNodeAlertsBatch(t *testing.T) {
 	ctx := context.Background()
 	a, _ := makeNode(t, s)
 	b, _ := makeNode(t, s)
-	rules := model.Alerts{Offline: true, OfflineSeconds: 120, Load: true, CPUPercent: 80, MemoryPercent: 85, HoldSeconds: 60}
+	rules := model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 120}, {Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 60}, {Kind: model.AlertMemory, Threshold: 85, HoldSeconds: 60}}
 	if err := s.SetNodeAlerts(ctx, []string{a, b}, rules); err != nil {
 		t.Fatal(err)
 	}
 	// 降速告警需要节点上的降速阈值：这两台都没有，整批拒绝且不改任何一台。
-	throttle := rules
-	throttle.Throttle = true
+	throttle := append(append(model.Alerts{}, rules...), model.AlertRule{Kind: model.AlertThrottle})
 	err := s.SetNodeAlerts(ctx, []string{a, b}, throttle)
 	if !errors.Is(err, model.ErrInvalid) || !strings.Contains(err.Error(), "node：") {
 		t.Fatalf("throttle without threshold: %v", err)
 	}
 	nodes, _ := s.Nodes(ctx, time.Now())
 	for _, n := range nodes {
-		if n.Alerts != rules {
+		if encode(n.Alerts) != encode(rules) {
 			t.Fatalf("%s alerts=%+v", n.ID, n.Alerts)
 		}
 	}

@@ -618,3 +618,43 @@ func TestProbeWireShape(t *testing.T) {
 		}
 	}
 }
+
+// Each rule kind takes only its own parameters, a kind appears once, and an
+// empty list encodes as [] so clients never see null.
+func TestAlertRules(t *testing.T) {
+	ok := Alerts{
+		{Kind: AlertOffline, HoldSeconds: 60},
+		{Kind: AlertRenewal, Threshold: 7, RepeatSeconds: 86400},
+		{Kind: AlertTraffic, Threshold: 80},
+		{Kind: AlertThrottle},
+		{Kind: AlertCPU, Threshold: 90, HoldSeconds: 300},
+		{Kind: AlertMemory, Threshold: 85, HoldSeconds: 30},
+	}
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for name, bad := range map[string]Alerts{
+		"duplicate":         {{Kind: AlertCPU, Threshold: 90, HoldSeconds: 60}, {Kind: AlertCPU, Threshold: 80, HoldSeconds: 60}},
+		"unknown kind":      {{Kind: "load"}},
+		"offline threshold": {{Kind: AlertOffline, Threshold: 5}},
+		"renewal fraction":  {{Kind: AlertRenewal, Threshold: 1.5}},
+		"traffic zero":      {{Kind: AlertTraffic}},
+		"throttle param":    {{Kind: AlertThrottle, Threshold: 1}},
+		"cpu short hold":    {{Kind: AlertCPU, Threshold: 90, HoldSeconds: 10}},
+		"memory over 100":   {{Kind: AlertMemory, Threshold: 101, HoldSeconds: 60}},
+		"repeat too short":  {{Kind: AlertOffline, RepeatSeconds: 60}},
+	} {
+		if bad.Validate() == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	if data, _ := json.Marshal(Node{}); !strings.Contains(string(data), `"alerts":[]`) {
+		t.Fatalf("empty alerts must be []: %s", data)
+	}
+	if r, on := ok.Rule(AlertMemory); !on || r.Threshold != 85 {
+		t.Fatalf("rule lookup: %+v %v", r, on)
+	}
+	if _, on := (Alerts{}).Rule(AlertCPU); on {
+		t.Fatal("absent rule reported on")
+	}
+}

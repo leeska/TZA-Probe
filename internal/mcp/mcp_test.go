@@ -192,7 +192,7 @@ func (f *fakeSource) SetSetting(_ context.Context, key, value string) error {
 func fixture() *fakeSource {
 	return &fakeSource{
 		nodes: []model.NodeView{
-			{Node: model.Node{ID: "n1", Name: "香港", Public: true, Alerts: model.Alerts{OfflineSeconds: 60}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, Online: true, TrafficUsed: 1234},
+			{Node: model.Node{ID: "n1", Name: "香港", Public: true, Alerts: model.Alerts{{Kind: model.AlertCPU, Threshold: 90, HoldSeconds: 300}}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, Online: true, TrafficUsed: 1234},
 			{Node: model.Node{ID: "n2", Name: "东京"}, Online: false},
 		},
 		tasks: []model.Task{{
@@ -700,7 +700,7 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	// create_node is the panel's node form, and the one place a node key leaves
 	// the Server: the caller must see it exactly once.
 	created := structured(t, invoke(t, env, "create_node",
-		`{"name":"东京","region":"日本","public":true,"billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","traffic_limit":1000000000000},"line":{"mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"quota"},"alerts":{"throttle":true}}`))
+		`{"name":"东京","region":"日本","public":true,"billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","traffic_limit":1000000000000},"line":{"mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"quota"},"alerts":[{"kind":"throttle"}]}`))
 	if created["id"] != "new-node" || created["token"] != "new-token" {
 		t.Fatalf("create_node: %v", created)
 	}
@@ -716,14 +716,15 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	}
 	// 达量降速的三项线路规格、触发条件与它的告警开关都要落库（面板表单与 MCP 同一形状）。
 	if n := env.source.savedNodes[0]; n.Line.Mbps != 1000 || n.Line.ThrottleMbps != 100 || n.Line.ThrottleHours != 24 ||
-		n.Line.ThrottleOn != "quota" || n.Billing.TrafficLimit != 1_000_000_000_000 || !n.Alerts.Throttle {
+		n.Line.ThrottleOn != "quota" || n.Billing.TrafficLimit != 1_000_000_000_000 || len(n.Alerts) != 1 || n.Alerts[0].Kind != model.AlertThrottle {
 		t.Fatalf("throttle fields did not persist: %+v", n)
 	}
 
 	// update_node merges into the stored node: a field the caller did not mention
-	// keeps its value, and an object such as alerts is merged field by field.
+	// keeps its value, and an object such as line is merged field by field. The
+	// alerts list is replaced as a whole: the rules listed are the rules that are on.
 	env.source.savedNodes = nil
-	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"billing":{"traffic_limit":1000000000000},"line":{"mbps":1000,"throttle_mbps":100,"throttle_on":"quota"},"alerts":{"offline":true}}`))["id"] != "n1" {
+	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"billing":{"traffic_limit":1000000000000},"line":{"mbps":1000,"throttle_mbps":100,"throttle_on":"quota"},"alerts":[{"kind":"offline","hold_seconds":60}]}`))["id"] != "n1" {
 		t.Fatalf("update_node did not report the node")
 	}
 	if len(env.source.savedNodes) != 1 {
@@ -733,7 +734,7 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	if node.Name != "香港" || node.Region != "" || node.Billing.ResetAt != "2026-09-01T00:00:00Z" || node.Billing.TrafficMode != "sum" {
 		t.Fatalf("update blanked fields it was not given: %+v", node)
 	}
-	if node.Public || !node.Alerts.Offline || node.Alerts.OfflineSeconds != 60 {
+	if rule, on := node.Alerts.Rule(model.AlertOffline); node.Public || !on || rule.HoldSeconds != 60 || len(node.Alerts) != 1 {
 		t.Fatalf("update did not apply the patch: %+v", node.Alerts)
 	}
 	// 逐字段合并：这次提到的线路规格与触发条件写进去，没提到的（降速窗口）不被动过。

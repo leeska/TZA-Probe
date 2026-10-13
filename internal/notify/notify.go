@@ -20,7 +20,7 @@ import (
 
 type Repository interface {
 	Nodes(context.Context, time.Time) ([]model.NodeView, error)
-	Transition(context.Context, model.Node, string, string, bool, int, time.Time) error
+	Transition(context.Context, model.Node, string, string, bool, int, int, time.Time) error
 	PendingEvents(context.Context, time.Time) ([]model.Event, error)
 	Delivery(context.Context, model.Event, bool, time.Time) error
 	Setting(context.Context, string) (string, error)
@@ -64,6 +64,38 @@ func throttleMessage(n model.NodeView) string {
 	return fmt.Sprintf("近 %d 小时平均带宽 %.1f Mbit/s 达到降速阈值 %d Mbit/s，可能已被商家降速", n.CoveredHours, n.AvgBits/1e6, n.Line.ThrottleMbps)
 }
 
+// evaluate reports whether one rule's condition holds for the node right now,
+// and the message an alert for it carries.
+func evaluate(n model.NodeView, r model.AlertRule, now time.Time) (bool, string) {
+	switch r.Kind {
+	case model.AlertOffline:
+		return !n.Online && now.Unix()-n.CreatedAt > int64(model.OfflineAfter.Seconds()), offlineMessage(n)
+	case model.AlertRenewal:
+		if n.Billing.ExpiresAt == "" {
+			return false, ""
+		}
+		expiry, err := time.Parse(time.RFC3339, n.Billing.ExpiresAt)
+		if err != nil {
+			return false, ""
+		}
+		return !now.Add(time.Duration(r.Threshold) * 24 * time.Hour).Before(expiry), renewalMessage(expiry, now)
+	case model.AlertTraffic:
+		limit := n.Billing.TrafficLimit
+		return limit > 0 && float64(n.TrafficUsed)/float64(limit)*100 >= r.Threshold, fmt.Sprintf("本计费周期用量达到 %.0f%% 阈值", r.Threshold)
+	case model.AlertThrottle:
+		return n.Throttled, throttleMessage(n)
+	case model.AlertCPU:
+		return n.Online && n.Metrics != nil && n.Metrics.CPU >= r.Threshold, fmt.Sprintf("CPU 使用率持续 %d 秒超过 %.0f%%", r.HoldSeconds, r.Threshold)
+	case model.AlertMemory:
+		if !n.Online || n.Metrics == nil || n.Metrics.MemoryTotal == 0 {
+			return false, ""
+		}
+		used := float64(n.Metrics.MemoryUsed) / float64(n.Metrics.MemoryTotal) * 100
+		return used >= r.Threshold, fmt.Sprintf("内存使用率持续 %d 秒超过 %.0f%%", r.HoldSeconds, r.Threshold)
+	}
+	return false, ""
+}
+
 type Engine struct {
 	Repository Repository
 	Sender     Sender
@@ -75,30 +107,14 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 		return err
 	}
 	for _, n := range nodes {
-		a := n.Alerts
-		load := false
-		if n.Online && n.Metrics != nil {
-			load = n.Metrics.CPU >= a.CPUPercent || float64(n.Metrics.MemoryUsed)/float64(n.Metrics.MemoryTotal)*100 >= a.MemoryPercent
-		}
-		renewal := false
-		var expiry time.Time
-		if n.Billing.ExpiresAt != "" {
-			expiry, _ = time.Parse(time.RFC3339, n.Billing.ExpiresAt)
-			renewal = !now.Add(time.Duration(a.RenewalDays) * 24 * time.Hour).Before(expiry)
-		}
-		rules := []struct {
-			kind, message string
-			condition     bool
-			hold          int
-		}{
-			{"offline", offlineMessage(n), a.Offline && !n.Online && now.Unix()-n.CreatedAt > int64(model.OfflineAfter.Seconds()), a.OfflineSeconds},
-			{"renewal", renewalMessage(expiry, now), a.Renewal && renewal, 0},
-			{"traffic", fmt.Sprintf("本计费周期用量达到 %.0f%% 阈值", a.TrafficPercent), a.Traffic && n.Billing.TrafficLimit > 0 && float64(n.TrafficUsed)/float64(n.Billing.TrafficLimit)*100 >= a.TrafficPercent, 0},
-			{"throttle", throttleMessage(n), a.Throttle && n.Throttled, 0},
-			{"load", "CPU 或内存持续超过设定阈值", a.Load && load, a.HoldSeconds},
-		}
-		for _, r := range rules {
-			if err = e.Repository.Transition(ctx, n.Node, r.kind, r.message, r.condition, r.hold, now); err != nil {
+		// 每种规则都要过一遍：没有这条规则（关掉了）就是条件不成立，正在触发的告警据此解除。
+		for _, kind := range model.AlertKinds {
+			rule, on := n.Alerts.Rule(kind)
+			condition, message := false, ""
+			if on {
+				condition, message = evaluate(n, rule, now)
+			}
+			if err = e.Repository.Transition(ctx, n.Node, kind, message, condition, rule.HoldSeconds, rule.RepeatSeconds, now); err != nil {
 				return err
 			}
 		}

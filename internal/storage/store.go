@@ -153,7 +153,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if version > 12 {
+	if version > 13 {
 		db.Close()
 		return nil, errors.New("database version is newer than this binary")
 	}
@@ -255,6 +255,13 @@ func Open(path string) (*Store, error) {
 		// 节点配置按关注点分组（display / billing / line），服务端自记的创建时间与用量校正
 		// 从配置里搬到单独的列。
 		if err = migrateNodeShape(db); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	if version < 13 {
+		// 提醒规则从「开关 + 阈值」平铺对象改成规则列表；负载规则拆成 CPU 与内存两条。
+		if err = migrateAlertRules(db); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -395,7 +402,7 @@ type legacyNode struct {
 	ThrottleMbps      int          `json:"throttle_mbps"`
 	ThrottleHours     int          `json:"throttle_hours"`
 	ThrottleOn        string       `json:"throttle_on"`
-	Alerts            model.Alerts `json:"alerts"`
+	Alerts            legacyAlerts `json:"alerts"`
 	CreatedAt         int64        `json:"created_at"`
 	TrafficAdjustment int64        `json:"traffic_adjustment"`
 	AdjustmentCycle   int64        `json:"adjustment_cycle"`
@@ -408,8 +415,105 @@ func (l legacyNode) upgrade() model.Node {
 		Billing: model.Billing{ResetAt: l.BillingAt, TrafficLimit: l.TrafficLimit, TrafficMode: l.TrafficMode, Free: l.Free,
 			Price: l.Price, Currency: l.Currency, PricePeriod: l.PricePeriod, ExpiresAt: l.ExpiresAt},
 		Line:   model.Line{Mbps: l.LineMbps, ThrottleMbps: l.ThrottleMbps, ThrottleHours: l.ThrottleHours, ThrottleOn: l.ThrottleOn},
-		Alerts: l.Alerts,
+		Alerts: l.Alerts.upgrade(),
 	}
+}
+
+// legacyAlerts is a node's alert configuration before version 13: one flat
+// object of on/off switches and thresholds, one repeat interval for all of
+// them, and a single load rule covering CPU or memory.
+type legacyAlerts struct {
+	OfflineSeconds int     `json:"offline_seconds"`
+	RepeatSeconds  int     `json:"repeat_seconds"`
+	Offline        bool    `json:"offline"`
+	Renewal        bool    `json:"renewal"`
+	RenewalDays    int     `json:"renewal_days"`
+	Traffic        bool    `json:"traffic"`
+	TrafficPercent float64 `json:"traffic_percent"`
+	Throttle       bool    `json:"throttle"`
+	Load           bool    `json:"load"`
+	CPUPercent     float64 `json:"cpu_percent"`
+	MemoryPercent  float64 `json:"memory_percent"`
+	HoldSeconds    int     `json:"hold_seconds"`
+}
+
+// upgrade keeps every rule that was on, with its thresholds; the shared repeat
+// interval goes onto each of them. A rule that was off had only remembered
+// thresholds, and the list form has no off rules to keep them on.
+func (l legacyAlerts) upgrade() model.Alerts {
+	out := model.Alerts{}
+	add := func(on bool, r model.AlertRule) {
+		if on {
+			r.RepeatSeconds = l.RepeatSeconds
+			out = append(out, r)
+		}
+	}
+	add(l.Offline, model.AlertRule{Kind: model.AlertOffline, HoldSeconds: l.OfflineSeconds})
+	add(l.Renewal, model.AlertRule{Kind: model.AlertRenewal, Threshold: float64(l.RenewalDays)})
+	add(l.Traffic, model.AlertRule{Kind: model.AlertTraffic, Threshold: l.TrafficPercent})
+	add(l.Throttle, model.AlertRule{Kind: model.AlertThrottle})
+	add(l.Load, model.AlertRule{Kind: model.AlertCPU, Threshold: l.CPUPercent, HoldSeconds: l.HoldSeconds})
+	add(l.Load, model.AlertRule{Kind: model.AlertMemory, Threshold: l.MemoryPercent, HoldSeconds: l.HoldSeconds})
+	return out
+}
+
+// migrateAlertRules rewrites every node's alerts into the version 13 rule
+// list. A config whose alerts is already a list is left alone. The debounce
+// state of the retired load rule goes too: CPU and memory are tracked anew.
+func migrateAlertRules(db *sql.DB) error {
+	rows, err := db.Query("SELECT id, config FROM nodes")
+	if err != nil {
+		return err
+	}
+	type change struct{ id, config string }
+	var changes []change
+	for rows.Next() {
+		var id, config string
+		if err = rows.Scan(&id, &config); err != nil {
+			rows.Close()
+			return err
+		}
+		fields := map[string]json.RawMessage{}
+		if err = json.Unmarshal([]byte(config), &fields); err != nil {
+			rows.Close()
+			return err
+		}
+		raw := fields["alerts"]
+		if len(raw) > 0 && raw[0] == '[' {
+			continue
+		}
+		var legacy legacyAlerts
+		if len(raw) > 0 && string(raw) != "null" {
+			if err = json.Unmarshal(raw, &legacy); err != nil {
+				rows.Close()
+				return err
+			}
+		}
+		fields["alerts"] = json.RawMessage(encode(legacy.upgrade()))
+		changes = append(changes, change{id, encode(fields)})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, c := range changes {
+		if _, err = tx.Exec("UPDATE nodes SET config=? WHERE id=?", c.config, c.id); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec("DELETE FROM alert_state WHERE kind='load'"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("PRAGMA user_version=13"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // migrateNodeShape adds the server-state columns, moves those values out of
@@ -1882,8 +1986,10 @@ func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
-// Transition persists debounce and edge state atomically with its durable notification event.
-func (s *Store) Transition(ctx context.Context, n model.Node, kind, message string, condition bool, hold int, now time.Time) error {
+// Transition persists debounce and edge state atomically with its durable
+// notification event. hold is how long the condition must last before it fires;
+// repeat re-sends a still-active alert every that many seconds (0: once).
+func (s *Store) Transition(ctx context.Context, n model.Node, kind, message string, condition bool, hold, repeat int, now time.Time) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -1912,15 +2018,15 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind, message stri
 	if _, err = tx.ExecContext(ctx, "INSERT INTO alert_state VALUES(?,?,?,?) ON CONFLICT(node_id,kind) DO UPDATE SET since=excluded.since,active=excluded.active", n.ID, kind, since, active); err != nil {
 		return err
 	}
-	repeat := false
-	if active && previous && n.Alerts.RepeatSeconds > 0 {
+	again := false
+	if active && previous && repeat > 0 {
 		var last int64
 		if err = tx.QueryRowContext(ctx, "SELECT coalesce(max(at),0) FROM events WHERE node_id=? AND kind=?", n.ID, kind).Scan(&last); err != nil {
 			return err
 		}
-		repeat = now.Unix()-last >= int64(n.Alerts.RepeatSeconds)
+		again = now.Unix()-last >= int64(repeat)
 	}
-	if active != previous || repeat {
+	if active != previous || again {
 		if !active {
 			message = "条件已解除或提醒已关闭"
 		}

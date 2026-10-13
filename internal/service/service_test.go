@@ -28,15 +28,15 @@ func open(t *testing.T) *Service {
 func TestPatchNodeMerges(t *testing.T) {
 	svc := open(t)
 	ctx := context.Background()
-	id, _, err := svc.CreateNode(ctx, model.Node{Name: "甲", Group: "HK", Alerts: model.Alerts{Load: true, CPUPercent: 80, MemoryPercent: 80, HoldSeconds: 60}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}})
+	id, _, err := svc.CreateNode(ctx, model.Node{Name: "甲", Group: "HK", Alerts: model.Alerts{{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 60}}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	n, err := svc.PatchNode(ctx, id, json.RawMessage(`{"id":"other","public":true,"alerts":{"offline":true}}`))
+	n, err := svc.PatchNode(ctx, id, json.RawMessage(`{"id":"other","public":true,"line":{"mbps":100}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n.ID != id || !n.Public || n.Group != "HK" || !n.Alerts.Offline || !n.Alerts.Load || n.Alerts.CPUPercent != 80 {
+	if rule, on := n.Alerts.Rule(model.AlertCPU); n.ID != id || !n.Public || n.Group != "HK" || n.Line.Mbps != 100 || !on || rule.Threshold != 80 {
 		t.Fatalf("merged node: %+v", n)
 	}
 	if _, err = svc.PatchNode(ctx, id, json.RawMessage(`{"pbulic":true}`)); !errors.Is(err, model.ErrInvalid) {

@@ -147,7 +147,7 @@ func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
 	admin := model.Secret()
 	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
 	defer server.Close()
-	id, _, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, Alerts: model.Alerts{Offline: true, OfflineSeconds: 60}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, Alerts: model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 60}}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,14 +175,14 @@ func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
 		return resp.StatusCode, obj, raw
 	}
 	_, _, public := call("GET", "/api/v1/nodes", "", false)
-	for _, leak := range []string{"traffic_adjustment", "adjustment_cycle", "created_at", `"offline":true`} {
+	for _, leak := range []string{"traffic_adjustment", "adjustment_cycle", "created_at", `"kind":"offline"`} {
 		if strings.Contains(string(public), leak) {
 			t.Fatalf("anonymous list leaks %s: %s", leak, public)
 		}
 	}
 	// 服务端自记的校正与创建时间不在节点配置里，管理员视图也不带；提醒规则只给管理员。
 	_, _, private := call("GET", "/api/v1/admin/nodes", "", true)
-	if strings.Contains(string(private), "traffic_adjustment") || strings.Contains(string(private), "created_at") || !strings.Contains(string(private), `"offline":true`) {
+	if strings.Contains(string(private), "traffic_adjustment") || strings.Contains(string(private), "created_at") || !strings.Contains(string(private), `"kind":"offline"`) {
 		t.Fatalf("admin list: %s", private)
 	}
 	code, obj, _ := call("POST", "/api/v1/admin/nodes/"+id+"/traffic", `{"used":1,"cycle":1}`, true)
@@ -258,14 +258,14 @@ func TestResourceRoutes(t *testing.T) {
 			t.Fatalf("task %s: enabled=%v nodes=%v", task.Name, task.Enabled, task.NodeIDs)
 		}
 	}
-	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`","`+b+`"],"alerts":{"offline":true,"offline_seconds":90}}`); code != 204 {
+	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`","`+b+`"],"alerts":[{"kind":"offline","hold_seconds":90}]}`); code != 204 {
 		t.Fatalf("alerts: %d %s", code, body)
 	}
-	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`"],"alerts":{"throttle":true}}`); code != 400 || !strings.Contains(body, "甲：") {
+	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`"],"alerts":[{"kind":"throttle"}]}`); code != 400 || !strings.Contains(body, "甲：") {
 		t.Fatalf("alerts invalid: %d %s", code, body)
 	}
 	// PATCH 只改提交的字段，与 MCP 的 update_node / update_task 是同一个合并。
-	if code, body := call("PATCH", "/api/v1/admin/nodes/"+a, `{"group":"HK","alerts":{"load":true,"cpu_percent":80,"memory_percent":80,"hold_seconds":60}}`); code != 200 || !strings.Contains(body, `"group":"HK"`) || !strings.Contains(body, `"offline":true`) {
+	if code, body := call("PATCH", "/api/v1/admin/nodes/"+a, `{"group":"HK","alerts":[{"kind":"cpu","threshold":80,"hold_seconds":60}]}`); code != 200 || !strings.Contains(body, `"group":"HK"`) || !strings.Contains(body, `"kind":"cpu"`) || strings.Contains(body, `"kind":"offline"`) {
 		t.Fatalf("patch node: %d %s", code, body)
 	}
 	if code, body := call("PATCH", "/api/v1/admin/nodes/"+a, `{"gruop":"HK"}`); code != 400 {

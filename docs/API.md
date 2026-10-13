@@ -13,7 +13,7 @@
 | POST /login、POST /logout、GET /session | 管理会话 |
 | GET、POST /admin/nodes | 列表、新建节点（返回一次性 token） |
 | PUT、PATCH、DELETE /admin/nodes/{id} | 编辑（PUT 整份替换；PATCH 只改提交的字段、嵌套对象按字段合并，返回合并后的节点）、删除节点 |
-| PUT /admin/nodes/alerts | `{"node_ids":[…],"alerts":{…}}`：把同一份提醒规则写给所选节点，一个事务；任何一台不合规整批不改，错误里写明是哪台 |
+| PUT /admin/nodes/alerts | `{"node_ids":[…],"alerts":[…]}`：把同一份提醒规则写给所选节点，一个事务；任何一台不合规整批不改，错误里写明是哪台 |
 | POST /admin/nodes/{id}/token | 撤销旧令牌，返回新令牌 |
 | GET、POST /admin/tasks | 列表、创建探测任务（返回 `{"id":…}`） |
 | PUT、PATCH、DELETE /admin/tasks/{id} | 编辑（PUT 整份替换；PATCH 同上合并语义）、删除任务 |
@@ -63,7 +63,7 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
  "billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_limit":2000000000000,"traffic_mode":"max",
             "free":false,"price":9.9,"currency":"USD","price_period":"月","expires_at":""},
  "line":{"mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"bandwidth"},
- "alerts":{…}}
+ "alerts":[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":90,"hold_seconds":300,"repeat_seconds":1800}]}
 ```
 
 - `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区（原 `representative`），`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。保存时去掉首尾空白，新填或改动的地区必须出现在内置目录或某个任务的目标地区里，否则 400 并指出是哪个地区（节点原有的值不受影响，照常可编辑）。`latency_carriers` / `route_carriers` 只在这台机器真有的探测项里再筛一道，留空显示全部；回程只有电信、联通、移动三网。
@@ -101,7 +101,7 @@ Server 把任务展开为单项探测（checks × targets，解锁任务一项�
 - 节点配置的重置时间与到期时间都是 RFC3339（精确到秒）：`billing.reset_at` 是周期锚点，只取它的「日 + 时分秒」逐月顺延，短月取月末；`billing.expires_at` 留空表示不设。旧的 `billing_day`（每月第几天）不再接受。
 - 后台表单的重置/到期时间填 `YYYY-MM-DD HH:MM:SS`（UTC），提交前转成 RFC3339；格式不符或日期不存在（如 2 月 31 日）在本地就报错。数字输入不再画步进箭头，滚轮经过数字、日期时间与下拉框时先失焦，滚动页面不会误改已填好的值。
 - 节点的 `billing.free`（布尔）标记免费机器：公开卡片写「免费」，保存时 `price` 与 `price_period` 清空；`price_period` 不再接受「免费」。数据库 v10 启动时把旧的「免费」周期就地转成 `free: true`；升级后旧版二进制不能打开该数据库，回滚需恢复升级前备份。
-- 节点告警新增 `offline_seconds`（判定离线后额外等待 0–86400 秒）与 `repeat_seconds`（0 为仅触发/恢复各一次；非零范围 300–604800 秒）。旧配置缺省为 0，不改变其通知频率。
+- 提醒规则 `alerts` 是列表，列出的规则开启，每种至多一条：`{"kind", "threshold", "hold_seconds", "repeat_seconds"}`。`offline` 用 `hold_seconds`（判定离线后再等 0–86400 秒）；`renewal` 用 `threshold`（到期前 0–365 天）；`traffic` 用 `threshold`（额度百分比 1–100）；`throttle` 无参数（按线路降速规则，节点须填 `line.throttle_mbps`）；`cpu` / `memory` 用 `threshold`（1–100%）与 `hold_seconds`（持续 30–86400 秒）。`repeat_seconds` 每条规则各自设置：0 为触发 / 恢复各一次，非零 300–604800 秒。不属于该种规则的参数会被拒绝。数据库 v13 把旧的开关对象就地转成列表：开着的规则连同阈值保留，旧的统一重复间隔写进每一条，负载规则拆成 cpu 与 memory 两条；关着的规则不再保留记住的阈值。旧的 `load` 事件照常显示，告警去抖状态随拆分重置。
 - 告警事件新增 `last_error`：最近一次通知投递错误；成功投递后清空。不保存 Telegram Token、请求 URL 或响应正文。
 
 数据库版本升级为 3，启动时自动完成两段迁移：v1 数据库补通知错误列和事件索引，v2 数据库把节点的 `billing_day`（每月第几天）改写成 `billing_at`（带秒的锚点时刻，取锚点日确实存在的最近一个月，避免被短月钳掉后逐月跑偏）。旧版二进制不能打开新版数据库，回滚时需恢复升级前备份。

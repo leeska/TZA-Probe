@@ -199,7 +199,7 @@ let list = await (
   await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })
 ).json();
 const created = list.find((n) => n.name === name);
-assert(created && !created.alerts.load && !created.alerts.offline, "新节点默认不开提醒");
+assert(created && Array.isArray(created.alerts) && created.alerts.length === 0, "新节点默认不开提醒（规则列表为空）");
 assert.equal(created.billing.traffic_limit, 2e12);
 assert.equal(created.region, "香港", "地区输入框里的值要原样落库（控件换组合框不改取值）");
 assert.equal(created.billing.currency, "CNY", "默认人民币");
@@ -349,7 +349,7 @@ const zeroAlerts = {
   name: "UI 零阈值 " + Date.now(), group: "", region: "", order: 0, public: false,
   display: { route_region: "" },
   billing: { traffic_limit: 0, traffic_mode: "sum", reset_at: "2026-09-01T00:00:00Z", price: 0, currency: "", free: true, price_period: "", expires_at: "" },
-  alerts: { offline: false, offline_seconds: 0, repeat_seconds: 0, renewal: false, renewal_days: 0, traffic: false, traffic_percent: 0, load: false, cpu_percent: 0, memory_percent: 0, hold_seconds: 0 },
+  alerts: [],
 };
 const zeroResponse = await fetch(base + "/api/v1/admin/nodes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json" }, body: JSON.stringify(zeroAlerts) });
 assert.equal(zeroResponse.status, 200, "server accepts zero thresholds while the rules are off");
@@ -383,7 +383,7 @@ $('[data-tab="alerts"]').click();
 await until(() => $(`[data-alerts="${zeroNode.id}"]`), "rules overview");
 $(`[data-alerts="${zeroNode.id}"]`).click();
 form = $("#alerts-form");
-for (const field of ["traffic_percent", "cpu_percent", "memory_percent", "hold_seconds"]) {
+for (const field of ["traffic_percent", "cpu_percent", "memory_percent", "cpu_hold", "memory_hold"]) {
   const el = form.elements[field];
   assert(Number(el.value) >= Number(el.min), `${field}=${el.value} is below min=${el.min}: the rules could never be saved`);
 }
@@ -860,18 +860,23 @@ form = $("#alerts-form");
     assert(text.includes(d), "提醒规则缺少默认值提示: " + d);
   assert(text.includes("阈值默认值：离线等待 60 秒"), "提示行要列出各项默认值");
 }
-assert.equal(form.elements.repeat_minutes.placeholder, "默认 0（只提醒一次）");
+// 每条规则各有自己的重复间隔。
+for (const rule of ["offline", "renewal", "traffic", "throttle", "cpu", "memory"])
+  assert.equal(form.elements[rule + "_repeat"].placeholder, "默认 0（只提醒一次）", rule + " 要有自己的重复间隔");
 assert(form.elements.cpu_percent.disabled, "未启用的负载规则不校验阈值");
-for (const rule of ["offline", "renewal", "traffic", "load"]) {
+for (const rule of ["offline", "renewal", "traffic", "cpu", "memory"]) {
   form.elements[rule].checked = true;
   form.elements[rule].dispatchEvent(new w.Event("change"));
 }
 assert(!form.elements.cpu_percent.disabled, "启用规则要恢复阈值输入");
-assert.equal(form.elements.hold_seconds.value, "300");
+assert.equal(form.elements.cpu_hold.value, "300");
+set(form, "cpu_repeat", "60");
 submit(form);
 await until(async () => {
   const n = (await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json()).find((x) => x.id === created.id);
-  return n?.alerts.load && n.alerts.offline && n.alerts.renewal && n.alerts.traffic && n.alerts.hold_seconds === 300;
+  const kinds = (n?.alerts || []).map((r) => r.kind).join(",");
+  const cpu = n?.alerts.find((r) => r.kind === "cpu");
+  return kinds === "offline,renewal,traffic,cpu,memory" && cpu.hold_seconds === 300 && cpu.repeat_seconds === 3600;
 }, "single-node rules saved");
 // 批量设置：勾两台，一份规则同时写给两台（服务端一个事务）。
 await until(() => $(`[data-select-node="${created.id}"]`) && !$("#dialog").open, "overview re-rendered");
@@ -885,13 +890,13 @@ await until(() => $(`[data-select-node="${created.id}"]`) && !$("#dialog").open,
   assert(/2 个节点/.test($("#dialog").textContent), "批量弹窗要写明作用于几台");
   form.elements.offline.checked = true;
   form.elements.offline.dispatchEvent(new w.Event("change"));
-  set(form, "repeat_minutes", "30");
+  set(form, "offline_repeat", "30");
   submit(form);
   await until(async () => {
     const list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
     return [created.id, other.id].every((id) => {
       const a = list.find((n) => n.id === id)?.alerts;
-      return a?.offline && !a.load && a.repeat_seconds === 1800;
+      return a?.length === 1 && a[0].kind === "offline" && a[0].repeat_seconds === 1800;
     });
   }, "batch rules saved on both nodes");
 }
@@ -2419,7 +2424,7 @@ const madeThrottle = await fetch(base + "/api/v1/admin/nodes", {
     public: true,
     billing: { reset_at: "2026-09-01T00:00:00Z", traffic_mode: "sum" },
     line: { mbps: 1000, throttle_mbps: 1, throttle_hours: 1 },
-    alerts: { throttle: true },
+    alerts: [{ kind: "throttle" }],
   }),
 });
 assert.equal(
@@ -2528,7 +2533,7 @@ const madeQuota = await fetch(base + "/api/v1/admin/nodes", {
     public: true,
     billing: { reset_at: "2026-09-01T00:00:00Z", traffic_limit: 1000000, traffic_mode: "max" },
     line: { mbps: 4000, throttle_mbps: 50, throttle_on: "quota" },
-    alerts: { throttle: true },
+    alerts: [{ kind: "throttle" }],
   }),
 });
 assert.equal(

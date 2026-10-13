@@ -59,7 +59,7 @@ var adminTools = []tool{
 	},
 	{
 		Name:        "set_node_alerts",
-		Description: "把同一份提醒规则写给一批节点（面板「告警与通知 → 规则总览」的批量设置）：整份替换这些节点的 alerts，一个事务，任何一台不合规（如没填降速阈值却开降速告警）整批不改并指出是哪台。",
+		Description: "把同一份提醒规则列表写给一批节点（面板「告警与通知 → 提醒规则」的批量设置）：整份替换这些节点的 alerts，一个事务，任何一台不合规（如没填降速阈值却开 throttle 规则）整批不改并指出是哪台。",
 		InputSchema: schema(map[string]any{
 			"node_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "节点 id 列表"},
 			"alerts":   alertsSchema(),
@@ -215,21 +215,16 @@ func carrierList() map[string]any {
 }
 
 func alertsSchema() map[string]any {
-	properties := map[string]any{
-		"offline":         map[string]any{"type": "boolean", "description": "离线提醒"},
-		"offline_seconds": map[string]any{"type": "integer", "minimum": 0, "maximum": 86400, "description": "判定离线后额外等待秒数，默认 60"},
-		"repeat_seconds":  map[string]any{"type": "integer", "minimum": 0, "maximum": 604800, "description": "重复提醒间隔：0 表示只触发/恢复各一次，非零为 300–604800 秒"},
-		"renewal":         map[string]any{"type": "boolean", "description": "到期续费提醒"},
-		"renewal_days":    map[string]any{"type": "integer", "minimum": 0, "maximum": 365, "description": "提前多少天提醒，默认 7"},
-		"traffic":         map[string]any{"type": "boolean", "description": "流量额度提醒"},
-		"traffic_percent": map[string]any{"type": "number", "minimum": 0, "maximum": 100, "description": "流量阈值百分比，默认 80"},
-		"throttle":        map[string]any{"type": "boolean", "description": "达量降速提醒：窗口平均带宽达到节点上的降速阈值时提醒"},
-		"load":            map[string]any{"type": "boolean", "description": "CPU / 内存负载提醒"},
-		"cpu_percent":     map[string]any{"type": "number", "minimum": 0, "maximum": 100, "description": "CPU 阈值，默认 90"},
-		"memory_percent":  map[string]any{"type": "number", "minimum": 0, "maximum": 100, "description": "内存阈值，默认 90"},
-		"hold_seconds":    map[string]any{"type": "integer", "minimum": 30, "maximum": 86400, "description": "负载需持续的秒数，默认 300"},
+	rule := map[string]any{
+		"type": "object", "additionalProperties": false, "required": []string{"kind"},
+		"properties": map[string]any{
+			"kind":           map[string]any{"type": "string", "enum": model.AlertKinds, "description": "offline 离线 / renewal 续费 / traffic 流量 / throttle 达量降速 / cpu / memory"},
+			"threshold":      map[string]any{"type": "number", "description": "renewal：到期前多少天（0–365）；traffic / cpu / memory：百分比（1–100）；offline、throttle 不填"},
+			"hold_seconds":   map[string]any{"type": "integer", "description": "offline：判定离线后再等的秒数（0–86400）；cpu / memory：持续多久才算（30–86400）；其余不填"},
+			"repeat_seconds": map[string]any{"type": "integer", "description": "持续告警的重复提醒间隔：0 只提醒一次，否则 300–604800 秒"},
+		},
 	}
-	return map[string]any{"type": "object", "properties": properties, "additionalProperties": false, "description": "该节点的提醒规则；不传表示不改"}
+	return map[string]any{"type": "array", "items": rule, "description": "该节点的提醒规则列表：列出的规则开启，没列出的关闭；每种至多一条。整份替换（update_node 里传 alerts 即替换全部规则）"}
 }
 
 func taskSchema(withID bool) map[string]any {

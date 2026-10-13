@@ -109,7 +109,9 @@ export const kindName = {
   renewal: "续费提醒",
   traffic: "流量警告",
   throttle: "降速警告",
-  load: "负载警告",
+  load: "负载警告", // 旧事件：负载规则已拆成 CPU 与内存两条
+  cpu: "CPU 警告",
+  memory: "内存警告",
   test: "通知测试",
 };
 

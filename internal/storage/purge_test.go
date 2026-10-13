@@ -36,7 +36,7 @@ func purgeFixture(t *testing.T, s *Store, now time.Time) (node, token string, ta
 			t.Fatal(err)
 		}
 	}
-	if err = s.Transition(ctx, model.Node{ID: node, Name: "node"}, "load", "x", true, 0, now); err != nil {
+	if err = s.Transition(ctx, model.Node{ID: node, Name: "node"}, "cpu", "x", true, 0, 0, now); err != nil {
 		t.Fatal(err)
 	}
 	return node, token, task
