@@ -284,3 +284,45 @@ func TestTaskHealthCountsLatestAttempts(t *testing.T) {
 		t.Fatal("unbound nodes must not count", got)
 	}
 }
+
+// ChangeBindings edits several tasks with different node lists: the added node
+// joins each, the removed one leaves each, and everything else stays bound.
+func TestChangeBindingsKeepsOtherBindings(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	a, _ := makeNode(t, s)
+	b, _ := makeNode(t, s)
+	c, _ := makeNode(t, s)
+	spec := func(name string, nodes ...string) model.Task {
+		return model.Task{Name: name, Enabled: true, NodeIDs: nodes, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{{Host: "example.com", Port: 443, Family: "ipv4"}}, Interval: 3600}}
+	}
+	one, err := s.SaveTask(ctx, spec("one", a, b), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := s.SaveTask(ctx, spec("two", b), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ChangeBindings(ctx, []string{one, two}, []string{c}, []string{b}); err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ := s.Tasks(ctx)
+	got := map[string]string{}
+	for _, task := range tasks {
+		got[task.ID] = strings.Join(task.NodeIDs, ",")
+	}
+	if got[one] != a+","+c || got[two] != c {
+		t.Fatalf("one=%s (want %s,%s) two=%s (want %s)", got[one], a, c, got[two], c)
+	}
+	var rows int
+	if err = s.db.QueryRow("SELECT count(*) FROM bindings WHERE node_id=?", b).Scan(&rows); err != nil || rows != 0 {
+		t.Fatal("removed node still bound", rows, err)
+	}
+	if err = s.ChangeBindings(ctx, []string{one}, []string{a}, []string{a}); !errors.Is(err, model.ErrInvalid) {
+		t.Fatal("add and remove of the same node must be refused", err)
+	}
+	if err = s.ChangeBindings(ctx, []string{one}, []string{"missing"}, nil); !errors.Is(err, model.ErrInvalid) {
+		t.Fatal("unknown node must be refused", err)
+	}
+}

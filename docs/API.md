@@ -19,7 +19,7 @@
 | PUT、PATCH、DELETE /admin/tasks/{id} | 编辑（PUT 整份替换；PATCH 同上合并语义）、删除任务 |
 | PUT /admin/tasks/{id}/enabled | `{"enabled":true|false}`：恢复 / 暂停 |
 | POST /admin/tasks/{id}/run | 立即安排执行；任务暂停或未绑定节点时 409 |
-| PUT /admin/tasks/bindings | `{"task_ids":[…],"node_ids":[…]}`：所选任务换成同一份节点列表，一个事务 |
+| PUT /admin/tasks/bindings | 两种写法，一个事务：`{"task_ids":[…],"node_ids":[…]}` 把所选任务换成同一份节点列表；`{"task_ids":[…],"add":[…],"remove":[…]}` 只增删这几个节点，各任务其余绑定不变（后台批量绑定用这种）。两种混用、或 add 与 remove 都为空时 400 |
 | GET /admin/catalog | 内置离线目标目录 |
 | GET /admin/events?before=&limit=&node_id=&kind=&active= | 告警与发送结果，按 id 倒序分页：`limit` 默认 100、上限 500，`before` 传上一页最后一条的 id 续读，`node_id` / `kind` 筛选；`active=1` 只列正在告警的项目，每项取最近一次事件（MCP `recent_events` 的 `active: true` 同义） |
 | GET、PUT、PATCH /admin/notification | 通知出口：查询渠道状态（不回凭据）、设置 Telegram / Webhook / 关闭；PUT 整份提交，PATCH 只改传了的项 |

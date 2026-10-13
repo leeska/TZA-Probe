@@ -840,6 +840,8 @@ await until(() => $("#task-form"), "edit unlock task");
 $('[data-select-task="' + createdTask.id + '"]').checked = true;
 $("#bind-selected").click();
 await until(() => $("#node-search"), "bind dialog");
+// 只勾一个任务时标题写明是哪个任务，不叫「批量」。
+assert(/^绑定节点 · /.test($("#dialog-title").textContent), "单个任务的绑定弹窗要写明任务名: " + $("#dialog-title").textContent);
 const nodeQuery = $("#node-search");
 const shownNodes = () => [...w.document.querySelectorAll("[data-node]")].map((i) => i.closest("label").textContent.trim());
 for (const query of ["香港", "hk", "HK", "hongkong", "xg", "xianggang", "xiang", "gang"]) {

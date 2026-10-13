@@ -144,7 +144,7 @@ function renderNodes(firing) {
   content().querySelectorAll("[data-billing]").forEach((b) => {
     b.onclick = () => {
       const n = nodes.find((x) => x.id === b.dataset.billing);
-      const d = modal("校正本周期用量", `<form><p>将当前周期总用量校正为指定值；后续采集继续累加，下个周期自动失效。</p>${field("实际已用流量（GB）", "used", n.traffic_used / 1e9, "number", 'min="0" max="10000000" step="any" required')}<p class="hint">当前周期：${date(n.cycle_start)} — ${date(n.cycle_end)}。修改计费方向或重置日会清除校正。</p><div class="form-footer"><button class="primary" type="submit">保存校正</button></div></form>`);
+      const d = modal(`校正本周期用量 · ${n.name}`, `<form><p>将当前周期总用量校正为指定值；后续采集继续累加，下个周期自动失效。</p>${field("实际已用流量（GB）", "used", n.traffic_used / 1e9, "number", 'min="0" max="10000000" step="any" required')}<p class="hint">当前周期：${date(n.cycle_start)} — ${date(n.cycle_end)}。修改计费方向或重置日会清除校正。</p><div class="form-footer"><button class="primary" type="submit">保存校正</button></div></form>`);
       d.querySelector("form").onsubmit = guard(async (e) => {
         e.preventDefault();
         await send(`/admin/nodes/${n.id}/traffic`, "POST", {used: Math.round(Number(new FormData(e.target).get("used")) * 1e9), cycle: n.cycle_start});
@@ -183,17 +183,7 @@ function renderNodes(firing) {
     .forEach(
       (b) =>
         (b.onclick = () =>
-          confirmAction(
-            `重新生成密钥 · ${nodeName(b.dataset.token)}`,
-            `「${nodeName(b.dataset.token)}」的旧 Agent 密钥会立即失效，生成后请用新的安装命令更新这台机器。`,
-            async () => {
-              const result = await send(
-                `/admin/nodes/${b.dataset.token}/token`,
-                "POST",
-              );
-              showToken(result.token);
-            },
-          )),
+          tokenAction(nodes.find((n) => n.id === b.dataset.token))),
     );
   content()
     .querySelectorAll("[data-delete]")
@@ -207,6 +197,7 @@ function renderNodes(firing) {
               await send(`/admin/nodes/${b.dataset.delete}`, "DELETE");
               await render();
             },
+            { label: "删除节点" },
           )),
     );
   wireReorder();
@@ -502,17 +493,33 @@ function nodeForm(existing) {
     d.close();
     await render();
     // 新建返回一次性密钥；编辑（PUT）成功是 204，没有正文。
-    if (result?.token) showToken(result.token);
+    if (result?.token) showToken(result.token, value.name);
     else toast("节点已保存");
   });
 }
 // 确认框写明对象：连着处理几台机器时，只写「删除节点」很容易点错行。
 const nodeName = (id) => nodes.find((n) => n.id === id)?.name || id;
 const taskName = (id) => tasks.find((t) => t.id === id)?.name || id;
-function confirmAction(title, message, action) {
+// 「接入」与「重置密钥」是同一个动作（生成新密钥），但对一台从没上报过的机器不该说「旧 Agent
+// 会失效」——那里没有在跑的 Agent，失效的只是创建时给出的那条安装命令。所以按有没有上报过分开说。
+function tokenAction(n) {
+  const fresh = !n.last_seen;
+  confirmAction(
+    `${fresh ? "接入" : "重置密钥"} · ${n.name}`,
+    fresh
+      ? `为「${n.name}」生成新的安装命令。这台机器还没接入过，不影响任何在跑的 Agent；之前给出的安装命令会随之失效。`
+      : `「${n.name}」的旧 Agent 密钥会立即失效，生成后请用新的安装命令更新这台机器。`,
+    async () => {
+      const result = await send(`/admin/nodes/${n.id}/token`, "POST");
+      showToken(result.token, n.name);
+    },
+    fresh ? { label: "生成安装命令", danger: false } : { label: "重置密钥" },
+  );
+}
+function confirmAction(title, message, action, { label = "确认", danger = true } = {}) {
   const d = modal(
     title,
-    `<p>${esc(message)}</p><div class="form-footer"><button class="danger" id="confirm">确认</button></div>`,
+    `<p>${esc(message)}</p><div class="form-footer"><button class="${danger ? "danger" : "primary"}" id="confirm">${esc(label)}</button></div>`,
   );
   d.querySelector("#confirm").onclick = guard(async () => {
     d.close();
@@ -608,6 +615,7 @@ function renderTasks(health = {}) {
               await send("/admin/tasks/" + b.dataset.deleteTask, "DELETE");
               await render();
             },
+            { label: "删除任务" },
           )),
     );
 }

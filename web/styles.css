@@ -2085,6 +2085,13 @@ dialog .form-footer {
   margin-top: 14px;
 }
 
+/* 绑定弹窗里「部分任务已绑定」的节点：半选，虚线描边与全选区分开。 */
+.node-checkboxes label.checkbox:has(input:indeterminate) {
+  border-style: dashed;
+  border-color: rgba(var(--accent-rgb), 0.45);
+  color: var(--accent);
+}
+
 .node-checkboxes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

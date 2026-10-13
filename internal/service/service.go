@@ -38,6 +38,7 @@ type Store interface {
 	SetTaskEnabled(context.Context, string, bool) error
 	RunTask(context.Context, string, time.Time) error
 	BindTasks(context.Context, []string, []string) error
+	ChangeBindings(context.Context, []string, []string, []string) error
 	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
 	TaskHealth(context.Context, time.Time) (map[string]model.TaskHealth, error)
 
@@ -319,6 +320,18 @@ func (s *Service) BindTasks(ctx context.Context, taskIDs, nodeIDs []string) erro
 		return model.Invalid("一次最多 500 个任务")
 	}
 	return s.Store.BindTasks(ctx, taskIDs, nodeIDs)
+}
+
+// ChangeBindings adds and removes nodes on every listed task, keeping each
+// task's other bindings, all or nothing.
+func (s *Service) ChangeBindings(ctx context.Context, taskIDs, add, remove []string) error {
+	if len(taskIDs) > 500 {
+		return model.Invalid("一次最多 500 个任务")
+	}
+	if len(add) == 0 && len(remove) == 0 {
+		return model.Invalid("没有要添加或移除的节点")
+	}
+	return s.Store.ChangeBindings(ctx, taskIDs, add, remove)
 }
 
 func (s *Service) TaskRuns(ctx context.Context, id string) ([]model.TaskRun, error) {

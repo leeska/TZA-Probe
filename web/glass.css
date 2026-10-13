@@ -1374,6 +1374,16 @@ input[type="checkbox"]:checked {
   box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.4);
 }
 
+/* 半选（绑定弹窗里「部分任务已绑定」）：一道横线，配色与选中一致但更淡。 */
+input[type="checkbox"]:indeterminate {
+  border-color: transparent;
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.5 12h11' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"), linear-gradient(145deg, #7fb8ff 0%, #5a9cf0 100%);
+  background-size: 14px 14px, cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 input[type="checkbox"]:focus-visible {
   outline: 2px solid rgba(var(--accent-rgb), 0.55);
   outline-offset: 2px;

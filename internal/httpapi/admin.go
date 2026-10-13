@@ -154,15 +154,26 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 	route("POST /api/v1/admin/tasks/{id}/run", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, a.svc.RunTask(r.Context(), r.PathValue("id")))
 	})
+	// 两种写法：node_ids 把所选任务的绑定都换成这一份；add / remove 只增删这几个节点，
+	// 各任务原有的其他绑定不动（多选任务时各自的节点列表往往不一样）。两种不能混用。
 	route("PUT /api/v1/admin/tasks/bindings", func(w http.ResponseWriter, r *http.Request) {
 		var v struct {
-			TaskIDs []string `json:"task_ids"`
-			NodeIDs []string `json:"node_ids"`
+			TaskIDs []string  `json:"task_ids"`
+			NodeIDs *[]string `json:"node_ids"`
+			Add     []string  `json:"add"`
+			Remove  []string  `json:"remove"`
 		}
 		if !decode(w, r, &v) {
 			return
 		}
-		respond(w, a.svc.BindTasks(r.Context(), v.TaskIDs, v.NodeIDs))
+		switch {
+		case v.NodeIDs != nil && (v.Add != nil || v.Remove != nil):
+			write(w, 400, map[string]string{"error": "node_ids 与 add / remove 只能用一种"})
+		case v.NodeIDs != nil:
+			respond(w, a.svc.BindTasks(r.Context(), v.TaskIDs, *v.NodeIDs))
+		default:
+			respond(w, a.svc.ChangeBindings(r.Context(), v.TaskIDs, v.Add, v.Remove))
+		}
 	})
 	// 任务列表的「最近执行」一列：每个任务各目标最近一次执行的成功 / 失败 / 进行中计数。
 	route("GET /api/v1/admin/tasks/health", func(w http.ResponseWriter, r *http.Request) {

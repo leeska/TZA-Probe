@@ -7,7 +7,8 @@ export function installCommand(endpoint, token) {
   return `curl -fsSL ${endpoint}/install.sh | sh -s -- --endpoint ${endpoint} --token ${token}`;
 }
 
-export function showToken(token) {
+// name 写进标题：同时给几台机器接入时，要分得清这条命令是哪一台的。
+export function showToken(token, name = "") {
   const endpoint = location.origin;
   const config = {
     endpoint,
@@ -21,7 +22,7 @@ export function showToken(token) {
   };
   const command = installCommand(endpoint, token);
   const d = modal(
-    "节点接入",
+    name ? `节点接入 · ${name}` : "节点接入",
     `<p>密钥仅在此处显示。在 Agent 主机（Linux + systemd，x86_64 / arm64）以 root（或有 sudo 权限的用户）执行下面这一条命令，会自动下载对应架构的 Agent、写入配置并启动服务：</p>
     ${endpointWarning()}
     <div class="command-block"><pre id="install-command">${esc(command)}</pre><button type="button" id="copy-command" class="primary">复制命令</button></div>

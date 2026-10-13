@@ -10,30 +10,71 @@ export async function controlTask(id, action, refresh) {
   await refresh();
 }
 
+// 绑定节点：多选任务时各任务原本绑的节点往往不一样，所以每个节点按「全部已绑 / 部分已绑 / 未绑」
+// 显示（部分已绑是半选），保存时只提交点过的节点（PUT /admin/tasks/bindings 的 add / remove），
+// 各任务其余的绑定原样保留。以前多选时一律从空白开始、保存是整份替换，加一台就会把别的全解绑。
 export function bindTasks(tasks, nodes, refresh) {
-  const selected = new Set(tasks.length === 1 ? tasks[0].node_ids.filter((id) => nodes.some((n) => n.id === id)) : []);
-  const d = modal("批量绑定节点", `<form><p>为 ${tasks.length} 个任务设置相同的节点列表，将替换原绑定。取消全部选择会停止这些任务的调度。</p><label>搜索节点<input id="node-search" type="search" placeholder="名称 / 分组 / 地区（支持拼音与缩写）"></label><div class="catalog-toolbar"><button type="button" id="select-visible">选中筛选结果</button><button type="button" id="clear-nodes">清空选择</button></div><div id="binding-nodes"></div><p id="binding-count"></p><div class="form-footer"><button type="submit" class="primary">保存绑定</button></div></form>`);
+  const live = (t) => new Set((t.node_ids || []).filter((id) => nodes.some((n) => n.id === id)));
+  const bound = tasks.map(live);
+  const initial = new Map(nodes.map((n) => {
+    const count = bound.filter((set) => set.has(n.id)).length;
+    return [n.id, count === tasks.length ? "all" : count ? "some" : "none"];
+  }));
+  const state = new Map(initial);
+  const one = tasks.length === 1;
+  const names = tasks.map((t) => t.name).join("、");
+  const d = modal(
+    one ? `绑定节点 · ${tasks[0].name}` : `批量绑定节点（${tasks.length} 个任务）`,
+    `<form><p>${one ? "勾选这个任务要在哪些节点上执行。取消全部勾选会停止它的调度。" : `所选任务：${esc(names)}。半选的节点只有部分任务绑定了：点一下改为全部绑定，再点一下全部解绑。保存时只改动你点过的节点，其余绑定保持不变。`}</p><label>搜索节点<input id="node-search" type="search" placeholder="名称 / 分组 / 地区（支持拼音与缩写）"></label><div class="catalog-toolbar"><button type="button" id="select-visible">全部绑定筛选结果</button><button type="button" id="clear-nodes">全部解绑</button></div><div id="binding-nodes" class="node-checkboxes"></div><p id="binding-count" class="hint"></p><div class="form-footer"><button type="submit" class="primary">保存绑定</button></div></form>`,
+  );
   let query = "";
   const matches = () => nodes.filter((n) => searchMatch(query, n.name, n.group, n.region));
+  const changes = () => {
+    const add = [], remove = [];
+    for (const [id, now] of state) {
+      if (now === initial.get(id)) continue;
+      if (now === "all") add.push(id);
+      else if (now === "none") remove.push(id);
+    }
+    return { add, remove };
+  };
+  const count = () => {
+    const { add, remove } = changes();
+    const bound = [...state.values()].filter((v) => v === "all").length;
+    const partial = [...state.values()].filter((v) => v === "some").length;
+    d.querySelector("#binding-count").textContent =
+      `全部绑定 ${bound} 个${partial ? `、部分绑定 ${partial} 个` : ""}节点` +
+      (add.length || remove.length ? ` · 将添加 ${add.length} 个、移除 ${remove.length} 个` : " · 尚未改动");
+  };
   const render = () => {
-    d.querySelector("#binding-nodes").innerHTML = matches().map((n) => `<label class="checkbox"><input type="checkbox" data-node="${esc(n.id)}" ${selected.has(n.id) ? "checked" : ""}>${esc(n.name)} · ${esc(n.group || "默认")}</label>`).join("") || '<p class="hint">没有匹配节点</p>';
-    d.querySelector("#binding-count").textContent = `已选 ${selected.size} 个节点`;
-    d.querySelectorAll("[data-node]").forEach((el) => el.onchange = () => {
-      el.checked ? selected.add(el.dataset.node) : selected.delete(el.dataset.node);
-      d.querySelector("#binding-count").textContent = `已选 ${selected.size} 个节点`;
+    const list = d.querySelector("#binding-nodes");
+    list.innerHTML = matches().map((n) => `<label class="checkbox"><input type="checkbox" data-node="${esc(n.id)}" ${state.get(n.id) === "all" ? "checked" : ""}>${esc(n.name)} · ${esc(n.group || "默认")}</label>`).join("") || '<p class="hint">没有匹配节点</p>';
+    list.querySelectorAll("[data-node]").forEach((el) => {
+      el.indeterminate = state.get(el.dataset.node) === "some";
+      el.onchange = () => {
+        state.set(el.dataset.node, el.checked ? "all" : "none");
+        count();
+      };
     });
+    count();
   };
   d.querySelector("#node-search").oninput = (e) => {query = e.target.value; render();};
-  d.querySelector("#select-visible").onclick = () => {matches().forEach((n) => selected.add(n.id)); render();};
-  d.querySelector("#clear-nodes").onclick = () => {selected.clear(); render();};
+  d.querySelector("#select-visible").onclick = () => {matches().forEach((n) => state.set(n.id, "all")); render();};
+  d.querySelector("#clear-nodes").onclick = () => {nodes.forEach((n) => state.set(n.id, "none")); render();};
   render();
   d.querySelector("form").onsubmit = guard(async (e) => {
     e.preventDefault();
+    const { add, remove } = changes();
+    if (!add.length && !remove.length) {
+      d.close();
+      toast("绑定没有改动");
+      return;
+    }
     const button = d.querySelector('[type="submit"]'); button.disabled = true;
     // 一次提交全部任务，服务端在一个事务里改：要么都改了，要么都没改。
     try {
-      await send("/admin/tasks/bindings", "PUT", {task_ids: tasks.map((t) => t.id), node_ids: [...selected]});
-      d.close(); toast("节点绑定已更新"); await refresh();
+      await send("/admin/tasks/bindings", "PUT", {task_ids: tasks.map((t) => t.id), add, remove});
+      d.close(); toast(`已添加 ${add.length} 个、移除 ${remove.length} 个节点`); await refresh();
     } finally {button.disabled = false;}
   });
 }

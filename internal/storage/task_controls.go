@@ -111,6 +111,64 @@ func (s *Store) BindTasks(ctx context.Context, taskIDs, nodeIDs []string) error 
 	return tx.Commit()
 }
 
+// ChangeBindings adds and removes nodes on every listed task while leaving
+// each task's other bindings alone, all in one transaction. It is what a batch
+// edit over tasks with different node lists needs: BindTasks would give them
+// all the same list and silently drop what only some of them had.
+func (s *Store) ChangeBindings(ctx context.Context, taskIDs, add, remove []string) error {
+	if len(taskIDs) == 0 {
+		return model.Invalid("请至少选择一个任务")
+	}
+	drop := map[string]bool{}
+	for _, node := range remove {
+		drop[node] = true
+	}
+	for _, node := range add {
+		if drop[node] {
+			return model.Invalid("同一个节点不能既添加又移除：" + node)
+		}
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, node := range add {
+		var exists int
+		if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM nodes WHERE id=?", node).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return model.Invalid("节点不存在：" + node)
+		}
+	}
+	seen := map[string]bool{}
+	for _, id := range taskIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		task, err := loadTask(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		next := []string{}
+		have := map[string]bool{}
+		for _, node := range append(task.NodeIDs, add...) {
+			if !drop[node] && !have[node] {
+				have[node] = true
+				next = append(next, node)
+			}
+		}
+		if err = bindTask(ctx, tx, id, next); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func bindTask(ctx context.Context, tx *sql.Tx, id string, nodeIDs []string) error {
 	task, err := loadTask(ctx, tx, id)
 	if err != nil {

@@ -243,6 +243,16 @@ func TestResourceRoutes(t *testing.T) {
 	if code, body := call("PUT", "/api/v1/admin/tasks/bindings", `{"task_ids":["`+tasks[0]+`"],"node_ids":["nope"]}`); code != 400 || !strings.Contains(body, "节点不存在") {
 		t.Fatalf("bind missing node: %d %s", code, body)
 	}
+	// add / remove 只增删给出的节点；与 node_ids 混用是 400。
+	if code, body := call("PUT", "/api/v1/admin/tasks/bindings", `{"task_ids":["`+tasks[0]+`"],"node_ids":[],"add":["`+a+`"]}`); code != 400 {
+		t.Fatalf("mixed binding modes: %d %s", code, body)
+	}
+	if code, body := call("PUT", "/api/v1/admin/tasks/bindings", `{"task_ids":["`+tasks[0]+`","`+tasks[1]+`"],"remove":["`+b+`"]}`); code != 204 {
+		t.Fatalf("remove binding: %d %s", code, body)
+	}
+	if code, body := call("PUT", "/api/v1/admin/tasks/bindings", `{"task_ids":["`+tasks[0]+`","`+tasks[1]+`"],"add":["`+b+`"]}`); code != 204 {
+		t.Fatalf("add binding: %d %s", code, body)
+	}
 	if code, _ := call("POST", "/api/v1/admin/tasks/"+tasks[0]+"/run", ""); code != 204 {
 		t.Fatalf("run: %d", code)
 	}
