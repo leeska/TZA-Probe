@@ -1,6 +1,6 @@
 # HTTP API v1
 
-全部 JSON。管理自动化用 `Authorization: Bearer <admin-token>`；Agent 用自己的节点令牌。浏览器通过 `POST /api/v1/login` 提交 `{ "token": "..." }` 获取 Cookie。生产环境必须由 TLS 代理保护。
+全部 JSON。管理自动化用 `Authorization: Bearer <admin-token>`；Agent 用自己的节点令牌。浏览器通过 `POST /api/v1/login` 提交后台账号 `{ "username": "...", "password": "..." }` 或管理密钥 `{ "token": "..." }` 获取 Cookie。生产环境必须由 TLS 代理保护。
 
 | 方法与路径（均以 /api/v1 开头） | 用途 |
 | --- | --- |
@@ -26,6 +26,7 @@
 | GET、PUT、PATCH /admin/notification | 通知出口：查询渠道状态（不回凭据）、设置 Telegram / Webhook / 关闭；PUT 整份提交，PATCH 只改传了的项 |
 | POST /admin/notification/test | 向已配置的渠道发送测试通知 |
 | GET /admin/backup | 下载整个数据库的一致快照（SQLite 文件，`VACUUM INTO` 生成，不用停服）；文件名 `tza-backup-YYYYMMDD-HHMMSS.db` |
+| GET、PUT /admin/account | 后台账号：GET 回 `{"username":…,"configured":true}`；PUT 提交 `{"current_password":…,"username":…,"password":…}` 修改用户名与密码（用户名 1–32 个非空白字符，密码 8–128 个字符；当前密码错误 400），成功后除本次以外的浏览器会话全部失效。忘记密码在服务器执行 `tza-server reset-password` |
 | GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |

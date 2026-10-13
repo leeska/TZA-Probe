@@ -6,8 +6,10 @@
 # 从 GitHub Release 安装（免 Go 与 git，发布包同时带两种架构的 Agent）：
 #   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --version v1.0.0
 #
-# 脚本只做四件事：取到 tza-server、装到 /usr/local/bin、建好数据目录、装 systemd 服务。
-# 重复执行即升级：旧二进制保留为 tza-server.previous，数据目录不动。
+# 脚本只做五件事：取到 tza-server、装到 /usr/local/bin、建好数据目录、生成管理密钥与
+# 后台账号、装 systemd 服务。
+# 重复执行即升级：旧二进制保留为 tza-server.previous，数据目录不动，已有的密钥与账号保留。
+# 后台初始密码只在首次安装时显示一次；忘记密码执行 sudo tza-server reset-password --data 数据目录。
 set -eu
 
 REPO="leeska/TZA-Probe"
@@ -29,7 +31,7 @@ TZA Probe Server 一键安装（Linux amd64 / arm64）
 选项
   --version vX.Y.Z   从 GitHub Release 安装，免 git 与 Go
   --listen ADDR      监听地址，默认 127.0.0.1:25774（跨主机接入请配置 HTTPS 反代）
-  --data DIR         数据目录，默认 /var/lib/tza-probe（内含 admin-token 与数据库）
+  --data DIR         数据目录，默认 /var/lib/tza-probe（内含 admin-token、admin-account 与数据库）
   --no-systemd       只安装二进制与数据目录，不注册 systemd 服务
   -h, --help         显示本说明
 EOF
@@ -128,6 +130,10 @@ if [ -n "${AGENTS:-}" ] && [ -d "${AGENTS:-}" ]; then
   done
 fi
 
+# 服务启动前生成管理密钥与后台账号：密码只在这里打印一次，不进 systemd 日志。
+# init 以 root 运行时会把新文件交给数据目录的属主（服务账户）。
+CREDS="$("$BIN" init --data "$DATA")"
+
 started="no"
 if [ "$SYSTEMD" != "no" ] && [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
   if [ -z "$UNIT_SRC" ]; then
@@ -185,7 +191,12 @@ else
   echo "未注册 systemd 服务，手动启动："
   echo "  sudo -u ${SERVICE_USER} ${BIN} --listen ${LISTEN} --data ${DATA}"
 fi
-echo "登录密钥：sudo cat ${DATA}/admin-token"
+echo
+echo "================ 后台登录信息 ================"
+echo "$CREDS"
+echo "=============================================="
+echo "管理密钥也可随时查看：sudo cat ${DATA}/admin-token（API / MCP 用 Authorization: Bearer 密钥）"
+echo "忘记后台密码：sudo ${BIN} reset-password --data ${DATA}"
 if [ "${LISTEN%%:*}" = "127.0.0.1" ]; then
   echo "管理页面：http://${LISTEN}/admin （跨主机访问请在前面配置 HTTPS 反代）"
 else

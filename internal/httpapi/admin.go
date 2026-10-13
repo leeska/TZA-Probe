@@ -2,12 +2,15 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
@@ -310,6 +313,68 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		io.Copy(w, f)
 	})
+	// ---- 后台账号：登录用的用户名与密码。改动要带当前密码；成功后其他浏览器会话全部失效。
+	route("GET /api/v1/admin/account", func(w http.ResponseWriter, r *http.Request) {
+		if a.AccountDir == "" {
+			write(w, 404, map[string]string{"error": "未启用后台账号"})
+			return
+		}
+		acct, err := account.Load(a.AccountDir)
+		if errors.Is(err, account.ErrNotFound) {
+			write(w, 200, map[string]any{"username": "", "configured": false})
+			return
+		}
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, map[string]any{"username": acct.Username, "configured": true})
+	})
+	route("PUT /api/v1/admin/account", func(w http.ResponseWriter, r *http.Request) {
+		if a.AccountDir == "" {
+			write(w, 404, map[string]string{"error": "未启用后台账号"})
+			return
+		}
+		var v struct {
+			CurrentPassword string `json:"current_password"`
+			Username        string `json:"username"`
+			Password        string `json:"password"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		username := strings.TrimSpace(v.Username)
+		if err := account.Validate(username, v.Password); err != nil {
+			write(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		acct, err := account.Load(a.AccountDir)
+		switch {
+		case errors.Is(err, account.ErrNotFound):
+			// 还没有账号（例如数据目录是旧版本留下的）：已登录的管理员直接设一个。
+		case err != nil:
+			fail(w, err)
+			return
+		default:
+			now := time.Now()
+			if a.loginLimited(now, false) {
+				write(w, 429, map[string]string{"error": "尝试过于频繁，请稍后重试"})
+				return
+			}
+			if !acct.Check(acct.Username, v.CurrentPassword) {
+				a.loginLimited(now, true)
+				write(w, 400, map[string]string{"error": "当前密码不正确"})
+				return
+			}
+		}
+		if err := account.Save(a.AccountDir, username, v.Password); err != nil {
+			fail(w, err)
+			return
+		}
+		a.dropOtherSessions(r)
+		write(w, 200, map[string]any{"username": username, "configured": true})
+	})
+
 	route("GET /api/v1/admin/panel", func(w http.ResponseWriter, r *http.Request) {
 		panel, err := a.svc.Panel(r.Context())
 		if err != nil {
@@ -345,4 +410,20 @@ func rawBody(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
 		return nil, false
 	}
 	return data, true
+}
+
+// dropOtherSessions signs out every browser except the one making r, after
+// the password changed.
+func (a *API) dropOtherSessions(r *http.Request) {
+	keep := ""
+	if c, err := r.Cookie("tza_session"); err == nil {
+		keep = model.Hash(c.Value)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for key := range a.sessions {
+		if key != keep {
+			delete(a.sessions, key)
+		}
+	}
 }

@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 
 脚本拉取 `main` 源码构建（需要 Go 1.27 与 git），安装 `/usr/local/bin/tza-server` 与 systemd 单元，建好 `/var/lib/tza-probe` 并放入 amd64 / arm64 两个 Agent。重复执行即升级，旧二进制保留为 `tza-server.previous`。可选参数：`--version vX.Y.Z`（改用 GitHub Release，免 Go 与 git）、`--listen ADDR`、`--data DIR`、`--no-systemd`。
 
-装完访问 `http://127.0.0.1:25774/admin`，密钥在 `/var/lib/tza-probe/admin-token`。跨主机接入需在前面配置 HTTPS 反代，见 [部署说明](docs/DEPLOYMENT.md)。
+装完脚本会打印管理密钥与后台用户名、密码（密码只在首次安装时显示一次，登录后可在“面板设置 → 后台账号”修改；忘记密码执行 `sudo tza-server reset-password --data /var/lib/tza-probe`）。访问 `http://127.0.0.1:25774/admin` 用用户名密码或管理密钥登录，密钥也可在 `/var/lib/tza-probe/admin-token` 查看。跨主机接入需在前面配置 HTTPS 反代，见 [部署说明](docs/DEPLOYMENT.md)。
 
 Docker 部署（镜像本地构建，数据放命名卷）：
 
@@ -32,6 +32,8 @@ Docker 部署（镜像本地构建，数据放命名卷）：
 git clone --depth 1 https://github.com/leeska/TZA-Probe && cd TZA-Probe
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
+
+后台初始用户名与密码只在首次启动的容器日志里出现一次（`docker compose -f deploy/docker-compose.yml logs tza-server`）。
 
 被监控主机不需要装 Go：后台新增节点后，“接入”弹窗给出的 `curl ... | sh -s -- --endpoint ... --token ...` 命令会下载并启动 Agent。
 
@@ -45,7 +47,7 @@ go build -o bin/tza-agent ./cmd/agent
 ./bin/tza-server --listen 127.0.0.1:25774 --data ./data
 ```
 
-访问 `http://127.0.0.1:25774/admin`，用 `data/admin-token` 中的密钥登录；也可设置 `TZA_ADMIN_TOKEN`（至少 32 个字符），密钥不写入日志。接入配置里的地址必须能从 Agent 主机访问，远程机器不能用 `127.0.0.1` 或 `localhost`。也可以下载 `agent.json` 手动运行：
+首次启动的日志会给出后台用户名 `admin` 与随机初始密码（只显示这一次；也可先执行 `./bin/tza-server init --data ./data` 在终端拿到）。访问 `http://127.0.0.1:25774/admin` 用它登录，或用 `data/admin-token` 中的密钥登录；忘记密码执行 `./bin/tza-server reset-password --data ./data`。也可设置 `TZA_ADMIN_TOKEN`（至少 32 个字符），密钥不写入日志。接入配置里的地址必须能从 Agent 主机访问，远程机器不能用 `127.0.0.1` 或 `localhost`。也可以下载 `agent.json` 手动运行：
 
 ```sh
 chmod 600 agent.json

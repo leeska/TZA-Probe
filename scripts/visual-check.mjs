@@ -66,6 +66,7 @@ async function shot(page, name, fullPage = true) {
   await page.goto(base + "/admin");
   await page.waitForSelector("#login");
   await shot(page, "admin-login", false);
+  await page.click("#login-mode"); // 登录页默认是用户名密码，切到密钥
   await page.fill("#login [name=token]", token);
   await page.click("#login button");
   await page.waitForSelector(".admin-layout");
@@ -126,6 +127,7 @@ async function shot(page, name, fullPage = true) {
   await page.goto(base + "/admin");
   await page.waitForSelector("#login");
   await shot(page, "admin-login-dark", false);
+  await page.click("#login-mode"); // 登录页默认是用户名密码，切到密钥
   await page.fill("#login [name=token]", token);
   await page.click("#login button");
   await page.waitForSelector(".admin-layout");

@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -40,6 +41,7 @@ type API struct {
 	Store         Repository
 	Notifier      notify.Sender
 	AdminToken    string
+	AccountDir    string // data directory holding the panel account; "" disables password login
 	Assets        http.Handler
 	Agents        *agentdist.Dist // nil disables /install.sh and /dl/
 	mu            sync.Mutex
@@ -304,33 +306,80 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		write(w, 403, map[string]string{"error": "请求来源不受信任"})
 		return
 	}
+	// 两种登录方式：后台账号（username + password）或管理密钥（token）。
 	var v struct {
-		Token string `json:"token"`
+		Token    string `json:"token"`
+		Username string `json:"username"`
+		Password string `json:"password"`
 	}
 	if !decode(w, r, &v) {
 		return
 	}
 	now := time.Now()
-	// Only wrong keys count toward the limit and the right key always gets in:
-	// counting every attempt let anyone hold the administrator out of the panel
-	// with 30 junk requests a minute. The key is 256 bits, so the limit is a
-	// brake on noise, not what stops guessing.
-	if len(v.Token) != len(a.AdminToken) || subtle.ConstantTimeCompare([]byte(v.Token), []byte(a.AdminToken)) != 1 {
-		a.mu.Lock()
-		if now.Sub(a.loginWindow) > time.Minute {
-			a.loginAttempts = 0
-			a.loginWindow = now
-		}
-		a.loginAttempts++
-		limited := a.loginAttempts > 30
-		a.mu.Unlock()
-		if limited {
+	byPassword := v.Token == ""
+	// Wrong attempts are counted before the password hash is computed, so a
+	// flood of guesses past the limit costs no PBKDF2 work.
+	if byPassword && a.loginLimited(now, false) {
+		write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
+		return
+	}
+	var ok bool
+	if byPassword {
+		ok = a.checkAccount(v.Username, v.Password)
+	} else {
+		ok = len(v.Token) == len(a.AdminToken) && subtle.ConstantTimeCompare([]byte(v.Token), []byte(a.AdminToken)) == 1
+	}
+	// Only wrong attempts count toward the limit and the right key always gets
+	// in: counting every attempt let anyone hold the administrator out of the
+	// panel with 30 junk requests a minute. The key is 256 bits, so the limit
+	// is a brake on noise, not what stops guessing; for passwords it is what
+	// stops guessing, so a password login is refused outright while limited.
+	if !ok {
+		if a.loginLimited(now, true) {
 			write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 			return
 		}
-		write(w, 401, map[string]string{"error": "管理密钥错误"})
+		if byPassword {
+			write(w, 401, map[string]string{"error": "用户名或密码错误"})
+		} else {
+			write(w, 401, map[string]string{"error": "管理密钥错误"})
+		}
 		return
 	}
+	a.startSession(w, r, now)
+}
+
+// loginLimited reports whether wrong logins in the current minute passed the
+// limit, counting one more first when failed is set.
+func (a *API) loginLimited(now time.Time, failed bool) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if now.Sub(a.loginWindow) > time.Minute {
+		a.loginAttempts = 0
+		a.loginWindow = now
+	}
+	if failed {
+		a.loginAttempts++
+	}
+	return a.loginAttempts > 30
+}
+
+func (a *API) checkAccount(username, password string) bool {
+	if a.AccountDir == "" || username == "" || password == "" {
+		return false
+	}
+	acct, err := account.Load(a.AccountDir)
+	if err != nil {
+		if !errors.Is(err, account.ErrNotFound) {
+			slog.Warn("administrator account unreadable", "error", err)
+		}
+		return false
+	}
+	return acct.Check(username, password)
+}
+
+// startSession issues a browser session cookie.
+func (a *API) startSession(w http.ResponseWriter, r *http.Request, now time.Time) {
 	token := model.Secret()
 	a.mu.Lock()
 	for key, expiry := range a.sessions {

@@ -20,15 +20,30 @@ export async function mountAdmin(root, brand) {
   }
 }
 function login() {
-  state.container.innerHTML = `<div class="login-layout"><section class="login-story">${state.brandHTML}<div><div class="eyebrow">SMALL STACK. CLEAR CONTROL.</div><h1>少一点复杂，<br>多一点掌控。</h1><p>主机、网络、用量与提醒。<br>一套属于自己的基础设施观测工具。</p></div><div class="login-story-foot"><small>TZA PROBE / CONTROL PLANE</small>${skinButton()}${themeButton()}</div></section><main class="login-panel"><form id="login"><div class="eyebrow">WELCOME BACK</div><h2>进入管理控制台</h2><p>使用部署时生成的管理密钥登录。</p><input type="text" name="username" value="admin" autocomplete="username" readonly hidden aria-hidden="true" tabindex="-1"><label>管理密钥<input type="password" name="token" required minlength="32" autocomplete="current-password" autofocus></label><p class="hint">密钥保存在服务器数据目录的 admin-token 文件中。</p><button class="primary" type="submit">登录控制台 →</button><a href="/">← 返回公开面板</a></form></main></div>`;
-  state.container.querySelector("form").onsubmit = guard(async (e) => {
+  state.container.innerHTML = `<div class="login-layout"><section class="login-story">${state.brandHTML}<div><div class="eyebrow">SMALL STACK. CLEAR CONTROL.</div><h1>少一点复杂，<br>多一点掌控。</h1><p>主机、网络、用量与提醒。<br>一套属于自己的基础设施观测工具。</p></div><div class="login-story-foot"><small>TZA PROBE / CONTROL PLANE</small>${skinButton()}${themeButton()}</div></section><main class="login-panel"><form id="login"><div class="eyebrow">WELCOME BACK</div><h2>进入管理控制台</h2><p data-login="account">使用后台用户名与密码登录。</p><p data-login="token" hidden>使用部署时生成的管理密钥登录。</p><label data-login="account">用户名<input type="text" name="username" required autocomplete="username" autocapitalize="off" spellcheck="false" autofocus></label><label data-login="account">密码<input type="password" name="password" required autocomplete="current-password"></label><label data-login="token" hidden>管理密钥<input type="password" name="token" minlength="32" autocomplete="off"></label><p class="hint" data-login="account">忘记密码时在服务器执行 tza-server reset-password 重置。</p><p class="hint" data-login="token" hidden>密钥保存在服务器数据目录的 admin-token 文件中。</p><button class="primary" type="submit">登录控制台 →</button><button type="button" class="login-switch" id="login-mode">改用管理密钥登录</button><a href="/">← 返回公开面板</a></form></main></div>`;
+  const form = state.container.querySelector("form");
+  // 两种登录方式共用一张表：切换只换显示与必填项，隐藏的那组不参与校验。
+  let byToken = false;
+  form.querySelector("#login-mode").onclick = () => {
+    byToken = !byToken;
+    for (const el of form.querySelectorAll("[data-login]")) el.hidden = (el.dataset.login === "token") !== byToken;
+    form.username.required = form.password.required = !byToken;
+    form.token.required = byToken;
+    form.querySelector("#login-mode").textContent = byToken ? "改用用户名密码登录" : "改用管理密钥登录";
+    (byToken ? form.token : form.username).focus();
+  };
+  form.onsubmit = guard(async (e) => {
     e.preventDefault();
-    const button = e.target.querySelector("button");
+    const button = e.target.querySelector("button[type=submit]");
     button.disabled = true;
+    const data = new FormData(e.target);
     try {
-      await send("/login", "POST", {
-        token: new FormData(e.target).get("token"),
-      });
+      // 填了密钥就按密钥登录（脚本化验收直接填密钥，不必先切换）。
+      await send(
+        "/login",
+        "POST",
+        data.get("token") ? { token: data.get("token") } : { username: data.get("username"), password: data.get("password") },
+      );
       state.serverVersion = (await api("/session")).version || "";
       shell();
       await render();
