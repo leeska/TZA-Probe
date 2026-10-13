@@ -297,12 +297,6 @@ html[data-skin="press"] :is(.search, .public-main .toolbar .search) input:focus 
 html[data-skin="press"] .segmented {
   border: 2px solid var(--glass-border);
   background-color: var(--glass-bg-subtle);
-  /* 两半之间那条墨线画在容器正中间：以前线是「没选中那半」的边框，点一下线就跟着那半挪 2px。
-     画成背景线，谁也搬不动它，而且两半等宽、谁选中都一样。 */
-  background-image: linear-gradient(var(--glass-border), var(--glass-border));
-  background-repeat: no-repeat;
-  background-size: 2px 100%;
-  background-position: center;
   box-shadow: none;
   padding: 0;
   gap: 0;
@@ -320,6 +314,14 @@ html[data-skin="press"] .segmented button.active {
   background: var(--accent);
   color: var(--press-surface);
   box-shadow: none;
+}
+
+/* 相邻两格之间的墨线：画成后一格左缘的内阴影。以前线是「没选中那半」的边框，点一下线就挪 2px；
+   后来改成容器正中的背景线，只对两格对得上，三格的告警页子页会从中间那格的字上穿过。
+   内阴影不占宽度、不随选中切换，几格都落在真实的分界上。选中块也要带上（覆盖上面的 box-shadow: none）。 */
+html[data-skin="press"] .segmented button + button,
+html[data-skin="press"] .segmented button + button.active {
+  box-shadow: inset 2px 0 0 var(--glass-border);
 }
 
 /* 控件里的按钮不跟着「盖章」位移：通用规则里 :active 会让按钮平移 2px，红块与中间那条线会跟着跳。 */
