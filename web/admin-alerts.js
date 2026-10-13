@@ -1,113 +1,193 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
 import { date, kindName } from "./format.js";
-import { state, content, fleetStatus, field, check, withCurrent } from "./admin-state.js";
-// 提醒规则：告警页的规则总览与它的编辑弹窗共用这一张表（单台编辑与批量设置是同一张表单）。
-// 每种规则一行：勾选即开启，参数是它自己的阈值 / 持续时间，外加它自己的重复提醒间隔。
-// 接口里规则是列表（{kind, threshold, hold_seconds, repeat_seconds}），列出的就是开着的。
+import { state, content, fleetStatus, field, select, withCurrent, nodeName, confirmAction } from "./admin-state.js";
+// 提醒规则：每条规则一种类型、自己的参数与重复间隔，外加作用范围（全部节点 / 分组 / 指定节点）。
+// 同一台节点同一种类型只生效一条：指定节点 > 分组 > 全部节点。节点列表里的 alerts 是服务端
+// 按这个优先级算好的生效规则（带 id 与 scope），规则本身从 /admin/alert-rules 读。
 const RULE_SPECS = [
   {
     kind: "offline", label: "离线提醒", column: "离线",
-    fields: [{ key: "hold_seconds", col: "hold", name: "offline_seconds", label: "等待秒数（默认 60）", def: 60, attrs: 'min="0" max="86400"' }],
+    fields: [{ key: "hold_seconds", label: "等待秒数", def: 60, attrs: 'min="0" max="86400"' }],
+    hint: "节点 45 秒未上报即判定离线，「等待秒数」是判定之后再等多久才提醒；恢复时通知一次。",
     cell: (r) => `等 ${r.hold_seconds || 0} 秒`,
   },
   {
     kind: "renewal", label: "续费提醒", column: "续费",
-    fields: [{ key: "threshold", col: "threshold", name: "renewal_days", label: "提前天数（默认 7）", def: 7, attrs: 'min="0" max="365" step="1"' }],
+    fields: [{ key: "threshold", label: "提前天数", def: 7, attrs: 'min="0" max="365" step="1"' }],
+    hint: "按节点的到期时间提醒；没填到期时间的节点不会触发。",
     cell: (r) => `提前 ${r.threshold || 0} 天`,
   },
   {
     kind: "traffic", label: "流量警告", column: "流量",
-    fields: [{ key: "threshold", col: "threshold", name: "traffic_percent", label: "额度百分比（默认 80）", def: 80, attrs: 'min="1" max="100"' }],
+    fields: [{ key: "threshold", label: "额度百分比", def: 80, attrs: 'min="1" max="100"' }],
+    hint: "本计费周期用量达到额度的这个比例时提醒；没填流量额度的节点不会触发。",
     cell: (r) => `${r.threshold}%`,
   },
   {
     kind: "throttle", label: "达量降速警告", column: "降速", fields: [],
-    hint: "按节点的降速规则触发（节点需先填降速速率）。",
+    hint: "按节点自己的降速规则触发；没填降速速率的节点不会触发。",
     cell: () => "开",
   },
   {
     kind: "cpu", label: "CPU 警告", column: "CPU",
     fields: [
-      { key: "threshold", col: "threshold", name: "cpu_percent", label: "CPU %（默认 90）", def: 90, attrs: 'min="1" max="100"' },
-      { key: "hold_seconds", col: "hold", name: "cpu_hold", label: "持续秒数（默认 300）", def: 300, attrs: 'min="30" max="86400"' },
+      { key: "threshold", label: "CPU %", def: 90, attrs: 'min="1" max="100"' },
+      { key: "hold_seconds", label: "持续秒数", def: 300, attrs: 'min="30" max="86400"' },
     ],
     cell: (r) => `${r.threshold}% · ${r.hold_seconds} 秒`,
   },
   {
     kind: "memory", label: "内存警告", column: "内存",
     fields: [
-      { key: "threshold", col: "threshold", name: "memory_percent", label: "内存 %（默认 90）", def: 90, attrs: 'min="1" max="100"' },
-      { key: "hold_seconds", col: "hold", name: "memory_hold", label: "持续秒数（默认 300）", def: 300, attrs: 'min="30" max="86400"' },
+      { key: "threshold", label: "内存 %", def: 90, attrs: 'min="1" max="100"' },
+      { key: "hold_seconds", label: "持续秒数", def: 300, attrs: 'min="30" max="86400"' },
     ],
     cell: (r) => `${r.threshold}% · ${r.hold_seconds} 秒`,
   },
 ];
+const specOf = (kind) => RULE_SPECS.find((s) => s.kind === kind);
 const ruleOf = (list, kind) => (list || []).find((r) => r.kind === kind);
-// 每条规则一行、固定四列：规则 | 阈值 | 持续 / 等待 | 重复提醒。规则没有的那一列留一个占位，
-// 同一种输入在每行都落在同一列——以前按各自的输入个数排，「重复提醒」在每行的位置都不一样。
-function alertFields(list) {
-  const rows = RULE_SPECS.map((spec) => {
-    const rule = ruleOf(list, spec.kind);
-    // 开着的规则原样回填（接口省略 0，没写就是 0）；关着的回填默认值，勾上就能直接存。
-    const value = (f) => (rule ? rule[f.key] ?? 0 : f.def);
-    const slot = (col) => {
-      const f = spec.fields.find((x) => x.col === col);
-      return f ? field(f.label, f.name, value(f), "number", `${f.attrs} placeholder="默认 ${f.def}"`) : '<span class="rule-empty" aria-hidden="true">—</span>';
-    };
-    const repeat = field("重复间隔（分钟）", spec.kind + "_repeat", rule ? (rule.repeat_seconds || 0) / 60 : 0, "number", 'min="0" max="10080" step="5" placeholder="默认 0（只提醒一次）"');
-    return `<div class="rule-row">${check(spec.label, spec.kind, !!rule)}${slot("threshold")}${slot("hold")}${repeat}${spec.hint ? `<small class="hint rule-hint">${spec.hint}</small>` : ""}</div>`;
-  }).join("");
-  return `<div class="form-section"><div class="rule-head" aria-hidden="true"><span>规则</span><span>阈值</span><span>持续 / 等待</span><span>重复提醒</span></div><div class="rules-list">${rows}</div><p class="hint">未勾选的规则不生效。节点 45 秒未上报即判定离线，「等待秒数」是判定之后再等多久才提醒；恢复时通知一次。重复间隔填 0 只提醒一次，否则至少 5 分钟。</p></div>`;
-}
-// 规则未勾选时禁用它的输入：既表明这些值当前不生效，也让浏览器跳过它们的 min 校验。
-function wireAlerts(form) {
-  const el = (name) => form.elements.namedItem(name);
-  const sync = () => {
-    for (const spec of RULE_SPECS)
-      [...spec.fields.map((f) => f.name), spec.kind + "_repeat"].forEach((name) => (el(name).disabled = !el(spec.kind).checked));
-  };
-  RULE_SPECS.forEach((spec) => (el(spec.kind).onchange = sync));
-  sync();
-}
-function readAlerts(form) {
-  const el = (name) => form.elements.namedItem(name);
-  return RULE_SPECS.filter((spec) => el(spec.kind).checked).map((spec) => {
-    const rule = { kind: spec.kind };
-    for (const f of spec.fields) rule[f.key] = Number(el(f.name).value);
-    rule.repeat_seconds = Math.round(Number(el(spec.kind + "_repeat").value) * 60);
-    return rule;
-  });
-}
-// 规则总览每格的文字：开着写参数（有重复间隔就附上），关着写「—」。
-function alertCells(list) {
-  const out = {};
-  for (const spec of RULE_SPECS) {
-    const rule = ruleOf(list, spec.kind);
-    out[spec.kind] = rule ? spec.cell(rule) + (rule.repeat_seconds ? ` · 每 ${rule.repeat_seconds / 60} 分钟` : "") : "—";
-  }
-  return out;
-}
+const SCOPES = [
+  ["all", "全部节点", "全部"],
+  ["group", "按分组", "分组"],
+  ["nodes", "指定节点", "单独"],
+];
+const scopeRank = (scope) => SCOPES.findIndex(([v]) => v === scope);
+const groupLabel = (g) => g || "默认";
+// 规则的参数（开着时附上重复间隔），总览格子与规则列表共用。
+const ruleParams = (r) => specOf(r.kind).cell(r) + (r.repeat_seconds ? ` · 每 ${r.repeat_seconds / 60} 分钟` : "");
 export function alertSummary(list) {
-  const c = alertCells(list);
-  const on = RULE_SPECS.filter((spec) => c[spec.kind] !== "—").map((spec) => `${spec.column} ${c[spec.kind]}`);
+  const on = RULE_SPECS.map((spec) => [spec, ruleOf(list, spec.kind)]).filter(([, r]) => r).map(([spec, r]) => `${spec.column} ${ruleParams(r)}`);
   return on.length ? on.join("，") : "未开启任何提醒";
 }
-// 编辑一台或一批节点的提醒规则：整份替换所选节点的规则列表，服务端一个事务里改完。
-function alertsEditor(targets, refresh) {
-  const one = targets.length === 1;
-  const list = one ? targets[0].alerts : [];
+// 名字列表太长时只写前三个。
+const names = (list) => (list.length > 3 ? `${list.slice(0, 3).join("、")} 等 ${list.length} 个` : list.join("、"));
+function scopeText(r) {
+  const exclude = r.exclude_node_ids?.length ? `，排除 ${names(r.exclude_node_ids.map(nodeName))}` : "";
+  if (r.scope === "all") return "全部节点" + exclude;
+  if (r.scope === "group") return `分组：${names((r.groups || []).map(groupLabel))}${exclude}`;
+  return `节点：${names((r.node_ids || []).map(nodeName))}`;
+}
+// 规则覆盖的节点（不管有没有被更具体的同类规则盖过）。
+function covered(r) {
+  return state.nodes.filter((n) => {
+    if (r.scope === "nodes") return (r.node_ids || []).includes(n.id);
+    if ((r.exclude_node_ids || []).includes(n.id)) return false;
+    return r.scope === "all" || (r.groups || []).includes(n.group || "");
+  });
+}
+// 规则列表：按类型排，同类型里范围从宽到窄，正好是优先级从低到高的顺序。
+function rulesPanel(rules) {
+  const sorted = [...rules].sort((a, b) => RULE_SPECS.indexOf(specOf(a.kind)) - RULE_SPECS.indexOf(specOf(b.kind)) || scopeRank(a.scope) - scopeRank(b.scope));
+  const rows = sorted
+    .map((r) => {
+      const hits = covered(r).length;
+      const live = state.nodes.filter((n) => ruleOf(n.alerts, r.kind)?.id === r.id).length;
+      const note = live < hits ? `<small>生效 ${live} 台，另 ${hits - live} 台以更具体的规则为准</small>` : `<small>生效 ${live} 台</small>`;
+      return `<tr><td data-label="类型">${esc(specOf(r.kind).label)}</td><td data-label="条件">${esc(ruleParams(r))}</td><td data-label="范围">${esc(scopeText(r))}${note}</td><td data-label="操作"><div class="row-actions"><button data-edit-rule="${esc(r.id)}">编辑</button><button class="danger" data-delete-rule="${esc(r.id)}">删除</button></div></td></tr>`;
+    })
+    .join("");
+  return `<section class="panel"><div class="panel-head"><div><h3>提醒规则</h3><span class="muted">同一台节点同一种提醒只生效一条：指定节点 &gt; 分组 &gt; 全部节点</span></div><button id="new-rule" class="primary">新建规则</button></div><div class="table-scroll"><table class="stack"><thead><tr><th>类型</th><th>条件</th><th>范围</th><th>操作</th></tr></thead><tbody>${rows || `<tr><td colspan="4" class="empty-cell">还没有提醒规则。新建一条并选好作用范围；选「全部节点」时，以后新加的节点也会自动套用。</td></tr>`}</tbody></table></div></section>`;
+}
+// 各节点生效情况：每台节点一行，每种提醒一格，写参数与它来自哪一级范围。
+function overviewPanel() {
+  const rows = state.nodes
+    .map((n) => {
+      const cells = RULE_SPECS.map((spec) => {
+        const r = ruleOf(n.alerts, spec.kind);
+        const from = r ? SCOPES.find(([v]) => v === r.scope)?.[2] : "";
+        return `<td data-label="${spec.column}">${r ? `${esc(ruleParams(r))}<small>${from}</small>` : "—"}</td>`;
+      }).join("");
+      return `<tr><td data-label="节点">${esc(n.name)}<small>${esc(groupLabel(n.group))}</small></td>${cells}</tr>`;
+    })
+    .join("");
+  const heads = RULE_SPECS.map((spec) => `<th>${spec.column}</th>`).join("");
+  return `<section class="panel"><div class="panel-head"><h3>各节点生效情况</h3><span class="muted">格子下方写规则来自哪一级：全部 / 分组 / 单独</span></div><div class="table-scroll"><table class="stack"><thead><tr><th>节点</th>${heads}</tr></thead><tbody>${rows || `<tr><td colspan="${RULE_SPECS.length + 1}" class="empty-cell">还没有节点。</td></tr>`}</tbody></table></div></section>`;
+}
+const tick = (label, attr, value, checked) => `<label class="checkbox"><input type="checkbox" ${attr}="${esc(value)}" ${checked ? "checked" : ""}>${esc(label)}</label>`;
+// 新建或编辑一条规则。范围切换时只显示那一种范围要填的列表；底部实时写出会生效在几台节点上。
+function ruleEditor(rule, rules, refresh) {
+  const r = rule || { kind: "offline", scope: "all", repeat_seconds: 0 };
+  const groups = [...new Set([...state.nodes.map((n) => n.group || ""), ...(r.groups || [])])].sort();
+  const nodeTicks = (attr, picked) => state.nodes.map((n) => tick(`${n.name}（${groupLabel(n.group)}）`, attr, n.id, picked.includes(n.id))).join("") || "<p>请先创建节点</p>";
   const d = modal(
-    one ? `提醒规则 · ${targets[0].name}` : `批量设置提醒规则（${targets.length} 个节点）`,
-    `<form id="alerts-form">${one ? "" : `<p class="hint">保存后，所选 ${targets.length} 个节点的提醒规则都会换成下面这一份：${esc(targets.map((n) => n.name).join("、"))}。</p>`}${alertFields(list)}<div class="form-footer"><button type="submit" class="primary">保存规则</button></div></form>`,
+    rule ? `编辑提醒规则 · ${specOf(r.kind).label}` : "新建提醒规则",
+    `<form id="rule-form">
+      <div class="form-section"><h3>提醒什么</h3><div class="form-grid">${select("类型", "kind", RULE_SPECS.map((s) => [s.kind, s.label]), r.kind)}<div id="rule-params" class="rule-params"></div>${field("重复间隔（分钟）", "repeat", (r.repeat_seconds || 0) / 60, "number", 'min="0" max="10080" step="5" placeholder="0 只提醒一次"')}</div><p class="hint" id="rule-hint"></p><p class="hint">重复间隔填 0 只在触发与恢复时各通知一次，否则至少 5 分钟。</p></div>
+      <div class="form-section"><h3>作用于</h3>
+        <div class="option-tiles" role="radiogroup">${SCOPES.map(([v, label]) => `<label class="checkbox"><input type="radio" name="scope" value="${v}" ${r.scope === v ? "checked" : ""}>${label}</label>`).join("")}</div>
+        <div data-part="group"><span class="option-label">分组</span><div class="node-checkboxes">${groups.map((g) => tick(groupLabel(g), "data-group", g, (r.groups || []).includes(g))).join("")}</div></div>
+        <div data-part="nodes"><div class="catalog-toolbar"><button type="button" data-pick="all">全选节点</button><button type="button" data-pick="none">清空节点</button></div><div class="node-checkboxes">${nodeTicks("data-node", r.node_ids || [])}</div></div>
+        <details data-part="exclude" ${r.exclude_node_ids?.length ? "open" : ""}><summary>排除节点（可选）</summary><div class="node-checkboxes">${nodeTicks("data-exclude", r.exclude_node_ids || [])}</div></details>
+        <p class="hint" id="rule-preview"></p>
+      </div>
+      <div class="form-footer"><button type="submit" class="primary">保存规则</button></div></form>`,
   );
   const form = d.querySelector("form");
-  wireAlerts(form);
+  const picked = (attr) => [...form.querySelectorAll(`[${attr}]:checked`)].map((b) => b.getAttribute(attr));
+  const params = () => {
+    const spec = specOf(form.elements.kind.value);
+    const same = rule && rule.kind === spec.kind;
+    form.querySelector("#rule-params").innerHTML = spec.fields.map((f) => field(f.label, f.key, same ? (rule[f.key] ?? 0) : f.def, "number", `${f.attrs} required`)).join("");
+    form.querySelector("#rule-hint").textContent = spec.hint || "";
+  };
+  const read = () => {
+    const scope = form.elements.scope.value;
+    const out = { kind: form.elements.kind.value, scope, repeat_seconds: Math.round(Number(form.elements.repeat.value) * 60) };
+    for (const f of specOf(out.kind).fields) out[f.key] = Number(form.elements[f.key].value);
+    if (scope === "group") out.groups = picked("data-group");
+    if (scope === "nodes") out.node_ids = picked("data-node");
+    if (scope !== "nodes" && picked("data-exclude").length) out.exclude_node_ids = picked("data-exclude");
+    return out;
+  };
+  // 预览：这条规则覆盖几台，其中几台被更具体的同类规则盖过（保存后以那条为准）。
+  const preview = () => {
+    const next = read();
+    form.querySelectorAll("[data-part]").forEach((el) => (el.hidden = el.dataset.part === "exclude" ? next.scope === "nodes" : el.dataset.part !== next.scope));
+    const hits = covered(next);
+    const narrower = hits.filter((n) => rules.some((o) => o.id !== rule?.id && o.kind === next.kind && scopeRank(o.scope) > scopeRank(next.scope) && covered(o).some((x) => x.id === n.id)));
+    form.querySelector("#rule-preview").textContent = `覆盖 ${hits.length} 台节点` + (narrower.length ? `，其中 ${names(narrower.map((n) => n.name))} 另有更具体的${specOf(next.kind).column}规则，以那条为准。` : "。") + (next.scope === "all" ? "以后新加的节点也会自动套用。" : "");
+  };
+  form.elements.kind.onchange = () => {
+    params();
+    preview();
+  };
+  form.onchange = preview;
+  form.querySelectorAll("[data-pick]").forEach((b) => (b.onclick = () => {
+    form.querySelectorAll("[data-node]").forEach((x) => (x.checked = b.dataset.pick === "all"));
+    preview();
+  }));
+  params();
+  preview();
   form.onsubmit = guard(async (e) => {
     e.preventDefault();
-    await send("/admin/nodes/alerts", "PUT", { node_ids: targets.map((n) => n.id), alerts: readAlerts(form) });
+    const body = read();
+    if (body.scope === "group" && !body.groups.length) throw new Error("请至少选一个分组");
+    if (body.scope === "nodes" && !body.node_ids.length) throw new Error("请至少选一台节点");
+    if (rule) await send(`/admin/alert-rules/${encodeURIComponent(rule.id)}`, "PUT", body);
+    else await send("/admin/alert-rules", "POST", body);
     d.close();
     await refresh();
-    toast(one ? "提醒规则已保存" : `已更新 ${targets.length} 个节点的提醒规则`);
+    toast(rule ? "提醒规则已保存" : "提醒规则已创建");
+  });
+}
+function wireRulesPanel(rules) {
+  const refresh = async () => {
+    state.nodes = await api("/admin/nodes");
+    await renderAlerts();
+  };
+  content().querySelector("#new-rule").onclick = () => ruleEditor(null, rules, refresh);
+  content().querySelectorAll("[data-edit-rule]").forEach(
+    (b) => (b.onclick = () => ruleEditor(rules.find((r) => r.id === b.dataset.editRule), rules, refresh)),
+  );
+  content().querySelectorAll("[data-delete-rule]").forEach((b) => {
+    const r = rules.find((x) => x.id === b.dataset.deleteRule);
+    b.onclick = () =>
+      confirmAction("删除提醒规则", `删除「${specOf(r.kind).label} · ${scopeText(r)}」？被它覆盖的节点改由范围更宽的同类规则接管，没有就不再提醒这一项。`, async () => {
+        await send(`/admin/alert-rules/${encodeURIComponent(r.id)}`, "DELETE");
+        await refresh();
+        toast("提醒规则已删除");
+      }, { label: "删除" });
   });
 }
 // 事件保存 90 天，接口按 id 倒序分页（每页 100 条）：筛选在服务端做，「加载更多」把上一页
@@ -124,38 +204,6 @@ function eventsURL(before = 0) {
 function eventRows(events, configured) {
   return events.map((e) => `<tr><td data-label="时间">${date(e.at)}</td><td data-label="节点">${esc(e.node_name)}</td><td data-label="类型">${esc(kindName[e.kind] || e.kind)}</td><td data-label="状态"><span class="pill ${e.active ? "warn" : "good"}">${e.active ? "触发" : "解除"}</span></td><td data-label="内容">${esc(e.message)}</td><td data-label="通知">${e.delivered ? "已送达" : e.attempts >= 10 ? "发送失败" : Date.now() / 1000 - e.at > 86400 ? "超过 24 小时，不再发送" : configured ? "待发送 / 重试" : "未配置渠道"}${e.attempts > 0 ? `<small>${e.attempts} 次尝试</small>` : ""}${e.last_error ? `<small>${esc(e.last_error)}</small>` : ""}</td></tr>`).join("");
 }
-// 规则总览：每台节点一行，每条规则一格；勾选若干行可以批量套同一份规则。
-function rulesPanel() {
-  const rows = state.nodes
-    .map((n) => {
-      const c = alertCells(n.alerts);
-      const cells = RULE_SPECS.map((spec) => `<td data-label="${spec.column}">${c[spec.kind]}</td>`).join("");
-      return `<tr><td data-label="选择"><input type="checkbox" data-select-node="${esc(n.id)}" aria-label="选择 ${esc(n.name)}"></td><td data-label="节点">${esc(n.name)}<small>${esc(n.group || "默认")}</small></td>${cells}<td data-label="操作"><div class="row-actions"><button data-alerts="${esc(n.id)}">编辑规则</button></div></td></tr>`;
-    })
-    .join("");
-  const heads = RULE_SPECS.map((spec) => `<th>${spec.column}</th>`).join("");
-  const span = RULE_SPECS.length + 3;
-  return `<section class="panel"><div class="panel-head"><h3>提醒规则</h3><button id="bulk-alerts">批量设置</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-nodes" type="checkbox" aria-label="选择全部节点"><span>全选</span></label></th><th>节点</th>${heads}<th>操作</th></tr></thead><tbody>${rows || `<tr><td colspan="${span}" class="empty-cell">还没有节点。</td></tr>`}</tbody></table></div></section>`;
-}
-function wireRulesPanel() {
-  const refresh = async () => {
-    state.nodes = await api("/admin/nodes");
-    await renderAlerts();
-  };
-  content().querySelector("#select-nodes").onchange = (e) =>
-    content().querySelectorAll("[data-select-node]").forEach((b) => (b.checked = e.target.checked));
-  content().querySelector("#bulk-alerts").onclick = () => {
-    const ids = new Set([...content().querySelectorAll("[data-select-node]:checked")].map((b) => b.dataset.selectNode));
-    if (!ids.size) {
-      toast("请先勾选节点");
-      return;
-    }
-    alertsEditor(state.nodes.filter((n) => ids.has(n.id)), refresh);
-  };
-  content().querySelectorAll("[data-alerts]").forEach(
-    (b) => (b.onclick = () => alertsEditor([state.nodes.find((n) => n.id === b.dataset.alerts)], refresh)),
-  );
-}
 const ALERT_VIEWS = [
   ["active", "当前告警"],
   ["events", "事件记录"],
@@ -165,9 +213,10 @@ function eventTable(rows, empty) {
   return `<div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody id="event-rows">${rows || `<tr><td colspan="6" class="empty-cell">${empty}</td></tr>`}</tbody></table></div>`;
 }
 export async function renderAlerts() {
-  const [settings, firing] = await Promise.all([
+  const [settings, firing, rules] = await Promise.all([
     api("/admin/notification"),
     api("/admin/events?active=1&limit=500"),
+    state.alertView === "rules" ? api("/admin/alert-rules") : [],
   ]);
   const configured = settings.channel !== "none";
   const channelName = settings.telegram_configured
@@ -190,7 +239,7 @@ export async function renderAlerts() {
     const kindOptions = [["", "全部类型"], ...Object.entries(kindName).filter(([k]) => k !== "test")];
     body = `<section class="panel"><div class="panel-head"><h3>事件记录</h3><span class="muted">保存 90 天 · 每次加载 ${EVENT_PAGE} 条</span></div><div class="catalog-filters event-filters"><label>节点<select id="event-node"><option value="">全部节点</option>${nodeOptions.filter(([v]) => v).map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.node_id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label><label>类型<select id="event-kind">${kindOptions.map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.kind ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div>${eventTable(eventRows(events, configured), filtered ? "没有符合筛选条件的事件。" : "暂无事件。提醒规则在「提醒规则」页开启。")}<div class="catalog-toolbar event-more"><button id="more-events" class="quiet" ${events.length < EVENT_PAGE ? "hidden" : ""}>加载更多</button></div></section>`;
   } else {
-    body = `<section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置渠道</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel()}`;
+    body = `<section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置渠道</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel(rules)}${overviewPanel()}`;
   }
   content().innerHTML = heading + body;
   content().querySelectorAll("[data-alert-view]").forEach(
@@ -206,7 +255,7 @@ export async function renderAlerts() {
     await renderAlerts();
   });
   if (state.alertView === "events") wireEvents(events, configured);
-  if (state.alertView === "rules") wireRules(settings, configured);
+  if (state.alertView === "rules") wireRules(settings, configured, rules);
 }
 function wireEvents(events, configured) {
   let last = events.at(-1)?.id || 0;
@@ -228,8 +277,8 @@ function wireEvents(events, configured) {
       await renderAlerts();
     });
 }
-function wireRules(settings, configured) {
-  wireRulesPanel();
+function wireRules(settings, configured, rules) {
+  wireRulesPanel(rules);
   content().querySelector("#test-webhook").onclick = guard(async () => {
     await send("/admin/notification/test", "POST");
     toast("测试通知已送达");

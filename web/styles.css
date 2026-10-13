@@ -3821,15 +3821,6 @@ tr.row-dragging td {
   opacity: 0.7;
 }
 
-/* 编辑节点 · 提醒规则：没勾选的规则，它的阈值输入已由 admin-alerts.js 设为 disabled，
-   这里把整格调暗，一眼看出「当前不生效」，不再像可编辑的普通输入框。 */
-.rule-row > label:not(.checkbox):has(input:disabled) {
-  opacity: 0.45;
-}
-.rule-row input:disabled {
-  cursor: not-allowed;
-}
-
 /* 编辑节点里 UTC 时间输入框下方的本地时间换算（admin-nodes.js）。 */
 label .local-time {
   font-size: 11px;

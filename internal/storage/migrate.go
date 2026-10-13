@@ -20,7 +20,7 @@ func migrate(db *sql.DB) (err error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 13 {
+	if version > 14 {
 		return errors.New("database version is newer than this binary")
 	}
 	if version == 0 {
@@ -114,6 +114,12 @@ func migrate(db *sql.DB) (err error) {
 	if version < 13 {
 		// 提醒规则从「开关 + 阈值」平铺对象改成规则列表；负载规则拆成 CPU 与内存两条。
 		if err = migrateAlertRules(db); err != nil {
+			return err
+		}
+	}
+	if version < 14 {
+		// 提醒规则从每台节点各存一份改成单独的规则表，按范围（全部 / 分组 / 指定节点）作用。
+		if err = migrateAlertScopes(db); err != nil {
 			return err
 		}
 	}
@@ -252,15 +258,21 @@ type legacyNode struct {
 	AdjustmentCycle   int64        `json:"adjustment_cycle"`
 }
 
-func (l legacyNode) upgrade() model.Node {
-	return model.Node{
+// nodeV12 is a node config as versions 12 and 13 stored it: the alert rules
+// still lived on the node (version 14 moved them to their own table).
+type nodeV12 struct {
+	model.Node
+	Alerts model.Alerts `json:"alerts"`
+}
+
+func (l legacyNode) upgrade() nodeV12 {
+	return nodeV12{Node: model.Node{
 		ID: l.ID, Name: l.Name, Group: l.Group, Region: l.Region, Order: l.Order, Public: l.Public,
 		Display: model.NodeDisplay{RouteRegion: l.Representative, LatencyRegion: l.LatencyRegion, LatencyCarriers: l.LatencyCarriers},
 		Billing: model.Billing{ResetAt: l.BillingAt, TrafficLimit: l.TrafficLimit, TrafficMode: l.TrafficMode, Free: l.Free,
 			Price: l.Price, Currency: l.Currency, PricePeriod: l.PricePeriod, ExpiresAt: l.ExpiresAt},
-		Line:   model.Line{Mbps: l.LineMbps, ThrottleMbps: l.ThrottleMbps, ThrottleHours: l.ThrottleHours, ThrottleOn: l.ThrottleOn},
-		Alerts: l.Alerts.upgrade(),
-	}
+		Line: model.Line{Mbps: l.LineMbps, ThrottleMbps: l.ThrottleMbps, ThrottleHours: l.ThrottleHours, ThrottleOn: l.ThrottleOn},
+	}, Alerts: l.Alerts.upgrade()}
 }
 
 // legacyAlerts is a node's alert configuration before version 13: one flat
@@ -355,6 +367,70 @@ func migrateAlertRules(db *sql.DB) error {
 		return err
 	}
 	if _, err = tx.Exec("PRAGMA user_version=13"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// migrateAlertScopes moves every node's own rule list into the alert_rules
+// table. Nodes that carried the very same rule (kind and every parameter) share
+// one node-scoped rule listing them, so nothing changes about who is alerted
+// and a fleet with one common setting sees one rule per kind. Rules never widen
+// to 全部节点 here: a node added later must not start alerting by itself.
+func migrateAlertScopes(db *sql.DB) error {
+	rows, err := db.Query("SELECT id, config FROM nodes ORDER BY rowid")
+	if err != nil {
+		return err
+	}
+	var rules []model.AlertRule
+	index := map[string]int{}
+	for rows.Next() {
+		var id, config string
+		if err = rows.Scan(&id, &config); err != nil {
+			rows.Close()
+			return err
+		}
+		var node struct {
+			Alerts []model.AlertRule `json:"alerts"`
+		}
+		if err = json.Unmarshal([]byte(config), &node); err != nil {
+			rows.Close()
+			return err
+		}
+		for _, r := range node.Alerts {
+			key := encode(model.AlertRule{Kind: r.Kind, Threshold: r.Threshold, HoldSeconds: r.HoldSeconds, RepeatSeconds: r.RepeatSeconds})
+			i, seen := index[key]
+			if !seen {
+				i = len(rules)
+				index[key] = i
+				rules = append(rules, model.AlertRule{ID: model.Secret()[:16], Kind: r.Kind, Threshold: r.Threshold,
+					HoldSeconds: r.HoldSeconds, RepeatSeconds: r.RepeatSeconds, Scope: model.ScopeNodes})
+			}
+			rules[i].NodeIDs = append(rules[i].NodeIDs, id)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec("CREATE TABLE IF NOT EXISTS alert_rules(id TEXT PRIMARY KEY, config TEXT NOT NULL)"); err != nil {
+		return err
+	}
+	for _, r := range rules {
+		if _, err = tx.Exec("INSERT INTO alert_rules(id,config) VALUES(?,?)", r.ID, encode(r)); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec("UPDATE nodes SET config=json_remove(config,'$.alerts')"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("PRAGMA user_version=14"); err != nil {
 		return err
 	}
 	return tx.Commit()

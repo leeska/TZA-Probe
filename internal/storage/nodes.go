@@ -15,6 +15,10 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 	if err != nil {
 		return nil, err
 	}
+	rules, err := s.AlertRules(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.query(ctx, "SELECT config,last_seen,metrics,created_at,traffic_adjustment,adjustment_cycle FROM nodes")
 	if err != nil {
 		return nil, err
@@ -47,6 +51,7 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 		}
 		v.Online = v.LastSeen > 0 && now.Unix()-v.LastSeen < int64(model.OfflineAfter.Seconds())
 		v.ProbeTargets = plan[v.ID]
+		v.Alerts = model.EffectiveAlerts(rules, v.Node)
 		corrections[v.ID] = c
 		start, end := model.Cycle(now, model.BillingAnchor(v.Billing.ResetAt, now))
 		v.CycleStart = start.Unix()
@@ -140,43 +145,6 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 	return n.ID, "", err
 }
 
-// SetNodeAlerts gives every listed node the same alert rules in one
-// transaction, leaving the rest of each node's config as stored. A node whose
-// line cannot take the rules (say, a throttle alert without a throttle
-// threshold) fails the whole batch and is named in the error.
-func (s *Store) SetNodeAlerts(ctx context.Context, ids []string, alerts model.Alerts) error {
-	if len(ids) == 0 {
-		return model.Invalid("请至少选择一个节点")
-	}
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		var raw string
-		if err = tx.QueryRowContext(ctx, "SELECT config FROM nodes WHERE id=?", id).Scan(&raw); errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		} else if err != nil {
-			return err
-		}
-		var n model.Node
-		if err = json.Unmarshal([]byte(raw), &n); err != nil {
-			return err
-		}
-		n.Alerts = alerts
-		if err = n.Validate(); err != nil {
-			return model.Invalid(n.Name + "：" + err.Error())
-		}
-		if _, err = tx.ExecContext(ctx, "UPDATE nodes SET config=? WHERE id=?", encode(n), id); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
 // SaveNodeOrder rewrites only the order field of the listed nodes, in the given
 // sequence (the first id becomes 0). The panel's drag sends the whole visible
 // list, so the caller never computes the numbers; because the stored config is
@@ -229,6 +197,9 @@ func (s *Store) DeleteNode(ctx context.Context, id string) error {
 			if _, err = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE node_id=?", id); err != nil {
 				return err
 			}
+		}
+		if err = forgetNodeInRules(ctx, tx, id); err != nil {
+			return err
 		}
 		return queuePurge(ctx, tx, purgeNodeRows, id, noCutoff)
 	})

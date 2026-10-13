@@ -207,30 +207,81 @@ func TestBindTasksIsAtomic(t *testing.T) {
 	}
 }
 
-// Batch alert rules land on every node or none, and the failing node is named.
-func TestSetNodeAlertsBatch(t *testing.T) {
+// A rule is saved only when its nodes exist and no other rule of its kind and
+// scope covers the same node; the narrowest rule wins on each node, and a
+// deleted node leaves every rule (a node-scoped rule naming only it goes too).
+func TestAlertRuleStore(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
-	a, _ := makeNode(t, s)
-	b, _ := makeNode(t, s)
-	rules := model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 120}, {Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 60}, {Kind: model.AlertMemory, Threshold: 85, HoldSeconds: 60}}
-	if err := s.SetNodeAlerts(ctx, []string{a, b}, rules); err != nil {
+	node := func(group string) string {
+		id, _, err := s.SaveNode(ctx, model.Node{Name: "n", Group: group, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	hk, jp, db := node("HK"), node("JP"), node("HK")
+	save := func(r model.AlertRule) (string, error) { return s.SaveAlertRule(ctx, r, true) }
+	all, err := save(model.AlertRule{Kind: model.AlertCPU, Threshold: 90, HoldSeconds: 300, Scope: model.ScopeAll, Exclude: []string{jp}})
+	if err != nil {
 		t.Fatal(err)
 	}
-	// 降速告警需要节点上的降速阈值：这两台都没有，整批拒绝且不改任何一台。
-	throttle := append(append(model.Alerts{}, rules...), model.AlertRule{Kind: model.AlertThrottle})
-	err := s.SetNodeAlerts(ctx, []string{a, b}, throttle)
-	if !errors.Is(err, model.ErrInvalid) || !strings.Contains(err.Error(), "node：") {
-		t.Fatalf("throttle without threshold: %v", err)
+	group, err := save(model.AlertRule{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 300, Scope: model.ScopeGroup, Groups: []string{"HK"}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	nodes, _ := s.Nodes(ctx, time.Now())
-	for _, n := range nodes {
-		if encode(n.Alerts) != encode(rules) {
-			t.Fatalf("%s alerts=%+v", n.ID, n.Alerts)
+	only, err := save(model.AlertRule{Kind: model.AlertCPU, Threshold: 70, HoldSeconds: 300, Scope: model.ScopeNodes, NodeIDs: []string{db}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, bad := range map[string]model.AlertRule{
+		"second all":    {Kind: model.AlertCPU, Threshold: 50, HoldSeconds: 300, Scope: model.ScopeAll},
+		"same group":    {Kind: model.AlertCPU, Threshold: 50, HoldSeconds: 300, Scope: model.ScopeGroup, Groups: []string{"HK"}},
+		"same node":     {Kind: model.AlertCPU, Threshold: 50, HoldSeconds: 300, Scope: model.ScopeNodes, NodeIDs: []string{db}},
+		"missing node":  {Kind: model.AlertOffline, Scope: model.ScopeNodes, NodeIDs: []string{"missing"}},
+		"bad threshold": {Kind: model.AlertCPU, Threshold: 500, HoldSeconds: 300, Scope: model.ScopeNodes, NodeIDs: []string{jp}},
+	} {
+		if _, err := save(bad); !errors.Is(err, model.ErrInvalid) {
+			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	if err = s.SetNodeAlerts(ctx, []string{"missing"}, rules); !errors.Is(err, model.ErrNotFound) {
-		t.Fatalf("missing node: %v", err)
+	// Editing a rule does not collide with itself.
+	if _, err = s.SaveAlertRule(ctx, model.AlertRule{ID: all, Kind: model.AlertCPU, Threshold: 95, HoldSeconds: 300, Scope: model.ScopeAll, Exclude: []string{jp}}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SaveAlertRule(ctx, model.AlertRule{ID: "missing", Kind: model.AlertOffline, Scope: model.ScopeAll}, false); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("update missing: %v", err)
+	}
+	effective := func() map[string]string {
+		views, _ := s.Nodes(ctx, time.Now())
+		out := map[string]string{}
+		for _, v := range views {
+			r, _ := v.Alerts.Rule(model.AlertCPU)
+			out[v.ID] = r.ID
+		}
+		return out
+	}
+	if got := effective(); got[hk] != group || got[jp] != "" || got[db] != only {
+		t.Fatalf("effective rules: %v (all=%s group=%s only=%s)", got, all, group, only)
+	}
+	if err = s.DeleteNode(ctx, jp); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.DeleteNode(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := s.AlertRules(ctx)
+	if len(rules) != 2 || rules[0].ID != all || len(rules[0].Exclude) != 0 || rules[1].ID != group {
+		t.Fatalf("rules after deleting nodes: %+v", rules)
+	}
+	if err = s.DeleteAlertRule(ctx, group); err != nil {
+		t.Fatal(err)
+	}
+	if got := effective(); got[hk] != all {
+		t.Fatalf("wider rule did not take over: %v", got)
+	}
+	if err = s.DeleteAlertRule(ctx, group); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("delete twice: %v", err)
 	}
 }
 

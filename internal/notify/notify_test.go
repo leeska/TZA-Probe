@@ -18,6 +18,18 @@ func billingAt(now time.Time) string {
 	return time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
 }
 
+// addRules stores each rule as one covering every node; the tests here each
+// run a single node, so scope is not what they exercise.
+func addRules(t *testing.T, s *storage.Store, rules ...model.AlertRule) {
+	t.Helper()
+	for _, r := range rules {
+		r.Scope = model.ScopeAll
+		if _, err := s.SaveAlertRule(context.Background(), r, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 	ctx := context.Background()
 	s, err := storage.Open(filepath.Join(t.TempDir(), "alerts.db"))
@@ -26,7 +38,8 @@ func TestDebounceDedupRecoveryAndDelivery(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Now()
-	n := model.Node{Name: "test", Alerts: model.Alerts{{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 30}, {Kind: model.AlertMemory, Threshold: 80, HoldSeconds: 30}}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}}
+	addRules(t, s, model.AlertRule{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 30}, model.AlertRule{Kind: model.AlertMemory, Threshold: 80, HoldSeconds: 30})
+	n := model.Node{Name: "test", Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}}
 	_, token, err := s.SaveNode(ctx, n, true)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +95,8 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Now()
-	node := model.Node{Name: "billing", Alerts: model.Alerts{{Kind: model.AlertOffline}, {Kind: model.AlertRenewal, Threshold: 7}, {Kind: model.AlertTraffic, Threshold: 80}}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum", TrafficLimit: 1000, ExpiresAt: now.Add(2 * 24 * time.Hour).UTC().Format(time.RFC3339)}}
+	addRules(t, s, model.AlertRule{Kind: model.AlertOffline}, model.AlertRule{Kind: model.AlertRenewal, Threshold: 7}, model.AlertRule{Kind: model.AlertTraffic, Threshold: 80})
+	node := model.Node{Name: "billing", Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum", TrafficLimit: 1000, ExpiresAt: now.Add(2 * 24 * time.Hour).UTC().Format(time.RFC3339)}}
 	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)
@@ -105,11 +119,11 @@ func TestRenewalTrafficOfflineRulesHaveIndependentSwitches(t *testing.T) {
 	if err != nil || len(events) != 3 {
 		t.Fatalf("expected renewal, traffic, offline: %+v %v", events, err)
 	}
-	views, _ := s.Nodes(ctx, now)
-	node = views[0].Node
-	node.Alerts = model.Alerts{}
-	if _, _, err = s.SaveNode(ctx, node, false); err != nil {
-		t.Fatal(err)
+	rules, _ := s.AlertRules(ctx)
+	for _, r := range rules {
+		if err = s.DeleteAlertRule(ctx, r.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err = engine.Tick(ctx, now.Add(75*time.Second)); err != nil {
 		t.Fatal(err)
@@ -127,7 +141,8 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	_, token, err := s.SaveNode(ctx, model.Node{Name: "grace", Alerts: model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 60}}, Billing: model.Billing{ResetAt: billingAt(time.Now()), TrafficMode: "sum"}}, true)
+	addRules(t, s, model.AlertRule{Kind: model.AlertOffline, HoldSeconds: 60})
+	_, token, err := s.SaveNode(ctx, model.Node{Name: "grace", Billing: model.Billing{ResetAt: billingAt(time.Now()), TrafficMode: "sum"}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,10 +206,11 @@ func TestPerRuleRepeatAndSplitLoad(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Now()
-	node := model.Node{Name: "busy", Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}, Alerts: model.Alerts{
-		{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 30, RepeatSeconds: 300},
-		{Kind: model.AlertMemory, Threshold: 50, HoldSeconds: 30},
-	}}
+	addRules(t, s,
+		model.AlertRule{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 30, RepeatSeconds: 300},
+		model.AlertRule{Kind: model.AlertMemory, Threshold: 50, HoldSeconds: 30},
+	)
+	node := model.Node{Name: "busy", Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}}
 	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)

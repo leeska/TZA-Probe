@@ -136,9 +136,9 @@ quota.focus();
 assert.equal(w.document.activeElement, quota);
 quota.dispatchEvent(new w.Event("wheel", { bubbles: true }));
 assert.notEqual(w.document.activeElement, quota, "滚轮经过数字框时必须失焦，避免滑动页面时误改数值");
-// 提醒规则不在节点表单里改，而是在告警页的规则总览（见下方告警页那一段）。
+// 提醒规则不在节点表单里改，而是在告警页按范围单独设置（见下方告警页那一段）。
 assert.equal(form.elements.namedItem("offline"), null, "节点表单里不该再有提醒规则输入");
-assert(/新节点默认不开任何提醒/.test($("#node-form").textContent), "新节点表单要说明提醒规则在哪设置");
+assert(/新节点自动套用/.test($("#node-form").textContent), "新节点表单要说明它会套用哪些提醒规则、在哪设置");
 // 内置目录只有国内三网，而节点多半在海外：建议列表必须补上常用海外地区，且仍可自由填写。
 // 2026-10-10 起地区控件是可检索的组合框（web/region-picker.js）：建议表在弹层里，真正的
 // 表单字段仍然是那个输入框，所以目录外的值照样能手打进去，只是多了一份可搜的建议。
@@ -349,10 +349,9 @@ const zeroAlerts = {
   name: "UI 零阈值 " + Date.now(), group: "", region: "", order: 0, public: false,
   display: { route_region: "" },
   billing: { traffic_limit: 0, traffic_mode: "sum", reset_at: "2026-09-01T00:00:00Z", price: 0, currency: "", free: true, price_period: "", expires_at: "" },
-  alerts: [],
 };
 const zeroResponse = await fetch(base + "/api/v1/admin/nodes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/json" }, body: JSON.stringify(zeroAlerts) });
-assert.equal(zeroResponse.status, 200, "server accepts zero thresholds while the rules are off");
+assert.equal(zeroResponse.status, 200, "server accepts a node with every threshold at zero");
 list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
 const zeroNode = list.find((n) => n.name === zeroAlerts.name);
 $("#refresh-nodes").click();
@@ -377,21 +376,22 @@ assert(
   "空货币要有一条「未设置」选项",
 );
 $(".close").click();
-// 阈值全 0 的节点打开规则编辑，也必须回填可保存的值（禁用元素的 checkValidity() 恒为真，
-// 所以直接比对值与 min）。规则编辑在告警页，切过去再回来。
+// 新建规则时每种类型都回填可保存的默认值（比对值与 min）。规则编辑在告警页，切过去再回来。
 $('[data-tab="alerts"]').click();
-// 告警页分三个子页，默认是「当前告警」；规则总览在「提醒规则」里。
+// 告警页分三个子页，默认是「当前告警」；规则列表在「提醒规则」里。
 await until(() => $('[data-alert-view="rules"]'), "alert sub-views");
 assert($('[data-alert-view="active"]').classList.contains("active"), "告警页默认先看当前告警");
 $('[data-alert-view="rules"]').click();
-await until(() => $(`[data-alerts="${zeroNode.id}"]`), "rules overview");
-$(`[data-alerts="${zeroNode.id}"]`).click();
-form = $("#alerts-form");
-for (const field of ["traffic_percent", "cpu_percent", "memory_percent", "cpu_hold", "memory_hold"]) {
-  const el = form.elements[field];
-  assert(Number(el.value) >= Number(el.min), `${field}=${el.value} is below min=${el.min}: the rules could never be saved`);
+await until(() => $("#new-rule"), "rule list");
+$("#new-rule").click();
+form = $("#rule-form");
+for (const kind of ["offline", "renewal", "traffic", "throttle", "cpu", "memory"]) {
+  form.elements.kind.value = kind;
+  form.elements.kind.dispatchEvent(new w.Event("change", { bubbles: true }));
+  for (const el of form.querySelectorAll("#rule-params input"))
+    assert(Number(el.value) >= Number(el.min), `${kind}.${el.name}=${el.value} is below min=${el.min}: the rule could never be saved`);
 }
-assert.equal(form.elements.traffic_percent.value, "80");
+assert.equal(form.elements.threshold.value, "90", "内存默认 90%");
 $(".close").click();
 $('[data-tab="nodes"]').click();
 await until(() => $("#add-node"), "node list again");
@@ -860,58 +860,76 @@ await until(() => $("#configure-webhook"), "rules sub-view");
 $("#configure-webhook").click();
 assert($('#dialog input[name="webhook"]'));
 $(".close").click();
-// 规则总览：每台节点一行。单台编辑——每个阈值都写明默认值，未启用的规则禁用其阈值。
-await until(() => $(`[data-alerts="${created.id}"]`), "rules overview row");
-$(`[data-alerts="${created.id}"]`).click();
-form = $("#alerts-form");
+// 提醒规则：一条规则一种类型，范围是全部节点 / 分组 / 指定节点；同类型按 指定节点 > 分组 > 全部 只生效一条。
+const ruleNodes = async () => (await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json());
+const pickScope = (form, scope) => {
+  const radio = form.querySelector(`input[name="scope"][value="${scope}"]`);
+  radio.checked = true;
+  radio.dispatchEvent(new w.Event("change", { bubbles: true }));
+};
+const pickKind = (form, kind) => {
+  form.elements.kind.value = kind;
+  form.elements.kind.dispatchEvent(new w.Event("change", { bubbles: true }));
+};
 {
-  const text = form.textContent;
-  for (const d of ["（默认 60）", "（默认 7）", "（默认 80）", "（默认 90）", "（默认 300）"])
-    assert(text.includes(d), "提醒规则缺少默认值提示: " + d);
-  assert(text.includes("重复间隔填 0 只提醒一次"), "提示行要说明重复间隔的规则");
-  // 四列对齐：每行都是「规则 + 阈值 + 持续 + 重复」四格，没有的那一格是占位。
-  for (const row of form.querySelectorAll(".rule-row"))
-    assert.equal([...row.children].filter((c) => !c.classList.contains("rule-hint")).length, 4, "每条规则一行四格: " + row.textContent);
-}
-// 每条规则各有自己的重复间隔。
-for (const rule of ["offline", "renewal", "traffic", "throttle", "cpu", "memory"])
-  assert.equal(form.elements[rule + "_repeat"].placeholder, "默认 0（只提醒一次）", rule + " 要有自己的重复间隔");
-assert(form.elements.cpu_percent.disabled, "未启用的负载规则不校验阈值");
-for (const rule of ["offline", "renewal", "traffic", "cpu", "memory"]) {
-  form.elements[rule].checked = true;
-  form.elements[rule].dispatchEvent(new w.Event("change"));
-}
-assert(!form.elements.cpu_percent.disabled, "启用规则要恢复阈值输入");
-assert.equal(form.elements.cpu_hold.value, "300");
-set(form, "cpu_repeat", "60");
-submit(form);
-await until(async () => {
-  const n = (await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json()).find((x) => x.id === created.id);
-  const kinds = (n?.alerts || []).map((r) => r.kind).join(",");
-  const cpu = n?.alerts.find((r) => r.kind === "cpu");
-  return kinds === "offline,renewal,traffic,cpu,memory" && cpu.hold_seconds === 300 && cpu.repeat_seconds === 3600;
-}, "single-node rules saved");
-// 批量设置：勾两台，一份规则同时写给两台（服务端一个事务）。
-await until(() => $(`[data-select-node="${created.id}"]`) && !$("#dialog").open, "overview re-rendered");
-{
-  const all = (await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json());
-  const other = all.find((n) => n.id !== created.id);
-  $(`[data-select-node="${created.id}"]`).checked = true;
-  $(`[data-select-node="${other.id}"]`).checked = true;
-  $("#bulk-alerts").click();
-  form = $("#alerts-form");
-  assert(/2 个节点/.test($("#dialog").textContent), "批量弹窗要写明作用于几台");
-  form.elements.offline.checked = true;
-  form.elements.offline.dispatchEvent(new w.Event("change"));
-  set(form, "offline_repeat", "30");
+  const fleet = await ruleNodes();
+  const other = fleet.find((n) => n.id !== created.id);
+  // 一条作用于全部节点的 CPU 规则：默认范围就是全部，预览写明覆盖几台、以后新加的也套用。
+  $("#new-rule").click();
+  form = $("#rule-form");
+  assert(form.textContent.includes("重复间隔填 0"), "提示行要说明重复间隔的规则");
+  pickKind(form, "cpu");
+  assert.equal(form.elements.threshold.value, "90");
+  assert.equal(form.elements.hold_seconds.value, "300");
+  assert(form.querySelector('[data-part="nodes"]').hidden, "范围是全部节点时不显示节点列表");
+  assert(new RegExp(`覆盖 ${fleet.length} 台节点`).test($("#rule-preview").textContent), "预览写明覆盖几台: " + $("#rule-preview").textContent);
+  assert(/以后新加的节点也会自动套用/.test($("#rule-preview").textContent), "全部节点的规则要说明新节点也会套用");
+  set(form, "repeat", "60");
+  submit(form);
+  await until(async () => (await ruleNodes()).every((n) => {
+    const cpu = n.alerts.find((r) => r.kind === "cpu");
+    return cpu?.scope === "all" && cpu.threshold === 90 && cpu.repeat_seconds === 3600;
+  }), "all-nodes CPU rule reaches every node");
+  // 再给其中一台单独设一条：这台以单独的为准，其余仍按全部节点那条。
+  await until(() => $("#new-rule") && !$("#dialog").open, "rule list re-rendered");
+  $("#new-rule").click();
+  form = $("#rule-form");
+  pickKind(form, "cpu");
+  pickScope(form, "nodes");
+  assert(!form.querySelector('[data-part="nodes"]').hidden, "指定节点时显示节点列表");
+  form.querySelector(`[data-node="${created.id}"]`).checked = true;
+  set(form, "threshold", "70");
+  form.dispatchEvent(new w.Event("change"));
+  assert(/覆盖 1 台节点/.test($("#rule-preview").textContent), "预览随勾选更新: " + $("#rule-preview").textContent);
   submit(form);
   await until(async () => {
-    const list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
-    return [created.id, other.id].every((id) => {
-      const a = list.find((n) => n.id === id)?.alerts;
-      return a?.length === 1 && a[0].kind === "offline" && a[0].repeat_seconds === 1800;
-    });
-  }, "batch rules saved on both nodes");
+    const list = await ruleNodes();
+    const mine = list.find((n) => n.id === created.id).alerts.find((r) => r.kind === "cpu");
+    const theirs = list.find((n) => n.id === other.id).alerts.find((r) => r.kind === "cpu");
+    return mine?.scope === "nodes" && mine.threshold === 70 && theirs?.scope === "all" && theirs.threshold === 90;
+  }, "node rule overrides the all-nodes rule on that node only");
+  await until(() => $("[data-delete-rule]") && !$("#dialog").open, "rule list with both rules");
+  assert(/另 1 台以更具体的规则为准/.test($("#admin-content").textContent), "宽规则要写明有几台被更具体的规则盖过");
+  assert($("#admin-content").textContent.includes("单独"), "生效总览要写明规则来自哪一级");
+  // 同类型同范围不能重叠：第二条全部节点的 CPU 规则被拒，弹窗留着、规则不增加。
+  $("#new-rule").click();
+  form = $("#rule-form");
+  pickKind(form, "cpu");
+  submit(form);
+  await until(() => /全部节点的CPU规则/.test($("#toast").textContent), "overlapping rule refused: " + $("#toast").textContent);
+  assert($("#dialog").open, "被拒时弹窗不关");
+  $(".close").click();
+  // 删掉单独那条：这台回到全部节点那条。
+  const rules = await (await fetch(base + "/api/v1/admin/alert-rules", { headers: adminHeaders })).json();
+  assert.equal(rules.length, 2, "重叠的规则不该存下");
+  const nodeRule = rules.find((r) => r.scope === "nodes");
+  $(`[data-delete-rule="${nodeRule.id}"]`).click();
+  $("#confirm").click();
+  await until(async () => (await ruleNodes()).find((n) => n.id === created.id).alerts.find((r) => r.kind === "cpu")?.threshold === 90, "deleting the node rule falls back to the wider one");
+  // 收尾：后面的验收不该被 CPU 规则的告警干扰。
+  for (const r of await (await fetch(base + "/api/v1/admin/alert-rules", { headers: adminHeaders })).json())
+    await fetch(base + "/api/v1/admin/alert-rules/" + r.id, { method: "DELETE", headers: adminHeaders });
+  await until(() => !$("#dialog").open, "dialog closed");
 }
 // 面板显示项（延迟色带 / 默认外观）在单独的「面板设置」页，不再挂在告警页里。
 assert(!$("#latency-window"), "告警页不该再出现面板显示项");
@@ -2443,7 +2461,6 @@ const madeThrottle = await fetch(base + "/api/v1/admin/nodes", {
     public: true,
     billing: { reset_at: "2026-09-01T00:00:00Z", traffic_mode: "sum" },
     line: { mbps: 1000, throttle_mbps: 1, throttle_hours: 1 },
-    alerts: [{ kind: "throttle" }],
   }),
 });
 assert.equal(
@@ -2552,7 +2569,6 @@ const madeQuota = await fetch(base + "/api/v1/admin/nodes", {
     public: true,
     billing: { reset_at: "2026-09-01T00:00:00Z", traffic_limit: 1000000, traffic_mode: "max" },
     line: { mbps: 4000, throttle_mbps: 50, throttle_on: "quota" },
-    alerts: [{ kind: "throttle" }],
   }),
 });
 assert.equal(

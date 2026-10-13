@@ -65,17 +65,6 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		respond(w, a.svc.ReorderNodes(r.Context(), v.IDs))
 	})
-	// 提醒规则按批设置（告警页的规则总览）：同一份规则写给所选节点，一个事务。
-	route("PUT /api/v1/admin/nodes/alerts", func(w http.ResponseWriter, r *http.Request) {
-		var v struct {
-			NodeIDs []string     `json:"node_ids"`
-			Alerts  model.Alerts `json:"alerts"`
-		}
-		if !decode(w, r, &v) {
-			return
-		}
-		respond(w, a.svc.SetAlerts(r.Context(), v.NodeIDs, v.Alerts))
-	})
 	route("POST /api/v1/admin/nodes/{id}/traffic", func(w http.ResponseWriter, r *http.Request) {
 		var v struct {
 			Used  int64 `json:"used"`
@@ -93,6 +82,38 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			return
 		}
 		write(w, 200, map[string]string{"token": token})
+	})
+
+	// ---- alert rules：每条规则单独增删改，范围是全部节点 / 分组 / 指定节点。
+	route("GET /api/v1/admin/alert-rules", func(w http.ResponseWriter, r *http.Request) {
+		rules, err := a.svc.AlertRules(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, rules)
+	})
+	route("POST /api/v1/admin/alert-rules", func(w http.ResponseWriter, r *http.Request) {
+		var rule model.AlertRule
+		if !decode(w, r, &rule) {
+			return
+		}
+		id, err := a.svc.CreateAlertRule(r.Context(), rule)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, map[string]string{"id": id})
+	})
+	route("PUT /api/v1/admin/alert-rules/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var rule model.AlertRule
+		if !decode(w, r, &rule) {
+			return
+		}
+		respond(w, a.svc.ReplaceAlertRule(r.Context(), r.PathValue("id"), rule))
+	})
+	route("DELETE /api/v1/admin/alert-rules/{id}", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, a.svc.DeleteAlertRule(r.Context(), r.PathValue("id")))
 	})
 
 	// ---- tasks

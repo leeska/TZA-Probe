@@ -1487,67 +1487,14 @@ input[type="checkbox"]:disabled {
   }
 }
 
-/* 提醒规则：四列网格（规则 | 阈值 | 持续 / 等待 | 重复提醒），表头与每行同一套列宽。 */
-.rule-head,
-.rule-row {
-  display: grid;
-  grid-template-columns: 150px repeat(3, minmax(0, 1fr));
-  align-items: end;
-  gap: 8px 14px;
+/* 提醒规则编辑：参数输入随类型重绘，容器本身不占格子，输入直接排进外层表单网格。 */
+.rule-params {
+  display: contents;
 }
 
-.rule-head {
-  padding: 0 14px 6px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.rules-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.rule-row {
-  padding: 10px 14px 12px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-}
-
-.rule-row > label.checkbox {
-  align-self: center;
-  font-weight: 600;
-}
-
-.rule-row > label:not(.checkbox) {
-  margin: 0;
-}
-
-.rule-empty {
-  align-self: center;
-  color: var(--muted);
-  padding-left: 4px;
-}
-
-.rule-row > .rule-hint {
-  grid-column: 2 / -1;
-  margin: 0;
-}
-
-@media (max-width: 760px) {
-  .rule-head {
-    display: none;
-  }
-  .rule-row {
-    grid-template-columns: 1fr 1fr;
-  }
-  .rule-row > label.checkbox,
-  .rule-row > .rule-hint {
-    grid-column: 1 / -1;
-  }
-  .rule-empty {
-    display: none;
-  }
+/* 作用范围下的分组 / 节点列表与范围单选之间留一点距离。 */
+#rule-form [data-part] {
+  margin-top: 12px;
 }
 
 /* ==========================================================================

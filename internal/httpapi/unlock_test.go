@@ -147,8 +147,11 @@ func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
 	admin := model.Secret()
 	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
 	defer server.Close()
-	id, _, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, Alerts: model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 60}}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "公开", Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SaveAlertRule(ctx, model.AlertRule{Kind: model.AlertOffline, HoldSeconds: 60, Scope: model.ScopeAll}, true); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
@@ -175,6 +178,9 @@ func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
 		return resp.StatusCode, obj, raw
 	}
 	_, _, public := call("GET", "/api/v1/nodes", "", false)
+	if code, _, _ := call("GET", "/api/v1/admin/alert-rules", "", false); code != 401 {
+		t.Fatalf("anonymous rule list: %d", code)
+	}
 	for _, leak := range []string{"traffic_adjustment", "adjustment_cycle", "created_at", `"kind":"offline"`} {
 		if strings.Contains(string(public), leak) {
 			t.Fatalf("anonymous list leaks %s: %s", leak, public)
@@ -191,7 +197,7 @@ func TestPublicNodeRedactionAndConflictMessage(t *testing.T) {
 	}
 }
 
-// The step-2 routes: task enable / run / batch bind, batch alert rules, the
+// The step-2 routes: task enable / run / batch bind, alert rules, the
 // two settings resources, and the removed catch-all routes answering 404.
 func TestResourceRoutes(t *testing.T) {
 	s, err := storage.Open(filepath.Join(t.TempDir(), "routes.db"))
@@ -268,15 +274,44 @@ func TestResourceRoutes(t *testing.T) {
 			t.Fatalf("task %s: enabled=%v nodes=%v", task.Name, task.Enabled, task.NodeIDs)
 		}
 	}
-	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`","`+b+`"],"alerts":[{"kind":"offline","hold_seconds":90}]}`); code != 204 {
-		t.Fatalf("alerts: %d %s", code, body)
+	// 提醒规则：单条增删改，范围决定作用于哪些节点；同类型同范围不能重叠。
+	code, body := call("POST", "/api/v1/admin/alert-rules", `{"kind":"offline","hold_seconds":90,"scope":"all"}`)
+	if code != 200 || !strings.Contains(body, `"id"`) {
+		t.Fatalf("create rule: %d %s", code, body)
 	}
-	if code, body := call("PUT", "/api/v1/admin/nodes/alerts", `{"node_ids":["`+a+`"],"alerts":[{"kind":"throttle"}]}`); code != 400 || !strings.Contains(body, "甲：") {
-		t.Fatalf("alerts invalid: %d %s", code, body)
+	var created struct{ ID string }
+	json.Unmarshal([]byte(body), &created)
+	if code, body := call("POST", "/api/v1/admin/alert-rules", `{"kind":"offline","scope":"all"}`); code != 400 || !strings.Contains(body, "全部节点") {
+		t.Fatalf("overlapping rule: %d %s", code, body)
 	}
-	// PATCH 只改提交的字段，与 MCP 的 update_node / update_task 是同一个合并。
-	if code, body := call("PATCH", "/api/v1/admin/nodes/"+a, `{"group":"HK","alerts":[{"kind":"cpu","threshold":80,"hold_seconds":60}]}`); code != 200 || !strings.Contains(body, `"group":"HK"`) || !strings.Contains(body, `"kind":"cpu"`) || strings.Contains(body, `"kind":"offline"`) {
+	if code, body := call("POST", "/api/v1/admin/alert-rules", `{"kind":"offline","hold_seconds":30,"scope":"nodes","node_ids":["`+a+`"]}`); code != 200 {
+		t.Fatalf("narrower rule: %d %s", code, body)
+	}
+	if code, body := call("PUT", "/api/v1/admin/alert-rules/"+created.ID, `{"kind":"offline","hold_seconds":120,"scope":"group","groups":["HK"]}`); code != 204 {
+		t.Fatalf("replace rule: %d %s", code, body)
+	}
+	if code, body := call("GET", "/api/v1/admin/alert-rules", ""); code != 200 || !strings.Contains(body, `"groups":["HK"]`) {
+		t.Fatalf("list rules: %d %s", code, body)
+	}
+	if code, _ := call("PUT", "/api/v1/admin/alert-rules/nope", `{"kind":"offline","scope":"all"}`); code != 404 {
+		t.Fatalf("replace missing rule: %d", code)
+	}
+	// PATCH 只改提交的字段，与 MCP 的 update_node / update_task 是同一个合并；规则不再写在节点上。
+	if code, body := call("PATCH", "/api/v1/admin/nodes/"+b, `{"group":"HK"}`); code != 200 || !strings.Contains(body, `"group":"HK"`) {
 		t.Fatalf("patch node: %d %s", code, body)
+	}
+	if code, body := call("PATCH", "/api/v1/admin/nodes/"+b, `{"alerts":[]}`); code != 400 {
+		t.Fatalf("alerts on a node: %d %s", code, body)
+	}
+	nodes, _ := s.Nodes(ctx, time.Now())
+	for _, n := range nodes {
+		r, on := n.Alerts.Rule(model.AlertOffline)
+		if want := map[string]int{a: 30, b: 120}[n.ID]; !on || r.HoldSeconds != want {
+			t.Fatalf("%s effective offline rule: %+v %v, want hold %d", n.Name, r, on, want)
+		}
+	}
+	if code, _ := call("DELETE", "/api/v1/admin/alert-rules/"+created.ID, ""); code != 204 {
+		t.Fatalf("delete rule: %d", code)
 	}
 	if code, body := call("PATCH", "/api/v1/admin/nodes/"+a, `{"gruop":"HK"}`); code != 400 {
 		t.Fatalf("patch typo: %d %s", code, body)

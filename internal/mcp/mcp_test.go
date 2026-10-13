@@ -33,7 +33,7 @@ type fakeSource struct {
 	deleted    []string
 	rotated    []string
 	controlled []string
-	alerted    []string
+	rules      []model.AlertRule
 	savedNodes []model.Node
 	savedTasks []model.Task
 	runs       []model.TaskRun
@@ -160,12 +160,37 @@ func (f *fakeSource) BindTasks(context.Context, []string, []string) error {
 	return f.control("bind")
 }
 func (f *fakeSource) SaveNodeOrder(context.Context, []string) error { return f.failure }
-func (f *fakeSource) SetNodeAlerts(_ context.Context, ids []string, _ model.Alerts) error {
+func (f *fakeSource) AlertRules(context.Context) ([]model.AlertRule, error) {
+	return f.rules, f.failure
+}
+func (f *fakeSource) SaveAlertRule(_ context.Context, r model.AlertRule, create bool) (string, error) {
 	if f.failure != nil {
-		return f.failure
+		return "", f.failure
 	}
-	f.alerted = append(f.alerted, ids...)
-	return nil
+	if err := r.Validate(); err != nil {
+		return "", model.Invalid(err.Error())
+	}
+	if create {
+		r.ID = "new-rule"
+		f.rules = append(f.rules, r)
+		return r.ID, nil
+	}
+	for i := range f.rules {
+		if f.rules[i].ID == r.ID {
+			f.rules[i] = r
+			return r.ID, nil
+		}
+	}
+	return "", model.ErrNotFound
+}
+func (f *fakeSource) DeleteAlertRule(_ context.Context, id string) error {
+	for i, r := range f.rules {
+		if r.ID == id {
+			f.rules = append(f.rules[:i], f.rules[i+1:]...)
+			return nil
+		}
+	}
+	return model.ErrNotFound
 }
 
 func (f *fakeSource) Backup(context.Context) (string, func(), error) {
@@ -204,9 +229,10 @@ func (f *fakeSource) SetSetting(_ context.Context, key, value string) error {
 func fixture() *fakeSource {
 	return &fakeSource{
 		nodes: []model.NodeView{
-			{Node: model.Node{ID: "n1", Name: "香港", Public: true, Alerts: model.Alerts{{Kind: model.AlertCPU, Threshold: 90, HoldSeconds: 300}}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, Online: true, TrafficUsed: 1234},
+			{Node: model.Node{ID: "n1", Name: "香港", Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, Alerts: model.Alerts{{ID: "r1", Kind: model.AlertCPU, Threshold: 90, HoldSeconds: 300, Scope: model.ScopeNodes}}, Online: true, TrafficUsed: 1234},
 			{Node: model.Node{ID: "n2", Name: "东京"}, Online: false},
 		},
+		rules: []model.AlertRule{{ID: "r1", Kind: model.AlertCPU, Threshold: 90, HoldSeconds: 300, Scope: model.ScopeNodes, NodeIDs: []string{"n1"}}},
 		tasks: []model.Task{{
 			ID: "t1", Name: "电信回程", Type: model.TaskProbe, Enabled: true, NodeIDs: []string{"n1"},
 			Probe: &model.ProbeSpec{Checks: []string{"route"}, RouteInterval: 1800, Targets: []model.Target{
@@ -380,7 +406,7 @@ func structured(t *testing.T, result map[string]any) map[string]any {
 var readOnly = map[string]bool{
 	"list_nodes": true, "list_tasks": true, "node_history": true, "node_network_history": true,
 	"node_observations": true, "recent_events": true, "latency_samples": true,
-	"list_catalog": true, "task_runs": true, "get_settings": true,
+	"list_alert_rules": true, "list_catalog": true, "task_runs": true, "get_settings": true,
 }
 
 func TestModernRevisionRoundTrip(t *testing.T) {
@@ -415,7 +441,8 @@ func TestModernRevisionRoundTrip(t *testing.T) {
 	entries, _ := list["tools"].([]any)
 	want := []string{
 		"list_nodes", "list_tasks", "node_history", "node_network_history", "node_observations", "recent_events", "latency_samples",
-		"create_node", "update_node", "delete_node", "rotate_node_token", "correct_node_traffic", "set_node_alerts", "list_catalog",
+		"create_node", "update_node", "delete_node", "rotate_node_token", "correct_node_traffic",
+		"list_alert_rules", "create_alert_rule", "update_alert_rule", "delete_alert_rule", "list_catalog",
 		"create_task", "update_task", "delete_task", "control_task", "task_runs",
 		"get_settings", "update_settings", "test_notification",
 	}
@@ -706,13 +733,41 @@ func TestToolsReadThePanelContract(t *testing.T) {
 	}
 }
 
+// The alert rule tools are the panel's rule list: one rule at a time, a
+// partial update keeps what it does not mention, and alerts no longer ride on
+// update_node.
+func TestAlertRuleTools(t *testing.T) {
+	env := newEnv(t)
+	listed := structured(t, invoke(t, env, "list_alert_rules", `{}`))
+	if rules, _ := listed["rules"].([]any); len(rules) != 1 {
+		t.Fatalf("list_alert_rules: %v", listed)
+	}
+	if created := structured(t, invoke(t, env, "create_alert_rule", `{"kind":"offline","hold_seconds":60,"scope":"all"}`)); created["id"] != "new-rule" {
+		t.Fatalf("create_alert_rule: %v", created)
+	}
+	updated := structured(t, invoke(t, env, "update_alert_rule", `{"rule_id":"r1","threshold":80}`))
+	rule, _ := updated["rule"].(map[string]any)
+	if rule["threshold"] != 80.0 || rule["hold_seconds"] != 300.0 || env.source.rules[0].Threshold != 80 {
+		t.Fatalf("update_alert_rule: %v", updated)
+	}
+	if deleted := structured(t, invoke(t, env, "delete_alert_rule", `{"rule_id":"r1"}`)); deleted["deleted"] != true || len(env.source.rules) != 1 {
+		t.Fatalf("delete_alert_rule: %v %+v", deleted, env.source.rules)
+	}
+	if _, out := env.modern(t, "1", "tools/call", "update_alert_rule", `{"rule_id":"new-rule","treshold":1}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("misspelled rule field: %v", out)
+	}
+	if _, out := env.modern(t, "1", "tools/call", "update_node", `{"node_id":"n1","alerts":[]}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("alerts on update_node: %v", out)
+	}
+}
+
 func TestAdminToolsChangeTheFleet(t *testing.T) {
 	env := newEnv(t)
 
 	// create_node is the panel's node form, and the one place a node key leaves
 	// the Server: the caller must see it exactly once.
 	created := structured(t, invoke(t, env, "create_node",
-		`{"name":"东京","region":"日本","public":true,"billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","traffic_limit":1000000000000},"line":{"mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"quota"},"alerts":[{"kind":"throttle"}]}`))
+		`{"name":"东京","region":"日本","public":true,"billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","traffic_limit":1000000000000},"line":{"mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"quota"}}`))
 	if created["id"] != "new-node" || created["token"] != "new-token" {
 		t.Fatalf("create_node: %v", created)
 	}
@@ -726,17 +781,16 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	if len(env.source.savedNodes) != 1 || env.source.savedNodes[0].Name != "东京" || !env.source.savedNodes[0].Public {
 		t.Fatalf("stored node: %+v", env.source.savedNodes)
 	}
-	// 达量降速的三项线路规格、触发条件与它的告警开关都要落库（面板表单与 MCP 同一形状）。
+	// 达量降速的三项线路规格与触发条件都要落库（面板表单与 MCP 同一形状）。
 	if n := env.source.savedNodes[0]; n.Line.Mbps != 1000 || n.Line.ThrottleMbps != 100 || n.Line.ThrottleHours != 24 ||
-		n.Line.ThrottleOn != "quota" || n.Billing.TrafficLimit != 1_000_000_000_000 || len(n.Alerts) != 1 || n.Alerts[0].Kind != model.AlertThrottle {
+		n.Line.ThrottleOn != "quota" || n.Billing.TrafficLimit != 1_000_000_000_000 {
 		t.Fatalf("throttle fields did not persist: %+v", n)
 	}
 
 	// update_node merges into the stored node: a field the caller did not mention
-	// keeps its value, and an object such as line is merged field by field. The
-	// alerts list is replaced as a whole: the rules listed are the rules that are on.
+	// keeps its value, and an object such as line is merged field by field.
 	env.source.savedNodes = nil
-	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"billing":{"traffic_limit":1000000000000},"line":{"mbps":1000,"throttle_mbps":100,"throttle_on":"quota"},"alerts":[{"kind":"offline","hold_seconds":60}]}`))["id"] != "n1" {
+	if structured(t, invoke(t, env, "update_node", `{"node_id":"n1","public":false,"billing":{"traffic_limit":1000000000000},"line":{"mbps":1000,"throttle_mbps":100,"throttle_on":"quota"}}`))["id"] != "n1" {
 		t.Fatalf("update_node did not report the node")
 	}
 	if len(env.source.savedNodes) != 1 {
@@ -746,8 +800,8 @@ func TestAdminToolsChangeTheFleet(t *testing.T) {
 	if node.Name != "香港" || node.Region != "" || node.Billing.ResetAt != "2026-09-01T00:00:00Z" || node.Billing.TrafficMode != "sum" {
 		t.Fatalf("update blanked fields it was not given: %+v", node)
 	}
-	if rule, on := node.Alerts.Rule(model.AlertOffline); node.Public || !on || rule.HoldSeconds != 60 || len(node.Alerts) != 1 {
-		t.Fatalf("update did not apply the patch: %+v", node.Alerts)
+	if node.Public {
+		t.Fatalf("update did not apply the patch: %+v", node)
 	}
 	// 逐字段合并：这次提到的线路规格与触发条件写进去，没提到的（降速窗口）不被动过。
 	if node.Line.Mbps != 1000 || node.Line.ThrottleMbps != 100 || node.Line.ThrottleHours != 0 || node.Line.ThrottleOn != "quota" {

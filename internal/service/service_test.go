@@ -28,7 +28,7 @@ func open(t *testing.T) *Service {
 func TestPatchNodeMerges(t *testing.T) {
 	svc := open(t)
 	ctx := context.Background()
-	id, _, err := svc.CreateNode(ctx, model.Node{Name: "甲", Group: "HK", Alerts: model.Alerts{{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 60}}, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}})
+	id, _, err := svc.CreateNode(ctx, model.Node{Name: "甲", Group: "HK", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestPatchNodeMerges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rule, on := n.Alerts.Rule(model.AlertCPU); n.ID != id || !n.Public || n.Group != "HK" || n.Line.Mbps != 100 || !on || rule.Threshold != 80 {
+	if n.ID != id || !n.Public || n.Group != "HK" || n.Line.Mbps != 100 {
 		t.Fatalf("merged node: %+v", n)
 	}
 	if _, err = svc.PatchNode(ctx, id, json.RawMessage(`{"pbulic":true}`)); !errors.Is(err, model.ErrInvalid) {
@@ -48,6 +48,34 @@ func TestPatchNodeMerges(t *testing.T) {
 	// 校验在服务层：按额度降速却没有额度，HTTP 与 MCP 拿到的是同一句 400。
 	if _, err = svc.PatchNode(ctx, id, json.RawMessage(`{"throttle_on":"quota","throttle_mbps":100}`)); !errors.Is(err, model.ErrInvalid) {
 		t.Fatalf("invalid patch: %v", err)
+	}
+}
+
+// A partial rule edit keeps what it does not mention; switching the scope
+// drops the lists of the old one unless they are sent again.
+func TestPatchAlertRule(t *testing.T) {
+	svc := open(t)
+	ctx := context.Background()
+	node, _, err := svc.CreateNode(ctx, model.Node{Name: "甲", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := svc.CreateAlertRule(ctx, model.AlertRule{Kind: model.AlertCPU, Threshold: 80, HoldSeconds: 60, Scope: model.ScopeNodes, NodeIDs: []string{node}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := svc.PatchAlertRule(ctx, id, json.RawMessage(`{"rule_id":"x","threshold":90}`))
+	if err != nil || r.ID != id || r.Threshold != 90 || r.HoldSeconds != 60 || len(r.NodeIDs) != 1 {
+		t.Fatalf("threshold patch: %+v %v", r, err)
+	}
+	if r, err = svc.PatchAlertRule(ctx, id, json.RawMessage(`{"scope":"all"}`)); err != nil || r.Scope != model.ScopeAll || r.NodeIDs != nil {
+		t.Fatalf("scope patch: %+v %v", r, err)
+	}
+	if _, err = svc.PatchAlertRule(ctx, id, json.RawMessage(`{"treshold":1}`)); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("misspelled field: %v", err)
+	}
+	if _, err = svc.PatchAlertRule(ctx, "missing", json.RawMessage(`{}`)); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("missing rule: %v", err)
 	}
 }
 

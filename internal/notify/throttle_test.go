@@ -21,7 +21,8 @@ func TestThrottleRuleOnQuota(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Date(2026, 9, 18, 12, 30, 0, 0, time.UTC)
-	node := model.Node{Name: "hk-dmit", Alerts: model.Alerts{{Kind: model.AlertThrottle}}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "max", TrafficLimit: 1_000_000_000}, Line: model.Line{Mbps: 4000, ThrottleMbps: 50, ThrottleOn: "quota"}}
+	node := model.Node{Name: "hk-dmit", Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "max", TrafficLimit: 1_000_000_000}, Line: model.Line{Mbps: 4000, ThrottleMbps: 50, ThrottleOn: "quota"}}
+	addRules(t, s, model.AlertRule{Kind: model.AlertThrottle})
 	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +55,7 @@ func TestThrottleRuleOnQuota(t *testing.T) {
 }
 
 // 达量降速告警：阈值来自节点（ThrottleMbps），判据是存储算出的窗口平均带宽。
-// 与其它规则一样，只有勾了 alerts.throttle 才提醒，且触发/恢复各通知一次。
+// 与其它规则一样，只有开了 throttle 规则才提醒，且触发/恢复各通知一次。
 func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 	ctx := context.Background()
 	s, err := storage.Open(filepath.Join(t.TempDir(), "throttle.db"))
@@ -63,7 +64,8 @@ func TestThrottleRuleTracksWindowAverage(t *testing.T) {
 	}
 	defer s.Close()
 	now := time.Date(2026, 9, 18, 12, 30, 0, 0, time.UTC)
-	node := model.Node{Name: "de-node", Alerts: model.Alerts{{Kind: model.AlertThrottle}}, Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 1, ThrottleHours: 1}}
+	node := model.Node{Name: "de-node", Billing: model.Billing{ResetAt: billingAt(now), TrafficMode: "sum"}, Line: model.Line{Mbps: 1000, ThrottleMbps: 1, ThrottleHours: 1}}
+	addRules(t, s, model.AlertRule{Kind: model.AlertThrottle})
 	_, token, err := s.SaveNode(ctx, node, true)
 	if err != nil {
 		t.Fatal(err)

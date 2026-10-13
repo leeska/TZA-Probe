@@ -619,42 +619,95 @@ func TestProbeWireShape(t *testing.T) {
 	}
 }
 
-// Each rule kind takes only its own parameters, a kind appears once, and an
-// empty list encodes as [] so clients never see null.
+// Each rule kind takes only its own parameters, each scope its own lists, and
+// an empty effective list encodes as [] so clients never see null.
 func TestAlertRules(t *testing.T) {
-	ok := Alerts{
-		{Kind: AlertOffline, HoldSeconds: 60},
-		{Kind: AlertRenewal, Threshold: 7, RepeatSeconds: 86400},
-		{Kind: AlertTraffic, Threshold: 80},
-		{Kind: AlertThrottle},
-		{Kind: AlertCPU, Threshold: 90, HoldSeconds: 300},
-		{Kind: AlertMemory, Threshold: 85, HoldSeconds: 30},
+	ok := []AlertRule{
+		{Kind: AlertOffline, HoldSeconds: 60, Scope: ScopeAll},
+		{Kind: AlertRenewal, Threshold: 7, RepeatSeconds: 86400, Scope: ScopeAll, Exclude: []string{"n1"}},
+		{Kind: AlertTraffic, Threshold: 80, Scope: ScopeGroup, Groups: []string{"HK", ""}},
+		{Kind: AlertThrottle, Scope: ScopeNodes, NodeIDs: []string{"n1"}},
+		{Kind: AlertCPU, Threshold: 90, HoldSeconds: 300, Scope: ScopeAll},
+		{Kind: AlertMemory, Threshold: 85, HoldSeconds: 30, Scope: ScopeAll},
 	}
-	if err := ok.Validate(); err != nil {
-		t.Fatal(err)
+	for _, r := range ok {
+		if err := r.Validate(); err != nil {
+			t.Fatalf("%+v: %v", r, err)
+		}
 	}
-	for name, bad := range map[string]Alerts{
-		"duplicate":         {{Kind: AlertCPU, Threshold: 90, HoldSeconds: 60}, {Kind: AlertCPU, Threshold: 80, HoldSeconds: 60}},
-		"unknown kind":      {{Kind: "load"}},
-		"offline threshold": {{Kind: AlertOffline, Threshold: 5}},
-		"renewal fraction":  {{Kind: AlertRenewal, Threshold: 1.5}},
-		"traffic zero":      {{Kind: AlertTraffic}},
-		"throttle param":    {{Kind: AlertThrottle, Threshold: 1}},
-		"cpu short hold":    {{Kind: AlertCPU, Threshold: 90, HoldSeconds: 10}},
-		"memory over 100":   {{Kind: AlertMemory, Threshold: 101, HoldSeconds: 60}},
-		"repeat too short":  {{Kind: AlertOffline, RepeatSeconds: 60}},
+	for name, bad := range map[string]AlertRule{
+		"no scope":          {Kind: AlertOffline},
+		"unknown scope":     {Kind: AlertOffline, Scope: "fleet"},
+		"group without any": {Kind: AlertOffline, Scope: ScopeGroup},
+		"nodes without any": {Kind: AlertOffline, Scope: ScopeNodes},
+		"nodes with groups": {Kind: AlertOffline, Scope: ScopeNodes, NodeIDs: []string{"a"}, Groups: []string{"b"}},
+		"all with nodes":    {Kind: AlertOffline, Scope: ScopeAll, NodeIDs: []string{"a"}},
+		"duplicate node":    {Kind: AlertOffline, Scope: ScopeNodes, NodeIDs: []string{"a", "a"}},
+		"unknown kind":      {Kind: "load", Scope: ScopeAll},
+		"offline threshold": {Kind: AlertOffline, Threshold: 5, Scope: ScopeAll},
+		"renewal fraction":  {Kind: AlertRenewal, Threshold: 1.5, Scope: ScopeAll},
+		"traffic zero":      {Kind: AlertTraffic, Scope: ScopeAll},
+		"throttle param":    {Kind: AlertThrottle, Threshold: 1, Scope: ScopeAll},
+		"cpu short hold":    {Kind: AlertCPU, Threshold: 90, HoldSeconds: 10, Scope: ScopeAll},
+		"memory over 100":   {Kind: AlertMemory, Threshold: 101, HoldSeconds: 60, Scope: ScopeAll},
+		"repeat too short":  {Kind: AlertOffline, RepeatSeconds: 60, Scope: ScopeAll},
 	} {
 		if bad.Validate() == nil {
 			t.Fatalf("%s accepted", name)
 		}
 	}
-	if data, _ := json.Marshal(Node{}); !strings.Contains(string(data), `"alerts":[]`) {
+	if data, _ := json.Marshal(NodeView{}); !strings.Contains(string(data), `"alerts":[]`) {
 		t.Fatalf("empty alerts must be []: %s", data)
-	}
-	if r, on := ok.Rule(AlertMemory); !on || r.Threshold != 85 {
-		t.Fatalf("rule lookup: %+v %v", r, on)
 	}
 	if _, on := (Alerts{}).Rule(AlertCPU); on {
 		t.Fatal("absent rule reported on")
+	}
+}
+
+// For each kind a node follows the narrowest rule covering it: 指定节点 >
+// 分组 > 全部节点, and an exclusion takes it out of a wide rule.
+func TestEffectiveAlerts(t *testing.T) {
+	rules := []AlertRule{
+		{ID: "all", Kind: AlertCPU, Threshold: 90, HoldSeconds: 300, Scope: ScopeAll, Exclude: []string{"quiet"}},
+		{ID: "hk", Kind: AlertCPU, Threshold: 80, HoldSeconds: 300, Scope: ScopeGroup, Groups: []string{"HK"}},
+		{ID: "one", Kind: AlertCPU, Threshold: 70, HoldSeconds: 300, Scope: ScopeNodes, NodeIDs: []string{"db"}},
+		{ID: "off", Kind: AlertOffline, Scope: ScopeGroup, Groups: []string{""}},
+	}
+	cases := []struct {
+		node Node
+		cpu  string
+		off  bool
+	}{
+		{Node{ID: "plain", Group: "US"}, "all", false},
+		{Node{ID: "web", Group: "HK"}, "hk", false},
+		{Node{ID: "db", Group: "HK"}, "one", false},
+		{Node{ID: "quiet", Group: ""}, "", true},
+	}
+	for _, c := range cases {
+		got := EffectiveAlerts(rules, c.node)
+		cpu, on := got.Rule(AlertCPU)
+		if (c.cpu == "") == on || (on && cpu.ID != c.cpu) {
+			t.Fatalf("%s: cpu rule %+v %v, want %q", c.node.ID, cpu, on, c.cpu)
+		}
+		if _, off := got.Rule(AlertOffline); off != c.off {
+			t.Fatalf("%s: offline %v, want %v", c.node.ID, off, c.off)
+		}
+		if on && (cpu.NodeIDs != nil || cpu.Groups != nil || cpu.Exclude != nil) {
+			t.Fatalf("effective rule keeps its lists: %+v", cpu)
+		}
+	}
+	// Two rules of a kind may not share a scope over the same node; across
+	// scopes they may, the narrower one wins.
+	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeAll}).Overlaps(rules); err == nil {
+		t.Fatal("second all-nodes CPU rule accepted")
+	}
+	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeGroup, Groups: []string{"JP", "HK"}}).Overlaps(rules); err == nil {
+		t.Fatal("second HK CPU rule accepted")
+	}
+	if err := (AlertRule{ID: "x", Kind: AlertCPU, Scope: ScopeNodes, NodeIDs: []string{"web"}}).Overlaps(rules); err != nil {
+		t.Fatal(err)
+	}
+	if err := (AlertRule{ID: "all", Kind: AlertCPU, Scope: ScopeAll}).Overlaps(rules); err != nil {
+		t.Fatalf("a rule overlaps itself: %v", err)
 	}
 }

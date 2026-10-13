@@ -18,7 +18,6 @@ func TestThrottleFieldsValidate(t *testing.T) {
 		}},
 		{"只填阈值（窗口留 0 走默认 24）", func(n *Node) { n.Line.ThrottleMbps = 100 }},
 		{"窗口上限 168 小时", func(n *Node) { n.Line.ThrottleHours = 168 }},
-		{"启用降速告警且填了阈值", func(n *Node) { n.Line.ThrottleMbps = 100; n.Alerts = Alerts{{Kind: AlertThrottle}} }},
 		{"DMIT 那种：1000 GB 额度用满后不计量、限速 50 Mbit/s", func(n *Node) {
 			n.Billing.TrafficLimit, n.Line.Mbps, n.Line.ThrottleMbps, n.Line.ThrottleOn = 1_000_000_000_000, 4000, 50, "quota"
 		}},
@@ -40,7 +39,6 @@ func TestThrottleFieldsValidate(t *testing.T) {
 		{"线路带宽为负", func(n *Node) { n.Line.Mbps = -1 }},
 		{"阈值超过 1 Tbit/s", func(n *Node) { n.Line.ThrottleMbps = 1_000_001 }},
 		{"阈值高于线路带宽", func(n *Node) { n.Line.Mbps, n.Line.ThrottleMbps = 1000, 2000 }},
-		{"开了降速告警却没填阈值", func(n *Node) { n.Alerts = Alerts{{Kind: AlertThrottle}} }},
 		{"未知的降速触发条件", func(n *Node) { n.Line.ThrottleMbps, n.Line.ThrottleOn = 100, "volume" }},
 		{"按额度降速但没填额度", func(n *Node) { n.Line.ThrottleMbps, n.Line.ThrottleOn = 50, "quota" }},
 		{"按额度降速但没填速率", func(n *Node) { n.Billing.TrafficLimit, n.Line.ThrottleOn = 1_000_000_000_000, "quota" }},

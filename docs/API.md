@@ -13,7 +13,8 @@
 | POST /login、POST /logout、GET /session | 管理会话；`GET /session` 另回服务端版本 `version`（内置 Agent 安装包同版本，后台据此标出该升级的 Agent） |
 | GET、POST /admin/nodes | 列表、新建节点（返回一次性 token） |
 | PUT、PATCH、DELETE /admin/nodes/{id} | 编辑（PUT 整份替换；PATCH 只改提交的字段、嵌套对象按字段合并，返回合并后的节点）、删除节点 |
-| PUT /admin/nodes/alerts | `{"node_ids":[…],"alerts":[…]}`：把同一份提醒规则写给所选节点，一个事务；任何一台不合规整批不改，错误里写明是哪台 |
+| GET、POST /admin/alert-rules | 提醒规则列表、新建一条（返回 `{"id":…}`）；同类型同范围覆盖同一台节点时 400 并说明冲突在哪 |
+| PUT、DELETE /admin/alert-rules/{id} | 整份替换、删除一条提醒规则 |
 | POST /admin/nodes/{id}/token | 撤销旧令牌，返回新令牌 |
 | GET、POST /admin/tasks | 列表、创建探测任务（返回 `{"id":…}`） |
 | PUT、PATCH、DELETE /admin/tasks/{id} | 编辑（PUT 整份替换；PATCH 同上合并语义）、删除任务 |
@@ -31,7 +32,7 @@
 | GET /agent/jobs | 获取有限租约任务：按种类分别领取，最多 8 个 TCP + 1 个回程 + 1 个解锁（Agent 须报 `parallel_jobs` 能力，否则整批最多两个） |
 | POST /agent/results | 上传与租约绑定的结果 |
 
-准确字段由 `internal/model` 中的 JSON 标签定义。未登录请求拿到的节点不含提醒规则（`alerts` 全为零值）。解锁结论只随 `/nodes` 的 `unlock` 字段下发。
+准确字段由 `internal/model` 中的 JSON 标签定义。未登录请求拿到的节点不含提醒规则（`alerts` 为空）。解锁结论只随 `/nodes` 的 `unlock` 字段下发。
 
 ## Model Context Protocol（`POST /mcp`）
 
@@ -42,7 +43,7 @@
 - `2026-07-28`（无握手）：每个请求在 `_meta` 里声明版本，并在头部镜像 `MCP-Protocol-Version`、`Mcp-Method`（`tools/call` 还有 `Mcp-Name`，非 ASCII 用 `=?base64?…?=`），三者必须与请求体一致，缺失或不符返回 400 与 `-32020 HeaderMismatch`；版本不认识返回 400 与 `-32022 UnsupportedProtocolVersionError`（`data.supported` 列出支持版本）；方法不认识返回 404 与 `-32601`。结果带 `resultType: "complete"` 与 `_meta["io.modelcontextprotocol/serverInfo"]`，`server/discover` 与 `tools/list` 带 `ttlMs` / `cacheScope`。
 - `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
 
-工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`set_node_alerts`（`node_ids` + `alerts`，与 HTTP 批量设置同一个事务）、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`alerts`）按字段合并。
+工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`list_alert_rules`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`create_alert_rule` / `update_alert_rule`（`rule_id` + 要改的字段，合并语义）/ `delete_alert_rule`、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`（`rule_id` 缺失按工具错误返回）、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` / `update_alert_rule` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`billing` 等）按字段合并，列表整份替换；`update_alert_rule` 改了 `scope` 时，旧范围用的列表没重新提交就清掉。
 `create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（两者另外回面板显示项：延迟色带时间窗 `latency_window_minutes`、访客默认明暗 `default_theme` 与皮肤 `default_skin`）。`update_settings` 只改传了的项：不传 `channel` 沿用当前渠道，Telegram 的 `bot_token` / `chat_id` 留空沿用已存的，只传显示项时不动通知配置；关闭通知须显式传 `channel: "none"`，一项都不传返回 `-32602`；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
 
 ## 通知渠道
@@ -55,7 +56,7 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 
 ## 节点结构
 
-节点配置按关注点分组，运行状态平铺在节点视图上：
+节点配置按关注点分组，运行状态与生效的提醒规则平铺在节点视图上：
 
 ```json
 {"id":"…","name":"东京","group":"JP","region":"日本","order":0,"public":true,
@@ -63,8 +64,10 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
  "billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_limit":2000000000000,"traffic_mode":"max",
             "free":false,"price":9.9,"currency":"USD","price_period":"月","expires_at":""},
  "line":{"mbps":1000,"throttle_mbps":100,"throttle_hours":24,"throttle_on":"bandwidth"},
- "alerts":[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":90,"hold_seconds":300,"repeat_seconds":1800}]}
+ "alerts":[{"id":"…","kind":"offline","hold_seconds":60,"scope":"all"},{"id":"…","kind":"cpu","threshold":90,"hold_seconds":300,"repeat_seconds":1800,"scope":"group"}]}
 ```
+
+`alerts` 只读：是服务端按规则范围算出的这台节点实际生效的规则（每种至多一条），新建、编辑节点时不提交它。
 
 - `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区，`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。保存时去掉首尾空白，新填或改动的地区必须出现在内置目录或某个任务的目标地区里，否则 400 并指出是哪个地区（节点原有的值不受影响，照常可编辑）。`latency_carriers` / `route_carriers` 只在这台机器真有的探测项里再筛一道，留空显示全部；回程只有电信、联通、移动三网。
 - `region`（节点所在地区）只做展示，不参与匹配，不做这项检查。
@@ -72,6 +75,19 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 - `line`：线路带宽 `mbps` 与商家降速规则。
 - 节点视图另带运行状态：`online`、`last_seen`、`metrics`、`cycle_start` / `cycle_end`、`traffic_used`、`avg_bps`、`covered_hours`、`window_hours`、`throttled`、`probe_targets`、`unlock`。
 - 创建时间与用量校正是服务端自记的状态，存在单独的列里，不在节点配置与任何响应中。
+
+## 提醒规则
+
+规则单独存放（`/admin/alert-rules`），一条规则一种类型，按范围作用于节点：
+
+```json
+{"id":"…","kind":"cpu","threshold":90,"hold_seconds":300,"repeat_seconds":1800,
+ "scope":"group","groups":["HK",""],"exclude_node_ids":["…"]}
+```
+
+- 提醒规则的参数：`offline` 用 `hold_seconds`（判定离线后再等 0–86400 秒）；`renewal` 用 `threshold`（到期前 0–365 天）；`traffic` 用 `threshold`（额度百分比 1–100）；`throttle` 无参数（按线路降速规则，节点须填 `line.throttle_mbps`）；`cpu` / `memory` 用 `threshold`（1–100%）与 `hold_seconds`（持续 30–86400 秒）。`repeat_seconds` 每条规则各自设置：0 为触发 / 恢复各一次，非零 300–604800 秒。不属于该种规则的参数会被拒绝。
+- 规则范围 `scope`：`all` 全部节点（含以后新加的）；`group` 作用于 `groups` 列出的分组（空串是未分组的节点）；`nodes` 作用于 `node_ids` 列出的节点。`all` / `group` 可用 `exclude_node_ids` 排除个别节点。同一台节点同一种类型只生效一条，优先级 `nodes` > `group` > `all`；所以同类型、同范围的两条规则不能覆盖同一台节点（两条 `all`、共用一个分组、共用一台节点），保存时 400。节点不存在时 400。删除节点会把它从所有规则的列表里去掉，只指定了它的规则一并删除。
+- 达量降速、续费、流量规则分别依赖节点的 `line.throttle_mbps`、`billing.expires_at`、`billing.traffic_limit`；没填的节点即使在范围内也不会触发。
 
 ## 任务结构
 
@@ -100,7 +116,6 @@ Server 把任务展开为单项探测（checks × targets，解锁任务一项�
 - `POST /api/v1/admin/nodes/{id}/traffic`：管理员提交 `{"used":5000000000,"cycle":<cycle_start>}`，将当前周期已用总量校正为指定字节数。周期已变化返回 409。校正保留原始计数，后续增量继续累计，下周期失效；更改重置时间或计费方向会清除校正。
 - 节点配置的重置时间与到期时间都是 RFC3339（精确到秒）：`billing.reset_at` 是周期锚点，只取它的「日 + 时分秒」逐月顺延，短月取月末；`billing.expires_at` 留空表示不设。
 - 后台表单的重置/到期时间填 `YYYY-MM-DD HH:MM:SS`（UTC），提交前转成 RFC3339；格式不符或日期不存在（如 2 月 31 日）在本地就报错。- 节点的 `billing.free`（布尔）标记免费机器：公开卡片写「免费」，保存时 `price` 与 `price_period` 清空。
-- 提醒规则 `alerts` 是列表，列出的规则开启，每种至多一条：`{"kind", "threshold", "hold_seconds", "repeat_seconds"}`。`offline` 用 `hold_seconds`（判定离线后再等 0–86400 秒）；`renewal` 用 `threshold`（到期前 0–365 天）；`traffic` 用 `threshold`（额度百分比 1–100）；`throttle` 无参数（按线路降速规则，节点须填 `line.throttle_mbps`）；`cpu` / `memory` 用 `threshold`（1–100%）与 `hold_seconds`（持续 30–86400 秒）。`repeat_seconds` 每条规则各自设置：0 为触发 / 恢复各一次，非零 300–604800 秒。不属于该种规则的参数会被拒绝。
 - 告警事件带 `last_error`：最近一次通知投递错误；成功投递后清空。不保存 Telegram Token、请求 URL 或响应正文。
 
 ## 网络任务管理
@@ -110,5 +125,5 @@ Server 把任务展开为单项探测（checks × targets，解锁任务一项�
 - `GET /api/v1/admin/tasks/health` 返回 `{任务 id: {ok, failed, pending, last_finished}}`：各任务每个绑定节点、每个目标最近一次执行的汇总（未完成且超过完成时限的算失败），从没执行过的任务不出现；任务列表的「最近执行」一列用它。
 - `GET /api/v1/admin/tasks/{id}/runs` 返回当前绑定节点每个已执行目标的最近领取时间、完成时间、结果和失败原因；全部尚未执行的节点显示未执行，未返回原始路径地址。
 - 后台支持选择多个任务后统一绑定节点，并支持搜索和全选筛选结果。一次请求、一个事务保存。
-- 提醒规则在「告警与通知」页的规则总览里设置：每台节点一行，可单台编辑，也可勾选多台后批量套用同一份规则（`PUT /admin/nodes/alerts`）。节点编辑表单只显示当前规则摘要与入口，保存节点时原样带回规则。
+- 提醒规则在「告警与通知 → 提醒规则」里逐条新建、编辑、删除，编辑时选范围并实时显示覆盖几台、其中几台被更具体的同类规则盖过；下方「各节点生效情况」逐台列出每种提醒的生效参数与来源（全部 / 分组 / 单独）。节点编辑表单只显示当前生效规则的摘要与入口。
 - 复制任务打开预填创建表单，默认暂停，保存前可修改目标和绑定。改了探测内容的编辑会清除该任务旧结果；只改名称、间隔、启停或绑定不会清除。

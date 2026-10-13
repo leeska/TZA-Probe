@@ -58,13 +58,30 @@ var adminTools = []tool{
 		Annotations: annotations("Correct cycle traffic", false, false, false),
 	},
 	{
-		Name:        "set_node_alerts",
-		Description: "把同一份提醒规则列表写给一批节点（面板「告警与通知 → 提醒规则」的批量设置）：整份替换这些节点的 alerts，一个事务，任何一台不合规（如没填降速阈值却开 throttle 规则）整批不改并指出是哪台。",
+		Name:        "list_alert_rules",
+		Description: "列出全部提醒规则（面板「告警与通知 → 提醒规则」）：每条规则一种类型、自己的阈值与重复间隔，以及作用范围 scope（all 全部节点 / group 所列分组 / nodes 所列节点）。同一台节点同一种类型只生效一条：指定节点 > 分组 > 全部节点；某台节点实际生效的规则见 list_nodes 的 alerts。",
+		InputSchema: schema(map[string]any{}),
+		Annotations: annotations("List alert rules", true, false, true),
+	},
+	{
+		Name:        "create_alert_rule",
+		Description: "新建一条提醒规则并返回 id。同一种类型、同一种范围不能有两条规则覆盖同一台节点（例如两条 scope=all 的 CPU 规则），会被拒绝并说明冲突在哪。",
+		InputSchema: alertRuleSchema(false),
+		Annotations: annotations("Create alert rule", false, false, false),
+	},
+	{
+		Name:        "update_alert_rule",
+		Description: "修改提醒规则：只提交要改的字段，其余沿用当前值；提交的列表整份替换。改了 scope 时，旧范围用的列表若没重新提交会被清掉。",
+		InputSchema: alertRuleSchema(true),
+		Annotations: annotations("Update alert rule", false, false, true),
+	},
+	{
+		Name:        "delete_alert_rule",
+		Description: "删除一条提醒规则；被它覆盖的节点改由范围更宽的同类型规则接管，没有就不再提醒这一项。",
 		InputSchema: schema(map[string]any{
-			"node_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "节点 id 列表"},
-			"alerts":   alertsSchema(),
-		}, "node_ids", "alerts"),
-		Annotations: annotations("Set alert rules", false, false, true),
+			"rule_id": map[string]any{"type": "string", "description": "规则 id，来自 list_alert_rules"},
+		}, "rule_id"),
+		Annotations: annotations("Delete alert rule", false, true, true),
 	},
 	{
 		Name:        "list_catalog",
@@ -198,7 +215,6 @@ func nodeSchema(withID bool) map[string]any {
 			"throttle_hours": map[string]any{"type": "integer", "minimum": 0, "maximum": 168, "description": "降速统计窗口（小时），0 或省略为默认 24；仅 throttle_on=bandwidth 时有效"},
 			"throttle_on":    map[string]any{"type": "string", "enum": []string{"bandwidth", "quota"}, "description": "降速触发条件：bandwidth=窗口平均带宽达到 throttle_mbps（省略即为此值）；quota=本周期用量用满 billing.traffic_limit 后按商家规则降到 throttle_mbps（不计量但限速）"},
 		}),
-		"alerts": alertsSchema(),
 	}
 	if withID {
 		properties["node_id"] = map[string]any{"type": "string", "description": "节点 id，来自 list_nodes"}
@@ -214,17 +230,25 @@ func carrierList() map[string]any {
 	}
 }
 
-func alertsSchema() map[string]any {
-	rule := map[string]any{
-		"type": "object", "additionalProperties": false, "required": []string{"kind"},
-		"properties": map[string]any{
-			"kind":           map[string]any{"type": "string", "enum": model.AlertKinds, "description": "offline 离线 / renewal 续费 / traffic 流量 / throttle 达量降速 / cpu / memory"},
-			"threshold":      map[string]any{"type": "number", "description": "renewal：到期前多少天（0–365）；traffic / cpu / memory：百分比（1–100）；offline、throttle 不填"},
-			"hold_seconds":   map[string]any{"type": "integer", "description": "offline：判定离线后再等的秒数（0–86400）；cpu / memory：持续多久才算（30–86400）；其余不填"},
-			"repeat_seconds": map[string]any{"type": "integer", "description": "持续告警的重复提醒间隔：0 只提醒一次，否则 300–604800 秒"},
-		},
+func alertRuleSchema(withID bool) map[string]any {
+	ids := func(description string) map[string]any {
+		return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": description}
 	}
-	return map[string]any{"type": "array", "items": rule, "description": "该节点的提醒规则列表：列出的规则开启，没列出的关闭；每种至多一条。整份替换（update_node 里传 alerts 即替换全部规则）"}
+	properties := map[string]any{
+		"kind":             map[string]any{"type": "string", "enum": model.AlertKinds, "description": "offline 离线 / renewal 续费 / traffic 流量 / throttle 达量降速（节点须填 line.throttle_mbps，否则不会触发）/ cpu / memory"},
+		"threshold":        map[string]any{"type": "number", "description": "renewal：到期前多少天（0–365）；traffic / cpu / memory：百分比（1–100）；offline、throttle 不填"},
+		"hold_seconds":     map[string]any{"type": "integer", "description": "offline：判定离线后再等的秒数（0–86400）；cpu / memory：持续多久才算（30–86400）；其余不填"},
+		"repeat_seconds":   map[string]any{"type": "integer", "description": "持续告警的重复提醒间隔：0 只提醒一次，否则 300–604800 秒"},
+		"scope":            map[string]any{"type": "string", "enum": []string{model.ScopeAll, model.ScopeGroup, model.ScopeNodes}, "description": "作用范围：all 全部节点（含以后新加的）/ group 所列分组 / nodes 所列节点"},
+		"groups":           ids("scope=group 时必填：分组名，空串表示未分组的节点"),
+		"node_ids":         ids("scope=nodes 时必填：节点 id，来自 list_nodes"),
+		"exclude_node_ids": ids("scope=all / group 时可选：不适用这条规则的节点 id"),
+	}
+	if withID {
+		properties["rule_id"] = map[string]any{"type": "string", "description": "规则 id，来自 list_alert_rules"}
+		return schema(properties, "rule_id")
+	}
+	return schema(properties, "kind", "scope")
 }
 
 func taskSchema(withID bool) map[string]any {
@@ -355,18 +379,47 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		}
 		return toolResult(map[string]any{"node_id": args.NodeID, "used": args.Used, "cycle": args.Cycle, "corrected": true}), nil, 0
 
-	case "set_node_alerts":
+	case "list_alert_rules":
+		rules, err := svc.AlertRules(ctx)
+		if err != nil {
+			return failure("读取提醒规则失败", err)
+		}
+		return toolResult(map[string]any{"rules": rules}), nil, 0
+
+	case "create_alert_rule":
+		var rule model.AlertRule
+		if e := arguments(params.Arguments, &rule); e != nil {
+			return nil, e, http.StatusOK
+		}
+		id, err := svc.CreateAlertRule(ctx, rule)
+		if err != nil {
+			return failure("新建提醒规则失败", err)
+		}
+		return toolResult(map[string]any{"id": id, "created": true}), nil, 0
+
+	case "update_alert_rule", "delete_alert_rule":
 		var args struct {
-			NodeIDs []string     `json:"node_ids"`
-			Alerts  model.Alerts `json:"alerts"`
+			model.AlertRule
+			RuleID string `json:"rule_id"`
 		}
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		if err := svc.SetAlerts(ctx, args.NodeIDs, args.Alerts); err != nil {
-			return failure("设置提醒规则失败", err)
+		if args.RuleID == "" {
+			return toolError("缺少 rule_id；先用 list_alert_rules 获取可用 id。"), nil, 0
 		}
-		return toolResult(map[string]any{"node_ids": args.NodeIDs, "alerts": args.Alerts, "updated": true}), nil, 0
+		if params.Name == "delete_alert_rule" {
+			if err := svc.DeleteAlertRule(ctx, args.RuleID); err != nil {
+				return failure("删除提醒规则失败", err)
+			}
+			return toolResult(map[string]any{"id": args.RuleID, "deleted": true}), nil, 0
+		}
+		// The stored rule is the base, so a partial edit cannot blank a field.
+		rule, err := svc.PatchAlertRule(ctx, args.RuleID, params.Arguments)
+		if err != nil {
+			return failure("修改提醒规则失败", err)
+		}
+		return toolResult(map[string]any{"rule": rule, "updated": true}), nil, 0
 
 	case "list_catalog":
 		return listCatalog(params)

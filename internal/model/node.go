@@ -7,9 +7,10 @@ import (
 
 // Node is a host's configuration as the panel and MCP edit it, grouped by
 // concern: what the public card shows (Display), what the line costs and how
-// its cycle counts (Billing), the line's own bandwidth rule (Line), and when to
-// alert (Alerts). Server-kept state — creation time and the cycle correction —
-// is not part of it (see storage).
+// its cycle counts (Billing) and the line's own bandwidth rule (Line). Alert
+// rules are stored on their own and cover nodes by scope (see AlertRule).
+// Server-kept state — creation time and the cycle correction — is not part of
+// it (see storage).
 type Node struct {
 	ID      string      `json:"id"`
 	Name    string      `json:"name"`
@@ -20,7 +21,6 @@ type Node struct {
 	Display NodeDisplay `json:"display"`
 	Billing Billing     `json:"billing"`
 	Line    Line        `json:"line"`
-	Alerts  Alerts      `json:"alerts"`
 }
 
 // NodeDisplay picks which probe results the public card shows. Both regions
@@ -99,12 +99,6 @@ func (n Node) Validate() error {
 	}
 	if n.Line.ThrottleOn == "quota" && n.Billing.TrafficLimit <= 0 {
 		return errors.New("按周期额度降速需先填写流量额度")
-	}
-	if err := n.Alerts.Validate(); err != nil {
-		return err
-	}
-	if _, on := n.Alerts.Rule(AlertThrottle); on && n.Line.ThrottleMbps == 0 {
-		return errors.New("启用降速告警需先填写降速阈值")
 	}
 	return nil
 }
@@ -198,6 +192,9 @@ func (v NodeView) ThrottleActive() bool {
 
 type NodeView struct {
 	Node
+	// Alerts is the rules in effect on this node, one per kind at most,
+	// resolved from the rule list by scope (see EffectiveAlerts).
+	Alerts      Alerts   `json:"alerts"`
 	Online      bool     `json:"online"`
 	LastSeen    int64    `json:"last_seen"`
 	Metrics     *Metrics `json:"metrics"`

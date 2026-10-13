@@ -24,8 +24,6 @@ const defaults = {
     expires_at: "",
   },
   line: { mbps: 0, throttle_mbps: 0, throttle_hours: 24, throttle_on: "bandwidth" },
-  // 提醒规则是一个列表，列出的规则开启；新节点默认一条都不开。
-  alerts: [],
 };
 export async function nodesPage() {
   // 「正在告警」的数字读不到时只少这一格的数，不挡住节点列表。
@@ -290,9 +288,8 @@ function nodeForm(existing) {
       n.billing.traffic_mode,
     )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing.reset_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.billing.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}</div><div class="form-grid price-grid">${check("免费机器（不计价）", "free", n.billing.free)}${field("价格", "price", n.billing.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.billing.currency), n.billing.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), period), period)}</div><p class="hint">重置时间按「日 + 时分秒」逐月顺延，当月没有该日时取最后一天；到期时间用于续费提醒。首次接入时建立流量基线，不补算历史用量。</p></div>
 <div class="form-section"><h3>线路与降速</h3><div class="form-grid">${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line.mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.line.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.line.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24）", "throttle_hours", n.line.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">降速阈值填 0 表示这条线路没有降速规则；按额度降速时不用统计窗口。</p><details class="more"><summary>降速规则说明</summary><p class="hint"><b>窗口平均带宽</b>：按 Agent 上报的网卡计数，取统计窗口内的平均速率，达到阈值即视为降速（常见口径：近 24 小时平均超过 100 Mbit/s 降到 100 Mbit/s），口径与本节点的流量计费方式一致。<b>额度用满后限速</b>：本周期用量达到额度即视为已降速，适合「用满后不计量但限速」的套餐，这时「线路带宽」填突发峰值。主机重启或网卡变化时会自动重建流量基线。</p></details></div>
-<div class="form-section"><h3>提醒规则</h3><p class="hint">${existing ? `当前：${esc(alertSummary(n.alerts))}。` : "新节点默认不开任何提醒。"}提醒规则在「告警与通知 → 提醒规则」里设置，可以多台一起改。</p>${existing ? '<button type="button" id="goto-alerts">去设置提醒规则 →</button>' : ""}</div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+<div class="form-section"><h3>提醒规则</h3><p class="hint">${existing ? `当前生效：${esc(alertSummary(n.alerts))}。` : "新节点自动套用作用于「全部节点」和它所在分组的规则。"}提醒规则在「告警与通知 → 提醒规则」里按全部节点、分组或指定节点设置。</p>${existing ? '<button type="button" id="goto-alerts">去设置提醒规则 →</button>' : ""}</div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
-  // 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
   const form = d.querySelector("form"),
     el = (name) => form.elements.namedItem(name);
   wireComboboxes(form);
@@ -357,7 +354,7 @@ function nodeForm(existing) {
       // 从元素读取而非 FormData：禁用的阈值不出现在 FormData 里，
       // 但取消勾选不应清掉已设好的数值。
       num = (k) => Number(el(k).value);
-    // 节点配置按关注点分组：卡片显示（display）、计费（billing）、线路（line）、提醒（alerts）。
+    // 节点配置按关注点分组：卡片显示（display）、计费（billing）、线路（line）。提醒规则单独存（告警页）。
     const value = {
       name: get("name"),
       group: get("group"),
@@ -388,8 +385,6 @@ function nodeForm(existing) {
         throttle_hours: Math.round(num("throttle_hours") || 0),
         throttle_on: get("throttle_on"),
       },
-      // 提醒规则不在这张表单里改（见告警页的规则总览），原样带回。
-      alerts: n.alerts,
     };
     const result = await send(
       "/admin/nodes" + (existing ? "/" + existing.id : ""),

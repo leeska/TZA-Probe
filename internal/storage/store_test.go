@@ -540,10 +540,10 @@ func TestEventsPageAndFilter(t *testing.T) {
 func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 	s := openTest(t)
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 13 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 14 {
 		t.Fatalf("user_version=%d %v", version, err)
 	}
-	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "events_rule_time", "jobs_latest_insert"} {
+	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "alert_rules", "events_rule_time", "jobs_latest_insert"} {
 		var n int
 		if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name=?", name).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("%s missing (%d, %v)", name, n, err)
@@ -720,10 +720,12 @@ func TestNodeShapeMigration(t *testing.T) {
 	want := model.Node{ID: "n", Name: "东京", Group: "JP", Region: "日本", Order: 3, Public: true,
 		Display: model.NodeDisplay{RouteRegion: "上海", LatencyRegion: "北京", LatencyCarriers: []string{"电信"}},
 		Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficLimit: 2000, TrafficMode: "max", Price: 9.9, Currency: "USD", PricePeriod: "月", ExpiresAt: "2027-01-01T00:00:00Z"},
-		Line:    model.Line{Mbps: 1000, ThrottleMbps: 100, ThrottleHours: 12, ThrottleOn: "bandwidth"},
-		Alerts:  model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 60}}}
+		Line:    model.Line{Mbps: 1000, ThrottleMbps: 100, ThrottleHours: 12, ThrottleOn: "bandwidth"}}
 	if encode(v.Node) != encode(want) {
 		t.Fatalf("node after migration:\n got %s\nwant %s", encode(v.Node), encode(want))
+	}
+	if got, want := ruleParams(v.Alerts), ruleParams(model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 60}}); got != want {
+		t.Fatalf("alerts after migration: got %s want %s", got, want)
 	}
 	if v.CreatedAt != 1700000000 || v.TrafficUsed != 700 {
 		t.Fatalf("server-kept state lost: created=%d used=%d", v.CreatedAt, v.TrafficUsed)
@@ -775,8 +777,8 @@ func TestAlertRulesMigration(t *testing.T) {
 		{Kind: model.AlertCPU, Threshold: 95, HoldSeconds: 120, RepeatSeconds: 600},
 		{Kind: model.AlertMemory, Threshold: 85, HoldSeconds: 120, RepeatSeconds: 600},
 	}
-	if encode(views[0].Alerts) != encode(want) {
-		t.Fatalf("rules after migration:\n got %s\nwant %s", encode(views[0].Alerts), encode(want))
+	if ruleParams(views[0].Alerts) != ruleParams(want) {
+		t.Fatalf("rules after migration:\n got %s\nwant %s", ruleParams(views[0].Alerts), ruleParams(want))
 	}
 	if err = views[0].Node.Validate(); err != nil {
 		t.Fatalf("migrated node invalid: %v", err)
@@ -784,5 +786,75 @@ func TestAlertRulesMigration(t *testing.T) {
 	var kinds string
 	if err = s.db.QueryRow("SELECT group_concat(kind) FROM alert_state WHERE node_id='n'").Scan(&kinds); err != nil || kinds != "offline" {
 		t.Fatalf("alert_state kinds = %q %v", kinds, err)
+	}
+}
+
+// ruleParams is the rules as kind and parameters only: what a node is alerted
+// on, whatever ids and scopes the rules got.
+func ruleParams(rules model.Alerts) string {
+	out := model.Alerts{}
+	for _, r := range rules {
+		out = append(out, model.AlertRule{Kind: r.Kind, Threshold: r.Threshold, HoldSeconds: r.HoldSeconds, RepeatSeconds: r.RepeatSeconds})
+	}
+	return encode(out)
+}
+
+// Version 14 moves each node's own rules into the rule table. Nodes that had
+// the very same rule share one node-scoped rule; a different threshold is a
+// rule of its own; nothing widens to every node, and the node configs no
+// longer carry alerts.
+func TestAlertScopesMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scopes.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := func(id, alerts string) string {
+		return `{"id":"` + id + `","name":"` + id + `","group":"","region":"","order":0,"public":false,"display":{"route_region":"","latency_region":""},
+		"billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_limit":0,"traffic_mode":"sum","price":0,"currency":"","price_period":"","expires_at":""},
+		"line":{"mbps":0,"throttle_mbps":0,"throttle_hours":0,"throttle_on":""},"alerts":` + alerts + `}`
+	}
+	configs := map[string]string{
+		"a": node("a", `[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":90,"hold_seconds":300}]`),
+		"b": node("b", `[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":80,"hold_seconds":300}]`),
+		"c": node("c", `[]`),
+	}
+	for _, id := range []string{"a", "b", "c"} {
+		if _, err = s.db.Exec("INSERT INTO nodes(id,config,token_hash) VALUES(?,?,?)", id, configs[id], "h"+id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = s.db.Exec("DROP TABLE alert_rules; PRAGMA user_version=13"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	rules, err := s.AlertRules(ctx)
+	if err != nil || len(rules) != 3 {
+		t.Fatalf("rules: %+v %v", rules, err)
+	}
+	for _, r := range rules {
+		if r.Scope != model.ScopeNodes || r.ID == "" || r.Validate() != nil {
+			t.Fatalf("migrated rule: %+v", r)
+		}
+	}
+	if fmt.Sprint(rules[0].NodeIDs) != "[a b]" || rules[0].Kind != model.AlertOffline {
+		t.Fatalf("shared offline rule: %+v", rules[0])
+	}
+	views, _ := s.Nodes(ctx, time.Now())
+	byID := map[string]model.NodeView{}
+	for _, v := range views {
+		byID[v.ID] = v
+	}
+	if cpu, _ := byID["b"].Alerts.Rule(model.AlertCPU); cpu.Threshold != 80 || len(byID["a"].Alerts) != 2 || len(byID["c"].Alerts) != 0 {
+		t.Fatalf("effective: a=%+v b=%+v c=%+v", byID["a"].Alerts, byID["b"].Alerts, byID["c"].Alerts)
+	}
+	var left int
+	if err = s.db.QueryRow("SELECT count(*) FROM nodes WHERE json_extract(config,'$.alerts') IS NOT NULL").Scan(&left); err != nil || left != 0 {
+		t.Fatalf("configs still carry alerts: %d %v", left, err)
 	}
 }

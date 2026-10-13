@@ -30,7 +30,10 @@ type Store interface {
 	DeleteNode(context.Context, string) error
 	Rotate(context.Context, string) (string, error)
 	CorrectTraffic(context.Context, string, int64, int64, time.Time) error
-	SetNodeAlerts(context.Context, []string, model.Alerts) error
+
+	AlertRules(context.Context) ([]model.AlertRule, error)
+	SaveAlertRule(context.Context, model.AlertRule, bool) (string, error)
+	DeleteAlertRule(context.Context, string) error
 
 	Tasks(context.Context) ([]model.Task, error)
 	SaveTask(context.Context, model.Task, bool) (string, error)
@@ -241,12 +244,79 @@ func (s *Service) ReorderNodes(ctx context.Context, ids []string) error {
 	return s.Store.SaveNodeOrder(ctx, ids)
 }
 
-// SetAlerts writes one rule set to every listed node in one transaction.
-func (s *Service) SetAlerts(ctx context.Context, ids []string, alerts model.Alerts) error {
-	if len(ids) > 500 {
-		return model.Invalid("一次最多 500 个节点")
+// ---------------------------------------------------------------- alert rules
+
+func (s *Service) AlertRules(ctx context.Context) ([]model.AlertRule, error) {
+	return s.Store.AlertRules(ctx)
+}
+
+// AlertRule resolves one rule; a missing id is a NotFound naming it.
+func (s *Service) AlertRule(ctx context.Context, id string) (model.AlertRule, error) {
+	if id == "" {
+		return model.AlertRule{}, model.Invalid("缺少规则 id")
 	}
-	return s.Store.SetNodeAlerts(ctx, ids, alerts)
+	rules, err := s.Store.AlertRules(ctx)
+	if err != nil {
+		return model.AlertRule{}, err
+	}
+	for _, r := range rules {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return model.AlertRule{}, model.NotFound("提醒规则不存在：" + id)
+}
+
+// CreateAlertRule stores a new rule and returns its id.
+func (s *Service) CreateAlertRule(ctx context.Context, r model.AlertRule) (string, error) {
+	r.ID = ""
+	return s.Store.SaveAlertRule(ctx, r, true)
+}
+
+// ReplaceAlertRule stores the whole submitted rule (the panel form).
+func (s *Service) ReplaceAlertRule(ctx context.Context, id string, r model.AlertRule) error {
+	if id == "" {
+		return model.Invalid("缺少规则 id")
+	}
+	r.ID = id
+	_, err := s.Store.SaveAlertRule(ctx, r, false)
+	if errors.Is(err, model.ErrNotFound) {
+		return model.NotFound("提醒规则不存在：" + id)
+	}
+	return err
+}
+
+// PatchAlertRule overlays only the submitted fields onto the stored rule; a
+// submitted list (groups, node_ids, exclude_node_ids) replaces the old one.
+// Changing the scope drops the lists the old scope used unless the patch
+// gives them again, so 「改成全部节点」 needs no explicit node_ids: [].
+func (s *Service) PatchAlertRule(ctx context.Context, id string, patch json.RawMessage) (model.AlertRule, error) {
+	current, err := s.AlertRule(ctx, id)
+	if err != nil {
+		return model.AlertRule{}, err
+	}
+	merged, err := Merge(current, patch)
+	if err != nil {
+		return model.AlertRule{}, model.Invalid("参数无法合并到当前规则：" + err.Error())
+	}
+	if merged.Scope != current.Scope {
+		sent := map[string]json.RawMessage{}
+		_ = json.Unmarshal(patch, &sent)
+		for key, list := range map[string]*[]string{"groups": &merged.Groups, "node_ids": &merged.NodeIDs, "exclude_node_ids": &merged.Exclude} {
+			if _, ok := sent[key]; !ok {
+				*list = nil
+			}
+		}
+	}
+	return merged, s.ReplaceAlertRule(ctx, id, merged)
+}
+
+func (s *Service) DeleteAlertRule(ctx context.Context, id string) error {
+	err := s.Store.DeleteAlertRule(ctx, id)
+	if errors.Is(err, model.ErrNotFound) {
+		return model.NotFound("提醒规则不存在：" + id)
+	}
+	return err
 }
 
 // ---------------------------------------------------------------- tasks
@@ -504,7 +574,7 @@ func (s *Service) UpdateSettings(ctx context.Context, notification *notify.Confi
 
 // Merge overlays the fields a caller actually sent onto the stored value: what
 // was submitted changes, a field left out keeps its current value, and a
-// nested object (alerts, …) merges field by field instead of being replaced.
+// nested object (billing, …) merges field by field instead of being replaced.
 // Identity keys are never taken from the patch. The result is decoded strictly,
 // so a misspelled field fails loudly.
 func Merge[T any](current T, submitted json.RawMessage) (T, error) {
@@ -523,7 +593,7 @@ func Merge[T any](current T, submitted json.RawMessage) (T, error) {
 			return out, err
 		}
 	}
-	for _, key := range []string{"id", "node_id", "task_id"} {
+	for _, key := range []string{"id", "node_id", "task_id", "rule_id"} {
 		delete(patch, key)
 	}
 	merged, err := mergeObjects(base, patch)
