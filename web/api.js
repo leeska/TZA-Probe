@@ -50,6 +50,9 @@ export function modal(title, body) {
     footer.prepend(cancel);
   }
   d.onclick = (e) => {
+    // 点在遮罩上时事件目标是 <dialog> 本身；点在内容上目标是里面的元素。只看坐标不够：
+    // 键盘触发的点击（在复选框 / 按钮上按空格、回车）坐标是 (0, 0)，会被当成点在框外而关掉弹窗。
+    if (e.target !== d) return;
     const rect = d.getBoundingClientRect();
     const isInDialog =
       rect.top <= e.clientY &&
