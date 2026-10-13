@@ -164,7 +164,7 @@ run_build() {
     CGO_ENABLED=0 GOOS=linux GOARCH=$arch "$GO" build -trimpath -ldflags "$LDFLAGS" \
       -o "$stage/tza-server" ./cmd/server || { FAILED=1; return; }
     cp "internal/agentdist/bin/tza-agent-linux-$arch" "$stage/tza-agent"
-    cp README.md LICENSE "$stage/"
+    cp README.md LICENSE NOTICE "$stage/"
     cp -r deploy docs "$stage/"
     ( cd "$stage" && tar -czf "$OUT/tza-probe-linux-$arch.tar.gz" . ) || { FAILED=1; return; }
     ( cd "$OUT" && sha256sum "tza-probe-linux-$arch.tar.gz" > "tza-probe-linux-$arch.tar.gz.sha256" ) || { FAILED=1; return; }
