@@ -2,7 +2,7 @@
 #   docker compose -f deploy/docker-compose.yml up -d --build
 #   docker compose -f deploy/docker-compose.yml logs -f
 # 后台初始用户名与密码只在首次启动的日志里出现一次：docker compose -f deploy/docker-compose.yml logs tza-server
-# 登录密钥：docker exec tza-server cat /data/admin-token
+# 首次启动日志显示后台用户名与密码；MCP API Key 在后台“面板设置”生成
 # 忘记后台密码：docker exec tza-server tza-server reset-password --data /data
 services:
   tza-server:

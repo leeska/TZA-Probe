@@ -72,7 +72,7 @@ probe.example.com {
 }
 ```
 
-安装脚本结束时打印管理密钥和后台用户名、密码（密码只在首次安装时显示一次）。访问 `https://probe.example.com/admin` 用用户名密码登录，也可改用管理密钥（在服务器本地读取 `/var/lib/tza-probe/admin-token`）。用户名与密码在“面板设置 → 后台账号”修改。管理密钥不放入 URL。新增节点后，后台提供配置和安装脚本。
+安装脚本结束时打印管理密钥和后台用户名、密码（密码只在首次安装时显示一次）。访问 `https://probe.example.com/admin` 用用户名密码登录。MCP API Key 在“面板设置”中生成、重新生成或撤销。用户名与密码在“面板设置 → 后台账号”修改。管理密钥不放入 URL。新增节点后，后台提供配置和安装脚本。
 
 Agent 的 endpoint 必须是它能访问的 Server 地址。远程 Agent 不能使用 Server 的 `127.0.0.1` 或 `localhost` 地址。从正确的 HTTPS 地址访问后台再生成接入配置，通常不需要手动改 endpoint。
 
@@ -136,7 +136,7 @@ sudo systemctl start tza-server
 
 ## 备份与恢复
 
-最简单的是后台“面板设置 → 数据备份”直接下载数据库快照（`GET /api/v1/admin/backup`，不用停服）；恢复时停服，把它放进数据目录、命名为 `tza-probe.db`（替换原文件），删掉同目录的 `tza-probe.db-wal` 与 `tza-probe.db-shm` 后启动。快照含通知凭据，按私密文件保管；它只含数据库，管理密钥 `admin-token` 与后台账号 `admin-account` 需另外保存。
+最简单的是后台“面板设置 → 数据备份”直接下载数据库快照（`GET /api/v1/admin/backup`，不用停服）；恢复时停服，把它放进数据目录、命名为 `tza-probe.db`（替换原文件），删掉同目录的 `tza-probe.db-wal` 与 `tza-probe.db-shm` 后启动。快照含通知凭据与 MCP Key 摘要，按私密文件保管；它只含数据库，管理密钥 `admin-token` 与后台账号 `admin-account` 需另外保存。
 
 要连同管理密钥一起备份，就停服复制完整数据目录。以下为 Server systemd 部署的备份命令：
 

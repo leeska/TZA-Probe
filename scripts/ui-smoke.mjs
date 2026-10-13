@@ -1,6 +1,6 @@
 // Integration checks against a disposable local Server; never target production.
 // Install jsdom 26 and esbuild 0.25 into a temporary directory, then set
-// TZA_UI_DEPS, TZA_TEST_URL and TZA_TEST_ADMIN_FILE as shown in docs/VERIFICATION.md.
+// TZA_UI_DEPS, TZA_TEST_URL, TZA_TEST_ADMIN_FILE and TZA_TEST_CREDENTIALS_FILE as shown in docs/VERIFICATION.md.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
@@ -17,6 +17,10 @@ const { build } = require("esbuild");
 const root = fileURLToPath(new URL("../", import.meta.url));
 // 断言卡片上的数字用页面自己的格式化函数：写死字符串的话，格式化改了断言还在绿。
 const { bytes, gib } = await import(new URL("../web/format.js", import.meta.url).href);
+const credentials = await readFile(process.env.TZA_TEST_CREDENTIALS_FILE, "utf8");
+const username = credentials.match(/^后台用户名：(.+)$/m)?.[1];
+const password = credentials.match(/^后台密码：(.+)$/m)?.[1];
+assert(username && password, "需要一次性 Server 的 init 输出");
 const token = (await readFile(process.env.TZA_TEST_ADMIN_FILE, "utf8")).trim();
 const bundle = await build({
   entryPoints: [path.join(root, "web/app.js")],
@@ -88,7 +92,9 @@ const submit = (form) =>
     new w.Event("submit", { bubbles: true, cancelable: true }),
   );
 await until(() => $("#login"), "login");
-set($("#login"), "token", token);
+assert(!$('#login [name="token"]') && !$("#login-mode"), "仅提供用户名密码登录");
+set($("#login"), "username", username);
+set($("#login"), "password", password);
 submit($("#login"));
 await until(() => $("#add-node"), "admin home");
 $("#add-node").click();
@@ -1073,6 +1079,35 @@ const saveLook = async (theme, skin) => {
 };
 await saveLook("dark", "press");
 await saveLook("auto", "glass");
+// MCP Key management is reachable from settings and never exposed on later reads.
+$("#generate-mcp-key").click();
+await until(() => $("#mcp-api-key"), "generate MCP key");
+const firstMCPKey = $("#mcp-api-key").value;
+assert(firstMCPKey.startsWith("tza_mcp_"));
+await until(() => $("#revoke-mcp-key"), "configured MCP key");
+const mcpCall = async (key) => fetch(base + "/mcp", {
+  method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+});
+assert.equal((await mcpCall(firstMCPKey)).status, 200);
+const keyState = await (await fetch(base + "/api/v1/admin/mcp-key", { headers: adminHeaders })).json();
+assert(keyState.configured && !keyState.api_key && !keyState.hash);
+$("#dialog .close").click();
+$("#generate-mcp-key").click();
+assert($("#confirm-mcp"), "rotation confirmation");
+$("#confirm-mcp").click();
+await until(() => $("#mcp-api-key"), "rotate MCP key");
+const secondMCPKey = $("#mcp-api-key").value;
+assert.notEqual(secondMCPKey, firstMCPKey);
+assert.equal((await mcpCall(firstMCPKey)).status, 401);
+assert.equal((await mcpCall(secondMCPKey)).status, 200);
+await until(() => $("#revoke-mcp-key"), "rotated settings");
+$("#dialog .close").click();
+$("#revoke-mcp-key").click();
+$("#confirm-mcp").click();
+await until(() => !$("#revoke-mcp-key"), "revoke MCP key");
+assert.equal((await mcpCall(secondMCPKey)).status, 401);
+
 $("#logout").click();
 await until(() => $("#login"), "logout");
 assert.equal(

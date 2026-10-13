@@ -217,7 +217,7 @@ echo
 echo "================ 后台登录信息 ================"
 echo "$CREDS"
 echo "=============================================="
-echo "管理密钥也可随时查看：sudo cat ${DATA}/admin-token（API / MCP 用 Authorization: Bearer 密钥）"
+echo "管理密钥也可随时查看：sudo cat ${DATA}/admin-token（管理 HTTP API 用 Authorization: Bearer 密钥；MCP API Key 在后台“面板设置”生成）"
 echo "忘记后台密码：sudo ${BIN} reset-password --data ${DATA}"
 if [ "${LISTEN%%:*}" = "127.0.0.1" ]; then
   echo "管理页面：http://${LISTEN}/admin （跨主机访问请在前面配置 HTTPS 反代）"

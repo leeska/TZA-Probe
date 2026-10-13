@@ -17,15 +17,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/storage"
 	"github.com/leeska/TZA-Probe/web"
 )
 
-// The MCP endpoint is part of the administrator surface: the same key, sent as a
-// bearer token, and the same cross-origin rule as the admin API.
-func TestMCPEndpointUsesTheAdministratorKey(t *testing.T) {
+// MCP accepts only its independent API key and rejects cross-origin requests.
+func TestMCPEndpointUsesIndependentKey(t *testing.T) {
 	s, err := storage.Open(filepath.Join(t.TempDir(), "mcp.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +34,11 @@ func TestMCPEndpointUsesTheAdministratorKey(t *testing.T) {
 	admin := model.Secret()
 	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
 	defer server.Close()
+	mcpKey := model.Secret()
+	value, _ := json.Marshal(mcpKeyRecord{Hash: model.Hash(mcpKey), CreatedAt: time.Now()})
+	if err := s.SetSetting(context.Background(), mcpKeySetting, string(value)); err != nil {
+		t.Fatal(err)
+	}
 	message := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
 	call := func(token, origin string) (int, []byte) {
 		t.Helper()
@@ -61,11 +66,14 @@ func TestMCPEndpointUsesTheAdministratorKey(t *testing.T) {
 	if code, _ := call(model.Secret(), ""); code != 401 {
 		t.Fatalf("non-administrator key: %d", code)
 	}
-	code, body := call(admin, "")
+	if code, _ := call(admin, ""); code != 401 {
+		t.Fatalf("legacy administrator key accepted: %d", code)
+	}
+	code, body := call(mcpKey, "")
 	if code != 200 || !strings.Contains(string(body), "list_nodes") {
 		t.Fatalf("administrator MCP request: %d %s", code, body)
 	}
-	if code, _ := call(admin, "https://evil.example"); code != 403 {
+	if code, _ := call(mcpKey, "https://evil.example"); code != 403 {
 		t.Fatalf("cross-origin MCP request: %d", code)
 	}
 	resp, err := server.Client().Get(server.URL + "/mcp")
@@ -402,9 +410,12 @@ func TestLoginCookiesAndJSONValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	token := model.Secret()
-	handler := (&API{Store: s, AdminToken: token, Assets: web.Handler()}).Handler()
-	r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"token":"`+token+`"}`))
+	dir := t.TempDir()
+	if err := account.Save(dir, "admin", "right-password"); err != nil {
+		t.Fatal(err)
+	}
+	handler := (&API{Store: s, AccountDir: dir, Assets: web.Handler()}).Handler()
+	r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"username":"admin","password":"right-password"}`))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Origin", "https://probe.example")
 	w := httptest.NewRecorder()
@@ -423,7 +434,7 @@ func TestLoginCookiesAndJSONValidation(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatal("session failed", w.Code)
 	}
-	r = httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"token":"`+token+`"} {}`))
+	r = httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"username":"admin","password":"right-password"} {}`))
 	r.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
@@ -594,41 +605,22 @@ func TestSaveNodeOrderRewritesOnlyOrder(t *testing.T) {
 	}
 }
 
-// Junk logins cannot lock the administrator out: only wrong keys count toward
-// the limit, the right key always gets in, and a full session table makes room
-// instead of refusing.
-func TestLoginLimitCannotLockOutTheAdministrator(t *testing.T) {
+// A full browser session table evicts the session closest to expiry.
+func TestSessionLimitEvictsOldest(t *testing.T) {
 	s, err := storage.Open(filepath.Join(t.TempDir(), "login.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	token := model.Secret()
-	handler := (&API{Store: s, AdminToken: token, Assets: web.Handler()}).Handler()
-	login := func(key string) (int, []*http.Cookie) {
-		r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"token":"`+key+`"}`))
-		r.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, r)
-		return w.Code, w.Result().Cookies()
-	}
-	wrong := model.Secret()
-	codes := map[int]int{}
-	for i := 0; i < 40; i++ {
-		code, _ := login(wrong)
-		codes[code]++
-	}
-	if codes[401] != 30 || codes[429] != 10 {
-		t.Fatalf("wrong-key responses: %v", codes)
-	}
+	api := &API{Store: s, Assets: web.Handler()}
+	handler := api.Handler()
 	var first []*http.Cookie
 	for i := 0; i <= maxSessions; i++ {
-		code, cookies := login(token)
-		if code != 204 {
-			t.Fatalf("login %d with the right key: %d", i, code)
-		}
+		r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil)
+		w := httptest.NewRecorder()
+		api.startSession(w, r, time.Now())
 		if i == 0 {
-			first = cookies
+			first = w.Result().Cookies()
 		}
 	}
 	r := httptest.NewRequest("GET", "https://probe.example/api/v1/session", nil)

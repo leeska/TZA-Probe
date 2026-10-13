@@ -168,7 +168,7 @@ func adminToken(dir string) (token string, err error) {
 			if err := account.OwnLikeDir(path, dir); err != nil {
 				return "", err
 			}
-			slog.Info("administrator key created; read locally to log in", "path", path)
+			slog.Info("administrator API key created; browser login uses username and password", "path", path)
 		} else if err != nil {
 			return "", err
 		} else {

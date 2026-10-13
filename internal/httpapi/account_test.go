@@ -96,8 +96,8 @@ func TestAccountLoginAndChange(t *testing.T) {
 	if code, _ := login("ops", "reset-password"); code != 204 {
 		t.Fatalf("terminal reset not picked up: %d", code)
 	}
-	// 密钥登录照常可用。
-	if w, _ := call("POST", "/api/v1/login", nil, map[string]string{"token": token}); w.Code != 204 {
+	// 管理密钥登录已移除，不得签发会话。
+	if w, _ := call("POST", "/api/v1/login", nil, map[string]string{"token": token}); w.Code != 400 {
 		t.Fatalf("key login: %d", w.Code)
 	}
 }

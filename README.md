@@ -12,7 +12,7 @@
 - **计费与提醒**：计费周期、流量额度、价格与到期时间、达量降速；离线 / 续费 / 流量 / 降速 / 负载提醒，经 Telegram 或 Webhook 发送。
 - **公开面板**：卡片与列表两种视图，浅色 / 深色主题与多套外观风格；搜索认中文、全拼、拼音首字母、英文与代号（香港 = `xianggang` / `xg` / `hk`）。
 - **管理后台**：节点管理与拖动排序、密钥轮换、任务目录检索与批量绑定、用量校正、告警事件与投递状态。
-- **MCP 接口** `/mcp`：AI 客户端用管理密钥读写整站，能力与管理面板一致。
+- **MCP 接口** `/mcp`：AI 客户端用后台生成的 MCP API Key 读写整站，能力与管理面板一致。
 
 ## 一键部署
 
@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 
 脚本拉取 `main` 源码构建（需要 Go 1.27 与 git），安装 `/usr/local/bin/tza-server` 与 systemd 单元，建好 `/var/lib/tza-probe` 并放入 amd64 / arm64 两个 Agent。重复执行即升级：旧二进制保留为 `tza-server.previous`，服务自动重启并核对运行的是新版本。可选参数：`--version vX.Y.Z`（改用 GitHub Release，免 Go 与 git）、`--listen ADDR`、`--data DIR`、`--no-systemd`。
 
-装完脚本会打印管理密钥与后台用户名、密码（密码只在首次安装时显示一次，登录后可在“面板设置 → 后台账号”修改；忘记密码执行 `sudo tza-server reset-password --data /var/lib/tza-probe`）。访问 `http://127.0.0.1:25774/admin` 用用户名密码或管理密钥登录，密钥也可在 `/var/lib/tza-probe/admin-token` 查看。跨主机接入需在前面配置 HTTPS 反代，见 [部署说明](docs/DEPLOYMENT.md)。
+装完脚本会打印管理密钥与后台用户名、密码（密码只在首次安装时显示一次，登录后可在“面板设置 → 后台账号”修改；忘记密码执行 `sudo tza-server reset-password --data /var/lib/tza-probe`）。访问 `http://127.0.0.1:25774/admin` 用用户名密码登录。MCP API Key 在“面板设置”中生成。跨主机接入需在前面配置 HTTPS 反代，见 [部署说明](docs/DEPLOYMENT.md)。
 
 Docker 部署（镜像本地构建，数据放命名卷）：
 
@@ -47,7 +47,7 @@ go build -o bin/tza-agent ./cmd/agent
 ./bin/tza-server --listen 127.0.0.1:25774 --data ./data
 ```
 
-首次启动的日志会给出后台用户名 `admin` 与随机初始密码（只显示这一次；也可先执行 `./bin/tza-server init --data ./data` 在终端拿到）。访问 `http://127.0.0.1:25774/admin` 用它登录，或用 `data/admin-token` 中的密钥登录；忘记密码执行 `./bin/tza-server reset-password --data ./data`。也可设置 `TZA_ADMIN_TOKEN`（至少 32 个字符），密钥不写入日志。接入配置里的地址必须能从 Agent 主机访问，远程机器不能用 `127.0.0.1` 或 `localhost`。也可以下载 `agent.json` 手动运行：
+首次启动的日志会给出后台用户名 `admin` 与随机初始密码（只显示这一次；也可先执行 `./bin/tza-server init --data ./data` 在终端拿到）。访问 `http://127.0.0.1:25774/admin` 用它登录；忘记密码执行 `./bin/tza-server reset-password --data ./data`。也可设置 `TZA_ADMIN_TOKEN`（至少 32 个字符），密钥不写入日志。接入配置里的地址必须能从 Agent 主机访问，远程机器不能用 `127.0.0.1` 或 `localhost`。也可以下载 `agent.json` 手动运行：
 
 ```sh
 chmod 600 agent.json
@@ -109,10 +109,10 @@ chmod 600 agent.json
 
 ## MCP 接口
 
-Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextprotocol.io) 端点，用管理密钥（`Authorization: Bearer`）或面板会话鉴权。工具覆盖管理面板的全部操作，读写与面板走同一套校验；已存的 Bot Token / Webhook 不回显。**写工具立即生效、删除不可撤销**，接入前请确认客户端会在执行前征求你的同意。
+Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextprotocol.io) 端点，用“面板设置 → MCP API Key”生成的独立 Key（`Authorization: Bearer <API Key>`）鉴权。Key 只在生成时显示一次，可重新生成或撤销，旧 Key 立即失效；管理密钥和面板 Cookie 无法访问 MCP。工具覆盖管理面板的全部操作，读写与面板走同一套校验；已存的 Bot Token / Webhook 不回显。**写工具立即生效、删除不可撤销**，接入前请确认客户端会在执行前征求你的同意。
 
 ```json
-{ "mcpServers": { "tza-probe": { "type": "http", "url": "https://probe.example.com/mcp", "headers": { "Authorization": "Bearer 管理密钥" } } } }
+{ "mcpServers": { "tza-probe": { "type": "http", "url": "https://probe.example.com/mcp", "headers": { "Authorization": "Bearer MCP_API_KEY" } } } }
 ```
 
 工具 21 个。读取：`list_nodes`、`list_tasks`、`node_history`、`node_network_history`、`node_observations`、`recent_events`、`latency_samples`、`list_catalog`、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`、`update_settings`、`test_notification`。`update_*` 是合并语义，只提交要改的字段。支持 `2026-07-28` 与 `2025-11-25` / `2025-06-18` 两代协议，细节见 [HTTP 协议](docs/API.md)。

@@ -121,6 +121,7 @@ check_ui_smoke() {
   say "ui-smoke.mjs（一次性 Server + jsdom）"
   "$GO" build -o "$TMP/tza-server" ./cmd/server || { note "!! 构建一次性 Server 失败"; FAILED=1; return; }
   mkdir -p "$TMP/data"
+  "$TMP/tza-server" init --data "$TMP/data" > "$TMP/credentials" || { FAILED=1; return; }
   "$TMP/tza-server" --listen "127.0.0.1:$port" --data "$TMP/data" > "$TMP/server.log" 2>&1 &
   SRV_PID=$!
   code=000
@@ -143,7 +144,7 @@ check_ui_smoke() {
     fi || { tail -5 "$TMP/npm.log" | sed 's/^/   /'; FAILED=1; return; }
   fi
   t0=$(now)
-  TZA_UI_DEPS="$deps" TZA_TEST_URL="http://127.0.0.1:$port" TZA_TEST_ADMIN_FILE="$TMP/data/admin-token" \
+  TZA_UI_DEPS="$deps" TZA_TEST_URL="http://127.0.0.1:$port" TZA_TEST_ADMIN_FILE="$TMP/data/admin-token" TZA_TEST_CREDENTIALS_FILE="$TMP/credentials" \
     "$JS" scripts/ui-smoke.mjs 2>&1 | tail -20 | sed 's/^/   /'
   rc=${PIPESTATUS[0]}
   note "ui-smoke $(dur $t0) rc=$rc"; [ "$rc" = 0 ] || FAILED=1

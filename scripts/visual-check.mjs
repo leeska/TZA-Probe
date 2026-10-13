@@ -2,7 +2,7 @@
 // 仅针对独立 loopback 数据目录运行，不创建或修改任何数据。
 //
 //   TZA_UI_DEPS=/tmp/tza-ui-deps TZA_TEST_URL=http://127.0.0.1:25874 \
-//   TZA_TEST_ADMIN_FILE=/tmp/tza-ui-data/admin-token TZA_SHOT_DIR=/tmp/tza-shots \
+//   TZA_TEST_CREDENTIALS_FILE=/tmp/tza-ui-credentials TZA_SHOT_DIR=/tmp/tza-shots \
 //   node scripts/visual-check.mjs
 //
 // 依赖 playwright（npm install --prefix $TZA_UI_DEPS playwright）。若不想让 Playwright
@@ -15,7 +15,10 @@ if (!deps) throw new Error("TZA_UI_DEPS 未设置");
 const { chromium } = createRequire(deps + "/package.json")("playwright");
 
 const base = process.env.TZA_TEST_URL || "http://127.0.0.1:25874";
-const token = (await readFile(process.env.TZA_TEST_ADMIN_FILE, "utf8")).trim();
+const credentials = await readFile(process.env.TZA_TEST_CREDENTIALS_FILE, "utf8");
+const username = credentials.match(/^后台用户名：(.+)$/m)?.[1];
+const password = credentials.match(/^后台密码：(.+)$/m)?.[1];
+if (!username || !password) throw new Error("需要一次性 Server 的 init 输出");
 const out = process.env.TZA_SHOT_DIR || "/tmp/tza-shots";
 await mkdir(out, { recursive: true });
 
@@ -66,8 +69,8 @@ async function shot(page, name, fullPage = true) {
   await page.goto(base + "/admin");
   await page.waitForSelector("#login");
   await shot(page, "admin-login", false);
-  await page.click("#login-mode"); // 登录页默认是用户名密码，切到密钥
-  await page.fill("#login [name=token]", token);
+  await page.fill("#login [name=username]", username);
+  await page.fill("#login [name=password]", password);
   await page.click("#login button");
   await page.waitForSelector(".admin-layout");
   await shot(page, "admin-nodes");
@@ -127,8 +130,8 @@ async function shot(page, name, fullPage = true) {
   await page.goto(base + "/admin");
   await page.waitForSelector("#login");
   await shot(page, "admin-login-dark", false);
-  await page.click("#login-mode"); // 登录页默认是用户名密码，切到密钥
-  await page.fill("#login [name=token]", token);
+  await page.fill("#login [name=username]", username);
+  await page.fill("#login [name=password]", password);
   await page.click("#login button");
   await page.waitForSelector(".admin-layout");
   await shot(page, "admin-nodes-dark");

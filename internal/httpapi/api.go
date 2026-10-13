@@ -187,11 +187,10 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		write(w, 404, map[string]string{"error": "接口不存在"})
 	})
-	// Model Context Protocol: the same administrator key as the API, sent as a
-	// bearer token by the AI client. The tools cover what the panel does, reads
-	// and writes both.
+	// MCP uses an independent, revocable API key managed in the panel.
+	a.mcpKeyRoutes(mux)
 	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier}
-	mux.HandleFunc("POST /mcp", a.admin(probe.ServeHTTP))
+	mux.HandleFunc("POST /mcp", a.mcpAuth(probe.ServeHTTP))
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		// The modern revision dropped the standalone SSE stream (GET) and
 		// session termination (DELETE), so both answer 405.
@@ -249,7 +248,7 @@ func (a *API) Handler() http.Handler {
 func (a *API) isAdmin(r *http.Request) bool {
 	// 与 agent() 一样只认标准的 Bearer 形式：TrimPrefix 在没有前缀时原样返回，会让裸放密钥的
 	// Authorization 头也通过。
-	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && len(token) == len(a.AdminToken) && subtle.ConstantTimeCompare([]byte(token), []byte(a.AdminToken)) == 1 {
+	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && a.AdminToken != "" && len(token) == len(a.AdminToken) && subtle.ConstantTimeCompare([]byte(token), []byte(a.AdminToken)) == 1 {
 		return true
 	}
 	c, err := r.Cookie("tza_session")
@@ -306,9 +305,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		write(w, 403, map[string]string{"error": "请求来源不受信任"})
 		return
 	}
-	// 两种登录方式：后台账号（username + password）或管理密钥（token）。
 	var v struct {
-		Token    string `json:"token"`
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
@@ -316,34 +313,16 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	byPassword := v.Token == ""
-	// Wrong attempts are counted before the password hash is computed, so a
-	// flood of guesses past the limit costs no PBKDF2 work.
-	if byPassword && a.loginLimited(now, false) {
+	if a.loginLimited(now, false) {
 		write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 		return
 	}
-	var ok bool
-	if byPassword {
-		ok = a.checkAccount(v.Username, v.Password)
-	} else {
-		ok = len(v.Token) == len(a.AdminToken) && subtle.ConstantTimeCompare([]byte(v.Token), []byte(a.AdminToken)) == 1
-	}
-	// Only wrong attempts count toward the limit and the right key always gets
-	// in: counting every attempt let anyone hold the administrator out of the
-	// panel with 30 junk requests a minute. The key is 256 bits, so the limit
-	// is a brake on noise, not what stops guessing; for passwords it is what
-	// stops guessing, so a password login is refused outright while limited.
-	if !ok {
+	if !a.checkAccount(v.Username, v.Password) {
 		if a.loginLimited(now, true) {
 			write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 			return
 		}
-		if byPassword {
-			write(w, 401, map[string]string{"error": "用户名或密码错误"})
-		} else {
-			write(w, 401, map[string]string{"error": "管理密钥错误"})
-		}
+		write(w, 401, map[string]string{"error": "用户名或密码错误"})
 		return
 	}
 	a.startSession(w, r, now)
