@@ -162,6 +162,9 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 	if len(events) != 1 || !events[0].Active {
 		t.Fatal(events)
 	}
+	if firing, _ := s.Events(ctx, model.EventQuery{Active: true}); len(firing) != 1 || firing[0].ID != events[0].ID {
+		t.Fatal("the firing offline alert must be listed as active", firing)
+	}
 	if err = s.Report(ctx, id, m, now.Add(140*time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +177,9 @@ func TestOfflineGraceAndRecovery(t *testing.T) {
 	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 2 || events[0].Active {
 		t.Fatal("recovery must occur once", events)
+	}
+	if firing, _ := s.Events(ctx, model.EventQuery{Active: true}); len(firing) != 0 {
+		t.Fatal("a recovered alert is no longer active", firing)
 	}
 }
 

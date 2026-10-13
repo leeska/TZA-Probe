@@ -2051,6 +2051,10 @@ func (s *Store) Events(ctx context.Context, q model.EventQuery) ([]model.Event, 
 	if q.Kind != "" {
 		where, args = append(where, "kind=?"), append(args, q.Kind)
 	}
+	if q.Active {
+		// 正在告警 = alert_state 里仍是 active 的那几条；每条取最近一次事件（触发或重复提醒）。
+		where = append(where, "id IN (SELECT max(e.id) FROM events e JOIN alert_state a ON a.node_id=e.node_id AND a.kind=e.kind AND a.active=1 GROUP BY e.node_id,e.kind)")
+	}
 	clause := ""
 	if len(where) > 0 {
 		clause = "WHERE " + strings.Join(where, " AND ")

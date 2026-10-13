@@ -167,6 +167,9 @@ func (f *fakeSource) SetNodeAlerts(_ context.Context, ids []string, _ model.Aler
 	return nil
 }
 
+func (f *fakeSource) TaskHealth(context.Context, time.Time) (map[string]model.TaskHealth, error) {
+	return map[string]model.TaskHealth{}, f.failure
+}
 func (f *fakeSource) TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error) {
 	if f.failure != nil {
 		return nil, f.failure

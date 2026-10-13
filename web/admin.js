@@ -83,6 +83,8 @@ async function render() {
   // 切页时面包屑与侧栏高亮立刻换，内容要等接口回来：中间这半秒把旧内容调暗并标成忙，
   // 不然看起来像点到了「网络探测」却还停在「节点管理」。
   const area = content();
+  // 换页 / 重绘会把行连同「更多」一起换掉；挪到 body 下还开着的菜单一并清掉，不留孤儿。
+  document.querySelectorAll("body > .row-menu").forEach((m) => m.remove());
   area?.classList.add("is-loading");
   area?.setAttribute("aria-busy", "true");
   try {
@@ -109,8 +111,10 @@ async function renderTab() {
     renderNodes();
   }
   if (tab === "tasks") {
-    tasks = await api("/admin/tasks");
-    renderTasks();
+    // 执行汇总读不到不该挡住任务列表：那一列退回「尚未执行」。
+    const [list, health] = await Promise.all([api("/admin/tasks"), api("/admin/tasks/health").catch(() => ({}))]);
+    tasks = list;
+    renderTasks(health);
   }
   if (tab === "alerts") await renderAlerts();
   if (tab === "settings") await renderSettings();
@@ -351,9 +355,15 @@ function nodeForm(existing) {
   const cardOptions = [...new Set([...regions, n.display.route_region, n.display.latency_region].filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
   // 免费机器存的周期是空值；取消勾选时周期从「月」起，不留一个「未设置」选项。
   const period = n.billing.free ? "月" : n.billing.price_period || "";
+  const carriers = (prefix, list, chosen) =>
+    `<div class="option-tiles">${list.map((carrier) => check(carrier, prefix + carrier, !chosen?.length || chosen.includes(carrier))).join("")}</div>`;
+  // 四段对应节点配置的分组：基本信息、公开卡片（display）、流量与计费（billing）、线路与降速（line）。
   const d = modal(
     existing ? "编辑节点" : "添加节点",
-    `<form id="node-form"><div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionCombobox("节点所在地区", "region", n.region, options)}${regionCombobox("卡片回程地区（与回程任务一致）", "representative", n.display.route_region, cardOptions, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("卡片延迟地区（留空沿用回程地区）", "latency_region", n.display.latency_region, cardOptions, { placeholder: "沿用回程地区" })}<div class="field-wide"><span class="field-label">公开卡片显示延迟</span><div class="checkbox-row">${["电信", "联通", "移动", "其他"].map((carrier) => check(carrier, "latency_carrier:" + carrier, !n.display.latency_carriers?.length || n.display.latency_carriers.includes(carrier))).join("")}</div><small class="hint">只在这台机器实际有探测的运营商里筛选，至少勾一项。</small></div><div class="field-wide"><span class="field-label">公开卡片显示回程</span><div class="checkbox-row">${["电信", "联通", "移动"].map((carrier) => check(carrier, "route_carrier:" + carrier, !n.display.route_carriers?.length || n.display.route_carriers.includes(carrier))).join("")}</div><small class="hint">回程只有三网，至少勾一项。</small></div>${check("在公开页面展示", "public", n.public)}</div></div><div class="form-section"><h3>计费与续费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.billing.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
+    `<form id="node-form">
+<div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionCombobox("节点所在地区", "region", n.region, options)}${check("在公开页面展示", "public", n.public)}</div></div>
+<div class="form-section"><h3>公开卡片</h3><p class="hint">卡片按这里的地区挑选探测结果，地区要和任务目标的地区一致才对得上。回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / 9929 等），IPv4 与 IPv6 分开检测。</p><div class="form-grid">${regionCombobox("回程地区", "representative", n.display.route_region, cardOptions, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("延迟地区（留空沿用回程地区）", "latency_region", n.display.latency_region, cardOptions, { placeholder: "沿用回程地区" })}</div><div class="option-groups card-carriers"><div class="option-group"><span class="option-label">显示延迟的运营商</span>${carriers("latency_carrier:", ["电信", "联通", "移动", "其他"], n.display.latency_carriers)}</div><div class="option-group"><span class="option-label">显示回程的运营商</span>${carriers("route_carrier:", ["电信", "联通", "移动"], n.display.route_carriers)}</div></div><p class="hint">只在这台机器实际有探测的运营商里筛选，每组至少勾一项；回程只有三网。</p></div>
+<div class="form-section"><h3>流量与计费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.billing.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
       "流量计费方式",
       "traffic_mode",
       [
@@ -363,7 +373,9 @@ function nodeForm(existing) {
         ["out", "仅上传"],
       ],
       n.billing.traffic_mode,
-    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing.reset_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${check("免费机器（不计价）", "free", n.billing.free)}${field("价格", "price", n.billing.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.billing.currency), n.billing.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), period), period)}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.billing.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line.mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.line.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.line.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24；按额度降速时不用）", "throttle_hours", n.line.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">重置时间按「日 + 时分秒」逐月顺延，当月没有该日时取最后一天；到期时间用于续费提醒。首次接入时建立流量基线，不补算历史用量。降速阈值填 0 表示这条线路没有降速规则。</p><details class="more"><summary>降速规则说明</summary><p class="hint"><b>窗口平均带宽</b>：按 Agent 上报的网卡计数，取统计窗口内的平均速率，达到阈值即视为降速（常见口径：近 24 小时平均超过 100 Mbit/s 降到 100 Mbit/s），口径与本节点的流量计费方式一致。<b>额度用满后限速</b>：本周期用量达到额度即视为已降速，适合「用满后不计量但限速」的套餐，这时「线路带宽」填突发峰值。主机重启或网卡变化时会自动重建流量基线。</p></details></div><div class="form-section"><h3>提醒规则</h3><p class="hint">${existing ? `当前：${esc(alertSummary(n.alerts))}。` : "新节点默认不开任何提醒。"}提醒规则在「告警与通知」页的规则总览里设置，可以多台一起改。</p>${existing ? '<button type="button" id="goto-alerts">去设置提醒规则 →</button>' : ""}</div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
+    )}${field("每月重置时间（UTC，精确到秒）", "billing_at", stamp(n.billing.reset_at) || monthStartStamp(), "text", 'required placeholder="例如 2026-09-01 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}${field("到期时间（UTC，精确到秒）", "expires_at", stamp(n.billing.expires_at), "text", 'placeholder="留空表示不设，例如 2027-05-28 00:00:00" pattern="\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(:\\d{2})?"')}</div><div class="form-grid price-grid">${check("免费机器（不计价）", "free", n.billing.free)}${field("价格", "price", n.billing.price, "number", 'min="0" step="any"')}${select("货币", "currency", withCurrent(CURRENCIES, n.billing.currency), n.billing.currency || "")}${select("价格周期", "price_period", withCurrent(PRICE_PERIODS.map((period) => [period, period]), period), period)}</div><p class="hint">重置时间按「日 + 时分秒」逐月顺延，当月没有该日时取最后一天；到期时间用于续费提醒。首次接入时建立流量基线，不补算历史用量。</p></div>
+<div class="form-section"><h3>线路与降速</h3><div class="form-grid">${field("线路带宽（Mbit/s，0 为不标注）", "line_mbps", n.line.mbps, "number", 'min="0" max="1000000" placeholder="例如 1000"')}${select("降速触发条件", "throttle_on", [["bandwidth", "窗口平均带宽达到降速阈值"], ["quota", "本周期额度用满后限速"]], n.line.throttle_on || "bandwidth")}${field("降速阈值 / 用满后限速（Mbit/s，0 为不设）", "throttle_mbps", n.line.throttle_mbps, "number", 'min="0" max="1000000" placeholder="例如 100"')}${field("降速统计窗口（小时，默认 24）", "throttle_hours", n.line.throttle_hours || 24, "number", 'min="1" max="168" placeholder="默认 24"')}</div><p class="hint">降速阈值填 0 表示这条线路没有降速规则；按额度降速时不用统计窗口。</p><details class="more"><summary>降速规则说明</summary><p class="hint"><b>窗口平均带宽</b>：按 Agent 上报的网卡计数，取统计窗口内的平均速率，达到阈值即视为降速（常见口径：近 24 小时平均超过 100 Mbit/s 降到 100 Mbit/s），口径与本节点的流量计费方式一致。<b>额度用满后限速</b>：本周期用量达到额度即视为已降速，适合「用满后不计量但限速」的套餐，这时「线路带宽」填突发峰值。主机重启或网卡变化时会自动重建流量基线。</p></details></div>
+<div class="form-section"><h3>提醒规则</h3><p class="hint">${existing ? `当前：${esc(alertSummary(n.alerts))}。` : "新节点默认不开任何提醒。"}提醒规则在「告警与通知 → 提醒规则」里设置，可以多台一起改。</p>${existing ? '<button type="button" id="goto-alerts">去设置提醒规则 →</button>' : ""}</div><div class="form-footer"><button type="submit" class="primary">保存节点</button></div></form>`,
   );
   // 规则未勾选时禁用它的阈值输入：既表明该值当前不生效，也让浏览器跳过它的 min 校验。
   const form = d.querySelector("form"),
@@ -393,6 +405,7 @@ function nodeForm(existing) {
       }
       d.close();
       tab = "alerts";
+      alertView = "rules";
       await render();
     });
   // 勾选免费时价格、货币与周期都不生效，一并禁用；保存时服务端也会把价格与周期清掉。
@@ -401,6 +414,10 @@ function nodeForm(existing) {
   };
   el("free").onchange = syncFree;
   syncFree();
+  // 按额度降速时统计窗口不参与判断，同样禁用（值原样保留，切回窗口模式时还在）。
+  const syncThrottle = () => (el("throttle_hours").disabled = el("throttle_on").value === "quota");
+  el("throttle_on").addEventListener("change", syncThrottle);
+  syncThrottle();
   // 重置 / 到期时间按 UTC 填写（服务端按 UTC 逐月顺延），公开面板却按访客本地时间显示。
   // 在输入框下面实时换算一行本地时间，免得填的人自己心算时差。
   for (const name of ["billing_at", "expires_at"]) {
@@ -486,19 +503,68 @@ function confirmAction(title, message, action) {
     await action();
   });
 }
-function renderTasks() {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">NETWORK OBSERVABILITY</div><h1>网络探测<span>${tasks.length}</span></h1><p>每个任务独立配置目标、协议、频率和参与节点。</p></div><div class="heading-actions"><button id="bind-selected">批量绑定节点</button><button id="add-task" class="primary">＋ 创建任务</button></div></section><div class="notice"><strong>回程标签由实际路径决定</strong><span>卡片按节点设置的回程地区显示。标签按实际经过的骨干命名，如 163 / CN2GIA / CN2GT / 9929；IPv4 / IPv6 独立检测；空节点绑定不会执行。</span></div><section class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-tasks" type="checkbox" aria-label="选择全部任务"><span>全选</span></label></th><th>任务</th><th>目标</th><th>地区 / 运营商</th><th>间隔</th><th>节点</th><th>操作</th></tr></thead><tbody>${tasks.map((t) => { const s = taskSummary(t); return `<tr><td data-label="选择"><input type="checkbox" data-select-task="${t.id}" aria-label="选择 ${esc(t.name)}"></td><td data-label="任务">${esc(t.name)}<small>${t.enabled ? "已启用" : "已停用"} · ${esc(s.checks)}</small></td><td data-label="目标">${s.unlock ? "内置目录" : s.count + " 个地址"}<small>${esc(s.families)}</small></td><td data-label="地区 / 运营商" title="${esc(s.targetsFull)}">${esc(s.targets)}<small>${s.regions > 3 ? `共 ${s.regions} 个地区` : ""}</small></td><td data-label="间隔">${esc(s.intervals)}</td><td data-label="节点">${t.node_ids?.filter((id) => nodes.some((n) => n.id === id)).length || 0} 个</td><td data-label="操作"><div class="row-actions"><button data-edit-task="${t.id}">编辑</button><button data-control="${t.enabled ? "pause" : "resume"}" data-task="${t.id}">${t.enabled ? "暂停" : "恢复"}</button><button data-control="run" data-task="${t.id}" ${!t.enabled || !t.node_ids?.length ? "disabled" : ""}>立即执行</button><button data-copy-task="${t.id}">复制</button><button data-bind-task="${t.id}">绑定</button><button data-runs-task="${t.id}">执行记录</button><button class="danger" data-delete-task="${t.id}">删除</button></div></td></tr>`; }).join("") || '<tr><td colspan="7" class="empty-cell">暂无任务。可从内置三网目标目录选择，也可填写自定义目标。</td></tr>'}</tbody></table></div></section>`;
+// 「最近执行」一格：各目标最近一次执行的汇总（/admin/tasks/health）。有失败就标橙并写几项，
+// 全部成功标绿，只有在途的写「执行中」；明细仍在「执行记录」里。
+function healthCell(t, h) {
+  if (!t.node_ids?.length) return '<span class="muted">未绑定节点</span>';
+  if (!h) return '<span class="muted">尚未执行</span>';
+  const total = h.ok + h.failed + h.pending;
+  const pill = h.failed
+    ? `<span class="pill warn">${h.failed} / ${total} 项失败</span>`
+    : h.ok
+      ? `<span class="pill good">正常</span>`
+      : `<span class="pill">执行中</span>`;
+  return `${pill}<small>${h.last_finished ? "完成于 " + date(h.last_finished) : "尚无完成记录"}</small>`;
+}
+// 行内只留最常用的两个动作，其余收进「更多」：一行七个链接在窄一点的屏幕上就折成两行。
+// 菜单展开时挪到 <body> 下再 fixed 定位：表格外层的 .table-scroll 会裁掉浮层，带
+// backdrop-filter 的面板又会让 fixed 变成相对面板定位。收起时挪回原处。
+function moreMenu(items) {
+  return `<details class="row-more more"><summary>更多</summary><div class="row-menu" role="menu">${items}</div></details>`;
+}
+function wireMoreMenus(root) {
+  for (const more of root.querySelectorAll(".row-more")) {
+    const menu = more.querySelector(".row-menu");
+    more.addEventListener("toggle", () => {
+      if (!more.open) {
+        more.append(menu);
+        return;
+      }
+      for (const other of document.querySelectorAll(".row-more[open]")) if (other !== more) other.open = false;
+      document.body.append(menu);
+      const rect = more.querySelector("summary").getBoundingClientRect();
+      const width = menu.offsetWidth;
+      const height = menu.offsetHeight;
+      const below = rect.bottom + 6;
+      menu.style.left = Math.max(8, Math.min(rect.right - width, document.documentElement.clientWidth - width - 8)) + "px";
+      menu.style.top = (below + height > window.innerHeight - 8 ? Math.max(8, rect.top - height - 6) : below) + "px";
+    });
+    // 点了菜单里的哪一项都先收起（那一项自己的处理照常执行）。
+    menu.addEventListener("click", () => (more.open = false));
+  }
+}
+// 点到菜单外、按 Esc 或滚动时收起：fixed 的菜单不会跟着行走。
+const closeMenus = () => document.querySelectorAll(".row-more[open]").forEach((m) => (m.open = false));
+document.addEventListener("click", (e) => {
+  if (!e.target?.closest?.(".row-more, .row-menu")) closeMenus();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeMenus();
+});
+window.addEventListener("scroll", closeMenus, { passive: true });
+function renderTasks(health = {}) {
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">NETWORK OBSERVABILITY</div><h1>网络探测<span>${tasks.length}</span></h1><p>每个任务独立配置目标、协议、频率和参与节点。</p></div><div class="heading-actions"><button id="bind-selected">批量绑定节点</button><button id="add-task" class="primary">＋ 创建任务</button></div></section><section class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-tasks" type="checkbox" aria-label="选择全部任务"><span>全选</span></label></th><th>任务</th><th>状态</th><th>目标</th><th>地区 / 运营商</th><th>节点</th><th>最近执行</th><th>操作</th></tr></thead><tbody>${tasks.map((t) => { const s = taskSummary(t); const bound = t.node_ids?.filter((id) => nodes.some((n) => n.id === id)).length || 0; return `<tr><td data-label="选择"><input type="checkbox" data-select-task="${t.id}" aria-label="选择 ${esc(t.name)}"></td><td data-label="任务">${esc(t.name)}<small>${s.unlock ? "解锁检测 · " : ""}间隔 ${esc(s.intervals)}</small></td><td data-label="状态"><span class="pill ${t.enabled ? "good" : ""}">${t.enabled ? "已启用" : "已停用"}</span></td><td data-label="目标">${s.unlock ? "内置目录" : s.count + " 个地址"}<small>${esc(s.families)}</small></td><td data-label="地区 / 运营商" title="${esc(s.targetsFull)}">${esc(s.targets)}<small>${s.regions > 3 ? `共 ${s.regions} 个地区` : ""}</small></td><td data-label="节点">${bound} 个</td><td data-label="最近执行">${healthCell(t, health[t.id])}</td><td data-label="操作"><div class="row-actions"><button data-edit-task="${t.id}">编辑</button><button data-control="${t.enabled ? "pause" : "resume"}" data-task="${t.id}">${t.enabled ? "暂停" : "恢复"}</button>${moreMenu(`<button data-control="run" data-task="${t.id}" ${!t.enabled || !bound ? "disabled" : ""}>立即执行</button><button data-runs-task="${t.id}">执行记录</button><button data-copy-task="${t.id}">复制</button><button class="menu-danger" data-delete-task="${t.id}">删除</button>`)}</div></td></tr>`; }).join("") || '<tr><td colspan="8" class="empty-cell">暂无任务。可从内置三网目标目录选择，也可填写自定义目标。</td></tr>'}</tbody></table></div></section>`;
+  wireMoreMenus(content());
   content().querySelector("#select-tasks").onchange = (e) => content().querySelectorAll("[data-select-task]").forEach((b) => b.checked = e.target.checked);
   content().querySelector("#bind-selected").onclick = () => {
     const ids = new Set([...content().querySelectorAll("[data-select-task]:checked")].map((b) => b.dataset.selectTask));
-    if (!ids.size) { toast("请先选择任务"); return; }
+    if (!ids.size) { toast("请先勾选任务"); return; }
     bindTasks(tasks.filter((t) => ids.has(t.id)), nodes, render);
   };
   content().querySelectorAll("[data-control]").forEach((b) => b.onclick = guard(async () => {
     b.disabled = true;
     try { await controlTask(b.dataset.task, b.dataset.control, render); } finally { b.disabled = false; }
   }));
-  content().querySelectorAll("[data-bind-task]").forEach((b) => b.onclick = () => bindTasks([tasks.find((t) => t.id === b.dataset.bindTask)], nodes, render));
   content().querySelectorAll("[data-runs-task]").forEach((b) => b.onclick = guard(() => taskRuns(tasks.find((t) => t.id === b.dataset.runsTask))));
   content().querySelectorAll("[data-copy-task]").forEach((b) => b.onclick = guard(async () => {
     const copy = structuredClone(tasks.find((t) => t.id === b.dataset.copyTask));
@@ -687,10 +753,21 @@ function wireRulesPanel() {
     (b) => (b.onclick = () => alertsEditor([nodes.find((n) => n.id === b.dataset.alerts)], refresh)),
   );
 }
+// 告警页分三个子页：当前告警（正在告警的项目，进来先看这个）、事件记录（90 天流水）、
+// 提醒规则（通知渠道 + 每台节点的规则）。以前三块摞在一页里，正在告警的项目淹没在流水里。
+let alertView = "active";
+const ALERT_VIEWS = [
+  ["active", "当前告警"],
+  ["events", "事件记录"],
+  ["rules", "提醒规则"],
+];
+function eventTable(rows, empty) {
+  return `<div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody id="event-rows">${rows || `<tr><td colspan="6" class="empty-cell">${empty}</td></tr>`}</tbody></table></div>`;
+}
 async function renderAlerts() {
-  const [events, settings] = await Promise.all([
-    api(eventsURL()),
+  const [settings, firing] = await Promise.all([
     api("/admin/notification"),
+    api("/admin/events?active=1&limit=500"),
   ]);
   const configured = settings.channel !== "none";
   const channelName = settings.telegram_configured
@@ -698,11 +775,40 @@ async function renderAlerts() {
     : settings.webhook_configured
       ? "Webhook"
       : "尚未配置";
-  const filtered = eventFilter.node_id || eventFilter.kind;
-  const nodeOptions = withCurrent(nodes.map((n) => [n.id, n.name]), eventFilter.node_id, "全部节点");
-  const kindOptions = [["", "全部类型"], ...Object.entries(kindName).filter(([k]) => k !== "test")];
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>通知出口、每台节点的提醒规则和事件记录。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel()}<section class="panel"><div class="panel-head"><h3>事件记录</h3><span class="muted">保存 90 天 · 每次加载 ${EVENT_PAGE} 条</span></div><div class="catalog-filters event-filters"><label>节点<select id="event-node"><option value="">全部节点</option>${nodeOptions.filter(([v]) => v).map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.node_id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label><label>类型<select id="event-kind">${kindOptions.map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.kind ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div><div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody id="event-rows">${eventRows(events, configured) || `<tr><td colspan="6" class="empty-cell">${filtered ? "没有符合筛选条件的事件。" : "暂无事件。提醒规则在上方的规则总览里开启。"}</td></tr>`}</tbody></table></div><div class="catalog-toolbar event-more"><button id="more-events" class="quiet" ${events.length < EVENT_PAGE ? "hidden" : ""}>加载更多</button></div></section>`;
-  wireRulesPanel();
+  const views = ALERT_VIEWS.map(([id, label]) => `<button type="button" data-alert-view="${id}" class="${alertView === id ? "active" : ""}" aria-pressed="${alertView === id}">${label}${id === "active" && firing.length ? ` <b class="count-badge">${firing.length}</b>` : ""}</button>`).join("");
+  const heading = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>正在告警的项目、事件记录、通知渠道与每台节点的提醒规则。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><div class="segmented alert-views" role="group" aria-label="告警页内容">${views}</div>`;
+  let body = "";
+  let events = [];
+  if (alertView === "active") {
+    // 没配通知渠道时在这里也提一句：正在告警却没人收到，比没有告警更该知道。
+    const warn = configured ? "" : `<div class="notice"><strong>通知渠道尚未配置</strong><span>下面的告警不会发到任何地方。到「提醒规则」页配置 Telegram 或 Webhook。</span></div>`;
+    body = `${warn}<section class="panel"><div class="panel-head"><h3>正在告警</h3><span class="muted">每项显示最近一次触发或重复提醒</span></div>${eventTable(eventRows(firing, configured), "当前没有正在告警的项目。")}</section>`;
+  } else if (alertView === "events") {
+    events = await api(eventsURL());
+    const filtered = eventFilter.node_id || eventFilter.kind;
+    const nodeOptions = withCurrent(nodes.map((n) => [n.id, n.name]), eventFilter.node_id, "全部节点");
+    const kindOptions = [["", "全部类型"], ...Object.entries(kindName).filter(([k]) => k !== "test")];
+    body = `<section class="panel"><div class="panel-head"><h3>事件记录</h3><span class="muted">保存 90 天 · 每次加载 ${EVENT_PAGE} 条</span></div><div class="catalog-filters event-filters"><label>节点<select id="event-node"><option value="">全部节点</option>${nodeOptions.filter(([v]) => v).map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.node_id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label><label>类型<select id="event-kind">${kindOptions.map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.kind ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div>${eventTable(eventRows(events, configured), filtered ? "没有符合筛选条件的事件。" : "暂无事件。提醒规则在「提醒规则」页开启。")}<div class="catalog-toolbar event-more"><button id="more-events" class="quiet" ${events.length < EVENT_PAGE ? "hidden" : ""}>加载更多</button></div></section>`;
+  } else {
+    body = `<section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置出口</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel()}`;
+  }
+  content().innerHTML = heading + body;
+  content().querySelectorAll("[data-alert-view]").forEach(
+    (b) =>
+      (b.onclick = guard(async () => {
+        alertView = b.dataset.alertView;
+        await renderAlerts();
+      })),
+  );
+  content().querySelector("#refresh-events").onclick = guard(async () => {
+    nodes = await api("/admin/nodes");
+    fleetStatus();
+    await renderAlerts();
+  });
+  if (alertView === "events") wireEvents(events, configured);
+  if (alertView === "rules") wireRules(settings, configured);
+}
+function wireEvents(events, configured) {
   let last = events.at(-1)?.id || 0;
   const more = content().querySelector("#more-events");
   more.onclick = guard(async () => {
@@ -721,7 +827,9 @@ async function renderAlerts() {
       eventFilter = { ...eventFilter, [key]: e.target.value };
       await renderAlerts();
     });
-  content().querySelector("#refresh-events").onclick = guard(renderAlerts);
+}
+function wireRules(settings, configured) {
+  wireRulesPanel();
   content().querySelector("#test-webhook").onclick = guard(async () => {
     await send("/admin/notification/test", "POST");
     toast("测试通知已送达");

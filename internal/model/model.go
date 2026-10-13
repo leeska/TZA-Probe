@@ -869,12 +869,14 @@ type Event struct {
 }
 
 // EventQuery pages the event log: newest first, ids below Before (0 = from the
-// newest), optionally one node or one kind.
+// newest), optionally one node or one kind. Active keeps only alerts that are
+// firing right now, each as the event that last reported it.
 type EventQuery struct {
 	Before int64
 	Limit  int
 	NodeID string
 	Kind   string
+	Active bool
 }
 
 const (
@@ -1057,6 +1059,15 @@ func ValidUnlockStatus(status string) bool {
 		return true
 	}
 	return false
+}
+
+// TaskHealth sums up one task's latest attempt per bound node and probe target
+// (the rows TaskRuns lists one by one) for the task list.
+type TaskHealth struct {
+	OK      int   `json:"ok"`
+	Failed  int   `json:"failed"`
+	Pending int   `json:"pending"`
+	Last    int64 `json:"last_finished,omitempty"`
 }
 
 type TaskRun struct {

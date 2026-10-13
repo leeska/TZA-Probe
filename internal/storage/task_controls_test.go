@@ -232,3 +232,55 @@ func TestSetNodeAlertsBatch(t *testing.T) {
 		t.Fatalf("missing node: %v", err)
 	}
 }
+
+// TaskHealth counts each bound target's latest attempt: ok, failed, or pending
+// until its finish window passes (then failed), and only for bound nodes.
+func TestTaskHealthCountsLatestAttempts(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, _ := makeNode(t, s)
+	task := model.Task{Name: "health", Enabled: true, NodeIDs: []string{id}, Type: model.TaskProbe, Probe: &model.ProbeSpec{Checks: []string{"tcp"}, Targets: []model.Target{
+		{Host: "a.example", Port: 443, Family: "ipv4"},
+		{Host: "b.example", Port: 443, Family: "ipv4"},
+		{Host: "c.example", Port: 443, Family: "ipv4"},
+	}, Interval: 3600}}
+	taskID, err := s.SaveTask(ctx, task, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if got, err := s.TaskHealth(ctx, now); err != nil || len(got) != 0 {
+		t.Fatal("never-run task must be absent", got, err)
+	}
+	// One TCP probe is leased at a time, so run them one after another.
+	lease := func(at time.Time) model.Job {
+		jobs, err := s.Lease(ctx, id, at)
+		if err != nil || len(jobs) != 1 {
+			t.Fatal(jobs, err)
+		}
+		return jobs[0]
+	}
+	latency := 10.0
+	if err = s.Finish(ctx, id, model.Result{JobID: lease(now).ID, Status: "ok", Sent: 1, Received: 1, Latency: &latency}, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Finish(ctx, id, model.Result{JobID: lease(now.Add(time.Second)).ID, Status: "failed", Reason: "connect_failed", Sent: 1}, now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	lease(now.Add(2 * time.Second))
+	got, err := s.TaskHealth(ctx, now.Add(3*time.Second))
+	want := model.TaskHealth{OK: 1, Failed: 1, Pending: 1, Last: now.Add(2 * time.Second).Unix()}
+	if err != nil || got[taskID] != want {
+		t.Fatalf("got %+v want %+v (%v)", got[taskID], want, err)
+	}
+	got, _ = s.TaskHealth(ctx, now.Add(time.Hour))
+	if h := got[taskID]; h.Pending != 0 || h.Failed != 2 {
+		t.Fatalf("an attempt past its finish window counts as failed: %+v", h)
+	}
+	if err = s.BindTasks(ctx, []string{taskID}, []string{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.TaskHealth(ctx, now); len(got) != 0 {
+		t.Fatal("unbound nodes must not count", got)
+	}
+}

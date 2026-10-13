@@ -1076,7 +1076,7 @@ tbody tr:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin: 8px 0 16px;
 }
 
 .target-chip {
@@ -1402,6 +1402,10 @@ input[type="checkbox"]:disabled {
 /* Page heading sits on the same inner grid as panel content */
 .page-heading {
   padding: 0 24px;
+}
+
+.alert-views {
+  margin-left: 24px;
 }
 
 .public-header nav .button {

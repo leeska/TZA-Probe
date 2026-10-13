@@ -164,6 +164,15 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		respond(w, a.svc.BindTasks(r.Context(), v.TaskIDs, v.NodeIDs))
 	})
+	// 任务列表的「最近执行」一列：每个任务各目标最近一次执行的成功 / 失败 / 进行中计数。
+	route("GET /api/v1/admin/tasks/health", func(w http.ResponseWriter, r *http.Request) {
+		out, err := a.svc.TaskHealth(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, out)
+	})
 	route("GET /api/v1/admin/tasks/{id}/runs", func(w http.ResponseWriter, r *http.Request) {
 		out, err := a.svc.TaskRuns(r.Context(), r.PathValue("id"))
 		if err != nil {
@@ -178,12 +187,13 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 	})
 
 	// ---- events
-	// 事件保存 90 天，一页放不下：before 是上一页最后一条的 id，node_id / kind 用来筛选。
+	// 事件保存 90 天，一页放不下：before 是上一页最后一条的 id，node_id / kind 用来筛选；
+	// active=1 只列正在告警的（每条取最近一次事件）。
 	route("GET /api/v1/admin/events", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
 		limit, _ := strconv.Atoi(q.Get("limit"))
-		events, err := a.svc.Events(r.Context(), model.EventQuery{Before: before, Limit: limit, NodeID: q.Get("node_id"), Kind: q.Get("kind")})
+		events, err := a.svc.Events(r.Context(), model.EventQuery{Before: before, Limit: limit, NodeID: q.Get("node_id"), Kind: q.Get("kind"), Active: q.Get("active") == "1"})
 		if err != nil {
 			fail(w, err)
 			return

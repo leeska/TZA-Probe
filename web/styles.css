@@ -1391,6 +1391,24 @@ button.node-name {
   margin-bottom: 24px;
 }
 
+/* 告警页的子页切换：贴在标题下面、与标题同一条左边线（glass 皮肤给标题加了 24px 内边距）。 */
+.alert-views {
+  margin: -8px 0 18px;
+}
+
+.alert-views .count-badge {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--orange, #f97316);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
 .heading-actions {
   display: flex;
   gap: 10px;
@@ -1645,6 +1663,86 @@ td .text-button:hover {
   transform: none !important;
 }
 
+/* 行内「更多」菜单。summary 长得和行内链接一样（同时挂 .more，皮肤给 details 画的卡片外观
+   都排除了 .more）。展开时菜单挪到 <body> 下 fixed 定位（位置由 admin.js 算）：表格外的
+   .table-scroll 会裁掉浮层，带 backdrop-filter 的面板又会把 fixed 变成相对它定位。 */
+details.row-more.more {
+  display: flex;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+}
+
+details.row-more.more > summary {
+  list-style: none;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--accent);
+  white-space: nowrap;
+  padding: 2px 0;
+  margin: 0;
+}
+
+details.row-more.more > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.row-more.more > summary::after {
+  content: " ▾";
+  font-size: 10px;
+}
+
+details.row-more.more[open] > summary {
+  margin: 0;
+}
+
+details.row-more.more > summary:hover {
+  text-decoration: underline;
+}
+
+.row-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 128px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--glass-bg-elevated, #fff);
+  border: 1px solid var(--glass-border, var(--line));
+  box-shadow: var(--glass-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.16));
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+}
+
+body > .row-menu button {
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 7px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+body > .row-menu button.menu-danger {
+  color: var(--red);
+}
+
+body > .row-menu button:hover:not(:disabled) {
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+body > .row-menu button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .row-actions button.danger {
   color: var(--red);
   background: none !important;
@@ -1736,6 +1834,23 @@ label.checkbox {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+
+/* 一段里接着的第二块网格（节点表单的价格行、运营商勾选）与上一块留出同样的行距。 */
+.form-grid + .form-grid,
+.form-grid + .option-groups {
+  margin-top: 16px;
+}
+
+/* 价格一行四格：免费勾选、价格、货币、周期。窄屏两列，手机一列（见文件末尾的媒体查询）。 */
+.price-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .price-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .form-section {
@@ -1946,6 +2061,16 @@ dialog .form-footer {
   align-self: end;
 }
 
+/* 「已选目标 N 组」那行标题贴着下面的胶囊。 */
+#selected-label {
+  margin: 0;
+}
+
+/* 名称与启用排在任务类型下面，和上面的说明文字隔开一行。 */
+.task-meta {
+  margin-top: 14px;
+}
+
 .node-checkboxes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1970,7 +2095,7 @@ dialog .form-footer {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin: 8px 0 16px;
 }
 
 .target-chip {

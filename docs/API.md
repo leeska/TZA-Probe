@@ -21,7 +21,7 @@
 | POST /admin/tasks/{id}/run | 立即安排执行；任务暂停或未绑定节点时 409 |
 | PUT /admin/tasks/bindings | `{"task_ids":[…],"node_ids":[…]}`：所选任务换成同一份节点列表，一个事务 |
 | GET /admin/catalog | 内置离线目标目录 |
-| GET /admin/events?before=&limit=&node_id=&kind= | 告警与发送结果，按 id 倒序分页：`limit` 默认 100、上限 500，`before` 传上一页最后一条的 id 续读，`node_id` / `kind` 筛选 |
+| GET /admin/events?before=&limit=&node_id=&kind=&active= | 告警与发送结果，按 id 倒序分页：`limit` 默认 100、上限 500，`before` 传上一页最后一条的 id 续读，`node_id` / `kind` 筛选；`active=1` 只列正在告警的项目，每项取最近一次事件（MCP `recent_events` 的 `active: true` 同义） |
 | GET、PUT /admin/notification | 通知出口：查询渠道状态（不回凭据）、设置 Telegram / Webhook / 关闭 |
 | POST /admin/notification/test | 向已配置的渠道发送测试通知 |
 | GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
@@ -110,6 +110,7 @@ Server 把任务展开为单项探测（checks × targets，解锁任务一项�
 
 - 任务的管理状态各有一个接口：`PUT /admin/tasks/{id}/enabled` 启停，`POST /admin/tasks/{id}/run` 立即执行，`PUT /admin/tasks/bindings` 绑定。绑定替换所选任务的全部绑定，空列表停止调度；无效节点或任务使本次整体失败，不会只改一部分。
 - 启停与绑定保留历史结果，暂停不取消已领取的探测；立即执行要求启用且已绑定节点，由 Agent 拉取执行，遵守原有并发限制。请求使用一个时间标记，不积累无限任务队列。
+- `GET /api/v1/admin/tasks/health` 返回 `{任务 id: {ok, failed, pending, last_finished}}`：各任务每个绑定节点、每个目标最近一次执行的汇总（未完成且超过完成时限的算失败），从没执行过的任务不出现；任务列表的「最近执行」一列用它。
 - `GET /api/v1/admin/tasks/{id}/runs` 返回当前绑定节点每个已执行目标的最近领取时间、完成时间、结果和失败原因；全部尚未执行的节点显示未执行，未返回原始路径地址。
 - 后台支持选择多个任务后统一绑定节点，并支持搜索和全选筛选结果。一次请求、一个事务保存。
 - 提醒规则在「告警与通知」页的规则总览里设置：每台节点一行，可单台编辑，也可勾选多台后批量套用同一份规则（`PUT /admin/nodes/alerts`）。节点编辑表单只显示当前规则摘要与入口，保存节点时原样带回规则。

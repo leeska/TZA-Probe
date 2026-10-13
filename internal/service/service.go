@@ -39,6 +39,7 @@ type Store interface {
 	RunTask(context.Context, string, time.Time) error
 	BindTasks(context.Context, []string, []string) error
 	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
+	TaskHealth(context.Context, time.Time) (map[string]model.TaskHealth, error)
 
 	History(context.Context, string, int, time.Time) ([]model.Sample, error)
 	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
@@ -322,6 +323,11 @@ func (s *Service) BindTasks(ctx context.Context, taskIDs, nodeIDs []string) erro
 
 func (s *Service) TaskRuns(ctx context.Context, id string) ([]model.TaskRun, error) {
 	return s.Store.TaskRuns(ctx, id, time.Now())
+}
+
+// TaskHealth is TaskRuns summed per task, for the task list.
+func (s *Service) TaskHealth(ctx context.Context) (map[string]model.TaskHealth, error) {
+	return s.Store.TaskHealth(ctx, time.Now())
 }
 
 // ---------------------------------------------------------------- reads

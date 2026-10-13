@@ -228,3 +228,40 @@ func (s *Store) TaskRuns(ctx context.Context, id string, now time.Time) ([]model
 	}
 	return out, rows.Err()
 }
+
+// TaskHealth folds every task's TaskRuns rows into counts, in one pass over
+// the latest table: a finished attempt is ok or failed by its result, an
+// unfinished one is pending until its finish window passes and failed after.
+// Tasks with no attempt yet are absent from the map.
+func (s *Store) TaskHealth(ctx context.Context, now time.Time) (map[string]model.TaskHealth, error) {
+	rows, err := s.query(ctx, `SELECT b.task_id,l.issued,l.finished,json_extract(l.task,'$.kind'),CASE WHEN json_valid(l.result) THEN json_extract(l.result,'$.status') END
+		FROM bindings b JOIN latest l ON l.node_id=b.node_id AND l.probe_key>=b.task_id||'|' AND l.probe_key<b.task_id||'}'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]model.TaskHealth{}
+	for rows.Next() {
+		var id string
+		var issued int64
+		var finished sql.NullInt64
+		var kind, status sql.NullString
+		if err = rows.Scan(&id, &issued, &finished, &kind, &status); err != nil {
+			return nil, err
+		}
+		h := out[id]
+		switch {
+		case finished.Valid && status.String == "ok":
+			h.OK++
+		case finished.Valid:
+			h.Failed++
+		case now.Unix()-issued > int64(finishWindow(kind.String).Seconds()):
+			h.Failed++
+		default:
+			h.Pending++
+		}
+		h.Last = max(h.Last, finished.Int64)
+		out[id] = h
+	}
+	return out, rows.Err()
+}

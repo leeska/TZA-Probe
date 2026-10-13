@@ -77,12 +77,13 @@ var readTools = []tool{
 	{
 		Name:        "recent_events",
 		Annotations: annotations("Recent alerts", true, false, true),
-		Description: "读取告警事件与通知投递结果（离线、续费、流量、负载的触发与恢复），新的在前。事件保存 90 天：翻页时把上一页最后一条的 id 作为 before 传入。",
+		Description: "读取告警事件与通知投递结果（离线、续费、流量、降速、CPU、内存的触发与恢复），新的在前。事件保存 90 天：翻页时把上一页最后一条的 id 作为 before 传入。active=true 只列正在告警的项目。",
 		InputSchema: schema(map[string]any{
 			"before":  map[string]any{"type": "integer", "description": "只取 id 小于它的事件（翻页游标），不传从最新开始"},
 			"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": model.MaxEventPage, "description": "条数，默认 100"},
 			"node_id": map[string]any{"type": "string", "description": "只看这个节点"},
-			"kind":    map[string]any{"type": "string", "description": "只看这类事件，如 offline / renewal / traffic / throttle / load"},
+			"kind":    map[string]any{"type": "string", "description": "只看这类事件：offline / renewal / traffic / throttle / cpu / memory（load 是拆分前的旧事件）"},
+			"active":  map[string]any{"type": "boolean", "description": "只列正在告警的项目，每项取最近一次事件"},
 		}),
 	},
 	{
@@ -150,11 +151,12 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 			Limit  int    `json:"limit"`
 			NodeID string `json:"node_id"`
 			Kind   string `json:"kind"`
+			Active bool   `json:"active"`
 		}
 		if e := arguments(params.Arguments, &args); e != nil {
 			return nil, e, http.StatusOK
 		}
-		events, err := svc.Events(ctx, model.EventQuery{Before: args.Before, Limit: args.Limit, NodeID: args.NodeID, Kind: args.Kind})
+		events, err := svc.Events(ctx, model.EventQuery{Before: args.Before, Limit: args.Limit, NodeID: args.NodeID, Kind: args.Kind, Active: args.Active})
 		if err != nil {
 			return toolFailure("读取告警事件失败", err)
 		}

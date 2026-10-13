@@ -380,6 +380,10 @@ $(".close").click();
 // 阈值全 0 的节点打开规则编辑，也必须回填可保存的值（禁用元素的 checkValidity() 恒为真，
 // 所以直接比对值与 min）。规则编辑在告警页，切过去再回来。
 $('[data-tab="alerts"]').click();
+// 告警页分三个子页，默认是「当前告警」；规则总览在「提醒规则」里。
+await until(() => $('[data-alert-view="rules"]'), "alert sub-views");
+assert($('[data-alert-view="active"]').classList.contains("active"), "告警页默认先看当前告警");
+$('[data-alert-view="rules"]').click();
 await until(() => $(`[data-alerts="${zeroNode.id}"]`), "rules overview");
 $(`[data-alerts="${zeroNode.id}"]`).click();
 form = $("#alerts-form");
@@ -832,7 +836,9 @@ await until(() => $("#task-form"), "edit unlock task");
   $(".close").click();
 }
 // 节点搜索同样支持拼音与代号（web/search.js）：香港节点用 hk / hongkong / xg / xianggang / 中文 都能搜到。
-$('[data-bind-task="' + createdTask.id + '"]').click();
+// 行内不再有「绑定」：勾选任务后用顶部的「批量绑定节点」（单个任务就是一批一个）。
+$('[data-select-task="' + createdTask.id + '"]').checked = true;
+$("#bind-selected").click();
 await until(() => $("#node-search"), "bind dialog");
 const nodeQuery = $("#node-search");
 const shownNodes = () => [...w.document.querySelectorAll("[data-node]")].map((i) => i.closest("label").textContent.trim());
@@ -846,7 +852,9 @@ nodeQuery.dispatchEvent(new w.Event("input", { bubbles: true }));
 assert(!shownNodes().some((t) => t.includes(name)), "美国 不该命中香港节点");
 $(".close").click();
 $('[data-tab="alerts"]').click();
-await until(() => $("#configure-webhook"), "alert page");
+await until(() => $('[data-alert-view="rules"]'), "alert page");
+$('[data-alert-view="rules"]').click();
+await until(() => $("#configure-webhook"), "rules sub-view");
 $("#configure-webhook").click();
 assert($('#dialog input[name="webhook"]'));
 $(".close").click();
