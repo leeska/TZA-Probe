@@ -206,23 +206,22 @@ func dataDir(name string, args []string, extra func(*flag.FlagSet)) (string, err
 }
 
 // initCommand prepares a data directory before the first start: it makes
-// sure the administrator key and the panel account exist and prints both. The
-// password is printed only when the account is created here; it is stored
-// hashed and cannot be shown again (reset-password issues a new one).
+// sure the API compatibility key and panel account exist. Only the panel
+// credentials are printed; the password is shown only when the account is
+// created here. It is stored hashed and cannot be shown again
+// (reset-password issues a new one).
 func initCommand(args []string) error {
 	dir, err := dataDir("init", args, nil)
 	if err != nil {
 		return err
 	}
-	token, err := adminToken(dir)
-	if err != nil {
+	if _, err := adminToken(dir); err != nil {
 		return err
 	}
 	username, password, created, err := account.Ensure(dir)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("管理密钥：%s\n", token)
 	if created {
 		fmt.Printf("后台用户名：%s\n", username)
 		fmt.Printf("后台密码：%s\n", password)

@@ -32,7 +32,7 @@ TZA Probe Server 一键安装（Linux amd64 / arm64）
 选项
   --version vX.Y.Z   从 GitHub Release 安装，免 git 与 Go
   --listen ADDR      监听地址，默认 127.0.0.1:25774（跨主机接入请配置 HTTPS 反代）
-  --data DIR         数据目录，默认 /var/lib/tza-probe（内含 admin-token、admin-account 与数据库）
+  --data DIR         数据目录，默认 /var/lib/tza-probe（保存后台账号、数据库与兼容 API 凭据）
   --no-systemd       只安装二进制与数据目录，不注册 systemd 服务
   -h, --help         显示本说明
 EOF
@@ -217,7 +217,7 @@ echo
 echo "================ 后台登录信息 ================"
 echo "$CREDS"
 echo "=============================================="
-echo "管理密钥也可随时查看：sudo cat ${DATA}/admin-token（管理 HTTP API 用 Authorization: Bearer 密钥；MCP API Key 在后台“面板设置”生成）"
+echo "后台仅支持用户名密码登录；MCP API Key 请登录后台，在“面板设置”中生成。"
 echo "忘记后台密码：sudo ${BIN} reset-password --data ${DATA}"
 if [ "${LISTEN%%:*}" = "127.0.0.1" ]; then
   echo "管理页面：http://${LISTEN}/admin （跨主机访问请在前面配置 HTTPS 反代）"

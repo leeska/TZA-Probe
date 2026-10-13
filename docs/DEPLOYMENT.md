@@ -72,7 +72,7 @@ probe.example.com {
 }
 ```
 
-安装脚本结束时打印管理密钥和后台用户名、密码（密码只在首次安装时显示一次）。访问 `https://probe.example.com/admin` 用用户名密码登录。MCP API Key 在“面板设置”中生成、重新生成或撤销。用户名与密码在“面板设置 → 后台账号”修改。管理密钥不放入 URL。新增节点后，后台提供配置和安装脚本。
+安装脚本结束时打印后台用户名、密码（密码只在首次安装时显示一次）。访问 `https://probe.example.com/admin` 用用户名密码登录。MCP API Key 在“面板设置”中生成、重新生成或撤销。用户名与密码在“面板设置 → 后台账号”修改。新增节点后，后台提供配置和安装脚本。
 
 Agent 的 endpoint 必须是它能访问的 Server 地址。远程 Agent 不能使用 Server 的 `127.0.0.1` 或 `localhost` 地址。从正确的 HTTPS 地址访问后台再生成接入配置，通常不需要手动改 endpoint。
 
