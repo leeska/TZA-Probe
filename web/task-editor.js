@@ -23,6 +23,45 @@ const regionSuggestions = (catalog, existing) =>
     (existing?.probe?.targets || []).map((x) => x.region),
   );
 
+// 常用海外目标：一键勾选，不用每次手填自定义目标。地区写服务名，图表里每条线就读作
+// 「Google · 其他」。只能 TCP 探测，公共 DNS 测 53 端口；域名只列确定有 AAAA 记录的才给 IPv6，
+// 免得勾上 IPv6 就整组失败。
+const presetGroups = [
+  ["公共 DNS", [
+    ["Cloudflare DNS", 53, "1.1.1.1", "2606:4700:4700::1111"],
+    ["Google DNS", 53, "8.8.8.8", "2001:4860:4860::8888"],
+    ["Quad9 DNS", 53, "9.9.9.9", "2620:fe::fe"],
+    ["OpenDNS", 53, "208.67.222.222", "2620:119:35::35"],
+  ]],
+  ["Telegram", [
+    ["Telegram DC1", 443, "149.154.175.53", "2001:b28:f23d:f001::a"],
+    ["Telegram DC2", 443, "149.154.167.51", "2001:67c:4e8:f002::a"],
+    ["Telegram DC3", 443, "149.154.175.100", "2001:b28:f23d:f003::a"],
+    ["Telegram DC4", 443, "149.154.167.91", "2001:67c:4e8:f004::a"],
+    ["Telegram DC5", 443, "91.108.56.130", "2001:b28:f23f:f005::a"],
+  ]],
+  ["主流网站", [
+    ["Google", 443, "www.google.com", "www.google.com"],
+    ["YouTube", 443, "www.youtube.com", "www.youtube.com"],
+    ["GitHub", 443, "github.com"],
+    ["Cloudflare", 443, "www.cloudflare.com", "www.cloudflare.com"],
+    ["Netflix", 443, "www.netflix.com", "www.netflix.com"],
+    ["ChatGPT", 443, "chatgpt.com"],
+    ["Discord", 443, "discord.com"],
+    ["Steam", 443, "store.steampowered.com"],
+  ]],
+].map(([title, items]) => [
+  title,
+  items.map(([region, port, v4, v6]) => [
+    region + " / 其他",
+    [
+      { host: v4, port, family: "ipv4", region, carrier: "其他" },
+      ...(v6 ? [{ host: v6, port, family: "ipv6", region, carrier: "其他" }] : []),
+    ],
+  ]),
+]);
+const presets = new Map(presetGroups.flatMap(([, items]) => items));
+
 // 间隔按最自然的单位写：3600 秒写「1 小时」，90 秒照写「90 秒」——只在整除时进位。
 function every(seconds) {
   if (seconds % 3600 === 0) return `每 ${seconds / 3600} 小时`;
@@ -102,14 +141,13 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
   const selected = new Map();
   for (const x of probe.targets) {
     const key = x.region + " / " + x.carrier;
-    const matching = groups
-      .get(key)
-      ?.some(
-        (y) => y.host === x.host && y.port === x.port && y.family === x.family,
-      );
+    const pool = groups.get(key) || presets.get(key);
+    const matching = pool?.some(
+      (y) => y.host === x.host && y.port === x.port && y.family === x.family,
+    );
     const selectionKey = matching ? key : key + " · " + x.host;
     const entry = selected.get(selectionKey) || { all: [], families: new Set() };
-    if (matching) entry.all = groups.get(key);
+    if (matching) entry.all = pool;
     else if (!entry.all.some((y) => y.host === x.host && y.family === x.family))
       entry.all.push(target(x));
     entry.families.add(x.family);
@@ -144,6 +182,18 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       <section class="form-section"><h3>选择目标</h3>
         <p id="selected-label" class="option-label"></p>
         <div id="selected-targets" class="selected-targets"></div>
+        <div class="preset-groups">${presetGroups
+          .map(
+            ([title, items]) =>
+              `<div class="preset-group"><span class="option-label">${esc(title)}</span><div class="option-tiles">${items
+                .map(
+                  ([key, xs]) =>
+                    `<label class="checkbox" title="${esc(xs.map((x) => x.host).filter((h, i, all) => all.indexOf(h) === i).join(" / "))}"><input type="checkbox" data-preset="${esc(key)}" ${selected.has(key) ? "checked" : ""}>${esc(xs[0].region)}<small>:${xs[0].port}</small></label>`,
+                )
+                .join("")}</div></div>`,
+          )
+          .join("")}</div>
+        <p class="option-label">国内三网目录</p>
         <div class="catalog-filters">
           <label>搜索目录<input id="catalog-search" placeholder="地区、运营商、地址（支持 hb、ct、hk 这类拼音与缩写）" type="search"></label>
           <label>地区<select id="catalog-region"><option value="">全部地区</option>${options([...new Set(catalog.targets.map((x) => x.region))])}</select></label>
@@ -236,6 +286,9 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
           update();
         }),
     );
+    d.querySelectorAll("[data-preset]").forEach(
+      (input) => (input.checked = selected.has(input.dataset.preset)),
+    );
     const count = activeTargets().length;
     const kinds = Number(el("tcp").checked) + Number(el("route").checked);
     const bound = nodes.filter((n) => el("node:" + n.id).checked).length;
@@ -283,6 +336,16 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     );
     update();
   }
+  d.querySelectorAll("[data-preset]").forEach(
+    (input) =>
+      (input.onchange = () => {
+        const key = input.dataset.preset;
+        if (input.checked)
+          selected.set(key, { all: presets.get(key), families: defaultFamilies(presets.get(key)) });
+        else selected.delete(key);
+        update();
+      }),
+  );
   for (const id of ["catalog-search", "catalog-region", "catalog-carrier"])
     d.querySelector("#" + id).addEventListener(
       id === "catalog-search" ? "input" : "change",

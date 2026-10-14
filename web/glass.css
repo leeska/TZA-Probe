@@ -1684,3 +1684,25 @@ html[data-theme="dark"] {
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.22);
   outline: none;
 }
+
+/* 任务编辑器里的常用海外目标：按类别一行一组，端口用小字跟在名称后面 */
+.preset-groups {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 14px;
+  background: var(--glass-bg-subtle);
+}
+
+.preset-group + .preset-group {
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border-subtle);
+}
+
+.preset-group .option-tiles label.checkbox small {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
