@@ -63,7 +63,8 @@ func TestAlertDetailsDescribeObservedValues(t *testing.T) {
 		if tc.kind == model.AlertRenewal {
 			rule.Threshold, rule.HoldSeconds = 7, 0
 		}
-		on, got := evaluate(n, rule, now)
+		on, message := evaluate(n, rule, now)
+		got := message()
 		if !on {
 			t.Fatalf("%s: expected trigger", tc.kind)
 		}
@@ -75,7 +76,8 @@ func TestAlertDetailsDescribeObservedValues(t *testing.T) {
 	}
 	n.Online = false
 	n.LastSeen = now.Add(-2 * time.Minute).Unix()
-	_, got := evaluate(n, model.AlertRule{Kind: model.AlertOffline, HoldSeconds: 60}, now)
+	_, message := evaluate(n, model.AlertRule{Kind: model.AlertOffline, HoldSeconds: 60}, now)
+	got := message()
 	for _, want := range []string{"最后上报：", "未上报时长：2分钟", "45秒", "1分钟"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("offline missing %q: %s", want, got)
@@ -83,7 +85,8 @@ func TestAlertDetailsDescribeObservedValues(t *testing.T) {
 	}
 	n.LastSeen = 0
 	n.CreatedAt = now.Add(-20 * time.Minute).Unix()
-	_, got = evaluate(n, model.AlertRule{Kind: model.AlertOffline}, now)
+	_, message = evaluate(n, model.AlertRule{Kind: model.AlertOffline}, now)
+	got = message()
 	if !strings.Contains(got, "从未上报") || !strings.Contains(got, "添加时间：") || strings.Contains(got, "1970-") {
 		t.Fatal(got)
 	}
@@ -192,6 +195,49 @@ func TestTelegramMessageHasReadableSections(t *testing.T) {
 	}
 	got = telegramMessage(model.Event{Kind: "test", Message: "通知连接测试", At: e.At})
 	if strings.Contains(got, "节点：") || strings.Contains(got, "事件编号：") || !strings.Contains(got, "通道：Telegram") {
+		t.Fatal(got)
+	}
+}
+
+// The repeat marker belongs in the body, after the node's group / region.
+func TestRepeatReminderFollowsNodeContext(t *testing.T) {
+	now := time.Date(2026, 10, 13, 15, 30, 0, 0, time.UTC)
+	n := model.NodeView{Node: model.Node{Group: "HK"}, Online: true, LastSeen: now.Unix(), Metrics: &model.Metrics{CPU: 95}}
+	rule := model.AlertRule{Kind: model.AlertCPU, Threshold: 90, RepeatSeconds: 1800, Scope: model.ScopeAll}
+	on, message := evaluate(n, rule, now)
+	got := eventText(n, rule, true, message, now)(true, true)
+	if !on || !strings.HasPrefix(got, "分组：HK\n\n提醒状态：异常仍持续（重复提醒）\n当前 CPU：95.0%") {
+		t.Fatal(got)
+	}
+	if got = eventText(n, rule, true, message, now)(true, false); strings.Contains(got, "重复提醒）") {
+		t.Fatal(got)
+	}
+}
+
+func TestDetailsWithoutOptionalFields(t *testing.T) {
+	now := time.Date(2026, 10, 13, 15, 30, 0, 0, time.UTC)
+	n := model.NodeView{Node: model.Node{Billing: model.Billing{ExpiresAt: now.Add(48 * time.Hour).Format(time.RFC3339), Price: 10, PricePeriod: "月"}}}
+	if got := renewalDetails(n, now); !strings.Contains(got, "续费参考：10 / 月") {
+		t.Fatal(got)
+	}
+	// 降速声明清掉后解除，不写像真阈值的 0 Mbit/s。
+	got := recoveryMessage(n, model.AlertRule{Kind: model.AlertThrottle}, false, now)
+	if strings.Contains(got, "0 Mbit/s") || !strings.Contains(got, "未声明降速条件") {
+		t.Fatal(got)
+	}
+}
+
+func TestTelegramMessageFitsLimit(t *testing.T) {
+	e := model.Event{ID: 9, NodeName: "node", Kind: model.AlertCPU, Active: true, At: 1791905400, Message: strings.Repeat("🔥数据", 3000)}
+	got := telegramMessage(e)
+	if n := utf16Len(got); n > telegramLimit {
+		t.Fatalf("message is %d UTF-16 units", n)
+	}
+	if !strings.Contains(got, "内容过长已截断") || !strings.HasSuffix(got, "事件编号：#9") {
+		t.Fatal(got[len(got)-200:])
+	}
+	e.Message = "短正文"
+	if got = telegramMessage(e); strings.Contains(got, "截断") {
 		t.Fatal(got)
 	}
 }

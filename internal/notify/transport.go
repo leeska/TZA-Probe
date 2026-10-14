@@ -32,11 +32,12 @@ func (s Transport) Send(ctx context.Context, c Config, event model.Event) error 
 // telegramTitles names each event kind on the second line of a Telegram
 // message. Every model.AlertKinds entry needs one (a test holds them together),
 // otherwise the message falls back to the raw kind; load is the retired
-// combined rule, kept for its events still in the log.
+// combined rule, kept for its events still in the log. Test messages carry no
+// kind line, so they need no title.
 var telegramTitles = map[string]string{
 	model.AlertOffline: "节点离线", model.AlertRenewal: "到期续费", model.AlertTraffic: "流量额度",
 	model.AlertThrottle: "达量降速", model.AlertCPU: "CPU 使用率", model.AlertMemory: "内存使用率",
-	"load": "系统负载", "test": "测试通知",
+	"load": "系统负载",
 }
 
 type Telegram struct {

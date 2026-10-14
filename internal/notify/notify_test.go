@@ -288,8 +288,8 @@ func TestAlertMessagesKeepFractionalThreshold(t *testing.T) {
 	n.TrafficUsed = 86
 	for _, kind := range []string{model.AlertCPU, model.AlertMemory, model.AlertTraffic} {
 		on, message := evaluate(n, model.AlertRule{Kind: kind, Threshold: 85.5, HoldSeconds: 60}, now)
-		if !on || !strings.Contains(message, "85.5%") {
-			t.Fatalf("%s: on=%v message=%q", kind, on, message)
+		if !on || !strings.Contains(message(), "85.5%") {
+			t.Fatalf("%s: on=%v message=%q", kind, on, message())
 		}
 	}
 }

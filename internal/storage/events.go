@@ -18,7 +18,11 @@ import (
 // changes nothing; those end as a read and write nothing, so a quiet fleet adds
 // no commits (and no fsyncs) next to the Agents' reports. A missing row is the
 // quiet state (since 0, inactive), so a kind that never fired needs none.
-func (s *Store) Transition(ctx context.Context, n model.Node, kind, message, recovery string, condition bool, hold, repeat int, now time.Time) error {
+//
+// describe builds the event text only when an event is written (active: the
+// alert fires or repeats, repeat: it is a repeat reminder), so the quiet path
+// formats nothing.
+func (s *Store) Transition(ctx context.Context, n model.Node, kind string, describe func(active, repeat bool) string, condition bool, hold, repeat int, now time.Time) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -59,22 +63,18 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind, message, rec
 		return err
 	}
 	if active != previous || again {
-		if !active {
-			message = recovery
-			if message == "" {
-				message = "条件已解除或提醒已关闭"
-			}
-			if previousSince > 0 {
-				message += "\n本次条件持续：" + model.HumanDuration(time.Duration(max(now.Unix()-previousSince, 0))*time.Second)
-			}
+		message := ""
+		if describe != nil {
+			message = describe(active, again)
 		}
-		if active {
-			if again {
-				message = "提醒状态：异常仍持续（重复提醒）\n" + message
-			}
-			if elapsed := now.Unix() - since; elapsed > 0 {
-				message += "\n本次条件持续：" + model.HumanDuration(time.Duration(elapsed)*time.Second)
-			}
+		if !active && message == "" {
+			message = "条件已解除或提醒已关闭"
+		}
+		if !active && previousSince > 0 {
+			message += "\n本次条件持续：" + model.HumanDuration(time.Duration(max(now.Unix()-previousSince, 0))*time.Second)
+		}
+		if elapsed := now.Unix() - since; active && elapsed > 0 {
+			message += "\n本次条件持续：" + model.HumanDuration(time.Duration(elapsed)*time.Second)
 		}
 		if _, err = tx.ExecContext(ctx, "INSERT INTO events(node_id,node_name,kind,message,active,at) VALUES(?,?,?,?,?,?)", n.ID, n.Name, kind, message, active, now.Unix()); err != nil {
 			return err

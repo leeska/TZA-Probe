@@ -19,7 +19,7 @@ import (
 
 type Repository interface {
 	Nodes(context.Context, time.Time) ([]model.NodeView, error)
-	Transition(context.Context, model.Node, string, string, string, bool, int, int, time.Time) error
+	Transition(context.Context, model.Node, string, func(active, repeat bool) string, bool, int, int, time.Time) error
 	PendingEvents(context.Context, time.Time) ([]model.Event, error)
 	Delivery(context.Context, model.Event, bool, time.Time) error
 }
@@ -66,43 +66,66 @@ func throttleMessage(n model.NodeView) string {
 }
 
 // evaluate reports whether one rule's condition holds for the node right now,
-// and the message an alert for it carries.
-func evaluate(n model.NodeView, r model.AlertRule, now time.Time) (bool, string) {
+// and how to build the message an alert for it carries. The message is lazy:
+// the engine evaluates every rule every tick, and almost no tick writes an event.
+func evaluate(n model.NodeView, r model.AlertRule, now time.Time) (bool, func() string) {
+	none := func() string { return "" }
+	hold := func() string { return model.HumanDuration(time.Duration(r.HoldSeconds) * time.Second) }
 	switch r.Kind {
 	case model.AlertOffline:
 		if n.Online {
-			return false, ""
+			return false, none
 		}
 		// 从没上报过的节点按创建时间给足装 Agent 的时间，否则一条「全部节点」的离线规则
 		// 会在每台新节点建好一两分钟后就报「一直未接入」。
 		if n.LastSeen == 0 {
-			return now.Unix()-n.CreatedAt > int64(model.FirstReportGrace.Seconds()), offlineMessage(n) + "\n添加时间：" + eventTime(n.CreatedAt) + "\n允许首次接入：" + model.HumanDuration(model.FirstReportGrace) + "\n触发后等待：" + model.HumanDuration(time.Duration(r.HoldSeconds)*time.Second)
+			return now.Unix()-n.CreatedAt > int64(model.FirstReportGrace.Seconds()), func() string {
+				return offlineMessage(n) + "\n添加时间：" + eventTime(n.CreatedAt) + "\n允许首次接入：" + model.HumanDuration(model.FirstReportGrace) + "\n触发后等待：" + hold()
+			}
 		}
-		return true, offlineMessage(n) + "\n最后上报：" + eventTime(n.LastSeen) + "\n未上报时长：" + model.HumanDuration(now.Sub(time.Unix(n.LastSeen, 0))) + "\n离线判定：连续 " + model.HumanDuration(model.OfflineAfter) + " 未上报\n触发后等待：" + model.HumanDuration(time.Duration(r.HoldSeconds)*time.Second)
+		return true, func() string {
+			return offlineMessage(n) + "\n最后上报：" + eventTime(n.LastSeen) + "\n未上报时长：" + model.HumanDuration(now.Sub(time.Unix(n.LastSeen, 0))) + "\n离线判定：连续 " + model.HumanDuration(model.OfflineAfter) + " 未上报\n触发后等待：" + hold()
+		}
 	case model.AlertRenewal:
 		if n.Billing.ExpiresAt == "" {
-			return false, ""
+			return false, none
 		}
 		expiry, err := time.Parse(time.RFC3339, n.Billing.ExpiresAt)
 		if err != nil {
-			return false, ""
+			return false, none
 		}
-		return !now.Add(time.Duration(r.Threshold) * 24 * time.Hour).Before(expiry), renewalDetails(n, now) + fmt.Sprintf("\n提醒窗口：到期前 %g 天", r.Threshold)
+		return !now.Add(time.Duration(r.Threshold) * 24 * time.Hour).Before(expiry), func() string {
+			return renewalDetails(n, now) + fmt.Sprintf("\n提醒窗口：到期前 %g 天", r.Threshold)
+		}
 	case model.AlertTraffic:
 		limit := n.Billing.TrafficLimit
-		return limit > 0 && float64(n.TrafficUsed)/float64(limit)*100 >= r.Threshold, trafficDetails(n) + fmt.Sprintf("\n触发阈值：%g%%", r.Threshold)
-	case model.AlertThrottle:
-		return n.Throttled, throttleMessage(n)
-	case model.AlertCPU:
-		return n.Online && n.Metrics != nil && n.Metrics.CPU >= r.Threshold, resourceDetails(n, r.Kind) + fmt.Sprintf("\n触发条件：CPU ≥ %g%%，持续至少 %s\n指标采样：%s", r.Threshold, model.HumanDuration(time.Duration(r.HoldSeconds)*time.Second), eventTime(n.LastSeen))
-	case model.AlertMemory:
-		if !n.Online || n.Metrics == nil || n.Metrics.MemoryTotal == 0 {
-			return false, ""
+		return limit > 0 && float64(n.TrafficUsed)/float64(limit)*100 >= r.Threshold, func() string {
+			return trafficDetails(n) + fmt.Sprintf("\n触发阈值：%g%%", r.Threshold)
 		}
-		used := float64(n.Metrics.MemoryUsed) / float64(n.Metrics.MemoryTotal) * 100
-		return used >= r.Threshold, resourceDetails(n, r.Kind) + fmt.Sprintf("\n触发条件：内存 ≥ %g%%，持续至少 %s\n指标采样：%s", r.Threshold, model.HumanDuration(time.Duration(r.HoldSeconds)*time.Second), eventTime(n.LastSeen))
+	case model.AlertThrottle:
+		return n.Throttled, func() string { return throttleMessage(n) }
+	case model.AlertCPU, model.AlertMemory:
+		used, ok := usage(n, r.Kind)
+		return ok && used >= r.Threshold, func() string {
+			return resourceDetails(n, r.Kind) + fmt.Sprintf("\n触发条件：%s ≥ %g%%，持续至少 %s\n指标采样：%s", usageLabels[r.Kind], r.Threshold, hold(), eventTime(n.LastSeen))
+		}
 	}
-	return false, ""
+	return false, none
+}
+
+// eventText builds one node/kind's event text for Transition: the trigger or
+// repeat snapshot when active, otherwise the recovery and its cause.
+func eventText(n model.NodeView, r model.AlertRule, enabled bool, message func() string, now time.Time) func(active, repeat bool) string {
+	return func(active, repeat bool) string {
+		if !active {
+			return recoveryMessage(n, r, enabled, now)
+		}
+		body := message() + ruleDetails(r)
+		if repeat {
+			body = "提醒状态：异常仍持续（重复提醒）\n" + body
+		}
+		return nodeContext(n, body)
+	}
 }
 
 type Engine struct {
@@ -121,18 +144,11 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 		for _, kind := range model.AlertKinds {
 			rule, on := n.Alerts.Rule(kind)
 			rule.Kind = kind
-			condition, message := false, ""
+			condition, message := false, func() string { return "" }
 			if on {
 				condition, message = evaluate(n, rule, now)
-				if condition {
-					message += ruleDetails(rule)
-				}
 			}
-			recovery := ""
-			if !condition {
-				recovery = recoveryMessage(n, rule, on, now)
-			}
-			if err = e.Repository.Transition(ctx, n.Node, kind, nodeContext(n, message), recovery, condition, rule.HoldSeconds, rule.RepeatSeconds, now); err != nil {
+			if err = e.Repository.Transition(ctx, n.Node, kind, eventText(n, rule, on, message, now), condition, rule.HoldSeconds, rule.RepeatSeconds, now); err != nil {
 				return err
 			}
 		}

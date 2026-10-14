@@ -197,7 +197,7 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 	now := time.Now()
 	n := model.Node{ID: id, Name: "test"}
 	for _, sec := range []int{0, 30, 299, 300, 301} {
-		if err := s.Transition(ctx, n, "offline", "offline", "", true, 30, 300, now.Add(time.Duration(sec)*time.Second)); err != nil {
+		if err := s.Transition(ctx, n, "offline", text("offline"), true, 30, 300, now.Add(time.Duration(sec)*time.Second)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -205,15 +205,15 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatal("repeat before cooldown", len(events))
 	}
-	if err := s.Transition(ctx, n, "offline", "offline", "", true, 30, 300, now.Add(330*time.Second)); err != nil {
+	if err := s.Transition(ctx, n, "offline", text("offline"), true, 30, 300, now.Add(330*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	events, _ = s.Events(ctx, model.EventQuery{})
 	if len(events) != 2 {
 		t.Fatal(len(events))
 	}
-	if !strings.Contains(events[0].Message, "重复提醒") || !strings.Contains(events[0].Message, "本次条件持续：5分钟30秒") {
-		t.Fatal("repeat missing its state or duration", events[0].Message)
+	if !strings.Contains(events[0].Message, "本次条件持续：5分钟30秒") {
+		t.Fatal("repeat missing its duration", events[0].Message)
 	}
 	e := events[0]
 	e.LastError = "connection failed"
@@ -224,7 +224,7 @@ func TestRepeatReminderAndFailurePersistence(t *testing.T) {
 	if events[0].LastError != e.LastError || events[0].Attempts != 1 {
 		t.Fatal(events)
 	}
-	if err := s.Transition(ctx, n, "offline", "offline", "", false, 30, 300, now.Add(340*time.Second)); err != nil {
+	if err := s.Transition(ctx, n, "offline", text("offline"), false, 30, 300, now.Add(340*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	events, _ = s.Events(ctx, model.EventQuery{})
@@ -251,7 +251,7 @@ func TestQuietTransitionWritesNothing(t *testing.T) {
 	at := func(sec int) time.Time { return now.Add(time.Duration(sec) * time.Second) }
 	before := changes()
 	for _, sec := range []int{0, 15, 30} {
-		if err := s.Transition(ctx, n, "cpu", "", "", false, 30, 0, at(sec)); err != nil {
+		if err := s.Transition(ctx, n, "cpu", nil, false, 30, 0, at(sec)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -261,14 +261,14 @@ func TestQuietTransitionWritesNothing(t *testing.T) {
 	}
 	// The condition starting is a change (since is recorded); holding below the
 	// hold time is not.
-	if err := s.Transition(ctx, n, "cpu", "", "", true, 300, 0, at(45)); err != nil {
+	if err := s.Transition(ctx, n, "cpu", nil, true, 300, 0, at(45)); err != nil {
 		t.Fatal(err)
 	}
 	started := changes()
 	if started == before {
 		t.Fatal("the start of a condition was not recorded")
 	}
-	if err := s.Transition(ctx, n, "cpu", "", "", true, 300, 0, at(60)); err != nil {
+	if err := s.Transition(ctx, n, "cpu", nil, true, 300, 0, at(60)); err != nil {
 		t.Fatal(err)
 	}
 	if changes() != started {
@@ -483,4 +483,9 @@ func TestLatencyWindowCeilingMatchesJobsRetention(t *testing.T) {
 	if got := int(JobsRetention.Minutes()); got != model.MaxLatencyWindowMinutes {
 		t.Fatalf("jobs 保留 %d 分钟，面板上限 %d 分钟，两者必须一致", got, model.MaxLatencyWindowMinutes)
 	}
+}
+
+// text is a fixed event text for Transition, whatever edge it describes.
+func text(message string) func(bool, bool) string {
+	return func(bool, bool) string { return message }
 }
