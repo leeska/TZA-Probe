@@ -13,6 +13,24 @@ type Target struct {
 	Family  string `json:"family"`
 	Region  string `json:"region"`
 	Carrier string `json:"carrier"`
+	// Checks narrows the task's checks for this one target (e.g. latency only
+	// for an overseas service whose route trace says nothing about the China
+	// backbones). Empty means every check of the task; otherwise it must be a
+	// non-empty subset of ProbeSpec.Checks.
+	Checks []string `json:"checks,omitempty"`
+}
+
+// runs reports whether this target runs the given check of its task.
+func (t Target) runs(kind string) bool {
+	if len(t.Checks) == 0 {
+		return true
+	}
+	for _, c := range t.Checks {
+		if c == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // Task kinds: a probe task runs TCP latency and/or route checks against a
@@ -37,7 +55,7 @@ type Task struct {
 }
 
 // ProbeSpec is a probe task's definition: every check runs against every
-// target. Interval is the TCP latency period, RouteInterval the route period;
+// target, unless a target narrows them with its own Checks. Interval is the TCP latency period, RouteInterval the route period;
 // each only matters when its check is selected.
 type ProbeSpec struct {
 	Checks        []string `json:"checks"`
@@ -79,6 +97,9 @@ func (t Task) Leaves() []Probe {
 		out := []Probe{}
 		for _, target := range t.Probe.Targets {
 			for _, kind := range t.Probe.Checks {
+				if !target.runs(kind) {
+					continue
+				}
 				leaf := Probe{ID: t.ID, Name: t.Name, Kind: kind, Host: target.Host, Port: target.Port,
 					Family: target.Family, Region: target.Region, Carrier: target.Carrier, Interval: t.Probe.Interval}
 				if kind == RouteKind {
@@ -125,6 +146,19 @@ func (t Task) Validate() error {
 		for _, check := range p.Checks {
 			if check != "tcp" && check != RouteKind {
 				return errors.New("检测内容须为 tcp（延迟）或 route（回程）")
+			}
+		}
+		// A target's own checks may only narrow the task's; a non-empty list
+		// therefore always keeps at least one check for that target.
+		for _, target := range p.Targets {
+			for _, check := range target.Checks {
+				in := false
+				for _, c := range p.Checks {
+					in = in || c == check
+				}
+				if !in {
+					return fmt.Errorf("目标 %s 的检测项 %q 不在任务的检测内容里", target.Host, check)
+				}
 			}
 		}
 		seen := map[string]bool{}

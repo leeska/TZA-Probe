@@ -99,9 +99,11 @@ export function taskSummary(t) {
     if (!byRegion.has(region)) byRegion.set(region, new Set());
     byRegion.get(region).add(x.carrier || "其他");
   }
-  const groups = [...byRegion].map(
-    ([region, carriers]) =>
-      `${region} ${[...carriers].sort((a, b) => rank(a) - rank(b)).join("/")}`,
+  // 只有「其他」的地区（海外服务、自定义目标）只写地区名：「Google」而不是「Google 其他」。
+  const groups = [...byRegion].map(([region, carriers]) =>
+    carriers.size === 1 && carriers.has("其他")
+      ? region
+      : `${region} ${[...carriers].sort((a, b) => rank(a) - rank(b)).join("/")}`,
   );
   return {
     checks: p.checks
@@ -139,7 +141,8 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(target(x));
   }
-  // 每组目标记录自己的 IP 协议：all 是该组可用地址，families 是本任务实际要测的协议。
+  // 每组目标记录自己的 IP 协议：all 是该组可用地址，families 是本任务实际要测的协议；
+  // checks 是这组要跑的检测项（延迟 / 回程），只能在任务的检测内容里收窄。
   const selected = new Map();
   for (const x of probe.targets) {
     const key = x.region + " / " + x.carrier;
@@ -148,13 +151,24 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       (y) => y.host === x.host && y.port === x.port && y.family === x.family,
     );
     const selectionKey = matching ? key : key + " · " + x.host;
-    const entry = selected.get(selectionKey) || { all: [], families: new Set() };
+    const entry = selected.get(selectionKey) || { all: [], families: new Set(), checks: new Set() };
     if (matching) entry.all = pool;
     else if (!entry.all.some((y) => y.host === x.host && y.family === x.family))
       entry.all.push(target(x));
+    for (const c of x.checks?.length ? x.checks : probe.checks) entry.checks.add(c);
     entry.families.add(x.family);
     selected.set(selectionKey, entry);
   }
+  // 新加入的组默认跑哪些检测：常用海外预设只测延迟——回程是按国内骨干命名的，追 Google、
+  // Telegram 的路由说明不了线路；三网目录与自定义目标两项都跑。
+  const defaultChecks = (key) => new Set(presets.has(key) ? ["tcp"] : ["tcp", "route"]);
+  const taskChecks = () => ["tcp", "route"].filter((k) => el(k).checked);
+  // 这组实际跑的检测项：任务勾的与这组自己的取交集；交集为空（任务只剩它没选的那项）就跟任务走。
+  const effectiveChecks = (e) => {
+    const all = taskChecks();
+    const mine = all.filter((k) => e.checks.has(k));
+    return mine.length ? mine : all;
+  };
   const availableFamilies = (all) => ["ipv4", "ipv6"].filter((f) => all.some((x) => x.family === f));
   // 新加入的组按上方“IP 协议”勾选；该组没有对应地址时退回它自己有的协议，避免加进来却什么都不测。
   const defaultFamilies = (all) => {
@@ -190,7 +204,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
           <label>延迟间隔（秒）<input name="interval" type="number" min="30" max="86400" value="${probe.interval || 60}"></label>
           <label>回程间隔（秒）<input name="route_interval" type="number" min="900" max="86400" value="${probe.route_interval || 3600}"></label>
         </div>
-        <p class="hint">IP 协议是新加入目标的默认值，改动会套用到全部已选目标，之后可在已选目标上单独调整。</p>
+        <p class="hint">IP 协议是新加入目标的默认值，改动会套用到全部已选目标。延迟和回程都勾上时，每组目标可以在已选目标上单独关掉其中一项；常用海外目标默认只测延迟。</p>
       </section>
       <section class="form-section">
         <div class="form-section-head"><h3>选择目标</h3><button type="button" id="clear-targets" class="quiet">清空已选</button></div>
@@ -257,10 +271,15 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
   const el = (name) => form.elements.namedItem(name);
   wireComboboxes(form);
   let visible = [];
+  // 只有收窄了的组才给目标带 checks：跑全部检测项的目标与以前保存的完全一样。
   const activeTargets = () =>
-    [...selected.values()].flatMap((e) =>
-      e.all.filter((x) => e.families.has(x.family)),
-    );
+    [...selected.values()].flatMap((e) => {
+      const checks = effectiveChecks(e);
+      const narrowed = checks.length < taskChecks().length;
+      return e.all
+        .filter((x) => e.families.has(x.family))
+        .map((x) => (narrowed ? { ...x, checks } : x));
+    });
   function update() {
     // 已选目标排在目录上面：编辑已有任务时一打开就看到它测的是什么，不用先滚过整份目录。
     d.querySelector("#selected-label").textContent = selected.size
@@ -276,7 +295,18 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
             return `<button type="button" class="chip-family ${on ? "on" : ""}" data-family-toggle="${esc(key)}" data-family="${f}" ${has ? "" : "disabled"} title="${has ? (on ? "点击停止检测" : "点击加入检测") : "该目标没有对应地址"}" aria-pressed="${on}">${f === "ipv4" ? "IPv4" : "IPv6"}</button>`;
           })
           .join("");
-        return `<span class="target-chip"><strong>${esc(targetLabel(key))}</strong><span class="chip-families">${toggles}</span><button type="button" class="chip-remove" data-remove="${esc(key)}" aria-label="移除 ${esc(targetLabel(key))}">×</button></span>`;
+        // 任务同时勾了延迟和回程时，每组可以单独关掉其中一项（最常见的是海外服务不测回程）。
+        const both = taskChecks().length === 2;
+        const checkToggles = both
+          ? `<span class="chip-sep" aria-hidden="true"></span>${["tcp", "route"]
+              .map((k) => {
+                const on = e.checks.has(k);
+                const label = k === "tcp" ? "延迟" : "回程";
+                return `<button type="button" class="chip-family ${on ? "on" : ""}" data-check-toggle="${esc(key)}" data-check="${k}" title="${on ? `点击不测${label}` : `点击加测${label}`}" aria-pressed="${on}">${label}</button>`;
+              })
+              .join("")}`
+          : "";
+        return `<span class="target-chip"><strong>${esc(targetLabel(key))}</strong><span class="chip-families">${toggles}${checkToggles}</span><button type="button" class="chip-remove" data-remove="${esc(key)}" aria-label="移除 ${esc(targetLabel(key))}">×</button></span>`;
       })
       .join("");
     d.querySelectorAll("[data-remove]").forEach(
@@ -300,11 +330,26 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
           update();
         }),
     );
+    d.querySelectorAll("[data-check-toggle]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          const e = selected.get(b.dataset.checkToggle);
+          const check = b.dataset.check;
+          if (!e.checks.has(check)) e.checks.add(check);
+          else if (taskChecks().some((k) => k !== check && e.checks.has(k))) e.checks.delete(check);
+          else {
+            toast("每组目标至少保留一项检测");
+            return;
+          }
+          update();
+        }),
+    );
     d.querySelectorAll("[data-preset]").forEach(
       (input) => (input.checked = selected.has(input.dataset.preset)),
     );
-    const count = activeTargets().length;
-    const kinds = Number(el("tcp").checked) + Number(el("route").checked);
+    const active = activeTargets();
+    const count = active.length;
+    const items = active.reduce((v, x) => v + (x.checks?.length || taskChecks().length), 0);
     const bound = nodes.filter((n) => el("node:" + n.id).checked).length;
     if (kind === "unlock") {
       // 解锁检测没有目标与检测项，汇总只写间隔与执行节点数——不写没有意义的「0 个地址」。
@@ -312,7 +357,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       d.querySelector("#task-summary").textContent = `解锁检测 · 每 ${every} 秒 · ${bound} 台执行节点`;
     } else {
       d.querySelector("#task-summary").textContent =
-        `已选 ${selected.size} 组目标 · ${count} 个地址 · 每台节点 ${count * kinds} 个检测项 · ${bound} 台执行节点`;
+        `已选 ${selected.size} 组目标 · ${count} 个地址 · 每台节点 ${items} 个检测项 · ${bound} 台执行节点`;
     }
     el("interval").disabled = !el("tcp").checked;
     el("route_interval").disabled = !el("route").checked;
@@ -343,6 +388,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
             selected.set(input.dataset.target, {
               all: groups.get(input.dataset.target),
               families: defaultFamilies(groups.get(input.dataset.target)),
+              checks: defaultChecks(input.dataset.target),
             });
           else selected.delete(input.dataset.target);
           update();
@@ -373,7 +419,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       (input.onchange = () => {
         const key = input.dataset.preset;
         if (input.checked)
-          selected.set(key, { all: presets.get(key), families: defaultFamilies(presets.get(key)) });
+          selected.set(key, { all: presets.get(key), families: defaultFamilies(presets.get(key)), checks: defaultChecks(key) });
         else selected.delete(key);
         update();
       }),
@@ -386,7 +432,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
   d.querySelector("#select-visible").onclick = () => {
     for (const [key, xs] of visible)
       if (!selected.has(key))
-        selected.set(key, { all: xs, families: defaultFamilies(xs) });
+        selected.set(key, { all: xs, families: defaultFamilies(xs), checks: defaultChecks(key) });
     renderCatalog();
   };
   d.querySelector("#clear-targets").onclick = () => {
@@ -424,7 +470,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       throw new Error("请填写地区、有效端口和至少一个地址");
     selected.set(
       region + " / " + carrier + " · " + xs.map((x) => x.host).join(" / "),
-      { all: xs, families: new Set(xs.map((x) => x.family)) },
+      { all: xs, families: new Set(xs.map((x) => x.family)), checks: defaultChecks("") },
     );
     update();
   });

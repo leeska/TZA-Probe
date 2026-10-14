@@ -42,6 +42,14 @@ function showFailure(dialog, id, focus, error) {
   box.append(text, retry);
   dialog.append(box);
 }
+// 一个探测目标的显示名：三网写「上海 · 电信」；三网之外（运营商「其他」）的目标地区就是服务名
+//（Google、Telegram DC1），后面再挂「· 其他」只是噪音，只写地区。
+function targetName(t) {
+  const carrier = t.carrier || "自定义";
+  if (t.region && (carrier === "其他" || carrier === "自定义")) return t.region;
+  return [t.region || t.name, carrier].filter(Boolean).join(" · ") || "网络目标";
+}
+
 // focus 为空时展示整台机器的综合信息；带 {kind, carrier} 时只展示那一格的详情：
 // 延迟格看该运营商的 TCP 延迟，回程格看该运营商的回程路径。
 export async function detail(id, focus = null) {
@@ -92,8 +100,11 @@ export async function detail(id, focus = null) {
   const focused = !!focus && (focus.kind === "latency" || focus.kind === "route");
   const focusCarrier = focused ? focus.carrier || "" : "";
   const focusKind = focused ? focus.kind : "";
+  // 卡片上的海外格一个目标一格，点开时带着它的地区（服务名），只看那一个目标。
+  const focusRegion = focused && focus.region != null ? focus.region : null;
+  const focusName = focusRegion != null ? focusRegion || "其他" : focusCarrier && focusCarrier !== "其他" ? focusCarrier : "";
   const focusTitle = focused
-    ? `${focusCarrier && focusCarrier !== "其他" ? focusCarrier + " · " : ""}${focusKind === "route" ? "三网回程" : "TCP 延迟"}`
+    ? `${focusName ? focusName + " · " : ""}${focusKind === "route" ? "三网回程" : "TCP 延迟"}`
     : "";
   // 一个探测任务都没有的机器（按设计不挂任务）：不给空图表，也不写「请在后台创建并绑定任务」，
   // 只留一行说明——与公开卡片同一句话。判据是节点上的探测项（probe_targets），不是这次拿回来
@@ -143,8 +154,10 @@ export async function detail(id, focus = null) {
   wireCharts(d);
   // 卡片把没有运营商的旧任务归入“其他”，这里用同样的规则匹配。
   const carrierOf = (value) => (["电信", "联通", "移动"].includes(value) ? value : "其他");
-  let networkSeries = focused ? network.filter((x) => carrierOf(x.carrier) === focusCarrier) : network;
-  const scopedObs = focused ? obs.filter((o) => carrierOf(o.task.carrier) === focusCarrier) : obs;
+  const inFocus = (carrier, region) =>
+    carrierOf(carrier) === focusCarrier && (focusRegion == null || (region || "") === focusRegion);
+  let networkSeries = focused ? network.filter((x) => inFocus(x.carrier, x.region)) : network;
+  const scopedObs = focused ? obs.filter((o) => inFocus(o.task.carrier, o.task.region)) : obs;
   const wantedFamily = focus && focus.family;
   let selectedFamily = wantedFamily && (wantedFamily === "ipv4" ? hasIPv4 : hasIPv6) ? wantedFamily : hasIPv4 ? "ipv4" : "ipv6";
   let selectedHours = 24;
@@ -179,7 +192,7 @@ export async function detail(id, focus = null) {
       ? `<section class="trace-group"><h4>三网回程<span>${matches.length} 个目标</span></h4>${matches
           .map(
             (o) =>
-              `<details class="trace"><summary><span><b>${esc(o.task.region || o.task.name)} · ${esc(o.task.carrier || "自定义")}</b><small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知")}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary><div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div></details>`,
+              `<details class="trace"><summary><span><b>${esc(targetName(o.task))}</b><small>${esc(o.task.host)}:${o.task.port} · ${date(o.at)}</small></span><span class="trace-status">${esc(!o.stale && o.result.status === "ok" ? o.result.route : "未知")}<small>${o.stale ? "结果已过期" : esc(reasonName[o.result.reason] || statusName[o.result.status] || "未知")}</small></span></summary><div class="table-scroll"><table><thead><tr><th>跳数</th><th>地址（脱敏）</th><th>ASN</th><th>延迟</th></tr></thead><tbody>${(o.result.hops || []).map((h) => `<tr><td>${h.ttl}</td><td>${esc(h.address)}</td><td>${esc(h.asn || "未知")}</td><td>${h.rtt ? h.rtt.toFixed(1) + " ms" : "—"}</td></tr>`).join("") || '<tr><td colspan="4">暂无路径数据</td></tr>'}</tbody></table></div></details>`,
           )
           .join("")}</section>`
       : probePlan.some((t) => t.kind === "route" && t.family === f)
@@ -261,7 +274,7 @@ export async function detail(id, focus = null) {
       const [samples, series] = await withDeadline(() => Promise.all([host ? host.promise : null, net.promise]));
       if (!d.open || d.dataset.nodeId !== id || ticket !== rangeTicket) return;
       selectedHours = hours;
-      networkSeries = focused ? series.filter((x) => carrierOf(x.carrier) === focusCarrier) : series;
+      networkSeries = focused ? series.filter((x) => inFocus(x.carrier, x.region)) : series;
       // 聚焦视图没有主机历史，只有网络曲线——那里没有 #charts，别把整段交互打断。
       const hosts = d.querySelector("#charts");
       if (hosts && samples) hosts.innerHTML = hostCharts(samples, hours, n);
@@ -278,7 +291,7 @@ export async function detail(id, focus = null) {
 }
 
 function targetLabel(series) {
-  return [series.region, series.carrier || "自定义"].filter(Boolean).join(" · ") || series.name || "网络目标";
+  return targetName(series);
 }
 
 // 时间范围下拉：主机历史支持 30 天，网络历史（/network-history）最多只有 7 天，
@@ -327,7 +340,13 @@ function networkOverview(series, metric, hours) {
   const unit = metric === "failure" ? "%" : "ms";
   // 图例和读数框只写「地区 · 运营商」：IPv6 目标地址太长，一行放不下会把读数框撑到
   // 图表外面；地址放在 title 里，下面「三网回程」表本来也会列出完整目标。
-  const seriesName = (s) => [s.region, s.carrier].filter(Boolean).join(" · ") || s.name || "网络目标";
+  // 同一个目标出现在两个任务里（各自一条线）时名字会重复，图例分不清：重名的后面补上任务名。
+  const nameCount = new Map();
+  for (const s of usable) nameCount.set(targetName(s), (nameCount.get(targetName(s)) || 0) + 1);
+  const seriesName = (s) => {
+    const base = targetName(s);
+    return nameCount.get(base) > 1 && s.name ? `${base}（${s.name}）` : base;
+  };
   const seriesFull = (s) => [s.region, s.carrier, s.host].filter(Boolean).join(" · ");
   const hover = usable.map((s, i) => ({
     label: seriesName(s),

@@ -543,8 +543,16 @@ assert(form.elements.ipv4.checked && form.elements.ipv6.checked);
 const chipFamilies = (label) =>
   [...w.document.querySelectorAll(".target-chip")]
     .find((c) => c.querySelector("strong").textContent.includes(label))
-    ?.querySelectorAll(".chip-family.on");
+    ?.querySelectorAll(".chip-family.on[data-family]");
 assert.equal(chipFamilies("电信").length, 2, "a freshly selected group follows the global default");
+// 延迟和回程都勾上时，每组还有自己的检测项开关；三网目录的组默认两项都跑。
+assert.deepEqual(
+  [...[...w.document.querySelectorAll(".target-chip")]
+    .find((c) => c.querySelector("strong").textContent.includes("电信"))
+    .querySelectorAll(".chip-family.on[data-check]")].map((b) => b.dataset.check),
+  ["tcp", "route"],
+  "三网目录的组默认延迟与回程都测",
+);
 [...w.document.querySelectorAll(".target-chip")]
   .find((c) => c.querySelector("strong").textContent.includes("电信"))
   .querySelector('.chip-family[data-family="ipv6"]')
@@ -1218,9 +1226,9 @@ assert.notEqual(
   "回程标签要按真实结果渲染",
 );
 const cardText = card.textContent;
-// 格子只画这台机器真有任务的组：它挂的是「上海 电信 / 联通 / 移动」，自定义的「其他」
-// 目标在新加坡，而卡片配的延迟地区是上海——不在卡片地区里的组不给格子。以前固定画满四格，
-// 那格永远「未检测」，看着像没加载完。
+// 格子只画这台机器真有任务的组：它挂的是「上海 电信 / 联通 / 移动」，外加一个在新加坡的
+// 自定义「其他」目标。三网按卡片的延迟地区（上海）筛；三网之外的目标一个一格、写上自己的
+// 地区名，不受延迟地区限制（用户点名：多选了几个国际目标，卡片上却只剩一行）。
 // 延迟块的行首是官方标志（用户点名：文字换成 logo），按 data-focus-carrier 认家；
 // 名字没丢——aria-label 与筛选用的 data-focus-carrier 里都在。
 const bandCarriers = [...card.querySelectorAll(".latency-bands .net-band")].map(
@@ -1228,11 +1236,16 @@ const bandCarriers = [...card.querySelectorAll(".latency-bands .net-band")].map(
 );
 for (const carrier of ["电信", "联通", "移动"])
   assert(bandCarriers.includes(carrier), `延迟块要覆盖 ${carrier}，实际 ${bandCarriers.join("/")}`);
-assert(
-  !bandCarriers.includes("其他"),
-  "卡片地区之外的探测组（自定义的新加坡目标）不占一格",
+const overseasBands = [...card.querySelectorAll('.latency-bands .net-band[data-focus-carrier="其他"]')];
+assert.equal(overseasBands.length, 1, "三网之外的目标一个一格：这台只有新加坡那一个");
+assert.equal(overseasBands[0].dataset.focusRegion, "新加坡", "海外格带上自己的地区，点开只看这一个目标");
+assert.equal(
+  overseasBands[0].querySelector(".band-name")?.textContent,
+  "新加坡",
+  "海外格把「延迟」二字换成目标名",
 );
-assert.equal(card.querySelectorAll(".latency-bands .net-band").length, 3, "延迟只画真有任务的三网（一家一块）");
+assert(overseasBands[0].querySelector(".carrier-mark.cx svg"), "海外格行首是地球图标");
+assert.equal(card.querySelectorAll(".latency-bands .net-band").length, 4, "三网各一块 + 海外目标一块");
 // 服务端给的 probe_targets 里确实带着那些探测项（含自定义的「其他」目标），是卡片按地区筛掉的。
 const plannedNode = (await (await fetch(base + "/api/v1/nodes")).json()).find(
   (x) => x.id === card.dataset.node,
@@ -1262,7 +1275,8 @@ assert.equal(
   "三处色带（列表 1 条 + 卡片 2 条）都要传 BAR_COUNT，不许写死格数",
 );
 {
-  const bands = card.querySelectorAll(".latency-bands .net-band");
+  // 三网那三块（海外格的地球图标与目标名在上面单独验过）。
+  const bands = card.querySelectorAll('.latency-bands .net-band:not([data-focus-carrier="其他"])');
   assert.equal(bands.length, 3, "延迟一家运营商一块");
   for (const band of bands) {
     const mark = band.querySelector(".band-head .carrier-name .carrier-mark");
@@ -2125,7 +2139,12 @@ assert.equal(
   "节点名要给全，不做省略",
 );
 // 延迟与回程在列表视图里是行内文本（卡片那格是方形格子），每家运营商一行。
-assert.equal(listRow.querySelectorAll(".net-cell .net-line").length, 3, "延迟三行（这台机器只挂了三网）");
+assert.equal(listRow.querySelectorAll(".net-cell .net-line").length, 4, "延迟四行：三网各一行 + 新加坡的自定义目标一行");
+{
+  // 海外行多一个定宽名字槽；同一格里三网行留同宽空槽，数值列照样对齐。
+  const names = [...listRow.querySelectorAll(".net-cell .net-line .net-name")].map((x) => x.textContent);
+  assert.deepEqual(names, ["", "", "", "新加坡"], "名字槽：三网空着，海外行写目标名");
+}
 assert.equal(listRow.querySelectorAll(".route-cell .route-line").length, 3, "回程三行");
 for (const line of listRow.querySelectorAll(".net-line")) {
   assert(line.dataset.focusKind === "latency" || line.dataset.focusKind === "route", "行内文本要带聚焦信息");
@@ -2146,7 +2165,7 @@ for (const line of listRow.querySelectorAll(".route-cell .route-line")) {
 }
 // 延迟三行也换成官方标志了（用户点名）：与同一行右边的回程行、与卡片里的延迟块口径一致。
 // 名字同样不能丢——aria-label / data-focus-carrier 里都在。
-for (const line of listRow.querySelectorAll(".net-cell .net-line")) {
+for (const line of listRow.querySelectorAll('.net-cell .net-line:not([data-focus-carrier="其他"])')) {
   const mark = line.querySelector(".carrier-name .carrier-mark");
   assert(mark && mark.querySelector("svg path[fill]"), "列表里的延迟行第一项要是运营商标志");
   assert(mark.getAttribute("aria-hidden") === "true", "列表里的标志同样是装饰");

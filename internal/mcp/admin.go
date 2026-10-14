@@ -310,6 +310,10 @@ func targetSchema() map[string]any {
 			"family":  map[string]any{"type": "string", "enum": []string{"ipv4", "ipv6"}, "description": "地址族，须与地址一致"},
 			"region":  map[string]any{"type": "string", "description": "地区，如 上海；须与节点的卡片代表地区一致"},
 			"carrier": map[string]any{"type": "string", "enum": []string{"电信", "联通", "移动", "其他"}, "description": "运营商；回程任务必填"},
+			"checks": map[string]any{
+				"type": "array", "items": map[string]any{"type": "string", "enum": []string{"tcp", "route"}},
+				"description": "只对这个目标生效的检测项，须是任务 checks 的子集；省略即任务的全部检测项（例如海外服务只测延迟：[\"tcp\"]）",
+			},
 		},
 		"required": []string{"host", "port", "family"}, "additionalProperties": false,
 	}

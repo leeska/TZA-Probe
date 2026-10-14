@@ -479,6 +479,37 @@ func TestCombinedTaskValidation(t *testing.T) {
 	}
 }
 
+// A target may narrow the task's checks: an overseas service runs latency only
+// while the domestic targets of the same task also trace the route.
+func TestTargetChecks(t *testing.T) {
+	spec := &ProbeSpec{Checks: []string{"tcp", "route"}, Targets: []Target{
+		{Host: "1.1.1.1", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信"},
+		{Host: "www.google.com", Port: 443, Family: "ipv4", Region: "Google", Carrier: "其他", Checks: []string{"tcp"}},
+	}, Interval: 60, RouteInterval: 900}
+	task := Task{Name: "三网 + 海外", Type: TaskProbe, Probe: spec}
+	if err := task.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string][]string{}
+	for _, leaf := range task.Leaves() {
+		kinds[leaf.Host] = append(kinds[leaf.Host], leaf.Kind)
+	}
+	if strings.Join(kinds["1.1.1.1"], ",") != "tcp,route" || strings.Join(kinds["www.google.com"], ",") != "tcp" {
+		t.Fatalf("leaves by host: %v", kinds)
+	}
+	// A target's checks can only narrow the task's: route on a latency-only task is refused.
+	spec.Checks = []string{"tcp"}
+	spec.Targets[1].Checks = []string{"route"}
+	if err := task.Validate(); err == nil || !strings.Contains(err.Error(), "不在任务的检测内容里") {
+		t.Fatalf("target check outside the task = %v", err)
+	}
+	// Round trip: an empty list is omitted, so tasks saved before this field stay byte-identical.
+	raw, err := json.Marshal(Target{Host: "a.example", Port: 1, Family: "ipv4"})
+	if err != nil || strings.Contains(string(raw), "checks") {
+		t.Fatalf("empty checks must be omitted: %s %v", raw, err)
+	}
+}
+
 // The task is a tagged union: the type names which spec carries the
 // definition, and the other one must be absent.
 func TestTaskUnion(t *testing.T) {

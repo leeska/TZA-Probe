@@ -344,48 +344,42 @@ window.addEventListener("resize", () => {
 // 所以不必先清零再量；只在补量变化半像素以上时写，静置时不碰样式。
 // 二次元皮肤的角色卡上半张是人物图、段落位置本就不同，不参与拉齐。
 const ROW_SECTIONS = [".node-sub", ".metrics-grid", ".card-stats"];
-let rowAlignQueued = false;
+// 同步执行：在写完 DOM 的同一个任务里量完、补完，浏览器下一次绘制看到的就是对齐后的样子。
+// 排到下一个任务（setTimeout / rAF）的话，中间那一帧画的是没补齐的布局，卡片会跳。
 function alignCardRows() {
-  if (rowAlignQueued) return;
-  rowAlignQueued = true;
-  // 排到本轮写 DOM 之后统一量一次；不用 requestAnimationFrame——后台标签页里它整个停掉，
-  // 回到前台前排队标记一直挂着。
-  setTimeout(() => {
-    rowAlignQueued = false;
-    const list = document.querySelector("#nodes");
-    if (!list) return;
-    const anime = document.documentElement.dataset.skin === "anime";
-    const rows = new Map();
-    const fills = [];
-    for (const card of list.querySelectorAll(".node-card")) {
-      // 每张卡三段，缺的段落留 null，下标与 ROW_SECTIONS 一一对应。
-      const sections = ROW_SECTIONS.map((sel) => {
-        const el = card.querySelector(`.card-body ${sel}`);
-        if (!el) return null;
-        const now = parseFloat(el.style.getPropertyValue("--row-fill")) || 0;
-        const x = { el, now, natural: el.getBoundingClientRect().height - now, fill: 0 };
-        fills.push(x);
-        return x;
-      });
-      if (list.classList.contains("node-list") || (anime && card.dataset.cast)) continue;
-      const top = Math.round(card.offsetTop);
-      if (!rows.has(top)) rows.set(top, []);
-      rows.get(top).push(sections);
-    }
-    for (const group of rows.values()) {
-      if (group.length < 2) continue;
-      ROW_SECTIONS.forEach((_, i) => {
-        const items = group.map((sections) => sections[i]).filter(Boolean);
-        const max = Math.max(...items.map((x) => x.natural));
-        for (const x of items) x.fill = max - x.natural;
-      });
-    }
-    for (const x of fills) {
-      if (Math.abs(x.now - x.fill) < 0.5) continue;
-      if (x.fill >= 0.5) x.el.style.setProperty("--row-fill", x.fill.toFixed(1) + "px");
-      else x.el.style.removeProperty("--row-fill");
-    }
-  });
+  const list = document.querySelector("#nodes");
+  if (!list) return;
+  const anime = document.documentElement.dataset.skin === "anime";
+  const rows = new Map();
+  const fills = [];
+  for (const card of list.querySelectorAll(".node-card")) {
+    // 每张卡三段，缺的段落留 null，下标与 ROW_SECTIONS 一一对应。
+    const sections = ROW_SECTIONS.map((sel) => {
+      const el = card.querySelector(`.card-body ${sel}`);
+      if (!el) return null;
+      const now = parseFloat(el.style.getPropertyValue("--row-fill")) || 0;
+      const x = { el, now, natural: el.getBoundingClientRect().height - now, fill: 0 };
+      fills.push(x);
+      return x;
+    });
+    if (list.classList.contains("node-list") || (anime && card.dataset.cast)) continue;
+    const top = Math.round(card.offsetTop);
+    if (!rows.has(top)) rows.set(top, []);
+    rows.get(top).push(sections);
+  }
+  for (const group of rows.values()) {
+    if (group.length < 2) continue;
+    ROW_SECTIONS.forEach((_, i) => {
+      const items = group.map((sections) => sections[i]).filter(Boolean);
+      const max = Math.max(...items.map((x) => x.natural));
+      for (const x of items) x.fill = max - x.natural;
+    });
+  }
+  for (const x of fills) {
+    if (Math.abs(x.now - x.fill) < 0.5) continue;
+    if (x.fill >= 0.5) x.el.style.setProperty("--row-fill", x.fill.toFixed(1) + "px");
+    else x.el.style.removeProperty("--row-fill");
+  }
 }
 document.addEventListener("tza:skin", alignCardRows);
 window.addEventListener("resize", alignCardRows);
@@ -417,7 +411,9 @@ function patchInto(el, next) {
     if (x.nodeType !== 1) continue;
     if (x.tagName !== y.tagName || x.childNodes.length !== y.childNodes.length) return false;
     if (!patchInto(x, y)) return false;
-    for (const name of PATCH_ATTRS(x)) if (!y.hasAttribute(name)) x.removeAttribute(name);
+    // style 只会是运行时写的（模板里没有内联样式）：同排拉齐的 --row-fill。补丁把它删掉、
+    // 再由拉齐补回，中间只要画一帧，下面的速率与延迟就上下跳一次（10 秒一轮，实测 31px）。
+    for (const name of PATCH_ATTRS(x)) if (name !== "style" && !y.hasAttribute(name)) x.removeAttribute(name);
     for (const attr of y.attributes || []) {
       if (x.getAttribute(attr.name) !== attr.value) x.setAttribute(attr.name, attr.value);
     }
@@ -539,7 +535,7 @@ function renderCards() {
       detail(
         b.dataset.detail,
         b.dataset.focusKind
-          ? { kind: b.dataset.focusKind, carrier: b.dataset.focusCarrier, family: b.dataset.focusFamily }
+          ? { kind: b.dataset.focusKind, carrier: b.dataset.focusCarrier, region: b.dataset.focusRegion, family: b.dataset.focusFamily }
           : null,
       );
     });
@@ -558,6 +554,7 @@ function renderCards() {
         detail(owner.dataset.node, {
           kind: cell.dataset.focusKind,
           carrier: cell.dataset.focusCarrier,
+          region: cell.dataset.focusRegion,
           family: cell.dataset.focusFamily,
         });
     });
@@ -747,11 +744,9 @@ function nodeFacts(n) {
   const obs = allObs.filter(
     (o) => o.task.family === effectiveFamily,
   );
-  // 延迟按运营商分格显示，地区取节点的延迟地区，其次回程地区，都未设则不限地区。
-  // 目录外的自定义目标（以及没有运营商的旧任务）归入“其他”。
+  // 三网延迟的地区取节点的延迟地区，其次回程地区，都未设则不限地区。
+  // 目录外的自定义目标（以及没有运营商的旧任务）归入“其他”，见下面的海外格。
   const carriers = ["电信", "联通", "移动"];
-  const carrierOf = (o) =>
-    carriers.includes(o.task.carrier) ? o.task.carrier : "其他";
   const bucketOf = (carrier) =>
     carriers.includes(carrier) ? carrier : "其他";
   const latencyRegion = n.display.latency_region || n.display.route_region || "";
@@ -763,15 +758,32 @@ function nodeFacts(n) {
   // 只在这个集合里再筛一道。
   const plan = n.probe_targets || [];
   const scoped = plan.filter((t) => t.family === effectiveFamily);
-  const latencyBuckets = [...carriers, "其他"].filter(
-    (c) =>
-      scoped.some(
-        (t) =>
-          t.kind === "tcp" &&
-          inRegion(t.region, latencyRegion) &&
-          bucketOf(t.carrier) === c,
-      ) && (!n.display.latency_carriers?.length || n.display.latency_carriers.includes(c)),
-  );
+  // 三网一家一格（按卡片的延迟地区筛）；三网之外的目标（常用海外预设、自定义地址）按各自的
+  // 地区——预设就是服务名——一个目标一格，顺序跟任务里的目标顺序走。以前它们全并成一格「其他」
+  // 取平均，勾了 Google、Telegram、DNS 一堆，卡片上却只剩一行（用户点名）。这些格子都写了
+  // 名字，所以不再受延迟地区限制：节点设了延迟地区时，海外预设照样显示。
+  const showCarrier = (c) => !n.display.latency_carriers?.length || n.display.latency_carriers.includes(c);
+  const otherRegions = [
+    ...new Set(
+      scoped
+        .filter((t) => t.kind === "tcp" && bucketOf(t.carrier) === "其他")
+        .map((t) => t.region || ""),
+    ),
+  ];
+  const latencyBuckets = [
+    ...carriers
+      .filter(
+        (c) =>
+          showCarrier(c) &&
+          scoped.some((t) => t.kind === "tcp" && inRegion(t.region, latencyRegion) && t.carrier === c),
+      )
+      .map((carrier) => ({ carrier, region: null })),
+    ...(showCarrier("其他") ? otherRegions.map((region) => ({ carrier: "其他", region })) : []),
+  ];
+  // 一格收哪些结果：三网按运营商 + 延迟地区，海外按运营商「其他」+ 目标自己的地区。
+  const inBucket = (b, carrier, region) =>
+    (carriers.includes(carrier) ? carrier : "其他") === b.carrier &&
+    (b.region == null ? inRegion(region, latencyRegion) : (region || "") === b.region);
   // 回程只有三网三格（自定义目标不参与回程），同一套资格判断。
   // 后台的「公开卡片显示回程」同样只在这个集合里再筛一道。
   const routeBuckets = carriers.filter(
@@ -788,12 +800,12 @@ function nodeFacts(n) {
       n.online &&
       o.task.kind === "tcp" &&
       !o.stale &&
-      o.result.status !== "pending" &&
-      inRegion(o.task.region, latencyRegion),
+      o.result.status !== "pending",
   );
   const latencies = latencyBuckets
-    .map((carrier) => {
-      const matches = tcp.filter((o) => carrierOf(o) === carrier);
+    .map((b) => {
+      const { carrier } = b;
+      const matches = tcp.filter((o) => inBucket(b, o.task.carrier, o.task.region));
       const ok = matches.filter((o) => o.result.latency != null);
       const value = ok.length
         ? ok.reduce((v, o) => v + o.result.latency, 0) / ok.length
@@ -807,13 +819,15 @@ function nodeFacts(n) {
           (s) =>
             s.node_id === n.id &&
             s.family === effectiveFamily &&
-            (!latencyRegion || s.region === latencyRegion) &&
-            (carriers.includes(s.carrier) ? s.carrier : "其他") === carrier,
+            inBucket(b, s.carrier, s.region),
         )
         .slice(-20);
       const recent = matches.map((o) => o.at).sort((a, b) => b - a)[0];
       return {
         carrier,
+        // 海外格的名字（服务名 / 地区）；三网格是 null，靠标志认。
+        region: b.region,
+        name: b.region == null ? null : b.region || "其他",
         value,
         text: value == null ? null : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms",
         // 一次都没成功时区分“没测过”和“测了但超时”
@@ -966,7 +980,7 @@ function networkSections(n, f) {
   if (!f.hasProbe) return probeNote(f.probeState);
   // 延迟与回程在这里各占一段：延迟是一家运营商一块（文字在上、延迟与丢包两条色带并排在下），
   // 回程仍是三个并排的胶囊。
-  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : ""}</div><div class="latency-bands">${latencyBands(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.display.route_region ? `<span class="rep-label">${esc(n.display.route_region)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
+  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(latencyRegionLabel(f))}</span>` : ""}</div><div class="latency-bands${f.latencies.some((l) => l.name) ? " named" : ""}">${latencyBands(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.display.route_region ? `<span class="rep-label">${esc(n.display.route_region)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
 }
 
 // 回程格子里的运营商身份：用各家的官方图形标志（电信 / 联通 / 移动，见 web/carrier-logos.js）。
@@ -989,11 +1003,13 @@ function routeCells(n, f) {
 // 行首与回程行一样放官方标志（用户点名：前面的「电信 / 联通 / 移动」也换成 logo——这样
 // 同一行右边的回程行、卡片里的延迟块、列表里的延迟行三处口径一致）；名字仍在 aria-label /
 // title / data-focus-carrier 里，点选与筛选照旧按 carrier 走。
+// 海外格（l.name）多一个名字槽：同一格里只要有一行带名字，三网行也留同宽的空槽，数值仍排成一列。
 function latencyLines(n, f) {
+  const named = f.latencies.some((l) => l.name);
   return f.latencies
     .map(
       (l) =>
-        `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.carrier} ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="carrier-name">${carrierMark(l.carrier)}</span><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span></button>`,
+        `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}"${focusRegion(l)} data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.name || l.carrier} ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="carrier-name">${carrierMark(l.carrier)}</span>${named ? `<span class="net-name" title="${esc(l.name || "")}">${esc(l.name || "")}</span>` : ""}<strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span></button>`,
     )
     .join("");
 }
@@ -1006,13 +1022,20 @@ function latencyLines(n, f) {
 // 格数两个视图共用一个值：列表原来画 20 格、卡片画 10 格，同一份数据在两个视图里格数不一样，
 // 用户点名统一到卡片的 10 格（列表那条吃满格子剩余宽度，10 格比 20 格更接近卡片里格子的大小）。
 const BAR_COUNT = 10;
+
+// 延迟地区只管三网那几格；有海外格（各自写了名字、不按地区筛）时注明「三网」，免得看成整块都是这个地区。
+const latencyRegionLabel = (f) =>
+  f.latencies.some((l) => l.name) && f.latencies.some((l) => !l.name) ? `三网 · ${f.latencyRegion}` : f.latencyRegion;
+
+// 海外格点开的聚焦视图只看那一个目标：带上它的地区（三网格不带，照旧按运营商聚焦）。
+const focusRegion = (l) => (l.region == null ? "" : ` data-focus-region="${esc(l.region)}"`);
 const lossPercent = (s) => (s.sent ? Math.max(0, (s.sent - s.received) / s.sent * 100) : null);
 
 function latencyBands(n, f) {
   return f.latencies
     .map(
       (l) =>
-        `<button class="net-band ${l.value == null ? "unknown" : "known"}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}" data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.carrier} 延迟 ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="band-head"><span class="carrier-name">${carrierMark(l.carrier)}</span><span class="band-metric"><i>延迟</i><strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="band-metric"><i>丢包</i><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span></span><span class="band-bars"><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span><span class="quality-bars loss-bars" title="最近 ${BAR_COUNT} 次丢包">${sampleBars(l.history, lossPercent, 20, BAR_COUNT)}</span></span></button>`,
+        `<button class="net-band ${l.value == null ? "unknown" : "known"}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}"${focusRegion(l)} data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.name || l.carrier} 延迟 ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="band-head"><span class="carrier-name">${carrierMark(l.carrier)}</span><span class="band-metric">${l.name ? `<i class="band-name" title="${esc(l.name)}">${esc(l.name)}</i>` : "<i>延迟</i>"}<strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="band-metric"><i>丢包</i><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span></span><span class="band-bars"><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span><span class="quality-bars loss-bars" title="最近 ${BAR_COUNT} 次丢包">${sampleBars(l.history, lossPercent, 20, BAR_COUNT)}</span></span></button>`,
     )
     .join("");
 }
@@ -1089,7 +1112,7 @@ function listInner(n) {
       : !detected
         ? noFamilyNote(n)
         : f.latencies.length
-          ? head("TCP 延迟", f.latencyRegion) + latencyLines(n, f)
+          ? head("TCP 延迟", f.latencyRegion && latencyRegionLabel(f)) + latencyLines(n, f)
           : f.hasProbe
             ? ""
             : probeNote(f.probeState);

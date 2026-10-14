@@ -955,6 +955,22 @@ button.node-name {
   font-size: 10px;
 }
 
+/* 海外格把「延迟」二字换成目标名（Google / Telegram DC1 …）：深一档的字色，太长就省略，
+   完整名字在 title 里。 */
+.net-band .band-metric i.band-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+/* 同一块里有海外格时，第一项的标签（「延迟」或目标名）定宽成一列，各行的延迟数值因此上下对齐；
+   只有三网时「延迟」二字照旧紧贴数值。 */
+.latency-bands.named .net-band .band-head .band-metric:nth-child(2) i {
+  flex: 0 0 7.6em;
+}
+
 .net-band .band-metric strong {
   font-size: 12px;
   font-weight: 650;
@@ -3379,6 +3395,17 @@ pre,
   flex: 0 0 11px;
 }
 
+/* 列表里海外行的名字槽：定宽，同一格的三网行留同宽空槽，数值列照样对齐。84px 放得下
+   「Cloudflare DNS」这类常用名；列表视图不省略文字，更长的自定义名在槽里折行。 */
+.node-grid.node-list .net-line .net-name {
+  flex: 0 0 84px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--muted);
+}
+
 /* 数值与丢包各占固定宽度并右对齐：四行（含「未检测」那行）的数字因此排成一列，
    色带吃满剩余空间、右端贴齐格子右边界，四行自然对齐。 */
 .node-grid.node-list .net-line strong {
@@ -4092,4 +4119,25 @@ td .due.expired + small {
   .probe-settings {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* 已选目标胶囊里 IP 协议与检测项（延迟 / 回程）两组开关之间的分隔。 */
+.chip-sep {
+  width: 1px;
+  height: 12px;
+  margin: 0 2px;
+  background: currentColor;
+  opacity: 0.25;
+  align-self: center;
+}
+
+/* 次要说明文字。以前没有这条通用规则，后台七处 class="muted"（面板标题旁的说明、任务列表的
+   「未绑定节点 / 尚未执行」）都按正文的深色和字号显示，和标题抢视线。更具体的 strong.muted
+   规则（延迟块、回程标签）照旧各自覆盖。 */
+.muted {
+  color: var(--muted);
+}
+
+.panel-head .muted {
+  font-size: 12px;
 }

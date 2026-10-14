@@ -52,13 +52,15 @@ function agentStale(n) {
   return ` <span class="agent-stale" title="面板版本 ${esc(state.serverVersion)}。在这台机器上不带 --token 重新执行安装命令即可升级，不用换密钥。">需更新</span>`;
 }
 // 节点绑了探测任务，但没有一项落在卡片的回程 / 延迟地区里：公开卡片只会写「该地区暂无探测任务」，
-// 后台原来看不出来。判据与 app.js 的卡片一致——地区留空算全匹配。
+// 后台原来看不出来。判据与 app.js 的卡片一致——地区留空算全匹配；三网之外（运营商「其他」）的
+// 延迟目标一个一格、不受地区限制，所以有它们就不算对不上。
 function cardRegionMiss(n) {
   const plan = (n.probe_targets || []).filter((t) => t.kind === "tcp" || t.kind === "route");
   if (!plan.length) return "";
   const route = n.display.route_region;
   const latency = n.display.latency_region || route;
   const hit = plan.some((t) => {
+    if (t.kind === "tcp" && !["电信", "联通", "移动"].includes(t.carrier)) return true;
     const want = t.kind === "tcp" ? latency : route;
     return !want || t.region === want;
   });
@@ -357,13 +359,13 @@ function nodeForm(existing) {
   // 免费机器存的周期是空值；取消勾选时周期从「月」起，不留一个「未设置」选项。
   const period = n.billing.free ? "月" : n.billing.price_period || "";
   const carriers = (prefix, list, chosen) =>
-    `<div class="option-tiles">${list.map((carrier) => check(carrier, prefix + carrier, !chosen?.length || chosen.includes(carrier))).join("")}</div>`;
+    `<div class="option-tiles">${list.map((carrier) => check(carrier === "其他" ? "其他（国际）" : carrier, prefix + carrier, !chosen?.length || chosen.includes(carrier))).join("")}</div>`;
   // 四段对应节点配置的分组：基本信息、公开卡片（display）、流量与计费（billing）、线路与降速（line）。
   const d = modal(
     existing ? "编辑节点" : "添加节点",
     `<form id="node-form">
 <div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${regionCombobox("节点所在地区", "region", n.region, options)}${check("在公开页面展示", "public", n.public)}</div></div>
-<div class="form-section"><h3>公开卡片</h3><p class="hint">卡片按这里的地区挑选探测结果，地区要和任务目标的地区一致才对得上。回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / 9929 等），IPv4 与 IPv6 分开检测。</p><div class="form-grid">${regionCombobox("回程地区", "representative", n.display.route_region, cardOptions, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("延迟地区（留空沿用回程地区）", "latency_region", n.display.latency_region, cardOptions, { placeholder: "沿用回程地区" })}</div><div class="option-groups card-carriers"><div class="option-group"><span class="option-label">显示延迟的运营商</span>${carriers("latency_carrier:", ["电信", "联通", "移动", "其他"], n.display.latency_carriers)}</div><div class="option-group"><span class="option-label">显示回程的运营商</span>${carriers("route_carrier:", ["电信", "联通", "移动"], n.display.route_carriers)}</div></div><p class="hint">只在这台机器实际有探测的运营商里筛选，每组至少勾一项；回程只有三网。</p></div>
+<div class="form-section"><h3>公开卡片</h3><p class="hint">卡片按这里的地区挑选三网的探测结果，地区要和任务目标的地区一致才对得上；三网之外的目标（常用海外、自定义）一个一行，不受地区限制。回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / 9929 等），IPv4 与 IPv6 分开检测。</p><div class="form-grid">${regionCombobox("回程地区", "representative", n.display.route_region, cardOptions, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("延迟地区（留空沿用回程地区）", "latency_region", n.display.latency_region, cardOptions, { placeholder: "沿用回程地区" })}</div><div class="option-groups card-carriers"><div class="option-group"><span class="option-label">显示延迟的运营商</span>${carriers("latency_carrier:", ["电信", "联通", "移动", "其他"], n.display.latency_carriers)}</div><div class="option-group"><span class="option-label">显示回程的运营商</span>${carriers("route_carrier:", ["电信", "联通", "移动"], n.display.route_carriers)}</div></div><p class="hint">只在这台机器实际有探测的运营商里筛选，每组至少勾一项；不勾「其他（国际）」就不显示海外目标那几行。回程只有三网。</p></div>
 <div class="form-section"><h3>流量与计费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.billing.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
       "流量计费方式",
       "traffic_mode",

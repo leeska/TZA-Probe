@@ -109,10 +109,11 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 
 - `probe.interval` 是 TCP 秒数（30–86400，选了 tcp 时必填），`probe.route_interval` 是回程秒数（900–86400，选了 route 时必填）。
 - 目标必须明确指定 ipv4 或 ipv6；双栈域名填写为两个目标，IP 字面量必须匹配地址族。运营商支持电信、联通、移动、其他。最多 200 个地址；重复检测项被拒绝。
+- 目标可带 `checks`，只对这个目标收窄任务的检测项，须是 `probe.checks` 的子集；省略即全部。例如同一任务里三网目标测延迟 + 回程、海外服务只测延迟：`{"host":"www.google.com","port":443,"family":"ipv4","region":"Google","carrier":"其他","checks":["tcp"]}`。
 - `unlock.family` 留空即自动：IPv4，纯 IPv6 的机器改派 IPv6。间隔最短 3600 秒。
 - `node_ids` 是明确节点列表，空列表不执行。
 
-Server 把任务展开为单项探测（checks × targets，解锁任务一项）。Agent 领到的 `job.task` 与观测里的 `task` 是这一项探测：`id`（所属任务）、`name`、`kind`（tcp / route / unlock）、`host`、`port`、`family`、`region`、`carrier`、`interval`。每项独立计时与保留最近结果；排队时优先最早到期项。
+Server 把任务展开为单项探测（checks × targets，目标自带 `checks` 时只取其中那几项；解锁任务一项）。Agent 领到的 `job.task` 与观测里的 `task` 是这一项探测：`id`（所属任务）、`name`、`kind`（tcp / route / unlock）、`host`、`port`、`family`、`region`、`carrier`、`interval`。每项独立计时与保留最近结果；排队时优先最早到期项。
 
 编辑任务时，只有「探测什么」变了（检测项、目标、解锁出口协议）才清掉该任务的旧结果与在途租约；只改名称、间隔、启停或绑定节点会保留结果，与专用的启停、绑定接口一致。
 
