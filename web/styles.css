@@ -1052,6 +1052,9 @@ button.node-name {
 
 .carrier-dot.cx { background: var(--subtle); }
 
+/* 「其他」（国际 / 自定义目标）的地球图标：没有品牌色，用强调色描线，跟着皮肤走。 */
+.carrier-mark.cx { color: var(--accent); }
+
 .route-label strong {
   font-size: 11px;
   font-weight: 650;
@@ -2090,19 +2093,12 @@ dialog .form-footer {
   border-radius: 10px;
 }
 
-.task-meta .option-tiles {
-  align-self: end;
-}
 
 /* 「已选目标 N 组」那行标题贴着下面的胶囊。 */
 #selected-label {
   margin: 0;
 }
 
-/* 名称与启用排在任务类型下面，和上面的说明文字隔开一行。 */
-.task-meta {
-  margin-top: 14px;
-}
 
 /* 绑定弹窗里「部分任务已绑定」的节点：半选，虚线描边与全选区分开。 */
 .node-checkboxes label.checkbox:has(input:indeterminate) {
@@ -4033,4 +4029,67 @@ td .due.expired + small {
 .sort-choices button small {
   color: var(--muted);
   font-weight: 400;
+}
+
+/* 同一排卡片的分段拉齐（app.js 的 alignCardRows）：矮的那段在底部补上与同排最高那张的差值，
+   内容位置不动，下一段因此与邻卡对齐。列表视图不参与。 */
+.node-grid:not(.node-list) .card-body :is(.node-sub, .metrics-grid, .card-stats) {
+  padding-bottom: var(--row-fill, 0px);
+}
+
+/* 任务编辑器：每段一个标题，段内一行一件事。
+   类型 / 名称 / 启用排成一行；检测类型、IP 协议和两个间隔排成一行（间隔不再藏在折叠里）；
+   目标来源分「国内三网 / 常用海外 / 自定义」三页，一次只摆一页。 */
+.task-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px 16px;
+}
+
+.probe-settings {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 12px 16px;
+}
+
+.form-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.form-section-head h3 {
+  margin: 0;
+}
+
+.form-section-head .catalog-toolbar {
+  margin: 0;
+}
+
+.target-tabs {
+  margin-bottom: 12px;
+}
+
+/* 自定义目标的「添加目标」与端口同一行，贴着输入框底边。 */
+.catalog-toolbar.custom-add {
+  align-items: flex-end;
+  margin: 0;
+}
+
+[data-target-panel][hidden] {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .task-head {
+    grid-template-columns: 1fr;
+  }
+  .probe-settings {
+    grid-template-columns: 1fr 1fr;
+  }
 }

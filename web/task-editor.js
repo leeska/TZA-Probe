@@ -61,6 +61,8 @@ const presetGroups = [
   ]),
 ]);
 const presets = new Map(presetGroups.flatMap(([, items]) => items));
+// 已选标签与自动命名里，预设目标只写服务名（「Google」），不带「/ 其他」。
+const targetLabel = (key) => (presets.has(key) ? presets.get(key)[0].region : key);
 
 // 间隔按最自然的单位写：3600 秒写「1 小时」，90 秒照写「90 秒」——只在整除时进位。
 function every(seconds) {
@@ -171,18 +173,47 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     `
     <form id="task-form">
       <section class="form-section"><h3>任务类型与名称</h3>
-        <div class="option-tiles" id="task-kind">
-          <label class="checkbox"><input type="radio" name="kind" value="probe" ${kind === "probe" ? "checked" : ""}>网络探测（延迟 / 回程）</label>
-          <label class="checkbox"><input type="radio" name="kind" value="unlock" ${kind === "unlock" ? "checked" : ""}>解锁检测</label>
+        <div class="task-head">
+          <div class="option-tiles" id="task-kind">
+            <label class="checkbox"><input type="radio" name="kind" value="probe" ${kind === "probe" ? "checked" : ""}>网络探测（延迟 / 回程）</label>
+            <label class="checkbox"><input type="radio" name="kind" value="unlock" ${kind === "unlock" ? "checked" : ""}>解锁检测</label>
+          </div>
+          <label class="task-name">任务名称<input name="name" maxlength="100" value="${esc(t.name || "")}" placeholder="留空自动命名" autocomplete="off"></label>
+          <div class="option-tiles">${checkbox("启用任务", "enabled", t.enabled)}</div>
         </div>
-        <p class="hint">解锁检测由节点自己的出口逐项检测流媒体 / AI / 交易所，没有目标地址与端口，间隔最短 1 小时。</p>
-        <div class="form-grid task-meta"><label>任务名称<input name="name" maxlength="100" value="${esc(t.name || "")}" placeholder="留空自动命名" autocomplete="off"></label><div class="option-tiles">${checkbox("启用任务", "enabled", t.enabled)}</div></div>
       </section>
       <div id="probe-sections"${kind === "unlock" ? " hidden" : ""}>
-      <section class="form-section"><h3>选择目标</h3>
+      <section class="form-section"><h3>检测内容</h3>
+        <div class="probe-settings">
+          <div class="option-group"><span class="option-label">检测类型</span><div class="option-tiles">${checkbox("TCP 延迟", "tcp", checks.includes("tcp"))}${checkbox("三网 / 海外回程", "route", checks.includes("route"))}</div></div>
+          <div class="option-group"><span class="option-label">IP 协议</span><div class="option-tiles">${checkbox("IPv4", "ipv4", families.has("ipv4"))}${checkbox("IPv6", "ipv6", families.has("ipv6"))}</div></div>
+          <label>延迟间隔（秒）<input name="interval" type="number" min="30" max="86400" value="${probe.interval || 60}"></label>
+          <label>回程间隔（秒）<input name="route_interval" type="number" min="900" max="86400" value="${probe.route_interval || 3600}"></label>
+        </div>
+        <p class="hint">IP 协议是新加入目标的默认值，改动会套用到全部已选目标，之后可在已选目标上单独调整。</p>
+      </section>
+      <section class="form-section">
+        <div class="form-section-head"><h3>选择目标</h3><button type="button" id="clear-targets" class="quiet">清空已选</button></div>
         <p id="selected-label" class="option-label"></p>
         <div id="selected-targets" class="selected-targets"></div>
-        <div class="preset-groups">${presetGroups
+        <div class="segmented target-tabs" role="tablist">${[
+          ["catalog", "国内三网"],
+          ["preset", "常用海外"],
+          ["custom", "自定义"],
+        ]
+          .map(([id, label]) => `<button type="button" role="tab" data-target-tab="${id}">${label}</button>`)
+          .join("")}</div>
+        <div data-target-panel="catalog">
+          <div class="catalog-filters">
+            <label>搜索目录<input id="catalog-search" placeholder="地区、运营商、地址（支持 hb、ct、hk 这类拼音与缩写）" type="search"></label>
+            <label>地区<select id="catalog-region"><option value="">全部地区</option>${options([...new Set(catalog.targets.map((x) => x.region))])}</select></label>
+            <label>运营商<select id="catalog-carrier"><option value="">全部运营商</option>${options(carriers)}</select></label>
+          </div>
+          <div class="catalog-toolbar"><span id="catalog-count"></span><button type="button" id="select-visible">选中筛选结果</button></div>
+          <div id="catalog-results" class="catalog-results"></div>
+          <p class="hint">同一地区和运营商只需选一次。</p>
+        </div>
+        <div data-target-panel="preset" class="preset-groups">${presetGroups
           .map(
             ([title, items]) =>
               `<div class="preset-group"><span class="option-label">${esc(title)}</span><div class="option-tiles">${items
@@ -193,34 +224,17 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
                 .join("")}</div></div>`,
           )
           .join("")}</div>
-        <p class="option-label">国内三网目录</p>
-        <div class="catalog-filters">
-          <label>搜索目录<input id="catalog-search" placeholder="地区、运营商、地址（支持 hb、ct、hk 这类拼音与缩写）" type="search"></label>
-          <label>地区<select id="catalog-region"><option value="">全部地区</option>${options([...new Set(catalog.targets.map((x) => x.region))])}</select></label>
-          <label>运营商<select id="catalog-carrier"><option value="">全部运营商</option>${options(carriers)}</select></label>
-        </div>
-        <div class="catalog-toolbar"><span id="catalog-count"></span><button type="button" id="select-visible">选中筛选结果</button><button type="button" id="clear-targets">清空已选</button></div>
-        <div id="catalog-results" class="catalog-results"></div>
-        <p class="hint">同一地区和运营商只需选一次。每组默认按下方勾选的 IP 协议检测，可在“已选目标”上单独改成只测 IPv4、只测 IPv6 或两者都测。</p>
-        <details><summary>添加自定义目标（含海外运营商）</summary>
+        <div data-target-panel="custom">
           <div class="form-grid">
             ${regionCombobox("地区", "custom-region", "", regionSuggestions(catalog, existing))}
             <label>运营商<select name="custom-carrier">${options(["其他", "电信", "联通", "移动"])}</select></label>
             <label>IPv4 地址或域名<input name="custom-ipv4" placeholder="IPv4 或支持 A 记录的域名"></label>
             <label>IPv6 地址或域名<input name="custom-ipv6" placeholder="IPv6 或支持 AAAA 记录的域名"></label>
             <label>端口<input name="custom-port" type="number" min="1" max="65535" value="443"></label>
-          </div><button type="button" id="add-custom">添加目标</button>
-        </details>
-      </section>
-      <section class="form-section"><h3>检测内容</h3>
-        <div class="option-groups">
-          <div class="option-group"><span class="option-label">检测类型</span><div class="option-tiles">${checkbox("TCP 延迟", "tcp", checks.includes("tcp"))}${checkbox("三网 / 海外回程", "route", checks.includes("route"))}</div></div>
-          <div class="option-group"><span class="option-label">IP 协议（批量设置，可在已选目标上单独调整）</span><div class="option-tiles">${checkbox("IPv4", "ipv4", families.has("ipv4"))}${checkbox("IPv6", "ipv6", families.has("ipv6"))}</div></div>
+            <div class="catalog-toolbar custom-add"><button type="button" id="add-custom">添加目标</button></div>
+          </div>
+          <p class="hint">海外运营商或目录里没有的地址在这里填，运营商选「其他」。</p>
         </div>
-        <details><summary>检测频率</summary><div class="form-grid">
-          <label>延迟间隔（秒）<input name="interval" type="number" min="30" max="86400" value="${probe.interval || 60}"></label>
-          <label>回程间隔（秒）<input name="route_interval" type="number" min="900" max="86400" value="${probe.route_interval || 3600}"></label>
-        </div></details>
       </section>
       </div>
       <section class="form-section" id="unlock-section"${kind === "unlock" ? "" : " hidden"}><h3>解锁检测</h3>
@@ -228,12 +242,12 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
           <label>检测间隔（秒）<input name="unlock_interval" type="number" min="3600" max="86400" value="${unlock.interval}"></label>
           <label>IP 协议<select name="unlock_family"><option value="">自动（由节点选择）</option><option value="ipv4"${unlock.family === "ipv4" ? " selected" : ""}>IPv4</option><option value="ipv6"${unlock.family === "ipv6" ? " selected" : ""}>IPv6</option></select></label>
         </div>
-        <p class="hint">留空即自动：纯 IPv6 的节点也能跑，不会因为默认 IPv4 而整轮失败。间隔最短 1 小时（每轮是从这台机器自己的出口发几十次 HTTPS 检测）。</p>
+        <p class="hint">由节点自己的出口逐项检测流媒体 / AI / 交易所，没有目标地址与端口。间隔最短 1 小时；协议留空即自动，纯 IPv6 的节点也能跑。</p>
       </section>
-      <section class="form-section"><h3>执行节点</h3>
-        <div class="catalog-toolbar"><button type="button" id="all-nodes">全选节点</button><button type="button" id="no-nodes">清空节点</button></div>
+      <section class="form-section">
+        <div class="form-section-head"><h3>执行节点</h3><div class="catalog-toolbar"><button type="button" id="all-nodes">全选节点</button><button type="button" id="no-nodes">清空节点</button></div></div>
         <div class="node-checkboxes">${nodes.map((n) => checkbox(n.name, "node:" + n.id, t.node_ids?.includes(n.id))).join("") || "<p>请先创建节点</p>"}</div>
-        <p class="hint">空选表示不执行；每台节点最多同时执行一个延迟和一个回程检测，多目标依次排队。</p>
+        <p class="hint">不选表示不执行；每台节点同时最多执行一个延迟和一个回程检测，多目标依次排队。</p>
       </section>
       <p id="task-summary" class="notice" aria-live="polite"></p>
       <div class="form-footer"><button type="submit" class="primary">保存任务</button></div>
@@ -262,7 +276,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
             return `<button type="button" class="chip-family ${on ? "on" : ""}" data-family-toggle="${esc(key)}" data-family="${f}" ${has ? "" : "disabled"} title="${has ? (on ? "点击停止检测" : "点击加入检测") : "该目标没有对应地址"}" aria-pressed="${on}">${f === "ipv4" ? "IPv4" : "IPv6"}</button>`;
           })
           .join("");
-        return `<span class="target-chip"><strong>${esc(key)}</strong><span class="chip-families">${toggles}</span><button type="button" class="chip-remove" data-remove="${esc(key)}" aria-label="移除 ${esc(key)}">×</button></span>`;
+        return `<span class="target-chip"><strong>${esc(targetLabel(key))}</strong><span class="chip-families">${toggles}</span><button type="button" class="chip-remove" data-remove="${esc(key)}" aria-label="移除 ${esc(targetLabel(key))}">×</button></span>`;
       })
       .join("");
     d.querySelectorAll("[data-remove]").forEach(
@@ -336,6 +350,24 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     );
     update();
   }
+  // 目标来源分三页：国内三网目录 / 常用海外预设 / 自定义，一次只摆一页。编辑已有任务时打开
+  // 已选目标所在的那一页（没有三网目标、有预设就开「常用海外」，只有自定义就开「自定义」）。
+  const showTab = (tab) => {
+    d.querySelectorAll("[data-target-tab]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.targetTab === tab);
+      b.setAttribute("aria-selected", String(b.dataset.targetTab === tab));
+    });
+    d.querySelectorAll("[data-target-panel]").forEach((p) => (p.hidden = p.dataset.targetPanel !== tab));
+  };
+  const keys = [...selected.keys()];
+  showTab(
+    keys.some((k) => groups.has(k)) || !keys.length
+      ? "catalog"
+      : keys.some((k) => presets.has(k))
+        ? "preset"
+        : "custom",
+  );
+  d.querySelectorAll("[data-target-tab]").forEach((b) => (b.onclick = () => showTab(b.dataset.targetTab)));
   d.querySelectorAll("[data-preset]").forEach(
     (input) =>
       (input.onchange = () => {
@@ -449,7 +481,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
     const name =
       el("name").value.trim() ||
       (
-        [...selected.keys()].slice(0, 2).join("、") +
+        [...selected.keys()].slice(0, 2).map(targetLabel).join("、") +
         (selected.size > 2 ? " 等" : "")
       ).slice(0, 100);
     await send(

@@ -297,6 +297,7 @@ async function liveTick() {
       setHTML(el.querySelector(".metrics-grid"), metricsInner(n));
       setHTML(el.querySelector(".speeds"), speedsInner(n));
     }
+    alignCardRows();
     setText(document.querySelector("#updated"), new Date().toLocaleTimeString("zh-CN", { hour12: false }));
     markLive(true);
   } catch (e) {
@@ -334,6 +335,61 @@ window.addEventListener("resize", () => {
   clearTimeout(plateResizeTimer);
   plateResizeTimer = setTimeout(layoutCastCards, 120);
 });
+
+// 同一排卡片的分段拉齐：卡片本身已等高（.node-grid 的 1fr 行），但段落各排各的——配了降速
+// 规则的卡在「周期用量」下多一行说明、到期价格那列多一行线路，下面的速率和延迟就比邻卡低一截
+// （用户标红框点名「没做到统一、没对齐」）。这里按视觉行分组，把指标、速率计费这几段补齐到
+// 同排最高的那张：补的是段落底部的 padding（--row-fill），内容位置不动，下一段自然对齐。
+// 自然高度 = 实测高度 − 当前补的量（直接读元素上的变量：10 秒一轮的卡片补丁会改写属性），
+// 所以不必先清零再量；只在补量变化半像素以上时写，静置时不碰样式。
+// 二次元皮肤的角色卡上半张是人物图、段落位置本就不同，不参与拉齐。
+const ROW_SECTIONS = [".node-sub", ".metrics-grid", ".card-stats"];
+let rowAlignQueued = false;
+function alignCardRows() {
+  if (rowAlignQueued) return;
+  rowAlignQueued = true;
+  // 排到本轮写 DOM 之后统一量一次；不用 requestAnimationFrame——后台标签页里它整个停掉，
+  // 回到前台前排队标记一直挂着。
+  setTimeout(() => {
+    rowAlignQueued = false;
+    const list = document.querySelector("#nodes");
+    if (!list) return;
+    const anime = document.documentElement.dataset.skin === "anime";
+    const rows = new Map();
+    const fills = [];
+    for (const card of list.querySelectorAll(".node-card")) {
+      // 每张卡三段，缺的段落留 null，下标与 ROW_SECTIONS 一一对应。
+      const sections = ROW_SECTIONS.map((sel) => {
+        const el = card.querySelector(`.card-body ${sel}`);
+        if (!el) return null;
+        const now = parseFloat(el.style.getPropertyValue("--row-fill")) || 0;
+        const x = { el, now, natural: el.getBoundingClientRect().height - now, fill: 0 };
+        fills.push(x);
+        return x;
+      });
+      if (list.classList.contains("node-list") || (anime && card.dataset.cast)) continue;
+      const top = Math.round(card.offsetTop);
+      if (!rows.has(top)) rows.set(top, []);
+      rows.get(top).push(sections);
+    }
+    for (const group of rows.values()) {
+      if (group.length < 2) continue;
+      ROW_SECTIONS.forEach((_, i) => {
+        const items = group.map((sections) => sections[i]).filter(Boolean);
+        const max = Math.max(...items.map((x) => x.natural));
+        for (const x of items) x.fill = max - x.natural;
+      });
+    }
+    for (const x of fills) {
+      if (Math.abs(x.now - x.fill) < 0.5) continue;
+      if (x.fill >= 0.5) x.el.style.setProperty("--row-fill", x.fill.toFixed(1) + "px");
+      else x.el.style.removeProperty("--row-fill");
+    }
+  });
+}
+document.addEventListener("tza:skin", alignCardRows);
+window.addEventListener("resize", alignCardRows);
+document.fonts?.ready.then(alignCardRows);
 
 // 每张卡片上一次渲染出来的 HTML：下次比对用，内容没变就不碰 DOM。
 const renderedHTML = new WeakMap();
@@ -473,6 +529,7 @@ function renderCards() {
       : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点，并开启公开展示。"}</p></div>`;
     [...list.querySelectorAll(".node-card")].forEach((el, i) => renderedHTML.set(el, wanted[i]));
   }
+  alignCardRows();
   if (atBottom) scroller.scrollTop = scroller.scrollHeight;
   markListOverflow();
   // 单元格子只展示那一格的内容（延迟 / 回程），整张卡片才展示综合信息。

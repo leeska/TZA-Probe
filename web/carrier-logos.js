@@ -17,8 +17,14 @@ export const CARRIER_LOGOS = {
 // 运营商 → 配色类（电信蓝 / 联通红 / 移动绿，与圆点时代一致；也留着给测试与样式钩子用）。
 export const CARRIER_CLASS = { 电信: "ct", 联通: "cu", 移动: "cm" };
 
-// 回程格子的第一项：有官方标志就用标志，认不出运营商就退回彩色圆点。
+// 「其他」那一格是三网之外的目标——海外服务、自定义地址（常用海外预设里的 Google / Telegram /
+// 公共 DNS 都归这一格），所以用一枚地球图标表示「国际」，与三家运营商的标志同尺寸、同位置。
+// 线条用 currentColor，颜色交给 .carrier-mark.cx，各皮肤与深浅色都跟着变。
+const GLOBE = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.6"/><ellipse cx="8" cy="8" rx="2.9" ry="6.6"/><path d="M1.6 8h12.8"/></svg>`;
+
+// 格子的第一项：三网用官方标志，「其他」用地球图标，认不出的运营商退回灰色圆点。
 export function carrierMark(carrier) {
+  if (carrier === "其他") return `<span class="carrier-mark cx" aria-hidden="true">${GLOBE}</span>`;
   const svg = CARRIER_LOGOS[carrier];
   if (!svg) return `<span class="carrier-dot cx" aria-hidden="true"></span>`;
   return `<span class="carrier-mark ${CARRIER_CLASS[carrier]}" aria-hidden="true">${svg}</span>`;

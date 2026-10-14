@@ -1068,7 +1068,7 @@ tbody tr:hover {
 }
 
 /* 任务编辑器最后一节后面紧跟汇总与页脚，不再需要分隔线 */
-#task-form .form-section:last-of-type {
+#task-form > .form-section:last-of-type {
   border-bottom: 0;
   padding-bottom: 6px;
   margin-bottom: 6px;
@@ -1471,8 +1471,7 @@ input[type="checkbox"]:disabled {
   .catalog-option {
     padding: 8px 6px;
   }
-  .option-groups,
-  .task-meta {
+  .option-groups {
     grid-template-columns: 1fr;
   }
   .command-block {
