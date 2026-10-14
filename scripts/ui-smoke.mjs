@@ -1536,9 +1536,9 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   };
   assert(/\[data-skin="anime"\]/.test(animeCSS), "皮肤规则要限定在 data-skin=anime 下");
   assert(
-    /:root\[data-skin="anime"\]\s*\{[^}]*--anime-bg: #f4f5fd[^}]*--anime-primary: #ff7aa2/s.test(animeCSS) &&
-      /:root\[data-skin="anime"\]\[data-theme="dark"\]\s*\{[^}]*--anime-bg: #14161f[^}]*--anime-fg: #eef1fa/s.test(animeCSS),
-    "二次元皮肤要有浅色与深色两份令牌（浅色白面樱花粉 / 夜版深蓝灰）",
+    /:root\[data-skin="anime"\]\s*\{[^}]*--anime-bg: #fdeef6[^}]*--anime-primary: #ff4f9a/s.test(animeCSS) &&
+      /:root\[data-skin="anime"\]\[data-theme="dark"\]\s*\{[^}]*--anime-bg: #150f29[^}]*--anime-fg: #f7efff/s.test(animeCSS),
+    "二次元皮肤要有浅色与深色两份令牌（2026-10-14 加浓：浅色樱花粉底纸 / 夜版星空紫）",
   );
   assert(
     /border-radius: var\(--anime-radius\) !important/.test(animeCSS) &&
@@ -1581,7 +1581,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 夜版：牌子的底色/描边要有暗色那一份，卡片子树的浅色令牌只能作用在浅色下，
   // 立绘在夜版里只裁到牌沿——不然深色的牌面上会露一条白牌面。
   assert(
-    /--anime-sign: #1d2130;[\s\S]*?--anime-sign-line: #2c3149;/.test(animeCSS),
+    /--anime-sign: #22183d;[\s\S]*?--anime-sign-line: #4a3478;/.test(animeCSS),
     "夜版要给牌子自己的底色与描边（否则卡片还是白的）",
   );
   assert(

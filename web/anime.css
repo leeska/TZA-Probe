@@ -2,8 +2,10 @@
    TZA Probe · 二次元（线路机角色）皮肤
 
    第五张样式表，只在 <html data-skin="anime"> 时生效（选择器一律带 data-skin 前缀，
-   默认的液态玻璃皮肤一个字节都不受影响）。视觉语言：白面 + 樱花粉主色 + 浅蓝灰底纸，
-   平涂、无模糊、无渐变，圆角比「现代极简」大一档（面级 18px）。
+   默认的液态玻璃皮肤一个字节都不受影响）。视觉语言（2026-10-14 加浓，用户：「现在太淡了」）：
+   樱花粉主色 + 薰衣草紫 / 天空蓝 / 柠檬黄三个辅色，粉紫天蓝柔光底纸铺一层星点，
+   面是白底 + 粉色描边 + 实色「贴纸」投影，主按钮是粉紫渐变的糖果按钮；无毛玻璃，
+   圆角比「现代极简」大一档（面级 22px）。夜版是同一套语言的星空紫。
    它比别的皮肤多一层结构：线路机的卡片里是**一张完整人物图 + 一块 HTML 看板**——
    ① 完整人物图（整张立绘，一张连续图：头/肩/双臂/双手在牌子上沿以上，牌子下沿以下紧接裙摆/腿/鞋）、
    ② HTML 看板（板沿 + 板面上的全部数据，全是 HTML 自己画的，直接盖在人物图上）、
@@ -21,24 +23,38 @@
    1. 令牌：白面 + 樱花粉主色 + 浅蓝灰底；深色是同一套语言的「夜版」
    -------------------------------------------------------------------------- */
 :root[data-skin="anime"] {
-  --anime-bg: #f4f5fd;
+  --anime-bg: #fdeef6;
   --anime-card: #ffffff;
-  --anime-fg: #262b3a;
-  --anime-muted: #f1f2fa;
-  --anime-muted-fg: #7c8496;
-  --anime-primary: #ff7aa2;
+  --anime-fg: #2b2440;
+  --anime-muted: #fff0f7;
+  --anime-muted-fg: #8a7c9e;
+  --anime-primary: #ff4f9a;
   --anime-primary-fg: #ffffff;
-  --anime-border: #e6e8f4;
-  --anime-ring: #ffb3c9;
-  --anime-hover: #f7f1f5;
-  --anime-hover-primary: #ff5f8f;
-  --anime-ring-soft: rgba(255, 122, 162, 0.22);
+  --anime-border: #ffc9e1;
+  --anime-ring: #ff9cc8;
+  --anime-hover: #ffe6f2;
+  --anime-hover-primary: #ff3d8b;
+  --anime-ring-soft: rgba(255, 79, 154, 0.22);
+
+  /* 三个辅色与「贴纸」投影色：磁贴、进度条、标题渐变字、星点都从这里取 */
+  --anime-violet: #8b6cff;
+  --anime-sky: #39b8ff;
+  --anime-sun: #ffbf2e;
+  --anime-candy: linear-gradient(135deg, #ff5fa2 0%, #ff4f9a 35%, #a56bff 100%);
+  --anime-rainbow: linear-gradient(90deg, #ff5fa2, #a56bff 50%, #39b8ff);
+  --anime-sticker: rgb(255 79 154 / 0.16);
+  --anime-sticker-strong: #e23f87;
+  --anime-star: rgb(255 79 154 / 0.28);
+  --anime-star-2: rgb(57 184 255 / 0.26);
+  --anime-glow-1: rgb(255 95 162 / 0.22);
+  --anime-glow-2: rgb(57 184 255 / 0.18);
+  --anime-glow-3: rgb(139 108 255 / 0.18);
 
   /* 圆角尺度：面 18px、容器 14px、控件 10px、小物件 6px */
   --anime-r-sm: 6px;
   --anime-r-md: 10px;
-  --anime-r-lg: 14px;
-  --anime-r-xl: 18px;
+  --anime-r-lg: 16px;
+  --anime-r-xl: 22px;
   --anime-radius: var(--anime-r-lg);
 
   /* 字体栈与其余三张皮肤统一：拉丁与系统 UI 字体在前，不列 CJK 字体（列了回程格会折行） */
@@ -46,17 +62,17 @@
     "Hiragino Sans GB", sans-serif;
   --anime-mono: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
 
-  --anime-shadow-xs: 0 1px 2px rgb(76 86 140 / 0.06);
-  --anime-shadow-sm: 0 2px 6px rgb(76 86 140 / 0.08);
-  --anime-shadow-md: 0 8px 22px rgb(76 86 140 / 0.12);
+  --anime-shadow-xs: 0 2px 0 var(--anime-sticker);
+  --anime-shadow-sm: 0 4px 0 var(--anime-sticker), 0 8px 18px rgb(255 79 154 / 0.08);
+  --anime-shadow-md: 0 6px 0 var(--anime-sticker), 0 14px 30px rgb(139 108 255 / 0.14);
 
   /* 面板自己的公共令牌：styles.css / glass.css 读的也是这一套 */
   --ink: var(--anime-fg);
   --muted: var(--anime-muted-fg);
-  --subtle: #aab1c4;
+  --subtle: #c3b6d3;
   --line: var(--anime-border);
   --accent: var(--anime-primary);
-  --accent-rgb: 255, 122, 162;
+  --accent-rgb: 255, 79, 154;
 
   --green: #2fbf71;
   --green-rgb: 47, 191, 113;
@@ -74,7 +90,7 @@
   --glass-bg-subtle: var(--anime-muted);
   --glass-bg-elevated: var(--anime-card);
   --glass-border: var(--anime-border);
-  --glass-border-subtle: #eff1f9;
+  --glass-border-subtle: #ffe0ee;
   /* glass.css 里很多面写成 `box-shadow: var(--glass-shadow), var(--glass-inner-rim)`，
      而 `none` 不能作为阴影列表里的一项——整条声明会被判无效丢掉。给一个全透明的阴影，
      效果等同「没有内描边」，但复合写法仍合法。 */
@@ -82,39 +98,52 @@
   --glass-shadow: var(--anime-shadow-sm);
   --glass-shadow-lg: var(--anime-shadow-md);
   --blur: none;
-  --progress-track: #eef0f8;
+  --progress-track: #ffe3f0;
 
   /* 「牌子」：立绘里那块白牌子的面与描边，卡片自己接着往下画 */
   --anime-sign: #ffffff;
-  --anime-sign-line: #e3e9f2;
+  --anime-sign-line: #ffc9e1;
 }
 
 :root[data-skin="anime"][data-theme="dark"] {
-  --anime-bg: #14161f;
-  --anime-card: #1d2130;
-  --anime-elevated: #232838;
-  --anime-fg: #eef1fa;
-  --anime-muted: #262b3c;
-  --anime-muted-fg: #a3abc4;
-  --anime-primary: #ff9ab8;
-  --anime-primary-fg: #1b1e2e;
-  --anime-border: #2c3149;
-  --anime-ring: #ff9ab8;
-  --anime-hover: #262b3c;
-  --anime-hover-primary: #ffb0c8;
-  --anime-ring-soft: rgba(255, 154, 184, 0.24);
+  --anime-bg: #150f29;
+  --anime-card: #22183d;
+  --anime-elevated: #2a1f4a;
+  --anime-fg: #f7efff;
+  --anime-muted: #2c2150;
+  --anime-muted-fg: #b6a8d6;
+  --anime-primary: #ff7ab8;
+  --anime-primary-fg: #ffffff;
+  --anime-border: #4a3478;
+  --anime-ring: #ff7ab8;
+  --anime-hover: #33265c;
+  --anime-hover-primary: #ff94c6;
+  --anime-ring-soft: rgba(255, 122, 184, 0.28);
 
-  --anime-shadow-xs: 0 1px 2px rgb(0 0 0 / 0.5);
-  --anime-shadow-sm: 0 2px 6px rgb(0 0 0 / 0.55);
-  --anime-shadow-md: 0 10px 24px rgb(0 0 0 / 0.6);
+  --anime-violet: #a98bff;
+  --anime-sky: #5cc8ff;
+  --anime-sun: #ffd25a;
+  --anime-candy: linear-gradient(135deg, #ff6fb0 0%, #ff5aa5 35%, #9a6bff 100%);
+  --anime-rainbow: linear-gradient(90deg, #ff7ab8, #a98bff 50%, #5cc8ff);
+  --anime-sticker: rgb(255 122 184 / 0.22);
+  --anime-sticker-strong: #c94b8f;
+  --anime-star: rgb(255 255 255 / 0.5);
+  --anime-star-2: rgb(255 170 220 / 0.4);
+  --anime-glow-1: rgb(255 90 170 / 0.22);
+  --anime-glow-2: rgb(80 170 255 / 0.18);
+  --anime-glow-3: rgb(150 100 255 / 0.26);
 
-  --anime-sign: #1d2130;
-  --anime-sign-line: #2c3149;
-  --subtle: #6f7791;
+  --anime-shadow-xs: 0 2px 0 rgb(0 0 0 / 0.35);
+  --anime-shadow-sm: 0 4px 0 rgb(0 0 0 / 0.35), 0 10px 24px rgb(0 0 0 / 0.35);
+  --anime-shadow-md: 0 6px 0 rgb(0 0 0 / 0.4), 0 16px 32px rgb(0 0 0 / 0.45);
+
+  --anime-sign: #22183d;
+  --anime-sign-line: #4a3478;
+  --subtle: #7d6fa3;
   --line: var(--anime-border);
   --glass-bg-elevated: var(--anime-elevated);
-  --glass-border-subtle: #262b3c;
-  --progress-track: #262b3c;
+  --glass-border-subtle: #33265c;
+  --progress-track: #33265c;
 
   --green: #4ade80;
   --green-rgb: 74, 222, 128;
@@ -137,9 +166,20 @@ html[data-skin="anime"] body {
   font-family: var(--anime-font);
 }
 
-/* 光斑画在 body::before 上（fixed inset -15% 的四团径向渐变 + 一层线性底），极简面不画。 */
+/* 底纸：粉 / 天蓝 / 薰衣草三团柔光 + 两层错开的星点。挂在 body::before（与玻璃皮肤同一个
+   fixed 层），所以滚动时不重绘；不做漂移动画——卡片里已有眨眼与呼吸，底纸再动就太闹了。 */
 html[data-skin="anime"] body::before {
-  display: none;
+  display: block;
+  inset: 0;
+  animation: none;
+  will-change: auto;
+  background:
+    radial-gradient(circle, var(--anime-star) 1.4px, transparent 1.9px) 0 0 / 34px 34px,
+    radial-gradient(circle, var(--anime-star-2) 1px, transparent 1.5px) 17px 17px / 34px 34px,
+    radial-gradient(ellipse at 10% 8%, var(--anime-glow-1), transparent 46%),
+    radial-gradient(ellipse at 92% 14%, var(--anime-glow-2), transparent 42%),
+    radial-gradient(ellipse at 60% 96%, var(--anime-glow-3), transparent 50%),
+    var(--anime-bg);
 }
 
 /* --------------------------------------------------------------------------
@@ -545,11 +585,6 @@ html[data-skin="anime"] .skin-option.on {
   box-shadow: inset 0 0 0 1px var(--anime-primary);
 }
 
-/* 遮罩：anime 的 dialog overlay 是 80% 黑。 */
-html[data-skin="anime"] dialog::backdrop {
-  background: rgba(0, 0, 0, 0.8);
-}
-
 html[data-skin="anime"] #toast {
   border: 1px solid var(--glass-border);
   border-radius: var(--anime-r-lg) !important;
@@ -572,6 +607,209 @@ html[data-skin="anime"] ::-webkit-scrollbar-thumb {
 
 html[data-skin="anime"][data-theme="dark"] ::-webkit-scrollbar-thumb {
   background: rgba(250, 250, 250, 0.25);
+}
+
+/* --------------------------------------------------------------------------
+   10. 加浓（2026-10-14）：粉色描边 + 贴纸投影的面、糖果主按钮、彩色磁贴与进度条、
+       ✦ 小标题、渐变大标题。这一节放在前面各节之后，同权重规则靠顺序覆盖。
+   -------------------------------------------------------------------------- */
+
+/* 面：白底 + 2px 粉描边 + 实色贴纸投影（不是模糊的灰阴影）。角色卡另有自己的牌面配色，不在此列。 */
+html[data-skin="anime"] :is(.panel, .overview-tile, .hero-meta, .public-header, .admin-top, .toolbar, .sidebar, .webhook-panel, .admin-stats > div, .detail-stats > div, .login-panel form),
+html[data-skin="anime"] .node-card:not([data-cast]) {
+  border: 2px solid var(--anime-border);
+  box-shadow: var(--anime-shadow-sm);
+}
+
+html[data-skin="anime"] :is(.overview-tile, .node-card:not([data-cast])):hover {
+  border-color: var(--anime-ring);
+  box-shadow: var(--anime-shadow-md);
+}
+
+/* 弹窗：粉描边 + 顶上一道三色彩带。 */
+html[data-skin="anime"] dialog {
+  border: 2px solid var(--anime-border);
+  box-shadow: var(--anime-shadow-md);
+  background-image: var(--anime-rainbow);
+  background-size: 100% 5px;
+  background-repeat: no-repeat;
+}
+
+/* 遮罩：带一点紫的半透明，不是死黑。 */
+html[data-skin="anime"] dialog::backdrop {
+  background: rgb(43 20 70 / 0.55);
+}
+
+/* 顶部四块磁贴（公开页与后台统计）各一种颜色：粉 / 天蓝 / 薰衣草 / 柠檬，小徽标同色。 */
+html[data-skin="anime"] :is(.overview-tile, .admin-stats > div):nth-child(1) { --tile: var(--anime-primary); }
+html[data-skin="anime"] :is(.overview-tile, .admin-stats > div):nth-child(2) { --tile: var(--anime-sky); }
+html[data-skin="anime"] :is(.overview-tile, .admin-stats > div):nth-child(3) { --tile: var(--anime-violet); }
+html[data-skin="anime"] :is(.overview-tile, .admin-stats > div):nth-child(4) { --tile: var(--anime-sun); }
+
+html[data-skin="anime"] :is(.overview-tile, .admin-stats > div) {
+  border-color: color-mix(in srgb, var(--tile, var(--anime-primary)) 38%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--tile, var(--anime-primary)) 14%, var(--anime-card)), var(--anime-card) 70%);
+  box-shadow: 0 4px 0 color-mix(in srgb, var(--tile, var(--anime-primary)) 26%, transparent);
+}
+
+html[data-skin="anime"] .overview-tile .tile-badge {
+  border-color: transparent;
+  background: var(--tile, var(--anime-primary));
+  color: #fff;
+}
+
+/* 后台「正在告警」有告警时数字是红的（.stat-warn），不跟磁贴色。 */
+html[data-skin="anime"] :is(.overview-tile, .admin-stats > div:not(.stat-warn)) strong {
+  color: color-mix(in srgb, var(--tile, var(--anime-primary)) 55%, var(--ink));
+}
+
+/* 标题：首页大标题后半句恢复渐变字（粉 → 紫 → 天蓝），后台标题加粗。 */
+html[data-skin="anime"] :is(.hero h1, .page-heading h1, .login-story h1) {
+  font-weight: 800;
+}
+
+html[data-skin="anime"] :is(.hero h1 span, .login-story h1 span) {
+  background: var(--anime-rainbow);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* 小标题（INVENTORY / WORKSPACE 这类）前面挂一颗 ✦，主色。 */
+html[data-skin="anime"] :is(.eyebrow, .sidebar-caption) {
+  color: var(--anime-primary);
+}
+
+html[data-skin="anime"] :is(.eyebrow, .sidebar-caption)::before {
+  content: "✦ ";
+}
+
+html[data-skin="anime"] .page-heading h1 span {
+  background: var(--anime-muted) !important;
+  color: var(--anime-primary) !important;
+  -webkit-text-fill-color: var(--anime-primary) !important;
+  border: 1px solid var(--anime-border);
+}
+
+/* 品牌方块：糖果渐变。 */
+html[data-skin="anime"] .brand-mark {
+  background: var(--anime-candy);
+  border-color: transparent;
+  box-shadow: 0 3px 0 var(--anime-sticker-strong);
+}
+
+/* 主按钮：糖果渐变 + 底下一道深一号的实色「按键边」，按下时压下去。 */
+html[data-skin="anime"] button.primary,
+html[data-skin="anime"] .primary {
+  background: var(--anime-candy) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 3px 0 var(--anime-sticker-strong) !important;
+  font-weight: 700;
+}
+
+html[data-skin="anime"] button.primary:not(:disabled):hover,
+html[data-skin="anime"] .primary:not(:disabled):hover {
+  background: var(--anime-candy) !important;
+  filter: brightness(1.06);
+  box-shadow: 0 4px 0 var(--anime-sticker-strong) !important;
+}
+
+html[data-skin="anime"] button.primary:not(:disabled):active,
+html[data-skin="anime"] .primary:not(:disabled):active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--anime-sticker-strong) !important;
+}
+
+/* 普通按钮：粉描边，悬停时字变主色。 */
+html[data-skin="anime"] :is(.button, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle, .skin-toggle):not(.primary) {
+  border: 1.5px solid var(--anime-border);
+}
+
+html[data-skin="anime"] :is(.button, .form-footer button, .page-heading button, .panel-head button:not(.quiet), .webhook-actions button, .catalog-toolbar button, details > button, .theme-toggle, .skin-toggle):not(.primary):not(:disabled):hover {
+  border-color: var(--anime-ring);
+  color: var(--anime-primary);
+}
+
+/* 分段控件：选中那半是糖果渐变的实片。 */
+html[data-skin="anime"] .segmented {
+  border: 1.5px solid var(--anime-border);
+  background: var(--anime-muted);
+}
+
+html[data-skin="anime"] .segmented button.active {
+  background: var(--anime-candy);
+  color: #fff;
+  box-shadow: 0 2px 0 var(--anime-sticker-strong);
+}
+
+/* 侧栏：选中项是糖果渐变的整块，图标与字都是白色。 */
+html[data-skin="anime"] .sidebar nav button.active {
+  background: var(--anime-candy) !important;
+  color: #fff !important;
+  box-shadow: 0 3px 0 var(--anime-sticker-strong) !important;
+}
+
+html[data-skin="anime"] .sidebar nav button.active .nav-icon {
+  color: #fff;
+  stroke: #fff;
+}
+
+/* 胶囊：粉底粉字；开着的 IPv4 / 延迟这类开关是主色实底。 */
+html[data-skin="anime"] :is(.family-tag, .os-tag, .arch-tag, .target-chip) {
+  border-color: var(--anime-border);
+  background: var(--anime-muted);
+  color: color-mix(in srgb, var(--anime-primary) 60%, var(--ink));
+}
+
+/* 表格：表头是连成一条的粉色带，只有两端圆角。以前第 3 节那条「所有元素统一圆角」把每个
+   th 都切成独立的圆角胶囊，格与格之间露出缝（用户标红框：「这个有点奇怪」）。 */
+html[data-skin="anime"] :is(th, td) {
+  border-radius: 0 !important;
+}
+
+html[data-skin="anime"] thead th {
+  background: var(--anime-muted);
+  color: var(--anime-primary);
+  font-weight: 700;
+  border-bottom: 2px solid var(--anime-border);
+}
+
+html[data-skin="anime"] thead th:first-child {
+  border-radius: var(--anime-r-md) 0 0 var(--anime-r-md) !important;
+}
+
+html[data-skin="anime"] thead th:last-child {
+  border-radius: 0 var(--anime-r-md) var(--anime-r-md) 0 !important;
+}
+
+html[data-skin="anime"] tbody tr:hover {
+  background: var(--anime-hover);
+}
+
+/* 进度条：四格各一条渐变（CPU 粉、内存紫、磁盘天蓝、用量柠檬）。webkit 与 moz 必须分开写（见第 7 节）。 */
+html[data-skin="anime"] .metrics-grid .metric:nth-child(1) progress::-webkit-progress-value { background: linear-gradient(90deg, #ff8fc0, var(--anime-primary)); }
+html[data-skin="anime"] .metrics-grid .metric:nth-child(1) progress::-moz-progress-bar { background: linear-gradient(90deg, #ff8fc0, var(--anime-primary)); }
+html[data-skin="anime"] .metrics-grid .metric:nth-child(2) progress::-webkit-progress-value { background: linear-gradient(90deg, #c2a8ff, var(--anime-violet)); }
+html[data-skin="anime"] .metrics-grid .metric:nth-child(2) progress::-moz-progress-bar { background: linear-gradient(90deg, #c2a8ff, var(--anime-violet)); }
+html[data-skin="anime"] .metrics-grid .metric:nth-child(3) progress::-webkit-progress-value { background: linear-gradient(90deg, #8fd8ff, var(--anime-sky)); }
+html[data-skin="anime"] .metrics-grid .metric:nth-child(3) progress::-moz-progress-bar { background: linear-gradient(90deg, #8fd8ff, var(--anime-sky)); }
+html[data-skin="anime"] .metrics-grid .metric:nth-child(4) progress::-webkit-progress-value { background: linear-gradient(90deg, #ffe08a, var(--anime-sun)); }
+html[data-skin="anime"] .metrics-grid .metric:nth-child(4) progress::-moz-progress-bar { background: linear-gradient(90deg, #ffe08a, var(--anime-sun)); }
+
+/* 提示条与通知：粉底粉描边。 */
+html[data-skin="anime"] .notice {
+  border: 1.5px solid var(--anime-border);
+  background: var(--anime-muted);
+}
+
+html[data-skin="anime"] #toast {
+  border: 2px solid var(--anime-border);
+}
+
+html[data-skin="anime"] ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--anime-primary) 45%, transparent);
 }
 
 /* --------------------------------------------------------------------------
@@ -818,13 +1056,14 @@ html[data-skin="anime"] .node-card[data-cast="generic"] {
   --cast-board-top: 179.60px;  /* 板顶 = 12 + 图高 × 0.284314 − 6（板唇） */
   --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
   --cast-plate-h: 108.00px;     /* 收起态板条高（兜底常量；真浏览器里由 layoutCastCards() 写同一值） */
-  --cast-board: #eef1f6;
-  --cast-cell: rgb(255 255 255 / 0.58);
-  --cast-line: #c9d2e2;
-  --cast-track: #dde4ef;
-  --cast-accent: #4a6ea8;
-  --cast-accent-rgb: 74, 110, 168;
-  --cast-motif: radial-gradient(circle at 50% 50%, rgb(74 110 168 / 0.14) 1.3px, transparent 1.6px);
+  /* 通用角色（名单外的机器都用她）跟主题走：粉色牌面 + 粉紫星点（以前是灰蓝，整页因此偏淡）。 */
+  --cast-board: #fff0f7;
+  --cast-cell: rgb(255 255 255 / 0.66);
+  --cast-line: #ffc0dc;
+  --cast-track: #ffdcec;
+  --cast-accent: #e83e8c;
+  --cast-accent-rgb: 232, 62, 140;
+  --cast-motif: radial-gradient(circle at 50% 50%, rgb(232 62 140 / 0.16) 1.3px, transparent 1.6px);
   --cast-motif-size: 15px 15px;
   --cast-blink-url: url("/anime/generic-blink.webp");
   --cast-blink-dur: 6.1s;
@@ -873,13 +1112,13 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
 }
 
 html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="generic"] {
-  --cast-board: #1a1f2b;
-  --cast-cell: #202636;
-  --cast-line: #2c3448;
-  --cast-track: #242b3c;
-  --cast-accent: #8fb0e8;
-  --cast-accent-rgb: 143, 176, 232;
-  --cast-motif: radial-gradient(circle at 50% 50%, rgb(143 176 232 / 0.10) 1.1px, transparent 1.4px);
+  --cast-board: #24193f;
+  --cast-cell: #2c2150;
+  --cast-line: #4a3478;
+  --cast-track: #33265c;
+  --cast-accent: #ff8cc4;
+  --cast-accent-rgb: 255, 140, 196;
+  --cast-motif: radial-gradient(circle at 50% 50%, rgb(255 140 196 / 0.12) 1.1px, transparent 1.4px);
 }
 
 /* --------------------------------------------------------------------------
