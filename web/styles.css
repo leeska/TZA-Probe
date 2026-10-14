@@ -2861,7 +2861,8 @@ pre,
   background: rgba(120, 120, 128, 0.14);
 }
 
-/* 样本配色按 data-swatch 写在样式表里：页面 CSP 是 style-src 'self'，行内样式会被忽略。 */
+/* 内置皮肤的样本配色按 data-swatch 写在样式表里（与 internal/theme 的 Builtins 同值）；
+   主题包的色样由 skins.js 的 paintSwatches 按清单上色。 */
 .skin-swatch {
   display: inline-flex;
   flex: 0 0 auto;
@@ -2886,9 +2887,9 @@ pre,
 [data-swatch="shadcn"] i:nth-child(1) { background: #f5f5f5; }
 [data-swatch="shadcn"] i:nth-child(2) { background: #ffffff; }
 [data-swatch="shadcn"] i:nth-child(3) { background: #171717; }
-[data-swatch="anime"] i:nth-child(1) { background: #f4f5fd; }
+[data-swatch="anime"] i:nth-child(1) { background: #fdeef6; }
 [data-swatch="anime"] i:nth-child(2) { background: #ffffff; }
-[data-swatch="anime"] i:nth-child(3) { background: #ff7aa2; }
+[data-swatch="anime"] i:nth-child(3) { background: #ff4f9a; }
 
 .skin-copy {
   display: flex;
@@ -4175,3 +4176,47 @@ td .due.expired + small {
   margin: 0 4px 0 0;
 }
 
+
+/* 面板设置 · 主题：一行一套，色样 + 名称说明 + 内置 / 主题包标签 + 删除。 */
+.theme-panel .panel-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 面板本身没有内边距（标题行自己是 16px 24px），列表与说明按同样的 24px 缩进。 */
+.theme-list {
+  display: grid;
+  gap: 8px;
+  margin: 4px 24px 10px;
+}
+
+.theme-panel > .hint {
+  margin: 0 24px 18px;
+}
+
+.theme-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.theme-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.theme-copy small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.theme-upload {
+  cursor: pointer;
+}

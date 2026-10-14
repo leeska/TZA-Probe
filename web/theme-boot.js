@@ -5,9 +5,15 @@
 // 切换逻辑见 theme.js / skins.js。
 (function () {
   var d = window.__tzaDefault || {};
+  // 认得的皮肤：/theme-default.js 发来的清单（内置 + 已安装的主题包）；没有清单时只认内置四套。
+  var list = window.__tzaThemes || [{ id: "glass" }, { id: "press" }, { id: "shadcn" }, { id: "anime" }];
+  var known = function (id) {
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return true;
+    return false;
+  };
   // 后台默认：没配过就是内置默认（跟随系统 + 液态玻璃），与 model.DefaultPanel* 一致。
   var themeDefault = d.theme === "light" || d.theme === "dark" ? d.theme : "auto";
-  var skinDefault = d.skin === "press" || d.skin === "shadcn" || d.skin === "anime" ? d.skin : "glass";
+  var skinDefault = known(d.skin) ? d.skin : "glass";
   var pref = null;
   try {
     pref = localStorage.getItem("tza-theme");
@@ -21,6 +27,6 @@
   var dark = pref === "dark" || (pref === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
   var root = document.documentElement;
   root.dataset.theme = dark ? "dark" : "light";
-  // 与 skins.js 的 SKINS 同名清单：认不出来的值（含 null）退回默认皮肤。
-  root.dataset.skin = skin === "press" || skin === "shadcn" || skin === "anime" ? skin : skinDefault;
+  // 认不出来的值（含 null、已删除的主题包）退回默认皮肤。
+  root.dataset.skin = known(skin) ? skin : skinDefault;
 })();

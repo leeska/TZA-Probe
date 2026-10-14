@@ -1,49 +1,83 @@
-// 外观风格（皮肤）：面板有三套视觉语言 —— 默认的「液态玻璃」、「复古印刷」与「现代极简」。
+// 外观风格（皮肤）：内置四套（液态玻璃、复古印刷、现代极简、二次元）加上后台上传的主题包。
 // 明暗（data-theme）仍由 theme.js 决定，风格（data-skin）由这里决定，两者正交：
 // 同一套皮肤在浅色与深色下各有一份令牌。偏好存 localStorage 的 tza-skin，
 // theme-boot.js 在样式表生效前已把 data-skin 写到 <html> 上，避免首屏闪一下默认皮肤。
+//
+// 清单的唯一来源是服务端（internal/theme）：/theme-default.js 把它放在 window.__tzaThemes 上，
+// 后台装 / 删主题包之后由 registerThemes() 换成新清单。没有清单时（jsdom 测试、旧缓存）退回内置四套。
 const KEY = "tza-skin";
 
-// swatch 的三格颜色写在 styles.css 里（CSP 的 style-src 'self' 会忽略行内 style），
-// 这里只给 data-swatch 的值，配色见 styles.css 的 .skin-swatch 一段。
-export const SKINS = [
-  { id: "glass", name: "液态玻璃", hint: "毛玻璃 · 圆角 · 柔和阴影" },
-  { id: "press", name: "复古印刷", hint: "纸张方格 · 硬边框 · 衬线标题" },
-  { id: "shadcn", name: "现代极简", hint: "中性灰 · 发丝描边 · 小圆角" },
-  { id: "anime", name: "二次元", hint: "线路机角色 · 白面樱花粉" },
+const BUILTIN = [
+  { id: "glass", name: "液态玻璃", hint: "毛玻璃 · 圆角 · 柔和阴影", builtin: true, chrome: { light: "#edf2fb", dark: "#0f141c" }, swatch: ["#eef3fc", "#ffffff", "#0071e3"] },
+  { id: "press", name: "复古印刷", hint: "纸张方格 · 硬边框 · 衬线标题", builtin: true, chrome: { light: "#f8f1df", dark: "#15120f" }, swatch: ["#f8f1df", "#fffaf0", "#b72f24"] },
+  { id: "shadcn", name: "现代极简", hint: "中性灰 · 发丝描边 · 小圆角", builtin: true, chrome: { light: "#ffffff", dark: "#0a0a0a" }, swatch: ["#f5f5f5", "#ffffff", "#171717"] },
+  { id: "anime", name: "二次元", hint: "线路机角色 · 樱花粉", builtin: true, chrome: { light: "#fdeef6", dark: "#150f29" }, swatch: ["#fdeef6", "#ffffff", "#ff4f9a"] },
 ];
 
-const IDS = SKINS.map((s) => s.id);
-const NAME = Object.fromEntries(SKINS.map((s) => [s.id, s.name]));
+const registry = (list) => (Array.isArray(list) && list.length ? list : BUILTIN);
+
+// 导出的是活绑定：registerThemes() 换掉之后，import 它的模块（后台设置页）读到的就是新清单。
+export let SKINS = registry(window.__tzaThemes);
+
+export function registerThemes(list) {
+  SKINS = registry(list);
+}
+
+const byId = (id) => SKINS.find((s) => s.id === id);
+// 主题包的名字与说明来自上传的 theme.json：拼进 HTML 之前一律转义。
+const esc = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
 // 后台设的默认皮肤（/theme-default.js 写在 window.__tzaDefault 上）；认不出来就是内置默认。
-const DEFAULT = IDS.includes(window.__tzaDefault?.skin) ? window.__tzaDefault.skin : "glass";
+const defaultSkin = () => (byId(window.__tzaDefault?.skin) ? window.__tzaDefault.skin : "glass");
 
 export function skinPreference() {
   let v = null;
   try {
     v = localStorage.getItem(KEY);
   } catch {}
-  return IDS.includes(v) ? v : DEFAULT;
+  return byId(v) ? v : defaultSkin();
 }
 
-// 浏览器地址栏 / 状态栏的底色：玻璃是冷白，印刷是纸色，极简是纯白 / 纯黑。
-const CHROME = {
-  press: { light: "#f8f1df", dark: "#15120f" },
-  shadcn: { light: "#ffffff", dark: "#0a0a0a" },
-  anime: { light: "#f4f5fd", dark: "#14161f" },
-};
+// 浏览器地址栏 / 状态栏的底色：每套皮肤在清单里自带一对（浅色 / 深色）。
 export function skinChrome() {
-  return CHROME[skinPreference()] || { light: "#edf2fb", dark: "#0f141c" };
+  return byId(skinPreference())?.chrome || BUILTIN[0].chrome;
+}
+
+// 已安装主题包的样式表：只有正在用的那套生效。首屏由 theme-css.js 同步挂上；运行中切换时
+// 在这里补挂缺的、停用别的。有要加载的就返回等它们加载完的 Promise（先切 data-skin 的话会先按
+// 默认样式画一帧）；内置皮肤或已经挂好的返回 null，调用方当场切换。
+function syncThemeCSS(skin) {
+  for (const l of document.querySelectorAll("link[data-theme-css]")) l.disabled = l.dataset.themeCss !== skin;
+  const t = byId(skin);
+  if (!t || t.builtin || !t.css?.length) return null;
+  const have = [...document.querySelectorAll("link[data-theme-css]")].filter((l) => l.dataset.themeCss === skin);
+  const missing = t.css.filter((href) => !have.some((l) => l.getAttribute("href") === href));
+  if (!missing.length) return null;
+  return Promise.all(
+    missing.map(
+      (href) =>
+        new Promise((done) => {
+          const l = document.createElement("link");
+          l.rel = "stylesheet";
+          l.dataset.themeCss = skin;
+          l.href = href;
+          l.onload = l.onerror = done;
+          document.head.append(l);
+        }),
+    ),
+  );
 }
 
 // 与 theme.js 各管一半：这里只管 data-skin、按钮文字与 meta 底色，明暗由 applyTheme 负责。
 export function applySkin(skin = skinPreference()) {
+  syncThemeCSS(skin);
   document.documentElement.dataset.skin = skin;
-  const title = `外观风格：${NAME[skin]}，点击选择`;
+  const label = title(skin);
   for (const b of document.querySelectorAll("[data-skin-toggle]")) {
     b.innerHTML = inner(skin);
-    b.title = title;
-    b.setAttribute("aria-label", title);
+    b.title = label;
+    b.setAttribute("aria-label", label);
   }
   paintChrome();
   closeMenu();
@@ -58,18 +92,21 @@ function paintChrome() {
 }
 
 export function setSkin(id) {
-  if (!IDS.includes(id)) return;
+  if (!byId(id)) return;
   try {
-    if (id === DEFAULT) localStorage.removeItem(KEY);
+    if (id === defaultSkin()) localStorage.removeItem(KEY);
     else localStorage.setItem(KEY, id);
   } catch {}
-  applySkin(id);
+  const pending = syncThemeCSS(id);
+  if (pending) pending.then(() => applySkin(id));
+  else applySkin(id);
 }
 
 const ICON = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.2c-3.9 0-7 2.5-7 5.6 0 1.9 1.6 3 3.4 3h1.1c.9 0 1.5.9 1 1.7-.6 1 .1 2.3 1.4 2.3 3.9 0 7-2.6 7-5.8S13.9 3.2 10 3.2Z"/><circle cx="7.4" cy="8.2" r="1"/><circle cx="11" cy="7.2" r="1"/></svg>`;
 
-const inner = (id) => `${ICON}<span>${NAME[id]}</span>`;
-const title = (id) => `外观风格：${NAME[id]}，点击选择`;
+const nameOf = (id) => byId(id)?.name || id;
+const inner = (id) => `${ICON}<span>${esc(nameOf(id))}</span>`;
+const title = (id) => `外观风格：${nameOf(id)}，点击选择`;
 
 export function skinButton(cls = "") {
   const id = skinPreference();
@@ -94,12 +131,27 @@ function renderMenu(el) {
   const cur = skinPreference();
   el.innerHTML = SKINS.map(
     (s) =>
-      `<button type="button" class="skin-option${s.id === cur ? " on" : ""}" role="option" aria-selected="${s.id === cur}" data-skin-option="${s.id}">` +
-      `<span class="skin-swatch" data-swatch="${s.id}" aria-hidden="true"><i></i><i></i><i></i></span>` +
-      `<span class="skin-copy"><b>${s.name}</b><small>${s.hint}</small></span>` +
+      `<button type="button" class="skin-option${s.id === cur ? " on" : ""}" role="option" aria-selected="${s.id === cur}" data-skin-option="${esc(s.id)}">` +
+      `<span class="skin-swatch" data-swatch="${esc(s.id)}" aria-hidden="true"><i></i><i></i><i></i></span>` +
+      `<span class="skin-copy"><b>${esc(s.name)}</b><small>${esc(s.hint)}</small></span>` +
       `<svg class="skin-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 12.5l4.4 4.4L18.5 8"/></svg>` +
       `</button>`,
   ).join("");
+  paintSwatches(el);
+}
+
+// 色样：内置皮肤的三格颜色写在 styles.css 的 [data-swatch] 规则里；主题包的颜色只有清单知道，
+// 渲染完逐格上色。CSP 的 style-src 'self' 会丢掉 HTML 里的 style 属性，但经 CSSOM 写的不受限。
+// 后台设置页的主题列表也用它。
+export function paintSwatches(root) {
+  for (const box of root.querySelectorAll("[data-swatch]")) {
+    const t = byId(box.dataset.swatch);
+    if (!t || t.builtin) continue;
+    const colors = t.swatch || [];
+    box.querySelectorAll("i").forEach((cell, i) => {
+      if (/^#[0-9a-fA-F]{6}$/.test(colors[i] || "")) cell.style.background = colors[i];
+    });
+  }
 }
 
 function closeMenu() {

@@ -82,12 +82,18 @@ type Server struct {
 	Name         string
 	Version      string
 	Instructions string
+	// Themes knows the uploaded theme packages (default_skin may name one).
+	Themes interface{ Known(id string) bool }
 }
 
 // service is the management surface the tools call; it is cheap to build, and
 // building it per call keeps Server a plain struct literal.
 func (s *Server) service() *service.Service {
-	return &service.Service{Store: s.Source, Notifier: s.Notifier}
+	svc := &service.Service{Store: s.Source, Notifier: s.Notifier}
+	if s.Themes != nil {
+		svc.Themes = s.Themes
+	}
+	return svc
 }
 
 type request struct {

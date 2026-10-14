@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -14,12 +15,61 @@ import (
 	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/theme"
 )
+
+// themeView is one skin as the browser needs it: installed packages carry the
+// URLs of their stylesheets (with the package revision, so a re-upload busts caches).
+type themeView struct {
+	theme.Manifest
+	CSS []string `json:"css,omitempty"`
+}
+
+func themeList(store *theme.Store) []themeView {
+	out := []themeView{}
+	for _, m := range store.List() {
+		v := themeView{Manifest: m}
+		for _, style := range m.Styles {
+			v.CSS = append(v.CSS, "/themes/"+m.ID+"/"+style+"?v="+m.Rev)
+		}
+		out = append(out, v)
+	}
+	return out
+}
 
 // adminRoutes is the management API. Every route decodes its request and hands
 // it to the service, which the MCP tools share; nothing here decides a rule.
 func (a *API) adminRoutes(mux *http.ServeMux) {
 	route := func(pattern string, handler http.HandlerFunc) { mux.HandleFunc(pattern, a.admin(handler)) }
+
+	// ---- themes：内置皮肤 + 后台上传的主题包（zip，见 docs/THEMES.md）
+	route("GET /api/v1/admin/themes", func(w http.ResponseWriter, r *http.Request) {
+		write(w, 200, themeList(a.Themes))
+	})
+	route("POST /api/v1/admin/themes", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, theme.MaxUpload))
+		if err != nil {
+			write(w, 413, map[string]string{"error": fmt.Sprintf("主题包最大 %d MB", theme.MaxUpload>>20)})
+			return
+		}
+		m, err := a.Themes.Install(body)
+		if err != nil {
+			write(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		write(w, 200, m)
+	})
+	route("DELETE /api/v1/admin/themes/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := a.Themes.Remove(r.PathValue("id")); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				write(w, 404, map[string]string{"error": "没有这个主题包"})
+				return
+			}
+			write(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(204)
+	})
 
 	// ---- nodes
 	route("GET /api/v1/admin/nodes", a.nodes)

@@ -1,0 +1,74 @@
+/* 抹茶：示例主题包（docs/THEMES.md）。
+   只改颜色变量和底纸，版式、组件全部沿用默认样式——大多数主题写到这个程度就够了。
+   选择器都带 [data-skin="matcha"]：本包只在被选中时加载，带上前缀是为了让优先级稳稳压过默认的
+   :root 与 [data-theme="dark"]，与默认样式的先后顺序无关。 */
+
+:root[data-skin="matcha"] {
+  --ink: #23301f;
+  --muted: #6d7a63;
+  --subtle: #a3ad97;
+  --line: rgba(60, 80, 40, 0.14);
+  --accent: #5f8f3a;
+  --accent-rgb: 95, 143, 58;
+
+  /* 面：平涂，不用毛玻璃 */
+  --glass-bg: #fbfaf3;
+  --glass-bg-subtle: #f2f1e4;
+  --glass-bg-elevated: #ffffff;
+  --glass-border: #dfe3cc;
+  --glass-border-subtle: #ebeedd;
+  --glass-inner-rim: 0 0 #0000;
+  --glass-shadow: 0 2px 8px rgb(60 80 40 / 0.08);
+  --glass-shadow-lg: 0 10px 28px rgb(60 80 40 / 0.12);
+  --blur: none;
+  --progress-track: #e6e9d6;
+}
+
+:root[data-skin="matcha"][data-theme="dark"] {
+  --ink: #eef2e6;
+  --muted: #a4ae98;
+  --subtle: #6f7a64;
+  --line: rgba(220, 235, 200, 0.12);
+  --accent: #9cc76f;
+  --accent-rgb: 156, 199, 111;
+
+  --glass-bg: #1d2219;
+  --glass-bg-subtle: #23291e;
+  --glass-bg-elevated: #262d21;
+  --glass-border: #323b2b;
+  --glass-border-subtle: #2a3124;
+  --glass-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+  --glass-shadow-lg: 0 10px 28px rgb(0 0 0 / 0.5);
+  --progress-track: #2f3729;
+}
+
+/* 底纸：默认皮肤在 body::before 上画四团流动的彩色光斑，这里换成两团静止的淡绿 */
+html[data-skin="matcha"] body {
+  background: #eef0e2;
+}
+
+html[data-skin="matcha"] body::before {
+  inset: 0;
+  animation: none;
+  background:
+    radial-gradient(ellipse at 15% 10%, rgb(150 190 110 / 0.28), transparent 50%),
+    radial-gradient(ellipse at 85% 90%, rgb(200 210 150 / 0.3), transparent 55%),
+    #eef0e2;
+}
+
+html[data-skin="matcha"][data-theme="dark"] body {
+  background: #141811;
+}
+
+html[data-skin="matcha"][data-theme="dark"] body::before {
+  background:
+    radial-gradient(ellipse at 15% 10%, rgb(110 150 70 / 0.18), transparent 50%),
+    #141811;
+}
+
+/* 标题里那道彩色渐变字换成抹茶绿 */
+html[data-skin="matcha"] :is(.hero h1 span, .login-story h1 span) {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--accent);
+}

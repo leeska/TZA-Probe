@@ -192,7 +192,7 @@ run_build() {
       -o "$stage/tza-server" ./cmd/server || { FAILED=1; return; }
     cp "internal/agentdist/bin/tza-agent-linux-$arch" "$stage/tza-agent"
     cp README.md LICENSE NOTICE "$stage/"
-    cp -r deploy docs "$stage/"
+    cp -r deploy docs examples "$stage/"
     ( cd "$stage" && pack "$OUT/tza-probe-linux-$arch.tar.gz" . ) || { FAILED=1; return; }
     ( cd "$OUT" && sha256 "tza-probe-linux-$arch.tar.gz" > "tza-probe-linux-$arch.tar.gz.sha256" ) || { FAILED=1; return; }
     # 只有 Linux 主机能直接运行这个二进制（macOS 上交叉编出的 Linux 程序跑不起来）。

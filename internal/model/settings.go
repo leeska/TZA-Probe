@@ -50,8 +50,8 @@ const (
 	DefaultPanelSkin  = "glass"
 )
 
-// PanelThemes / PanelSkins 是允许写入的两组取值，与 web/theme.js 的 ORDER、
-// web/skins.js 的 SKINS 一一对应（httpapi 的测试会拿 web/skins.js 对一遍）。
+// PanelThemes / PanelSkins 是内置的两组取值，与 web/theme.js 的 ORDER、internal/theme 的
+// Builtins 一一对应（httpapi 的测试会拿它们对一遍）。后台上传的主题包另由 Service.Themes 认。
 var PanelThemes = []string{"auto", "light", "dark"}
 var PanelSkins = []string{"glass", "press", "shadcn", "anime"}
 
@@ -92,7 +92,7 @@ func ValidatePanelSkin(v string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("默认皮肤须为 %s 之一", strings.Join(PanelSkins, " / "))
+	return fmt.Errorf("默认皮肤须为 %s 之一，或一个已安装的主题包", strings.Join(PanelSkins, " / "))
 }
 
 // PanelSettings is the visitor-facing panel configuration as the admin pages
@@ -115,8 +115,9 @@ func (p PanelPatch) Empty() bool {
 	return p.LatencyWindowMinutes == nil && p.DefaultTheme == nil && p.DefaultSkin == nil
 }
 
-// Validate checks every carried field before anything is written.
-func (p PanelPatch) Validate() error {
+// Validate checks every carried field before anything is written. installed
+// reports whether a skin id names an uploaded theme package (nil: built-ins only).
+func (p PanelPatch) Validate(installed func(string) bool) error {
 	if p.LatencyWindowMinutes != nil {
 		if err := ValidateLatencyWindowMinutes(*p.LatencyWindowMinutes); err != nil {
 			return err
@@ -127,7 +128,7 @@ func (p PanelPatch) Validate() error {
 			return err
 		}
 	}
-	if p.DefaultSkin != nil {
+	if p.DefaultSkin != nil && (installed == nil || !installed(*p.DefaultSkin)) {
 		if err := ValidatePanelSkin(*p.DefaultSkin); err != nil {
 			return err
 		}

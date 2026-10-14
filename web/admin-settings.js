@@ -1,14 +1,17 @@
 import { THEMES } from "./theme.js";
-import { SKINS } from "./skins.js";
+import { SKINS, registerThemes, paintSwatches } from "./skins.js";
 import { api, send, toast, guard, modal, esc } from "./api.js";
-import { content, field } from "./admin-state.js";
+import { content, field, confirmAction } from "./admin-state.js";
 const MCP_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/MCP.md";
+const THEME_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/THEMES.md";
 const mcpDocs = () => `<p class="hint mcp-doc">接入文档：<a href="${MCP_DOC_URL}" target="_blank" rel="noopener noreferrer">${MCP_DOC_URL}</a></p>`;
 // 面板设置：公开面板的全站显示项（延迟色带时间窗、访客首屏外观）。以前挂在「告警与通知」页里，
 // 但它们跟告警无关，单独一页。两项都走 /admin/panel 保存（见下方注释）。
 export async function renderSettings(nodesReady) {
   // 本页不用节点列表；切页时外壳传来的节点请求一起等，顶栏在线计数随之刷新。页内保存后重画不传。
-  const [, settings, acct, mcp] = await Promise.all([nodesReady, api("/admin/panel"), api("/admin/account").catch(() => null), api("/admin/mcp-key")]);
+  const [, settings, acct, mcp, themes] = await Promise.all([nodesReady, api("/admin/panel"), api("/admin/account").catch(() => null), api("/admin/mcp-key"), api("/admin/themes").catch(() => null)]);
+  // 主题清单以服务端为准：装 / 删主题包之后这里重画，皮肤菜单与默认皮肤下拉一起换成新清单。
+  if (themes) registerThemes(themes);
   // 时间范围给几个常用档位（分钟是接口单位，档位只是界面）：
   // 探测结果保留 7 天，所以更长的一律取到保留上限，不另设选项。
   const windows = [
@@ -26,7 +29,7 @@ export async function renderSettings(nodesReady) {
   // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
   const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
   const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : "glass";
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>公开面板的显示选项、后台账号、MCP API Key 与数据备份。</p></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片的延迟色带每格一次探测，固定画最近 10 次；早于这个范围的探测不再显示，那几格留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${s.id}"${s.id === skinNow ? " selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section>${acct ? `<section class="panel webhook-panel"><div><h3>后台账号</h3><p>${acct.configured ? `当前用户名：<b>${esc(acct.username)}</b>` : "尚未设置账号，请在服务器执行 tza-server reset-password 创建账号。"}</p><small>修改后其他已登录的浏览器需要重新登录。忘记密码时在服务器执行 tza-server reset-password --data 数据目录，会生成新密码。</small></div><div class="webhook-actions"><button id="edit-account" class="primary">${acct.configured ? "修改账号" : "设置账号"}</button></div></section>` : ""}<section class="panel webhook-panel"><div><h3>MCP API Key</h3><p>${mcp.configured ? `已启用 · 生成于 ${esc(new Date(mcp.created_at).toLocaleString())}` : "尚未生成，MCP 接口未启用。"}</p><small>用于 AI 客户端连接并管理节点、任务和设置。仅用于 MCP；重新生成或撤销后旧 Key 立即失效。</small><p>连接地址：<code>${esc(location.origin + "/mcp")}</code></p><p class="hint">请求头：Authorization: Bearer &lt;API Key&gt;</p>${mcpDocs()}</div><div class="webhook-actions"><button id="generate-mcp-key" class="primary">${mcp.configured ? "重新生成" : "生成 API Key"}</button>${mcp.configured ? '<button id="revoke-mcp-key">撤销</button>' : ""}</div></section><section class="panel webhook-panel"><div><h3>数据备份</h3><p>下载整个数据库的一份快照：节点、任务、历史与设置都在里面。不用停服，面板和 Agent 上报照常。</p><small>升级到会改数据库结构的版本之前先下载一份。恢复时先停服，把它放进数据目录、命名为 tza-probe.db（替换原文件），并删掉同目录的 tza-probe.db-wal 与 tza-probe.db-shm，再启动。</small></div><div class="webhook-actions"><a id="download-backup" class="button primary" href="/api/v1/admin/backup" download>下载备份</a></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>公开面板的显示选项、后台账号、MCP API Key 与数据备份。</p></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片的延迟色带每格一次探测，固定画最近 10 次；早于这个范围的探测不再显示，那几格留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${esc(s.id)}"${s.id === skinNow ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section>${themePanel()}${acct ? `<section class="panel webhook-panel"><div><h3>后台账号</h3><p>${acct.configured ? `当前用户名：<b>${esc(acct.username)}</b>` : "尚未设置账号，请在服务器执行 tza-server reset-password 创建账号。"}</p><small>修改后其他已登录的浏览器需要重新登录。忘记密码时在服务器执行 tza-server reset-password --data 数据目录，会生成新密码。</small></div><div class="webhook-actions"><button id="edit-account" class="primary">${acct.configured ? "修改账号" : "设置账号"}</button></div></section>` : ""}<section class="panel webhook-panel"><div><h3>MCP API Key</h3><p>${mcp.configured ? `已启用 · 生成于 ${esc(new Date(mcp.created_at).toLocaleString())}` : "尚未生成，MCP 接口未启用。"}</p><small>用于 AI 客户端连接并管理节点、任务和设置。仅用于 MCP；重新生成或撤销后旧 Key 立即失效。</small><p>连接地址：<code>${esc(location.origin + "/mcp")}</code></p><p class="hint">请求头：Authorization: Bearer &lt;API Key&gt;</p>${mcpDocs()}</div><div class="webhook-actions"><button id="generate-mcp-key" class="primary">${mcp.configured ? "重新生成" : "生成 API Key"}</button>${mcp.configured ? '<button id="revoke-mcp-key">撤销</button>' : ""}</div></section><section class="panel webhook-panel"><div><h3>数据备份</h3><p>下载整个数据库的一份快照：节点、任务、历史与设置都在里面。不用停服，面板和 Agent 上报照常。</p><small>升级到会改数据库结构的版本之前先下载一份。恢复时先停服，把它放进数据目录、命名为 tza-probe.db（替换原文件），并删掉同目录的 tza-probe.db-wal 与 tza-probe.db-shm，再启动。</small></div><div class="webhook-actions"><a id="download-backup" class="button primary" href="/api/v1/admin/backup" download>下载备份</a></div></section>`;
   // 面板显示项走 /admin/panel：通知那个出口的语义是「空值即清空」，
   // 用同一个 PUT 保存显示项会顺手把 webhook 或 Bot Token 清掉。
   content().querySelector("#save-window").onclick = guard(async () => {
@@ -45,6 +48,8 @@ export async function renderSettings(nodesReady) {
     await renderSettings();
     toast(`前台默认外观：${THEMES.find((t) => t.id === theme).name} · ${SKINS.find((s) => s.id === skin).name}`);
   });
+  paintSwatches(content());
+  wireThemes();
   content().querySelector("#generate-mcp-key").onclick = guard(async () => {
     if (mcp.configured) {
       confirmMCP("重新生成 MCP API Key", "旧 Key 将立即失效，连接的客户端需要更新配置。", generateMCPKey);
@@ -62,6 +67,42 @@ export async function renderSettings(nodesReady) {
   });
   content().querySelector("#edit-account")?.addEventListener("click", () => accountForm(acct));
 }
+// 主题：内置四套 + 后台上传的主题包。主题包是一个 zip（theme.json + 样式表 + 图片 / 字体，
+// 不含脚本），装好后访客就能在右上角的外观菜单里选它，也能设成前台默认。格式见 docs/THEMES.md。
+function themePanel() {
+  const rows = SKINS.map((t) => {
+    const meta = t.builtin ? "" : [t.id, t.version && "v" + t.version, t.author].filter(Boolean).join(" · ");
+    return `<div class="theme-row"><span class="skin-swatch" data-swatch="${esc(t.id)}" aria-hidden="true"><i></i><i></i><i></i></span><span class="theme-copy"><b>${esc(t.name)}</b><small>${esc(t.hint || "")}${meta ? `<br>${esc(meta)}` : ""}</small></span><span class="pill">${t.builtin ? "内置" : "主题包"}</span>${t.builtin ? "" : `<button type="button" class="danger" data-remove-theme="${esc(t.id)}">删除</button>`}</div>`;
+  }).join("");
+  return `<section class="panel theme-panel"><div class="panel-head"><div><h3>主题</h3><span class="muted">上传的主题包只含样式表、图片和字体，不能带脚本。</span></div><div class="panel-actions"><label class="button primary theme-upload">上传主题包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${rows}</div><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级；主题包存在数据目录的 themes/ 下，不在数据库备份里。</p></section>`;
+}
+
+function wireThemes() {
+  const input = content().querySelector("#theme-file");
+  input.onchange = guard(async () => {
+    const file = input.files[0];
+    input.value = "";
+    if (!file) return;
+    const m = await api("/admin/themes", { method: "POST", body: file, headers: { "Content-Type": "application/zip" } });
+    await renderSettings();
+    toast(`主题包已安装：${m.name}（右上角外观菜单里可以选它）`);
+  });
+  content().querySelectorAll("[data-remove-theme]").forEach((b) =>
+    (b.onclick = () => {
+      const t = SKINS.find((s) => s.id === b.dataset.removeTheme);
+      confirmAction(
+        `删除主题包 · ${t?.name || b.dataset.removeTheme}`,
+        `删除后正在用它的访客会回到默认皮肤；它若是前台默认皮肤，默认也回到液态玻璃。`,
+        async () => {
+          await send("/admin/themes/" + encodeURIComponent(b.dataset.removeTheme), "DELETE");
+          await renderSettings();
+        },
+        { label: "删除主题包" },
+      );
+    }),
+  );
+}
+
 // 改用户名与密码：已有账号时要先输入当前密码。新密码填两遍，防止手误把自己锁在外面。
 function accountForm(acct) {
   const current = acct.configured ? field("当前密码", "current_password", "", "password", 'required autocomplete="current-password"') : "";

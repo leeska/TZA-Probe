@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +63,13 @@ type Store interface {
 type Service struct {
 	Store    Store
 	Notifier notify.Sender
+	// Themes knows the uploaded theme packages; nil means built-in skins only.
+	Themes interface{ Known(id string) bool }
+}
+
+// installedSkin reports whether id is an uploaded theme package.
+func (s *Service) installedSkin(id string) bool {
+	return s.Themes != nil && s.Themes.Known(id)
 }
 
 // ErrNoSender means this Server was started without a notification sender.
@@ -535,8 +543,17 @@ func (s *Service) Panel(ctx context.Context) (model.PanelSettings, error) {
 	return model.PanelSettings{
 		LatencyWindowMinutes: model.LatencyWindowMinutes(window),
 		DefaultTheme:         model.PanelTheme(theme),
-		DefaultSkin:          model.PanelSkin(skin),
+		DefaultSkin:          s.panelSkin(skin),
 	}, nil
+}
+
+// panelSkin normalizes a stored default skin: an installed package stays, an
+// unknown value (a package since deleted) falls back to the built-in default.
+func (s *Service) panelSkin(stored string) string {
+	if v := strings.TrimSpace(stored); s.installedSkin(v) {
+		return v
+	}
+	return model.PanelSkin(stored)
 }
 
 // PatchPanel changes only the fields the patch carries.
@@ -544,7 +561,7 @@ func (s *Service) PatchPanel(ctx context.Context, patch model.PanelPatch) (model
 	if patch.Empty() {
 		return model.PanelSettings{}, model.Invalid("至少给一项面板显示设置")
 	}
-	if err := patch.Validate(); err != nil {
+	if err := patch.Validate(s.installedSkin); err != nil {
 		return model.PanelSettings{}, model.Invalid(err.Error())
 	}
 	if err := s.writePanel(ctx, patch); err != nil {
@@ -579,7 +596,7 @@ func (s *Service) UpdateSettings(ctx context.Context, notification *notify.Confi
 	if notification == nil && panel.Empty() {
 		return notify.Config{}, model.PanelSettings{}, model.Invalid("至少给一项设置；关闭通知请传 channel=none")
 	}
-	if err := panel.Validate(); err != nil {
+	if err := panel.Validate(s.installedSkin); err != nil {
 		return notify.Config{}, model.PanelSettings{}, model.Invalid(err.Error())
 	}
 	config, err := s.Notification(ctx)

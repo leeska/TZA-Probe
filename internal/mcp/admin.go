@@ -148,7 +148,7 @@ var adminTools = []tool{
 			"chat_id":                map[string]any{"type": "string", "description": "Telegram Chat ID：数字 ID 或 @频道名（留空保留已存的）"},
 			"latency_window_minutes": map[string]any{"type": "integer", "description": "公开卡片延迟色带最早显示多久以前的探测（分钟）：色带固定画最近 10 次，早于这个范围的不画"},
 			"default_theme":          map[string]any{"type": "string", "enum": model.PanelThemes, "description": "访客默认明暗"},
-			"default_skin":           map[string]any{"type": "string", "enum": model.PanelSkins, "description": "访客默认皮肤"},
+			"default_skin":           map[string]any{"type": "string", "description": "访客默认皮肤：内置的 " + strings.Join(model.PanelSkins, " / ") + "，或后台已安装的主题包 id"},
 		}),
 		Annotations: annotations("Update notification settings", false, false, true),
 	},

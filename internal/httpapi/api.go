@@ -24,6 +24,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/service"
+	"github.com/leeska/TZA-Probe/internal/theme"
 )
 
 // Repository is the persistence the HTTP contract needs: the management
@@ -44,6 +45,7 @@ type API struct {
 	AccountDir    string // data directory holding the panel account; "" disables password login
 	Assets        http.Handler
 	Agents        *agentdist.Dist // nil disables /install.sh and /dl/
+	Themes        *theme.Store    // uploaded theme packages; nil means built-in skins only
 	mu            sync.Mutex
 	sessions      map[string]time.Time
 	loginWindow   time.Time
@@ -104,7 +106,7 @@ func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) 
 
 func (a *API) Handler() http.Handler {
 	a.sessions = map[string]time.Time{}
-	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier}
+	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier, Themes: a.Themes}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, map[string]any{"version": model.Version, "protocol": model.Protocol})
@@ -144,6 +146,10 @@ func (a *API) Handler() http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		if r.Method == http.MethodGet {
 			fmt.Fprintf(w, "window.__tzaDefault={theme:%q,skin:%q};\n", theme, skin)
+			// 皮肤清单（内置 + 已安装的主题包）也在这里一起发：theme-boot.js 要在首屏前认出
+			// 访客存下的皮肤，theme-css.js 要在首屏前挂上已安装主题的样式表。
+			list, _ := json.Marshal(themeList(a.Themes))
+			fmt.Fprintf(w, "window.__tzaThemes=%s;\n", list)
 		}
 	})
 	mux.HandleFunc("POST /api/v1/agent/report", a.agent(func(w http.ResponseWriter, r *http.Request, id string) {
@@ -189,7 +195,7 @@ func (a *API) Handler() http.Handler {
 	})
 	// MCP uses an independent, revocable API key managed in the panel.
 	a.mcpKeyRoutes(mux)
-	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier}
+	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier, Themes: a.Themes}
 	mux.HandleFunc("POST /mcp", a.mcpAuth(probe.ServeHTTP))
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		// The modern revision dropped the standalone SSE stream (GET) and
@@ -231,6 +237,8 @@ func (a *API) Handler() http.Handler {
 			slog.Warn("agent download failed", "arch", arch, "error", err)
 		}
 	})
+	// 已安装主题包的静态文件（样式表、图片、字体）；类型白名单与 nosniff 见 theme.Store.ServeHTTP。
+	mux.Handle("GET /themes/{id}/{file...}", a.Themes)
 	mux.Handle("/", a.Assets)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")

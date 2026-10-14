@@ -22,6 +22,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/service"
 	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-Probe/internal/theme"
 	"github.com/leeska/TZA-Probe/web"
 )
 
@@ -77,7 +78,7 @@ func run() error {
 	} else {
 		slog.Info("agent binaries available for one-line installation", "arch", available)
 	}
-	api := &httpapi.API{Store: store, Notifier: notify.Transport{}, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents}
+	api := &httpapi.API{Store: store, Notifier: notify.Transport{}, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: &theme.Store{Dir: filepath.Join(*dir, "themes")}}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
 	wg.Add(2)
