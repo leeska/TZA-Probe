@@ -25,9 +25,9 @@ const defaults = {
   },
   line: { mbps: 0, throttle_mbps: 0, throttle_hours: 24, throttle_on: "bandwidth" },
 };
-export async function nodesPage() {
+export async function nodesPage(nodesReady) {
   // 「正在告警」的数字读不到时只少这一格的数，不挡住节点列表。
-  const [known, firing] = await Promise.all([knownRegions(), api("/admin/events?active=1&limit=500").catch(() => null)]);
+  const [, known, firing] = await Promise.all([nodesReady, knownRegions(), api("/admin/events?active=1&limit=500").catch(() => null)]);
   state.regions = known;
   renderNodes(firing);
 }
@@ -67,7 +67,7 @@ function cardRegionMiss(n) {
   return ` <span class="region-miss" title="绑定的探测任务目标在「${esc(where)}」，与卡片地区「${esc(latency === route ? route : `${route} / ${latency}`)}」对不上，公开卡片不显示延迟和回程。在「编辑」里改卡片地区，或给任务加上这个地区的目标。">卡片无探测</span>`;
 }
 function renderNodes(firing) {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${state.nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${state.nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${state.nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${state.nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div><div id="goto-firing" class="stat-link${firing?.length ? " stat-warn" : ""}" role="button" tabindex="0" title="查看当前告警"><span>正在告警</span><strong>${firing ? firing.length : "—"}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><button id="refresh-nodes" class="quiet">↻ 刷新</button></div><div class="table-scroll"><table class="stack"><thead><tr><th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${state.nodes.map((n) => `<tr data-node="${n.id}"><td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 回程地区 ${esc(n.display.route_region || "未设置")}${cardRegionMiss(n)}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span>${firingPill(n, firing)}<small>Agent ${n.metrics ? [n.metrics.version, n.metrics.arch].filter(Boolean).map(esc).join(" · ") : "未接入"}${agentStale(n)}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${state.nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${state.nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${state.nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${state.nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div><div id="goto-firing" class="stat-link${firing?.length ? " stat-warn" : ""}" role="button" tabindex="0" title="查看当前告警"><span>正在告警</span><strong>${firing ? firing.length : "—"}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><div class="panel-actions"><button id="sort-nodes" class="quiet" ${state.nodes.length < 2 ? "disabled" : ""} title="按分组、名称、地区或到期时间重排全部节点">⇅ 一键排序</button><button id="refresh-nodes" class="quiet">↻ 刷新</button></div></div><div class="table-scroll"><table class="stack"><thead><tr><th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${state.nodes.map((n) => `<tr data-node="${n.id}"><td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"} · 回程地区 ${esc(n.display.route_region || "未设置")}${cardRegionMiss(n)}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span>${firingPill(n, firing)}<small>Agent ${n.metrics ? [n.metrics.version, n.metrics.arch].filter(Boolean).map(esc).join(" · ") : "未接入"}${agentStale(n)}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
   content().querySelectorAll("[data-billing]").forEach((b) => {
     b.onclick = () => {
       const n = state.nodes.find((x) => x.id === b.dataset.billing);
@@ -93,6 +93,7 @@ function renderNodes(firing) {
     }
   };
   content().querySelector("#refresh-nodes").onclick = guard(render);
+  content().querySelector("#sort-nodes").onclick = sortDialog;
   content()
     .querySelectorAll("[data-edit]")
     .forEach(
@@ -127,77 +128,164 @@ function renderNodes(firing) {
     );
   wireReorder();
 }
-// 拖动排序：这张表就是服务端按 order 排出来的（storage.Nodes → 先 order 后 name），拖动
+// 拖动排序：这张表就是服务端按 order 排出来的（visibleNodes → 先 order 后 name），拖动
 // 只改这个顺序：松手时把整份可见 id 列表交给 POST /admin/nodes/order，由服务端按 0,1,2…
 // 重写 order——前端不自己算号（算错会和分组次序打架），更不逐台 PUT 整份配置（那会把没
 // 回填的字段清掉）。
 //
 // 用 pointer 事件而不是 HTML5 drag：后者在手机上根本不触发，而这套面板是会在手机上开的。
-// 手柄 setPointerCapture 之后 pointermove / pointerup 都回到手柄，落点用 elementFromPoint
-// 认（它是命中测试，不受指针捕获影响）。
+// 落点用 elementFromPoint 认。手柄聚焦时也能用键盘调：↑↓ 移一位，Home / End 到头尾。
 function wireReorder() {
   const body = content().querySelector("table.stack tbody");
   if (!body) return;
   const rows = () => [...body.querySelectorAll("tr[data-node]")];
+  const currentIds = () => rows().map((r) => r.dataset.node);
   body.querySelectorAll("[data-drag]").forEach((handle) => {
     const row = handle.closest("tr[data-node]");
     let moved = false;
-    const move = (e) => {
-      const over = document
-        .elementFromPoint(e.clientX, e.clientY)
-        ?.closest("tr[data-node]");
-      if (over && over !== row) {
-        const rect = over.getBoundingClientRect();
+    let origin = null; // 按下时的下一行，Esc 取消时放回去
+    let pointerY = 0;
+    let scrolling = 0;
+    // 把行挪到指针下面那一行的前或后。指针停着不动、但页面在自动滚动时也要重算，
+    // 所以单独成函数，由 pointermove 和滚动循环共用。
+    const place = (x, y) => {
+      const over = document.elementFromPoint(x, y)?.closest("tr[data-node]");
+      if (!over || over === row || over.parentNode !== body) return;
+      const rect = over.getBoundingClientRect();
+      // 落在下半行就插到它后面，落在上半行就插到它前面。
+      const before = y > rect.top + rect.height / 2 ? over.nextSibling : over;
+      if (before !== row && before !== row.nextSibling) {
+        body.insertBefore(row, before);
         moved = true;
-        // 落在下半行就插到它后面，落在上半行就插到它前面。
-        body.insertBefore(
-          row,
-          e.clientY > rect.top + rect.height / 2 ? over.nextSibling : over,
-        );
       }
-      // 拖到视口上下边缘时跟着滚一点，长一点的列表才拖得到头。用滚动元素的 scrollTop
-      // 而不是 window.scrollBy：jsdom 没实现 scrollBy，会往控制台扔 "Not implemented"，
-      // 而 ui-smoke 断言管理端控制台零报错（滚动元素在浏览器里就是 <html>）。
+    };
+    // 拖到视口上下边缘时持续滚动：越靠边越快，指针停住也照样滚，长列表一次就能拖到头。
+    // 用滚动元素的 scrollTop 而不是 window.scrollBy：jsdom 没实现 scrollBy，会往控制台扔
+    // "Not implemented"，而 ui-smoke 断言管理端控制台零报错（浏览器里滚动元素就是 <html>）。
+    let pointerX = 0;
+    const autoScroll = () => {
       const edge = 80;
-      const scroller = document.scrollingElement || document.documentElement;
-      if (e.clientY < edge) scroller.scrollTop -= 12;
-      else if (e.clientY > window.innerHeight - edge) scroller.scrollTop += 12;
+      const depth = pointerY < edge ? pointerY - edge : pointerY > window.innerHeight - edge ? pointerY - (window.innerHeight - edge) : 0;
+      if (depth) {
+        const scroller = document.scrollingElement || document.documentElement;
+        const before = scroller.scrollTop;
+        scroller.scrollTop += Math.max(-24, Math.min(24, depth / 3));
+        if (scroller.scrollTop !== before) place(pointerX, pointerY);
+      }
+      scrolling = requestAnimationFrame(autoScroll);
+    };
+    const move = (e) => {
+      pointerX = e.clientX;
+      pointerY = e.clientY;
+      place(e.clientX, e.clientY);
     };
     const drop = guard(async () => {
       stop();
-      if (!moved) return;
-      await send("/admin/nodes/order", "POST", {
-        ids: rows().map((r) => r.dataset.node),
-      });
-      await render();
-      toast("顺序已保存");
+      if (moved) await saveOrder(currentIds());
     });
     const cancel = () => {
+      if (moved) body.insertBefore(row, origin);
       moved = false;
       stop();
     };
+    const escape = (e) => {
+      if (e.key === "Escape") cancel();
+    };
     // 监听挂在 document 上，不用 setPointerCapture：真浏览器里捕获会在拖动途中被隐式
-    // 释放（lostpointercapture，26px 的手柄走出几十像素就丢了），之后 pointermove 直接
-    // 落到别的元素上，手柄再也收不到事件——整段拖动白做，且完全没有报错。挂在 document
-    // 上则无论指针在哪、中途有没有重排 DOM，事件都还在。
+    // 释放（26px 的手柄走出几十像素就丢了），之后手柄再也收不到事件——整段拖动白做，
+    // 且完全没有报错。挂在 document 上则无论指针在哪、中途有没有重排 DOM，事件都还在。
     const stop = () => {
       row.classList.remove("row-dragging");
+      body.classList.remove("reordering");
+      cancelAnimationFrame(scrolling);
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", drop);
       document.removeEventListener("pointercancel", cancel);
+      document.removeEventListener("keydown", escape);
     };
     handle.addEventListener("pointerdown", (e) => {
       if (e.button) return;
       // 按住手柄不顺带选中文字或起原生拖拽；触摸设备上的滚动由样式的 touch-action 关掉。
       e.preventDefault();
       moved = false;
+      origin = row.nextSibling;
+      pointerX = e.clientX;
+      pointerY = e.clientY;
       row.classList.add("row-dragging");
+      body.classList.add("reordering");
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", drop);
       document.addEventListener("pointercancel", cancel);
+      document.addEventListener("keydown", escape);
+      scrolling = requestAnimationFrame(autoScroll);
     });
-    handle.addEventListener("lostpointercapture", cancel);
+    handle.addEventListener("keydown", (e) => {
+      const list = rows();
+      const at = list.indexOf(row);
+      const target = { ArrowUp: at - 1, ArrowDown: at + 1, Home: 0, End: list.length - 1 }[e.key];
+      if (target === undefined) return;
+      e.preventDefault();
+      if (target < 0 || target >= list.length || target === at) return;
+      body.insertBefore(row, target > at ? list[target].nextSibling : list[target]);
+      handle.focus();
+      row.scrollIntoView?.({ block: "nearest" });
+      // 连按几下只存最后一次，免得每按一下都发一个请求。
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveOrder(currentIds()), 500);
+    });
   });
+}
+let saving = Promise.resolve();
+let saveTimer = 0;
+// 保存只发顺序，不整页重画（重画要重读节点、事件、目录，页面还会暗一下）：服务端按
+// 0,1,2… 重写 order，本地照同一规则改 state.nodes，编辑表单带回的 order 才不是旧值。
+// 存失败就整页重画，回到服务端的真实顺序。几次保存排队依次发，后发的一定后到。
+function saveOrder(ids, done = "顺序已保存") {
+  saving = saving
+    .then(async () => {
+      await send("/admin/nodes/order", "POST", { ids });
+      const rank = new Map(ids.map((id, i) => [id, i]));
+      for (const n of state.nodes) if (rank.has(n.id)) n.order = rank.get(n.id);
+      state.nodes.sort((a, b) => a.order - b.order);
+      toast(done);
+    })
+    .catch(async (e) => {
+      toast(e.message);
+      await render();
+    });
+  return saving;
+}
+// 一键排序：按所选方式算出整份 id 列表，走与拖动相同的保存接口。名称、分组、地区按中文
+// 拼音与数字大小比较（node-2 排在 node-10 前）；同一组 / 同一地区内的先后规则见各项说明。
+const collator = new Intl.Collator("zh-Hans-CN", { numeric: true, sensitivity: "base" });
+const byName = (a, b) => collator.compare(a.name, b.name);
+// 空值（未分组、未设置地区）排在最后，免得一堆「默认」顶在最前面。
+const byField = (key) => (a, b) => (!a[key] - !b[key]) || collator.compare(a[key] || "", b[key] || "");
+const expiryOf = (n) => (n.billing.expires_at ? Date.parse(n.billing.expires_at) : Infinity);
+const SORTS = [
+  ["group", "按分组", "同组排在一起，组名按拼音；组内保持现在的先后。未分组的排最后。", (a, b) => byField("group")(a, b) || a.order - b.order],
+  ["name", "按名称", "按名称的拼音 / 字母顺序，数字按大小（node-2 在 node-10 前）。", byName],
+  ["region", "按地区", "同地区排在一起，地区按拼音；地区内按名称。未设置地区的排最后。", (a, b) => byField("region")(a, b) || byName(a, b)],
+  ["expiry", "按到期时间", "最先到期的排前面（已过期的最前），未设置到期时间的排最后。", (a, b) => expiryOf(a) - expiryOf(b) || byName(a, b)],
+];
+function sortDialog() {
+  const d = modal(
+    "一键排序",
+    `<p>按所选方式重排全部 ${state.nodes.length} 台节点，替换现在的手动顺序，公开面板的顺序随之改变。排好后仍可拖动微调。</p><div class="sort-choices">${SORTS.map(([id, label, hint]) => `<button type="button" data-sort="${id}"><strong>${label}</strong><small>${hint}</small></button>`).join("")}</div><div class="form-footer"></div>`,
+  );
+  d.querySelectorAll("[data-sort]").forEach(
+    (b) =>
+      (b.onclick = guard(async () => {
+        const [, label, , compare] = SORTS.find(([id]) => id === b.dataset.sort);
+        // state.nodes 已是当前顺序；sort 是稳定的，「组内保持现在的先后」就靠这一点。
+        const ids = [...state.nodes].sort(compare).map((n) => n.id);
+        d.close();
+        const body = content().querySelector("table.stack tbody");
+        const rowOf = new Map([...body.querySelectorAll("tr[data-node]")].map((r) => [r.dataset.node, r]));
+        for (const id of ids) if (rowOf.has(id)) body.append(rowOf.get(id));
+        await saveOrder(ids, `已${label}排序`);
+      })),
+  );
 }
 // 新节点的默认重置时间：当月 1 日 00:00:00 UTC，与旧默认「每月 1 日」一致。
 function monthStartStamp() {
@@ -213,15 +301,15 @@ async function knownRegions() {
     const region = String(value ?? "").trim();
     if (region) found.add(region);
   };
-  try {
-    if (!state.catalog) state.catalog = await api("/admin/catalog");
-    for (const target of state.catalog?.targets || []) add(target.region);
-  } catch {}
-  try {
-    const list = state.tasks.length ? state.tasks : await api("/admin/tasks");
-    for (const task of list)
-      for (const target of task.probe?.targets || []) add(target.region);
-  } catch {}
+  // 目录与任务互不依赖，并行读；任一读不到只少那一部分候选。
+  const [catalog, list] = await Promise.all([
+    state.catalog ? state.catalog : api("/admin/catalog").catch(() => null),
+    state.tasks.length ? state.tasks : api("/admin/tasks").catch(() => []),
+  ]);
+  if (catalog) state.catalog = catalog;
+  for (const target of catalog?.targets || []) add(target.region);
+  for (const task of list)
+    for (const target of task.probe?.targets || []) add(target.region);
   return [...found].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
 }
 // 候选列表在 render() 里预取，弹窗才能同步打开；节点自身的历史值再并进来，
@@ -256,7 +344,7 @@ const CURRENCIES = [
 const DRAG_ICON =
   '<svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="9" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="9" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="9" cy="13" r="1.4"/></svg>';
 function dragHandle(n) {
-  return `<button type="button" class="drag-handle" data-drag="${n.id}" title="按住拖动调整顺序" aria-label="拖动排序 ${esc(n.name)}">${DRAG_ICON}</button>`;
+  return `<button type="button" class="drag-handle" data-drag="${n.id}" title="按住拖动调整顺序；聚焦后也可用 ↑ ↓ / Home / End 移动，拖动中按 Esc 取消" aria-label="调整顺序：${esc(n.name)}（↑ ↓ 移动，Home / End 移到最前或最后）">${DRAG_ICON}</button>`;
 }
 function nodeForm(existing) {
   const n = existing || structuredClone(defaults);

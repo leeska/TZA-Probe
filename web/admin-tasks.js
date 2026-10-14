@@ -3,9 +3,9 @@ import { taskEditor, taskSummary } from "./task-editor.js";
 import { api, send, esc, toast, guard } from "./api.js";
 import { date } from "./format.js";
 import { state, content, taskName, confirmAction, moreMenu, wireMoreMenus, render } from "./admin-state.js";
-export async function tasksPage() {
+export async function tasksPage(nodesReady) {
   // 执行汇总读不到不该挡住任务列表：那一列退回「尚未执行」。
-  const [list, health] = await Promise.all([api("/admin/tasks"), api("/admin/tasks/health").catch(() => ({}))]);
+  const [, list, health] = await Promise.all([nodesReady, api("/admin/tasks"), api("/admin/tasks/health").catch(() => ({}))]);
   state.tasks = list;
   renderTasks(health);
 }

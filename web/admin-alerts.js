@@ -1,6 +1,6 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
 import { date, kindName } from "./format.js";
-import { state, content, fleetStatus, field, select, withCurrent, nodeName, confirmAction } from "./admin-state.js";
+import { state, content, loadNodes, field, select, withCurrent, nodeName, confirmAction } from "./admin-state.js";
 // 提醒规则：每条规则一种类型、自己的参数与重复间隔，外加作用范围（全部节点 / 分组 / 指定节点）。
 // 同一台节点同一种类型只生效一条：指定节点 > 分组 > 全部节点。节点列表里的 alerts 是服务端
 // 按这个优先级算好的生效规则（带 id 与 scope），规则本身从 /admin/alert-rules 读。
@@ -215,20 +215,19 @@ const ALERT_VIEWS = [
 function eventTable(rows, empty) {
   return `<div class="table-scroll"><table class="stack"><thead><tr><th>时间</th><th>节点</th><th>类型</th><th>状态</th><th>内容</th><th>通知</th></tr></thead><tbody id="event-rows">${rows || `<tr><td colspan="6" class="empty-cell">${empty}</td></tr>`}</tbody></table></div>`;
 }
-export async function renderAlerts() {
+// nodesReady 是外壳切页时已发出的节点请求；页内重画不传。
+export async function renderAlerts(nodesReady) {
   // 规则页的「生效 N 台」与逐台表格读的是节点上服务端算好的 alerts，必须和规则同一时刻读：
   // 只重读规则的话，MCP 那边刚改过的规则会显示成生效 0 台，直到手动刷新。
   const rulesView = state.alertView === "rules";
-  const [settings, firing, rules, nodes] = await Promise.all([
+  const eventsView = state.alertView === "events";
+  const [settings, firing, rules, events] = await Promise.all([
     api("/admin/notification"),
     api("/admin/events?active=1&limit=500"),
     rulesView ? api("/admin/alert-rules") : [],
-    rulesView ? api("/admin/nodes") : null,
+    eventsView ? api(eventsURL()) : [],
+    nodesReady || (rulesView ? loadNodes() : null),
   ]);
-  if (nodes) {
-    state.nodes = nodes;
-    fleetStatus();
-  }
   const configured = settings.channel !== "none";
   const channelName = settings.telegram_configured
     ? "Telegram 机器人"
@@ -238,13 +237,11 @@ export async function renderAlerts() {
   const views = ALERT_VIEWS.map(([id, label]) => `<button type="button" data-alert-view="${id}" class="${state.alertView === id ? "active" : ""}" aria-pressed="${state.alertView === id}">${label}${id === "active" && firing.length ? ` <b class="count-badge">${firing.length}</b>` : ""}</button>`).join("");
   const heading = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>正在告警的项目、事件记录、通知渠道与每台节点的提醒规则。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><div class="segmented alert-views" role="group" aria-label="告警页内容">${views}</div>`;
   let body = "";
-  let events = [];
   if (state.alertView === "active") {
     // 没配通知渠道时在这里也提一句：正在告警却没人收到，比没有告警更该知道。
     const warn = configured ? "" : `<div class="notice"><strong>通知渠道尚未配置</strong><span>下面的告警不会发到任何地方。到「提醒规则」页配置 Telegram 或 Webhook。</span></div>`;
     body = `${warn}<section class="panel"><div class="panel-head"><h3>正在告警</h3><span class="muted">每项显示最近一次触发或重复提醒</span></div>${eventTable(eventRows(firing, configured), "当前没有正在告警的项目。")}</section>`;
-  } else if (state.alertView === "events") {
-    events = await api(eventsURL());
+  } else if (eventsView) {
     const filtered = eventFilter.node_id || eventFilter.kind;
     const nodeOptions = withCurrent(state.nodes.map((n) => [n.id, n.name]), eventFilter.node_id, "全部节点");
     const kindOptions = [["", "全部类型"], ...Object.entries(kindName).filter(([k]) => k !== "test")];
@@ -260,15 +257,8 @@ export async function renderAlerts() {
         await renderAlerts();
       })),
   );
-  content().querySelector("#refresh-events").onclick = guard(async () => {
-    // 规则页的 renderAlerts 自己会重读节点。
-    if (!rulesView) {
-      state.nodes = await api("/admin/nodes");
-      fleetStatus();
-    }
-    await renderAlerts();
-  });
-  if (state.alertView === "events") wireEvents(events, configured);
+  content().querySelector("#refresh-events").onclick = guard(() => renderAlerts(loadNodes()));
+  if (eventsView) wireEvents(events, configured);
   if (rulesView) wireRules(settings, configured, rules);
 }
 function wireEvents(events, configured) {

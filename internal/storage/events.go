@@ -99,7 +99,9 @@ func (s *Store) Events(ctx context.Context, q model.EventQuery) ([]model.Event, 
 	}
 	if q.Active {
 		// 正在告警 = alert_state 里仍是 active 的那几条；每条取最近一次事件（触发或重复提醒）。
-		where = append(where, "id IN (SELECT max(e.id) FROM events e JOIN alert_state a ON a.node_id=e.node_id AND a.kind=e.kind AND a.active=1 GROUP BY e.node_id,e.kind)")
+		// 从 alert_state 出发逐条走 events_rule_time 索引：事件保留 90 天、可达几十万条，
+		// 先 JOIN 再 GROUP BY 会把整个索引扫一遍，节点页与告警页每次打开都要付这笔。
+		where = append(where, "id IN (SELECT (SELECT max(e.id) FROM events e WHERE e.node_id=a.node_id AND e.kind=a.kind) FROM alert_state a WHERE a.active=1)")
 	}
 	clause := ""
 	if len(where) > 0 {

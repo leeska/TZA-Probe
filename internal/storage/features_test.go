@@ -489,3 +489,38 @@ func TestLatencyWindowCeilingMatchesJobsRetention(t *testing.T) {
 func text(message string) func(bool, bool) string {
 	return func(bool, bool) string { return message }
 }
+
+// 「当前告警」每个仍在告警的节点 / 类型只取最近一条事件（触发或重复提醒），解除的不列。
+func TestActiveEventsTakeLatestPerAlert(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, _ := makeNode(t, s)
+	n := model.Node{ID: id, Name: "test"}
+	now := time.Now()
+	step := func(kind string, condition bool, sec int) {
+		t.Helper()
+		if err := s.Transition(ctx, n, kind, text(kind), condition, 0, 60, now.Add(time.Duration(sec)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step("cpu", true, 0)
+	step("cpu", true, 60) // repeat reminder
+	step("memory", true, 0)
+	step("memory", false, 30) // cleared
+	step("offline", true, 0)
+	active, err := s.Events(ctx, model.EventQuery{Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.Events(ctx, model.EventQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := map[string]int64{}
+	for _, e := range all {
+		latest[e.Kind] = max(latest[e.Kind], e.ID)
+	}
+	if len(active) != 2 || active[0].Kind != "offline" || active[1].Kind != "cpu" || active[1].ID != latest["cpu"] {
+		t.Fatalf("active=%+v", active)
+	}
+}

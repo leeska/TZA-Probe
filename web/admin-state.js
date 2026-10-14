@@ -1,4 +1,4 @@
-import { esc, modal, guard } from "./api.js";
+import { api, esc, modal, guard } from "./api.js";
 // 后台各页共用的状态与表单小工具。页面模块（admin-nodes / tasks / alerts / settings）
 // 只经由这里互相知道对方：跨页跳转用 go()，重绘当前页用 render()，两者都由外壳
 // admin.js 注册；页面模块不反过来 import admin.js。
@@ -26,6 +26,13 @@ export async function go(tab, alertView) {
   await render();
 }
 export const content = () => state.container.querySelector("#admin-content");
+// 重读节点列表并刷新顶栏。外壳切页时先发出它、把 promise 交给页面，页面和自己的接口一起
+// Promise.all：节点列表不再单独占一个往返，页面数据要等它回来才开始请求。
+export const loadNodes = () =>
+  api("/admin/nodes").then((list) => {
+    state.nodes = list;
+    fleetStatus();
+  });
 // 顶栏状态取自刚读到的节点列表：全部在线为绿，有离线为橙。以前这里写死「系统运行中」，
 // 出了问题也照样亮着。
 export function fleetStatus() {

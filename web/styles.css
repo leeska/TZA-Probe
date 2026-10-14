@@ -3826,6 +3826,32 @@ tr.row-dragging td {
   opacity: 0.7;
 }
 
+/* 拖动中：被拖的行抬起来一点，其余行不响应悬停、不选中文字，落点一眼看得出。 */
+tbody.reordering {
+  user-select: none;
+  cursor: grabbing;
+}
+
+tbody.reordering tr.row-dragging {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), inset 3px 0 0 rgb(var(--accent-rgb));
+}
+
+.drag-handle:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 1px;
+  color: var(--ink);
+}
+
+/* 触屏上 26px 的手柄太难按准，放大到 40px 的触控区。 */
+@media (pointer: coarse) {
+  .drag-handle {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 /* 编辑节点里 UTC 时间输入框下方的本地时间换算（admin-nodes.js）。 */
 label .local-time {
   font-size: 11px;
@@ -3978,4 +4004,33 @@ td .due.expired + small {
   white-space: pre-line;
   overflow-wrap: anywhere;
   min-width: 220px;
+}
+
+/* 节点表标题栏右侧的一组按钮（一键排序、刷新）。 */
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 一键排序弹窗：每种方式一枚整行按钮，标题加一句说明，点了就排。 */
+.sort-choices {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.sort-choices button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  white-space: normal;
+}
+
+.sort-choices button small {
+  color: var(--muted);
+  font-weight: 400;
 }

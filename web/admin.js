@@ -4,7 +4,7 @@ import { api, send, guard } from "./api.js";
 import { renderAlerts } from "./admin-alerts.js";
 import { nodesPage } from "./admin-nodes.js";
 import { renderSettings } from "./admin-settings.js";
-import { state, content, fleetStatus, setRenderer } from "./admin-state.js";
+import { state, content, loadNodes, setRenderer } from "./admin-state.js";
 import { tasksPage } from "./admin-tasks.js";
 export async function mountAdmin(root, brand) {
   setRenderer(render);
@@ -86,7 +86,5 @@ async function renderTab() {
     alerts: "告警与通知",
     settings: "面板设置",
   }[state.tab];
-  state.nodes = await api("/admin/nodes");
-  fleetStatus();
-  await { nodes: nodesPage, tasks: tasksPage, alerts: renderAlerts, settings: renderSettings }[state.tab]();
+  await { nodes: nodesPage, tasks: tasksPage, alerts: renderAlerts, settings: renderSettings }[state.tab](loadNodes());
 }

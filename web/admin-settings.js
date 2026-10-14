@@ -6,8 +6,9 @@ const MCP_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/MCP.md";
 const mcpDocs = () => `<p class="hint mcp-doc">接入文档：<a href="${MCP_DOC_URL}" target="_blank" rel="noopener noreferrer">${MCP_DOC_URL}</a></p>`;
 // 面板设置：公开面板的全站显示项（延迟色带时间窗、访客首屏外观）。以前挂在「告警与通知」页里，
 // 但它们跟告警无关，单独一页。两项都走 /admin/panel 保存（见下方注释）。
-export async function renderSettings() {
-  const [settings, acct, mcp] = await Promise.all([api("/admin/panel"), api("/admin/account").catch(() => null), api("/admin/mcp-key")]);
+export async function renderSettings(nodesReady) {
+  // 本页不用节点列表；切页时外壳传来的节点请求一起等，顶栏在线计数随之刷新。页内保存后重画不传。
+  const [, settings, acct, mcp] = await Promise.all([nodesReady, api("/admin/panel"), api("/admin/account").catch(() => null), api("/admin/mcp-key")]);
   // 时间范围给几个常用档位（分钟是接口单位，档位只是界面）：
   // 探测结果保留 7 天，所以更长的一律取到保留上限，不另设选项。
   const windows = [

@@ -460,6 +460,39 @@ await fetch(base + "/api/v1/admin/nodes/" + zeroNode.id, { method: "DELETE", hea
   assert.equal(after[0], target, "原来最后一行要排到第一");
   assert.deepEqual(after.slice(1), before.slice(0, -1), "只动被拖的那一行");
   assert(!rows()[0].classList.contains("row-dragging"), "松手要清掉拖动中标记");
+  // 松手只存顺序、不整页重画；本地 state 同步成服务端的 0,1,2…，之后编辑节点带回的 order 不会是旧值。
+  // 键盘：聚焦手柄按 End 移到最后，停 0.5 秒后存一次。
+  const first = rows()[0].dataset.node;
+  $(`[data-drag="${first}"]`).dispatchEvent(new w.KeyboardEvent("keydown", { key: "End", bubbles: true }));
+  assert.equal(rows().at(-1).dataset.node, first, "End 要把这一行移到最后");
+  await until(async () => {
+    const list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
+    return list.at(-1)?.id === first;
+  }, "键盘调整后的顺序要落库");
+  // 拖动中按 Esc：放回按下时的位置，不发请求。
+  const snapshot = rows().map((r) => r.dataset.node);
+  const second = $(`[data-drag="${snapshot[1]}"]`);
+  w.document.elementFromPoint = (x, y) => rows()[y] || null;
+  second.dispatchEvent(pointer("pointerdown", 1));
+  second.dispatchEvent(pointer("pointermove", 0));
+  assert.equal(rows()[0].dataset.node, snapshot[1], "拖到第一行就插在第一位");
+  w.document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  w.document.elementFromPoint = realElementFromPoint;
+  assert.deepEqual(rows().map((r) => r.dataset.node), snapshot, "Esc 要把拖动中的行放回原位");
+  assert(!rows()[1].classList.contains("row-dragging"), "Esc 要清掉拖动中标记");
+  // 一键排序：按名称重排全部节点（拼音 / 数字大小），页面与服务端的顺序都要跟着变。
+  $("#sort-nodes").click();
+  await until(() => $('[data-sort="name"]'), "一键排序弹窗");
+  $('[data-sort="name"]').click();
+  const collator = new Intl.Collator("zh-Hans-CN", { numeric: true, sensitivity: "base" });
+  await until(async () => {
+    const list = await (await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })).json();
+    const names = list.map((n) => n.name);
+    return names.every((name, i) => i === 0 || collator.compare(names[i - 1], name) <= 0) &&
+      list.every((n, i) => n.order === i) &&
+      rows().map((r) => r.dataset.node).join() === list.map((n) => n.id).join();
+  }, "一键按名称排序后服务端与页面顺序一致");
+  await until(() => $("#toast").textContent === "已按名称排序", "一键排序的提示: " + $("#toast").textContent);
   for (const id of madeIDs)
     await fetch(base + "/api/v1/admin/nodes/" + id, { method: "DELETE", headers: adminHeaders });
 }
