@@ -1255,6 +1255,24 @@ assert.equal(
 );
 assert(overseasBands[0].querySelector(".carrier-mark.cx svg"), "海外格行首是地球图标");
 assert.equal(card.querySelectorAll(".latency-bands .net-band").length, 4, "三网各一块 + 海外目标一块");
+{
+  // 商家名牌：节点填了 vendor，公开卡片上就多一枚 .vendor-plate（名字转义后显示），搜索也能按它找到。
+  const patched = await fetch(base + "/api/v1/admin/nodes/" + card.dataset.node, {
+    method: "PATCH",
+    headers: { ...adminHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ vendor: "netcup<b>" }),
+  });
+  assert.equal(patched.status, 200, "PATCH vendor: " + (await patched.clone().text()));
+  await until(() => findPublicCard()?.querySelector(".vendor-plate")?.textContent === "netcup<b>", "商家名牌出现在公开卡片上", 15000);
+  assert.equal(findPublicCard().querySelector(".vendor-plate b"), null, "商家名要转义，不能当 HTML 渲染");
+  const restored = await fetch(base + "/api/v1/admin/nodes/" + card.dataset.node, {
+    method: "PATCH",
+    headers: { ...adminHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ vendor: "" }),
+  });
+  assert.equal(restored.status, 200, "清空 vendor");
+  await until(() => findPublicCard() && !findPublicCard().querySelector(".vendor-plate"), "清空商家后名牌消失", 15000);
+}
 // 服务端给的 probe_targets 里确实带着那些探测项（含自定义的「其他」目标），是卡片按地区筛掉的。
 const plannedNode = (await (await fetch(base + "/api/v1/nodes")).json()).find(
   (x) => x.id === card.dataset.node,

@@ -163,3 +163,56 @@ func TestNilStoreIsBuiltinsOnly(t *testing.T) {
 		t.Fatalf("nil store serves nothing: %d", rec.Code)
 	}
 }
+
+const packManifest = `{"id":"europe","type":"characters","name":"欧洲","characters":[
+ {"id":"germany","name":"德国","regions":["德国"],"art":"de.webp","hands":"de-hands.webp",
+  "plate":{"top":0.307,"bottom":0.446},
+  "palette":{"light":{"board":"#eef8f7","line":"#a8d8d3","track":"#d3eeeb","accent":"#2a8f86"},
+             "dark":{"board":"#14262a","line":"#2b4d52","track":"#1d363a","accent":"#6fd3c9"}}}]}`
+
+// A character pack adds figures to the 二次元 skin: it installs like any
+// package but is not a skin a visitor (or the default setting) can pick.
+func TestCharacterPack(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	m, err := s.Install(pack(t, file{name: "theme.json", body: packManifest}, file{name: "de.webp", body: "RIFF"}, file{name: "de-hands.webp", body: "RIFF"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Type != TypeCharacters || len(m.Characters) != 1 || m.Characters[0].Regions[0] != "德国" {
+		t.Fatalf("manifest: %+v", m)
+	}
+	if s.Known("europe") {
+		t.Fatal("a character pack is not a skin")
+	}
+	if got := s.List(); got[len(got)-1].ID != "europe" {
+		t.Fatal("character packs are listed with the rest")
+	}
+
+	css := file{name: "a.css", body: "a{}"}
+	art := file{name: "de.webp", body: "RIFF"}
+	hands := file{name: "de-hands.webp", body: "RIFF"}
+	swap := func(from, to string) file {
+		return file{name: "theme.json", body: strings.Replace(packManifest, from, to, 1)}
+	}
+	skin := strings.Replace(manifest, `"styles"`, `"characters":[{"id":"x"}],"styles"`, 1)
+	for name, archive := range map[string][]byte{
+		"styles in a pack":    pack(t, swap(`"type":"characters",`, `"type":"characters","styles":["a.css"],`), art, hands, css),
+		"characters in skin":  pack(t, file{name: "theme.json", body: skin}, file{name: "theme.css", body: "a{}"}),
+		"unknown type":        pack(t, swap(`"characters",`, `"plugin",`), art, hands),
+		"missing art file":    pack(t, file{name: "theme.json", body: packManifest}, hands),
+		"missing hands file":  pack(t, file{name: "theme.json", body: packManifest}, art),
+		"svg art":             pack(t, swap(`"de.webp"`, `"de.svg"`), hands, file{name: "de.svg", body: "<svg/>"}),
+		"plate too thin":      pack(t, swap(`"bottom":0.446`, `"bottom":0.31`), art, hands),
+		"plate out of range":  pack(t, swap(`"top":0.307`, `"top":0.05`), art, hands),
+		"bad accent":          pack(t, swap(`"accent":"#2a8f86"`, `"accent":"teal"`), art, hands),
+		"missing dark":        pack(t, swap(`"dark":{"board":"#14262a","line":"#2b4d52","track":"#1d363a","accent":"#6fd3c9"}`, `"dark":{}`), art, hands),
+		"bad character id":    pack(t, swap(`"id":"germany"`, `"id":"Germany!"`), art, hands),
+		"no characters":       pack(t, file{name: "theme.json", body: `{"id":"empty","type":"characters","name":"空"}`}),
+		"duplicate character": pack(t, swap(`}}}]}`, `}}},{"id":"germany","name":"又一个","art":"de.webp","plate":{"top":0.3,"bottom":0.4},"palette":{"light":{"board":"#ffffff","line":"#ffffff","track":"#ffffff","accent":"#ffffff"},"dark":{"board":"#000000","line":"#000000","track":"#000000","accent":"#000000"}}}]}`), art, hands),
+	} {
+		s := &Store{Dir: t.TempDir()}
+		if _, err := s.Install(archive); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

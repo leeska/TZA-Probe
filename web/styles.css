@@ -529,6 +529,11 @@ h1 {
   display: none;
 }
 
+/* 看板上沿的商家名牌（二次元皮肤专用的那一份；别的皮肤用 node-sub 里的 .vendor-plate）。 */
+.anime-plate {
+  display: none;
+}
+
 /* 卡片本身不再可点：进节点详情只走内容里那枚「详细」按钮（用户点名：点卡片空白区、点数据行、
    点立绘空白处都不该弹详情页）。 */
 .node-card { cursor: default; }
@@ -4219,4 +4224,38 @@ td .due.expired + small {
 
 .theme-upload {
   cursor: pointer;
+}
+
+/* 商家名牌（app.js 的 vendorPlate）：默认是地区 · 分组后面的一枚强调色小牌。
+   主题可以整套重画（二次元主题把它挂在看板上沿），类名 .vendor-plate 是对主题开放的。 */
+.vendor-plate {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.5;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+/* 角色包那一行：前四个角色的立绘缩略图（只露上半身），代替主题的色样。 */
+.pack-thumbs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.pack-thumbs img {
+  width: 22px;
+  height: 34px;
+  object-fit: cover;
+  object-position: top center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--glass-bg-subtle);
 }

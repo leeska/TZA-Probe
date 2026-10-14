@@ -14,13 +14,19 @@ const BUILTIN = [
   { id: "anime", name: "二次元", hint: "线路机角色 · 樱花粉", builtin: true, chrome: { light: "#fdeef6", dark: "#150f29" }, swatch: ["#fdeef6", "#ffffff", "#ff4f9a"] },
 ];
 
-const registry = (list) => (Array.isArray(list) && list.length ? list : BUILTIN);
+// 角色包（type: "characters"）不是可选的外观，它只给二次元主题添角色（anime-cast.js 读它们）。
+const registry = (list) => {
+  const skins = Array.isArray(list) ? list.filter((t) => t.type !== "characters") : [];
+  return skins.length ? skins : BUILTIN;
+};
 
 // 导出的是活绑定：registerThemes() 换掉之后，import 它的模块（后台设置页）读到的就是新清单。
 export let SKINS = registry(window.__tzaThemes);
 
 export function registerThemes(list) {
   SKINS = registry(list);
+  // 角色匹配（anime-cast.js）现读 window.__tzaThemes，一起换成新清单。
+  if (Array.isArray(list)) window.__tzaThemes = list;
 }
 
 const byId = (id) => SKINS.find((s) => s.id === id);

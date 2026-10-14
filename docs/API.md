@@ -65,7 +65,7 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 节点配置按关注点分组，运行状态与生效的提醒规则平铺在节点视图上：
 
 ```json
-{"id":"…","name":"东京","group":"JP","region":"日本","order":0,"public":true,
+{"id":"…","name":"东京","group":"JP","region":"日本","vendor":"netcup","order":0,"public":true,
  "display":{"route_region":"上海","latency_region":"","latency_carriers":["电信"],"route_carriers":["电信","联通"]},
  "billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_limit":2000000000000,"traffic_mode":"max",
             "free":false,"price":9.9,"currency":"USD","price_period":"月","expires_at":""},
@@ -77,6 +77,8 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 
 - `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区，`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。保存时去掉首尾空白，新填或改动的地区必须出现在内置目录或某个任务的目标地区里，否则 400 并指出是哪个地区（节点原有的值不受影响，照常可编辑）。`latency_carriers` / `route_carriers` 只在这台机器真有的探测项里再筛一道，留空显示全部；回程只有电信、联通、移动三网。
 - `region`（节点所在地区）只做展示，不参与匹配，不做这项检查。
+- `character`：二次元主题里这台节点用哪个角色，可省略（按节点名、地区自动选）。填内置角色 id（`generic`、`jp-nosla-gen2` 等）或「角色包 id/角色 id」；所在角色包被删后自动退回自动匹配。
+- `vendor`：商家（如 netcup / Hytron），可省略。公开卡片上显示为名牌，公开接口照常返回，前台搜索也按它匹配；最多 60 字节，首尾不能有空格。
 - `billing`：`reset_at` 是周期锚点；`free` 见下文。
 - `line`：线路带宽 `mbps` 与商家降速规则。
 - 节点视图另带运行状态：`online`、`last_seen`、`metrics`、`cycle_start` / `cycle_end`、`traffic_used`、`avg_bps`、`covered_hours`、`window_hours`、`throttled`、`probe_targets`、`unlock`。

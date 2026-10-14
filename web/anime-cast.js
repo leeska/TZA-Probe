@@ -53,15 +53,57 @@ export function castOf(node) {
   return CAST[key] || null;
 }
 
-// 画哪张立绘：名单里的用自己的，名单以外的统一落到通用人物 "generic"。
-// 名字里有独立形象的四台仍返回自己的 id，别处的判断（折叠键、牌面配色）都不受影响。
+// ---- 角色包（后台上传的 "type": "characters" 主题包，见 docs/THEMES.md）----
+// 清单来自 /theme-default.js 的 window.__tzaThemes（后台装 / 删之后 skins.js 的 registerThemes
+// 会换掉它），所以每次现读，不缓存。角色的键是「包 id/角色 id」——与节点的 character 字段同一写法。
+export function packCharacters() {
+  const out = [];
+  for (const t of window.__tzaThemes || []) {
+    if (t.type !== "characters" || !Array.isArray(t.characters)) continue;
+    const file = (f) => (f ? `/themes/${t.id}/${f}?v=${t.rev || ""}` : "");
+    for (const c of t.characters)
+      out.push({ ...c, key: `${t.id}/${c.id}`, pack: t.id, packName: t.name, artURL: file(c.art), handsURL: file(c.hands), blinkURL: file(c.blink) });
+  }
+  return out;
+}
+
+export function packCharacter(key) {
+  return packCharacters().find((c) => c.key === key) || null;
+}
+
+// 后台节点表单里「角色」下拉的候选：内置角色 + 角色包里的全部角色。
+export function characterChoices() {
+  return [
+    ...Object.values(CAST).map((c) => ({ key: c.id, name: c.id === "generic" ? "通用角色" : `${c.crew || c.vendor} · ${c.id}`, source: "内置" })),
+    ...packCharacters().map((c) => ({ key: c.key, name: c.name, source: c.packName })),
+  ];
+}
+
+const builtinIds = new Set(Object.values(CAST).map((c) => c.id));
+const lower = (v) => String(v || "").trim().toLowerCase();
+
+// 画哪个角色。依次：节点自己指定的（character，角色包已删就跳过）→ 角色包里按节点名点名的 →
+// 内置的四台专属立绘（按节点名）→ 角色包里按地区匹配的 → 角色包里标了 default 的 → 通用人物。
+// 节点名精确匹配比地区更具体，所以排前面；同一档里角色包比内置优先（上传就是为了替换）。
 export function castId(node) {
-  return castOf(node)?.id || "generic";
+  const pick = node?.character;
+  if (pick && (builtinIds.has(pick) || packCharacter(pick))) return pick;
+  const chars = packCharacters();
+  const name = lower(node?.name);
+  const byName = chars.find((c) => (c.nodes || []).some((n) => lower(n) === name));
+  if (byName) return byName.key;
+  const own = castOf(node);
+  if (own) return own.id;
+  const region = String(node?.region || "").trim();
+  const byRegion = region && chars.find((c) => (c.regions || []).includes(region));
+  if (byRegion) return byRegion.key;
+  const fallback = chars.find((c) => c.default);
+  return fallback ? fallback.key : "generic";
 }
 
 // 折叠状态用哪把钥匙：四台专属立绘仍用自己的 id（沿用既有 localStorage 记录），
 // 通用人物的多张卡各用各的节点 id —— 否则点一张会连带收起其它所有通用卡。
 export function foldKey(node) {
   const c = castOf(node);
-  return c ? c.id : "node-id:" + (node?.id ?? "");
+  return c && castId(node) === c.id ? c.id : "node-id:" + (node?.id ?? "");
 }

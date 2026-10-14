@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # TZA-Probe 的检查与构建流水线（不依赖 GitHub Actions，任意 Linux 机器可跑）：
 #   check  gofmt / go vet / go test（有 gcc 时加 -race）/ web/*.js 语法 /
-#          presentation-test.mjs / 一次性 Server 上的 ui-smoke.mjs
+#          presentation-test.mjs / 角色包生成器自检（有 Pillow 时）/ 一次性 Server 上的 ui-smoke.mjs
 #   build  构建 linux amd64 / arm64 的 Server（内含两个架构的 Agent）+ 两个发行包与 sha256
 #   all    check 后 build（默认）
 #
@@ -13,6 +13,7 @@
 #   OUT=<目录>          产物目录（默认 <仓库>/dist）
 #   UI_SMOKE=0          跳过 ui-smoke（只跑纯 Go 与纯前端部分）
 #   TZA_NODE / TZA_NPM  指定 Node / npm（默认取 PATH 里的）
+#   TZA_PY              指定带 Pillow、numpy 的 Python（角色包生成器自检用；没有就跳过）
 #   TZA_BUN             指定 Bun；没有 Node 时用它跑前端检查（默认 PATH 里的 bun 或 ~/.bun/bin/bun）
 set -uo pipefail
 
@@ -115,6 +116,19 @@ check_web() {
   note "presentation-test $(dur $t0) rc=$rc"; [ "$rc" = 0 ] || FAILED=1
 }
 
+# 角色包生成器（tools/character-pack）的离线自检：合成一张假立绘，跑去底 / 找牌子 / 拆双手 / 配色。
+# 需要带 Pillow 与 numpy 的 Python（TZA_PY 指定，默认 PATH 里的 python3）；没有就跳过并注明，不算失败。
+check_character_pack() {
+  local py=${TZA_PY:-python3} t0 rc
+  if ! command -v "$py" >/dev/null 2>&1 || ! "$py" -c 'import PIL, numpy' 2>/dev/null; then
+    note "跳过 character-pack selftest（$py 里没有 Pillow / numpy）"
+    return
+  fi
+  say "tools/character-pack selftest"
+  t0=$(now); "$py" tools/character-pack/make_pack.py selftest; rc=$?
+  note "character-pack selftest $(dur $t0) rc=$rc"; [ "$rc" = 0 ] || FAILED=1
+}
+
 check_ui_smoke() {
   [ "${UI_SMOKE:-1}" = 1 ] || { note "UI_SMOKE=0，跳过 ui-smoke"; return; }
   local t0 rc port=${TZA_UI_PORT:-25874} deps=${TZA_UI_DEPS:-/tmp/tza-ui-deps} i code
@@ -155,6 +169,7 @@ run_check() {
   [ -n "$JS" ] || { echo "!! 找不到 node 或 bun（试 TZA_NODE=/path/to/node 或 TZA_BUN=/path/to/bun）" >&2; exit 1; }
   check_go
   check_web
+  check_character_pack
   check_ui_smoke
 }
 
@@ -192,7 +207,7 @@ run_build() {
       -o "$stage/tza-server" ./cmd/server || { FAILED=1; return; }
     cp "internal/agentdist/bin/tza-agent-linux-$arch" "$stage/tza-agent"
     cp README.md LICENSE NOTICE "$stage/"
-    cp -r deploy docs examples "$stage/"
+    cp -r deploy docs examples tools "$stage/"
     ( cd "$stage" && pack "$OUT/tza-probe-linux-$arch.tar.gz" . ) || { FAILED=1; return; }
     ( cd "$OUT" && sha256 "tza-probe-linux-$arch.tar.gz" > "tza-probe-linux-$arch.tar.gz.sha256" ) || { FAILED=1; return; }
     # 只有 Linux 主机能直接运行这个二进制（macOS 上交叉编出的 Linux 程序跑不起来）。

@@ -812,6 +812,40 @@ html[data-skin="anime"] ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--anime-primary) 45%, transparent);
 }
 
+/* 商家名牌：角色卡上挂在看板上沿正中、两只手之间，像一枚别在牌子上的名牌——角色本身只按地区区分，
+   商家靠这块 HTML 名牌换字（用户：「只做地区，选中该主题时可以替换名牌上的字」）。
+   它是卡片上单独的一层（app.js 的 .anime-plate）：看板盒子会裁掉超出板沿的部分、双手层又整块压在
+   看板上，放进板里会被切掉一半。高度按板顶算（--cast-board-top，与看板同一个变量），收起态板顶不动，
+   名牌也就照样挂在板条上。颜色跟角色牌面走（--cast-accent）。板里那枚默认小牌只在卡片视图藏掉——
+   列表视图没有看板，照旧用那枚小牌。 */
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .vendor-plate {
+  display: none;
+}
+
+html[data-skin="anime"] .node-card[data-cast] .anime-plate {
+  display: block;
+  position: absolute;
+  top: calc(var(--cast-board-top, 201.66px) - 22px);
+  left: 50%;
+  z-index: 5;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(-50%) rotate(-2deg);
+  padding: 3px 14px;
+  border: 2px solid var(--cast-accent, var(--anime-primary));
+  border-radius: 8px !important;
+  background: var(--anime-card);
+  color: var(--cast-accent, var(--anime-primary));
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  box-shadow: 0 3px 0 rgba(var(--cast-accent-rgb, 255, 79, 154), 0.3);
+  pointer-events: none;
+}
+
 /* --------------------------------------------------------------------------
    N. 角色立绘 / HTML 看板 / 双手层：整张人物图 + 看板盖在上面（2026-10-10 v2）
 
@@ -948,6 +982,29 @@ html[data-skin="anime"] .node-card[data-cast] {
   background-image: var(--cast-motif);
   background-size: var(--cast-motif-size);
   border-color: var(--cast-line);
+}
+
+/* 角色包里的角色（data-cast-pack）：没有逐人的规则，图片、牌子比例、眨眼节奏与两套配色由 app.js 的
+   packVars() 写在卡壳上（--pack-*-l / --pack-*-d），这里按明暗从两套里取，再配一层与强调色同色的点纹。 */
+html[data-skin="anime"] .node-card[data-cast-pack] {
+  --cast-board: var(--pack-board-l);
+  --cast-cell: var(--pack-cell-l);
+  --cast-line: var(--pack-line-l);
+  --cast-track: var(--pack-track-l);
+  --cast-accent: var(--pack-accent-l);
+  --cast-accent-rgb: var(--pack-accent-rgb-l);
+  --cast-motif: radial-gradient(circle at 50% 50%, rgba(var(--pack-accent-rgb-l), 0.16) 1.3px, transparent 1.6px);
+  --cast-motif-size: 15px 15px;
+}
+
+html[data-skin="anime"][data-theme="dark"] .node-card[data-cast-pack] {
+  --cast-board: var(--pack-board-d);
+  --cast-cell: var(--pack-cell-d);
+  --cast-line: var(--pack-line-d);
+  --cast-track: var(--pack-track-d);
+  --cast-accent: var(--pack-accent-d);
+  --cast-accent-rgb: var(--pack-accent-rgb-d);
+  --cast-motif: radial-gradient(circle at 50% 50%, rgba(var(--pack-accent-rgb-d), 0.12) 1.1px, transparent 1.4px);
 }
 
 /* JP-NoSla-Gen2 · 家人云 × 日本：樱花粉牌面 + 极淡花瓣点。

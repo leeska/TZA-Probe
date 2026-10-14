@@ -479,6 +479,41 @@ func TestCombinedTaskValidation(t *testing.T) {
 	}
 }
 
+// Vendor is an optional label: empty is fine, surrounding spaces and overlong values are refused.
+func TestNodeVendor(t *testing.T) {
+	n := Node{Name: "DE-NETCUP-Piko", Billing: Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}
+	if err := n.Validate(); err != nil {
+		t.Fatalf("no vendor: %v", err)
+	}
+	n.Vendor = "netcup"
+	if err := n.Validate(); err != nil {
+		t.Fatalf("vendor: %v", err)
+	}
+	for _, bad := range []string{" netcup", "netcup ", strings.Repeat("x", 61)} {
+		n.Vendor = bad
+		if err := n.Validate(); err == nil {
+			t.Errorf("vendor %q accepted", bad)
+		}
+	}
+	n.Vendor = ""
+	for _, ok := range []string{"", "generic", "jp-nosla-gen2", "europe/germany"} {
+		n.Character = ok
+		if err := n.Validate(); err != nil {
+			t.Errorf("character %q: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"../x", "Europe/Germany", "a/b/c", "europe/", "/germany"} {
+		n.Character = bad
+		if err := n.Validate(); err == nil {
+			t.Errorf("character %q accepted", bad)
+		}
+	}
+	raw, _ := json.Marshal(Node{Name: "x"})
+	if strings.Contains(string(raw), "vendor") || strings.Contains(string(raw), "character") {
+		t.Fatalf("empty vendor must be omitted so stored configs stay unchanged: %s", raw)
+	}
+}
+
 // A target may narrow the task's checks: an overseas service runs latency only
 // while the domestic targets of the same task also trace the route.
 func TestTargetChecks(t *testing.T) {

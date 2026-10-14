@@ -126,7 +126,7 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 
 - [部署说明](docs/DEPLOYMENT.md)：手工安装、反代、升级、备份与恢复。
 - [MCP 接入指南](docs/MCP.md)：API Key、客户端配置、工具能力与连接排错。
-- [主题包](docs/THEMES.md)：自己做一套外观风格（zip 上传，只含样式表与图片），格式、颜色变量与示例。
+- [主题包与角色包](docs/THEMES.md)：自己做一套外观风格，或给二次元主题添按地区匹配的角色（zip 上传，只含样式表与图片），格式、颜色变量与示例。
 - [组件边界](docs/ARCHITECTURE.md)、[HTTP 协议](docs/API.md)、[项目范围](docs/SCOPE.md)。
 - [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为只能在真实环境验证。
 

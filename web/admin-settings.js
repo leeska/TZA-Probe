@@ -69,12 +69,22 @@ export async function renderSettings(nodesReady) {
 }
 // 主题：内置四套 + 后台上传的主题包。主题包是一个 zip（theme.json + 样式表 + 图片 / 字体，
 // 不含脚本），装好后访客就能在右上角的外观菜单里选它，也能设成前台默认。格式见 docs/THEMES.md。
+// 列表里除了外观（内置四套 + 主题包），还有角色包：它们不是外观，只给二次元主题添角色，
+// 所以不在外观菜单里，这里用一排立绘缩略图代替色样，写清有几个角色、各自匹配哪些地区。
 function themePanel() {
-  const rows = SKINS.map((t) => {
+  const list = window.__tzaThemes || SKINS;
+  const rows = list.map((t) => {
     const meta = t.builtin ? "" : [t.id, t.version && "v" + t.version, t.author].filter(Boolean).join(" · ");
-    return `<div class="theme-row"><span class="skin-swatch" data-swatch="${esc(t.id)}" aria-hidden="true"><i></i><i></i><i></i></span><span class="theme-copy"><b>${esc(t.name)}</b><small>${esc(t.hint || "")}${meta ? `<br>${esc(meta)}` : ""}</small></span><span class="pill">${t.builtin ? "内置" : "主题包"}</span>${t.builtin ? "" : `<button type="button" class="danger" data-remove-theme="${esc(t.id)}">删除</button>`}</div>`;
+    const pack = t.type === "characters";
+    const lead = pack
+      ? `<span class="pack-thumbs" aria-hidden="true">${(t.characters || []).slice(0, 4).map((c) => `<img src="/themes/${esc(t.id)}/${esc(c.art)}?v=${esc(t.rev || "")}" alt="" loading="lazy">`).join("")}</span>`
+      : `<span class="skin-swatch" data-swatch="${esc(t.id)}" aria-hidden="true"><i></i><i></i><i></i></span>`;
+    const hint = pack
+      ? `${(t.characters || []).length} 个角色：${(t.characters || []).map((c) => c.name + ((c.regions || []).length ? `（${c.regions.join(" / ")}）` : c.default ? "（默认）" : "")).join("、")}`
+      : t.hint || "";
+    return `<div class="theme-row">${lead}<span class="theme-copy"><b>${esc(t.name)}</b><small>${esc(hint)}${meta ? `<br>${esc(meta)}` : ""}</small></span><span class="pill">${t.builtin ? "内置" : pack ? "角色包" : "主题包"}</span>${t.builtin ? "" : `<button type="button" class="danger" data-remove-theme="${esc(t.id)}">删除</button>`}</div>`;
   }).join("");
-  return `<section class="panel theme-panel"><div class="panel-head"><div><h3>主题</h3><span class="muted">上传的主题包只含样式表、图片和字体，不能带脚本。</span></div><div class="panel-actions"><label class="button primary theme-upload">上传主题包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${rows}</div><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级；主题包存在数据目录的 themes/ 下，不在数据库备份里。</p></section>`;
+  return `<section class="panel theme-panel"><div class="panel-head"><div><h3>主题</h3><span class="muted">主题包换外观，角色包给二次元主题添角色；都只含样式表、图片和字体，不能带脚本。</span></div><div class="panel-actions"><label class="button primary theme-upload">上传主题包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${rows}</div><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级；主题包存在数据目录的 themes/ 下，不在数据库备份里。</p></section>`;
 }
 
 function wireThemes() {
@@ -85,14 +95,16 @@ function wireThemes() {
     if (!file) return;
     const m = await api("/admin/themes", { method: "POST", body: file, headers: { "Content-Type": "application/zip" } });
     await renderSettings();
-    toast(`主题包已安装：${m.name}（右上角外观菜单里可以选它）`);
+    toast(m.type === "characters" ? `角色包已安装：${m.name}（二次元主题里按节点名 / 地区自动用上，也可以在节点设置里指定）` : `主题包已安装：${m.name}（右上角外观菜单里可以选它）`);
   });
   content().querySelectorAll("[data-remove-theme]").forEach((b) =>
     (b.onclick = () => {
-      const t = SKINS.find((s) => s.id === b.dataset.removeTheme);
+      const t = (window.__tzaThemes || SKINS).find((s) => s.id === b.dataset.removeTheme);
       confirmAction(
         `删除主题包 · ${t?.name || b.dataset.removeTheme}`,
-        `删除后正在用它的访客会回到默认皮肤；它若是前台默认皮肤，默认也回到液态玻璃。`,
+        t?.type === "characters"
+          ? `删除后用到这些角色的节点回到自动匹配（多半是通用角色）。`
+          : `删除后正在用它的访客会回到默认皮肤；它若是前台默认皮肤，默认也回到液态玻璃。`,
         async () => {
           await send("/admin/themes/" + encodeURIComponent(b.dataset.removeTheme), "DELETE");
           await renderSettings();

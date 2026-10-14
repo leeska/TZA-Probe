@@ -6,7 +6,7 @@ import { applySkin, skinButton } from "./skins.js";
 import { searchMatch } from "./search.js";
 import { carrierMark } from "./carrier-logos.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
-import { castId, foldKey } from "./anime-cast.js";
+import { castId, foldKey, packCharacter } from "./anime-cast.js";
 import "./ui-select.js";
 
 const app = document.querySelector("#app");
@@ -91,7 +91,7 @@ function viewSwitch() {
 }
 
 function renderShell() {
-  app.innerHTML = `<header class="public-header">${brand}<nav><span class="live-label"><i></i><span class="live-text">LIVE STATUS</span></span>${skinButton()}${themeButton()}<a href="/admin" class="button quiet admin-link" aria-label="管理控制台"><span class="admin-link-full">管理控制台</span><span class="admin-link-short">后台</span> ↗</a></nav></header><main class="public-main"><section class="hero"><div><h1>每一台主机，<span>一眼看清</span>。</h1></div><div class="hero-meta"><span>最近同步</span><strong id="updated">连接中</strong><small>每秒刷新</small></div></section><section id="overview" class="overview"></section><section class="toolbar"><div class="filter-controls"><div class="search"><span>⌕</span><input id="search" aria-label="搜索节点" placeholder="搜索名称 / 地区 / 分组 / 拼音"></div><select id="group-filter" aria-label="节点分组"><option value="">全部分组</option></select></div><div class="view-bar">${viewSwitch()}</div></section><div id="nodes" class="node-grid"></div><footer><span>独立 · 轻量 · 可控</span><span>TZA PROBE · V2</span></footer></main>`;
+  app.innerHTML = `<header class="public-header">${brand}<nav><span class="live-label"><i></i><span class="live-text">LIVE STATUS</span></span>${skinButton()}${themeButton()}<a href="/admin" class="button quiet admin-link" aria-label="管理控制台"><span class="admin-link-full">管理控制台</span><span class="admin-link-short">后台</span> ↗</a></nav></header><main class="public-main"><section class="hero"><div><h1>每一台主机，<span>一眼看清</span>。</h1></div><div class="hero-meta"><span>最近同步</span><strong id="updated">连接中</strong><small>每秒刷新</small></div></section><section id="overview" class="overview"></section><section class="toolbar"><div class="filter-controls"><div class="search"><span>⌕</span><input id="search" aria-label="搜索节点" placeholder="搜索名称 / 地区 / 分组 / 商家 / 拼音"></div><select id="group-filter" aria-label="节点分组"><option value="">全部分组</option></select></div><div class="view-bar">${viewSwitch()}</div></section><div id="nodes" class="node-grid"></div><footer><span>独立 · 轻量 · 可控</span><span>TZA PROBE · V2</span></footer></main>`;
 
   document.querySelector("#search").oninput = (e) => {
     query = e.target.value;
@@ -498,7 +498,7 @@ function renderCards() {
   const filtered = nodes.filter(
     (n) =>
       (!group || n.group === group) &&
-      searchMatch(query, n.name, n.region, n.group),
+      searchMatch(query, n.name, n.region, n.group, n.vendor),
   );
   // 每 10 秒的明细刷新。卡片只在内容变了的时候逐张替换，集合变了才整块重绘——整块重绘会把整个
   // 滚动子树重建，是最容易被感知为「跳」的动作。滚动位置的保持交给浏览器自己的滚动锚定
@@ -512,6 +512,10 @@ function renderCards() {
   const sameSet = shown.length === filtered.length && shown.every((el, i) => el.dataset.node === filtered[i].id);
   if (sameSet) {
     shown.forEach((el, i) => {
+      for (const [name, value] of Object.entries(shellAttrs(filtered[i]))) {
+        if (!value) el.removeAttribute(name);
+        else if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+      }
       if (renderedHTML.get(el) === wanted[i]) return;
       const fresh = document.createElement("div");
       fresh.innerHTML = wanted[i];
@@ -630,10 +634,49 @@ const BOARD_H = 457; // 展开态板面**基准**高度（px，与 CSS 的 --cas
 // 立绘缩放必须挂在一个常量上：早先按「板面实测高」算，板高又是内容撑的 —— 内容少的线路机
 // （8 台通用人物里就有）板面只有 330 出头，整张立绘跟着缩到 436px，人变小、板也铺不到卡底。
 // 现在板面有 min-height 兜底，立绘按常量缩放，12 张卡的人物大小与板位完全一致。
+// 角色包里的角色没有写死在 anime.css 里的那一份变量（内置角色每人一条规则），这里按清单写到卡壳上：
+// 三张图的地址、牌子上下沿的比例、浅色 / 深色两套牌面配色（anime.css 的 [data-cast-pack] 规则按
+// data-theme 从两套里取）。地址由服务端校验过（只含安全字符），可以直接拼进 url()。
+const hexRGB = (h) => {
+  const v = parseInt(String(h).slice(1), 16);
+  return `${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255}`;
+};
+// 眨眼节奏按角色的键算：同一个角色每次都一样，不同角色错开（几张卡同时眨眼很假，内置角色也是逐人错开的）。
+const blinkSeed = (key) => [...key].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+function packVars(c) {
+  const seed = blinkSeed(c.key);
+  const vars = {
+    "--cast-blink-dur": (5 + (seed % 17) / 10).toFixed(1) + "s",
+    "--cast-blink-delay": (0.2 + ((seed >> 5) % 13) / 10).toFixed(1) + "s",
+    "--cast-art-url": `url("${c.artURL}")`,
+    "--cast-hands-url": c.handsURL ? `url("${c.handsURL}")` : "none",
+    "--cast-blink-url": c.blinkURL ? `url("${c.blinkURL}")` : "none",
+    "--cast-top-frac": String(c.plate.top),
+    "--cast-bot-frac": String(c.plate.bottom),
+  };
+  for (const [mode, p] of [["l", c.palette.light], ["d", c.palette.dark]]) {
+    vars[`--pack-board-${mode}`] = p.board;
+    vars[`--pack-cell-${mode}`] = p.cell || (mode === "l" ? "rgb(255 255 255 / 0.62)" : p.board);
+    vars[`--pack-line-${mode}`] = p.line;
+    vars[`--pack-track-${mode}`] = p.track;
+    vars[`--pack-accent-${mode}`] = p.accent;
+    vars[`--pack-accent-rgb-${mode}`] = hexRGB(p.accent);
+  }
+  return vars;
+}
+
 function layoutCastCards() {
   for (const card of document.querySelectorAll(".node-card[data-cast]")) {
     const body = card.querySelector(".card-body");
     if (!body) continue;
+    const pack = card.dataset.castPack ? packCharacter(card.dataset.cast) : null;
+    if (pack) {
+      for (const [name, value] of Object.entries(packVars(pack)))
+        if (card.style.getPropertyValue(name) !== value) card.style.setProperty(name, value);
+    } else if (card.style.getPropertyValue("--cast-art-url")) {
+      // 从角色包换回内置角色：清掉上一轮写的内联变量，否则它们会盖过 anime.css 里内置角色的那条规则。
+      for (const name of [...card.style]) if (name.startsWith("--pack-") || ["--cast-art-url", "--cast-hands-url", "--cast-blink-url", "--cast-blink-dur", "--cast-blink-delay", "--cast-top-frac", "--cast-bot-frac"].includes(name)) card.style.removeProperty(name);
+    }
     const cs = getComputedStyle(card);
     const topFrac = parseFloat(cs.getPropertyValue("--cast-top-frac")) || 0.3;
     const figureH = (BOARD_H - LIP - GROUND) / (1 - topFrac);
@@ -709,9 +752,16 @@ const cardShell = (n, inner) => {
   // 二次元皮肤：卡壳上也挂一份角色 id。人物层 `.anime-cast` 是卡片**内部**的元素，
   // 卡片自己读不到它的 data-cast，而皮肤样式表要按角色给整张牌面上色
   // （`.node-card[data-cast="…"]`），所以这里再挂一份——两处都由 castId() 出，不会漂。
-  const cast = castId(n);
-  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}" data-cast="${cast}" data-fold-key="${foldKey(n)}">${inner}</article>`;
+  const a = shellAttrs(n);
+  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}" data-cast="${esc(a["data-cast"])}"${a["data-cast-pack"] ? ` data-cast-pack="${esc(a["data-cast-pack"])}"` : ""} data-fold-key="${esc(a["data-fold-key"])}">${inner}</article>`;
 };
+
+// 卡壳上随节点设置变的那几个属性。10 秒一轮只按内容补丁（patchInto 不碰卡壳本身），
+// 所以 renderCards 每轮也按这里对一遍——后台给节点换了角色，卡片不用整块重绘就跟上。
+function shellAttrs(n) {
+  const cast = castId(n);
+  return { "data-cast": cast, "data-cast-pack": cast.includes("/") ? cast.split("/")[0] : "", "data-fold-key": foldKey(n) };
+}
 
 function card(n) {
   return cardShell(n, cardInner(n));
@@ -1060,6 +1110,12 @@ function privateTag(n) {
     : "";
 }
 
+// 商家名牌：节点填了商家才有。默认皮肤里是地区 · 分组后面的一枚小牌；主题可以按 .vendor-plate
+// 重新画（二次元主题把它挂到看板上沿当名牌）。卡片与列表共用。
+function vendorPlate(n) {
+  return n.vendor ? `<span class="vendor-plate" title="商家">${esc(n.vendor)}</span>` : "";
+}
+
 function gridInner(n) {
   const f = nodeFacts(n);
   // 卡片上没有可用地址族时不再挂「无探测」标签：卡底那行（「仅主机指标」或「未检测到可用的
@@ -1081,6 +1137,10 @@ function gridInner(n) {
     ? `<div class="anime-cast" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
     : "";
   const hands = cast ? `<div class="anime-hands" data-bleed aria-hidden="true"></div>` : "";
+  // 二次元皮肤里，商家名牌挂在看板上沿正中、两只手之间（anime.css）。它得是卡片上单独的一层：
+  // 看板盒子会裁掉超出板沿的部分，双手层又整块压在看板之上，放在板里就会被切掉一半。
+  // 别的皮肤用 node-sub 里那枚小牌（vendorPlate），这一层默认 display:none（styles.css）。
+  const plate = cast && n.vendor ? `<div class="anime-plate" aria-hidden="true">${esc(n.vendor)}</div>` : "";
   // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心
   // 不被它们挤动——收起 / 展开时名字落在同一坐标（折叠只影响板面上其余的内容/数据）。
   const cardTop =
@@ -1093,7 +1153,7 @@ function gridInner(n) {
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
   // 「详细」是内容里唯一能进详情页的控件（卡片空白、数据行都不再导航）。
-  return `${figure}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p>${f.hasIPv4 || f.hasIPv6 ? familySwitch(n, f) : ""}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}`;
+  return `${figure}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p>${f.hasIPv4 || f.hasIPv6 ? familySwitch(n, f) : ""}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}${plate}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。
@@ -1124,7 +1184,7 @@ function listInner(n) {
   // 里补一枚「详细」——不然列表里就没有任何进详情的入口了，卡片视图那边也是同一枚按钮。
   // 按钮放在名字下面那排徽标的右端，不跟名字抢同一行：主机格只有 190px，同一行时名字只剩 ~108px，
   // 「HK-BGP-01 · 香港直连」这种常见长度也要折行。
-  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}</p></div></div><div class="card-actions">${privateTag(n)}${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
+  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p></div></div><div class="card-actions">${privateTag(n)}${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 展示方式只在这里分叉：两个视图取数完全相同，liveTick 那一层找的也是同一批类名。

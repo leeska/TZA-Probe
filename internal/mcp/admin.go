@@ -186,11 +186,13 @@ func nodeSchema(withID bool) map[string]any {
 		return map[string]any{"type": "object", "additionalProperties": false, "description": description, "properties": properties}
 	}
 	properties := map[string]any{
-		"name":   map[string]any{"type": "string", "description": "节点名称，必填"},
-		"group":  map[string]any{"type": "string", "description": "分组，如 HK"},
-		"region": map[string]any{"type": "string", "description": "节点所在地区"},
-		"public": map[string]any{"type": "boolean", "description": "是否在公开面板展示"},
-		"order":  map[string]any{"type": "integer", "description": "排序，越小越靠前"},
+		"name":      map[string]any{"type": "string", "description": "节点名称，必填"},
+		"group":     map[string]any{"type": "string", "description": "分组，如 HK"},
+		"region":    map[string]any{"type": "string", "description": "节点所在地区"},
+		"vendor":    map[string]any{"type": "string", "description": "商家（如 netcup / Hytron），公开卡片上显示为名牌；留空不显示"},
+		"character": map[string]any{"type": "string", "description": "二次元主题里这台节点用哪个角色：内置角色 id（generic 等）或「角色包 id/角色 id」；留空按节点名、地区自动选"},
+		"public":    map[string]any{"type": "boolean", "description": "是否在公开面板展示"},
+		"order":     map[string]any{"type": "integer", "description": "排序，越小越靠前"},
 		"display": object("公开卡片显示哪些探测结果；两个地区须是内置目录或已有任务用到的目标地区（list_catalog / list_tasks），否则拒绝", map[string]any{
 			"route_region":     map[string]any{"type": "string", "description": "卡片回程显示的地区；留空不限地区"},
 			"latency_region":   map[string]any{"type": "string", "description": "卡片延迟显示的地区；留空沿用 route_region"},
