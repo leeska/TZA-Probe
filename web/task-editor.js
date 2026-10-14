@@ -2,6 +2,7 @@ import { esc, modal, guard, toast, send } from "./api.js";
 import { searchMatch } from "./search.js";
 import { regionOptions } from "./regions.js";
 import { regionCombobox, wireComboboxes } from "./region-picker.js";
+import { carrierMark } from "./carrier-logos.js";
 
 const carriers = ["电信", "联通", "移动", "其他"];
 const checkbox = (label, name, checked) =>
@@ -210,6 +211,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         <div class="form-section-head"><h3>选择目标</h3><button type="button" id="clear-targets" class="quiet">清空已选</button></div>
         <p id="selected-label" class="option-label"></p>
         <div id="selected-targets" class="selected-targets"></div>
+        <div id="batch-checks" class="batch-checks" hidden></div>
         <div class="segmented target-tabs" role="tablist">${[
           ["catalog", "国内三网"],
           ["preset", "常用海外"],
@@ -233,7 +235,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
               `<div class="preset-group"><span class="option-label">${esc(title)}</span><div class="option-tiles">${items
                 .map(
                   ([key, xs]) =>
-                    `<label class="checkbox" title="${esc(xs.map((x) => x.host).filter((h, i, all) => all.indexOf(h) === i).join(" / "))}"><input type="checkbox" data-preset="${esc(key)}" ${selected.has(key) ? "checked" : ""}>${esc(xs[0].region)}<small>:${xs[0].port}</small></label>`,
+                    `<label class="checkbox" title="${esc(xs.map((x) => x.host).filter((h, i, all) => all.indexOf(h) === i).join(" / "))}"><input type="checkbox" data-preset="${esc(key)}" ${selected.has(key) ? "checked" : ""}>${carrierMark("其他", xs[0].region)}${esc(xs[0].region)}<small>:${xs[0].port}</small></label>`,
                 )
                 .join("")}</div></div>`,
           )
@@ -328,6 +330,40 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
             return;
           }
           update();
+        }),
+    );
+    // 批量设置检测项：一次套用到全部已选组，和上面的 IP 协议勾选一样是「批量开关」，之后仍可逐组改。
+    // 「仅三网」按组里目标的运营商认（三网目录、或运营商选了电信 / 联通 / 移动的自定义目标）。
+    const batch = d.querySelector("#batch-checks");
+    batch.hidden = !(selected.size && taskChecks().length === 2);
+    if (!batch.hidden)
+      batch.innerHTML = ["route", "tcp"]
+        .map((k) => {
+          const label = k === "tcp" ? "延迟" : "回程";
+          return `<span class="batch-group catalog-toolbar"><span class="option-label">批量${label}</span>${[
+            ["all", "全部测"],
+            ["domestic", "仅三网测"],
+            ["none", "全部不测"],
+          ]
+            .map(([mode, text]) => `<button type="button" data-batch-check="${k}" data-batch-mode="${mode}">${text}</button>`)
+            .join("")}</span>`;
+        })
+        .join("");
+    batch.querySelectorAll("[data-batch-check]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          const check = b.dataset.batchCheck;
+          const other = check === "tcp" ? "route" : "tcp";
+          let kept = 0;
+          for (const e of selected.values()) {
+            const domestic = ["电信", "联通", "移动"].includes(e.all[0]?.carrier);
+            const want = b.dataset.batchMode === "all" || (b.dataset.batchMode === "domestic" && domestic);
+            if (want) e.checks.add(check);
+            else if (e.checks.has(other)) e.checks.delete(check);
+            else kept++;
+          }
+          update();
+          if (kept) toast(`${kept} 组只剩这一项检测，已保留`);
         }),
     );
     d.querySelectorAll("[data-check-toggle]").forEach(

@@ -1070,6 +1070,8 @@ button.node-name {
 
 /* 「其他」（国际 / 自定义目标）的地球图标：没有品牌色，用强调色描线，跟着皮肤走。 */
 .carrier-mark.cx { color: var(--accent); }
+/* 海外服务标志自带品牌色；黑色品牌（GitHub / Steam）用 currentColor，跟正文色走，深色主题下也看得见。 */
+.carrier-mark.svc { color: var(--ink); }
 
 .route-label strong {
   font-size: 11px;
@@ -4141,3 +4143,35 @@ td .due.expired + small {
 .panel-head .muted {
   font-size: 12px;
 }
+
+/* 常用海外预设方块里的服务标志：与公开卡片同一枚，贴在名字前面。 */
+.preset-group label.checkbox .carrier-mark {
+  width: 13px;
+  height: 13px;
+  margin-right: 2px;
+}
+
+/* 已选目标下的批量检测项：两组按钮（回程 / 延迟）各占一行内的一段，窄屏自然换行。 */
+.batch-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: -6px 0 14px;
+}
+
+.batch-checks[hidden] {
+  display: none;
+}
+
+.catalog-toolbar.batch-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.batch-group .option-label {
+  margin: 0 4px 0 0;
+}
+

@@ -19,3 +19,8 @@ NTrace-core 版本），构建方式见 Dockerfile 与 docs/DEPLOYMENT.md。
 
 如需保持 tza-agent 为纯 MIT，可在构建时排除 internal/probe 的嵌入式实现
 （去掉 cmd/agent 中的 probe.Embedded，改用 --nexttrace 指向外部二进制）。
+
+公开面板与后台里海外服务的标志（Cloudflare、Google、Quad9、Telegram、YouTube、GitHub、
+Netflix、Discord、Steam）取自 Simple Icons 16.33.0（https://simpleicons.org），
+图形以 CC0-1.0 发布；各标志是其所有者的商标，这里只用来标明探测目标属于哪个服务。
+见 web/carrier-logos.js。

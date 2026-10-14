@@ -553,6 +553,15 @@ assert.deepEqual(
   ["tcp", "route"],
   "三网目录的组默认延迟与回程都测",
 );
+{
+  // 批量检测项：「回程 · 全部不测」关掉每组的回程，「全部测」再全部打开（之后的保存仍按全开断言）。
+  const routeOn = () =>
+    [...w.document.querySelectorAll('.target-chip .chip-family[data-check="route"]')].map((b) => b.classList.contains("on"));
+  w.document.querySelector('[data-batch-check="route"][data-batch-mode="none"]').click();
+  assert(routeOn().length && routeOn().every((on) => !on), "批量「回程 · 全部不测」要关掉每组的回程");
+  w.document.querySelector('[data-batch-check="route"][data-batch-mode="all"]').click();
+  assert(routeOn().every((on) => on), "批量「回程 · 全部测」要把每组的回程打开");
+}
 [...w.document.querySelectorAll(".target-chip")]
   .find((c) => c.querySelector("strong").textContent.includes("电信"))
   .querySelector('.chip-family[data-family="ipv6"]')
