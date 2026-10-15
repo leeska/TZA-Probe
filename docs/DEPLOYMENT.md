@@ -119,7 +119,7 @@ sudo systemctl enable --now tza-agent
 | `--cc-key ID:BASE64`（可重复） | `TZA_CC_KEYS`（逗号分隔） | 额外信任的 TZA-CC 签名公钥（自建 CC 或测试用，`cc pubkey` 打印的就是这个格式），与内置的官方公钥合并（官方 CC 不用配）。同一个 key id 出现两次且内容不同时拒绝启动 |
 
 ```sh
-tza-server --data /var/lib/tza-probe --cc-url https://cc.example.com --cc-key 'tzacc-2026:1PcvnQ8z…'
+tza-server --data /var/lib/tza-probe --cc-url https://cc.example.com --cc-key 'tzacc-2026-1a2b3c4d:1PcvnQ8z…'
 ```
 
 systemd 部署可在 `tza-server.service` 的 `[Service]` 里加 `Environment=TZA_CC_URL=…` 与 `Environment=TZA_CC_KEYS=…`。
