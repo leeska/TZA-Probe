@@ -151,7 +151,7 @@ func TestInstallRejects(t *testing.T) {
 
 func TestNilStoreIsBuiltinsOnly(t *testing.T) {
 	var s *Store
-	if len(s.List()) != len(Builtins) || !s.Known("anime") || s.Known("matcha") {
+	if len(s.List()) != len(Builtins) || !s.Known("glass") || s.Known("anime") || s.Known("matcha") {
 		t.Fatal("a nil store lists the built-ins only")
 	}
 	if _, err := s.Install(nil); err == nil {

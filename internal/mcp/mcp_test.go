@@ -1020,14 +1020,14 @@ func TestCatalogAndNotificationTools(t *testing.T) {
 	}
 
 	// 访客默认外观与面板一致可读写，非法值按协议错误回，且整次调用什么都不写。
-	look := structured(t, invoke(t, env, "update_settings", `{"default_theme":"dark","default_skin":"press"}`))
-	if look["default_theme"] != "dark" || look["default_skin"] != "press" || look["channel"] != "telegram" {
+	look := structured(t, invoke(t, env, "update_settings", `{"default_theme":"dark","default_skin":"glass"}`))
+	if look["default_theme"] != "dark" || look["default_skin"] != "glass" || look["channel"] != "telegram" {
 		t.Fatalf("默认外观: %v", look)
 	}
-	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"default_theme":"light","default_skin":"bogus"}`); codeOf(t, out) != codeInvalidParams {
-		t.Fatalf("未知皮肤该被拒: %v", out)
+	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"default_theme":"light","default_skin":"press"}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("没装的皮肤（复古印刷已不内置）该被拒: %v", out)
 	}
-	if again := structured(t, invoke(t, env, "get_settings", `{}`)); again["default_theme"] != "dark" || again["default_skin"] != "press" {
+	if again := structured(t, invoke(t, env, "get_settings", `{}`)); again["default_theme"] != "dark" || again["default_skin"] != "glass" {
 		t.Fatalf("被拒的调用改了外观: %v", again)
 	}
 
@@ -1036,7 +1036,7 @@ func TestCatalogAndNotificationTools(t *testing.T) {
 		t.Fatalf("未配置的站点品牌: %v", fresh)
 	}
 	named := structured(t, invoke(t, env, "update_settings", `{"site_name":"  橙子监控 "}`))
-	if named["site_name"] != "橙子监控" || named["default_skin"] != "press" || named["channel"] != "telegram" {
+	if named["site_name"] != "橙子监控" || named["default_skin"] != "glass" || named["channel"] != "telegram" {
 		t.Fatalf("站点名称: %v", named)
 	}
 	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"site_name":"`+strings.Repeat("长", model.MaxSiteNameLen+1)+`"}`); codeOf(t, out) != codeInvalidParams {

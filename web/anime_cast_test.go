@@ -7,7 +7,10 @@ import (
 	"testing"
 )
 
-// 角色名单（web/anime-cast.js）、样式表（web/anime.css）与人物图（web/anime/<id>.webp）三处必须对齐：
+// animeDir 是二次元主题包的源码（从市场安装，样式表与人物图都在包里）。
+const animeDir = "../themes/anime"
+
+// 角色名单（web/anime-cast.js）、样式表（themes/anime/anime.css）与人物图（themes/anime/anime/<id>.webp）三处必须对齐：
 // 名单里多一个 id 而样式表没规则 = 卡片顶部空一块（元素渲染了、图却挂不上）；样式表里挂了一个
 // 名单里没有的 id = 拼错的死规则；少了图片文件则是运行时 404。三样都是「静默不显示」，
 // 只有这条测试能提前拦住。
@@ -24,7 +27,7 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	css, err := os.ReadFile("anime.css")
+	css, err := os.ReadFile(animeDir + "/anime.css")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,8 +81,8 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		if !strings.Contains(string(css), `[data-cast="`+id+`"]`) {
 			t.Errorf("anime.css 缺少角色 %q 的 [data-cast] 规则", id)
 		}
-		if !strings.Contains(string(css), `url("/anime/`+id+`.webp")`) {
-			t.Errorf("anime.css 里角色 %q 的人物图路径不是 /anime/%s.webp", id, id)
+		if !strings.Contains(string(css), `url("anime/`+id+`.webp")`) {
+			t.Errorf("anime.css 里角色 %q 的人物图路径不是 anime/%s.webp（相对主题包）", id, id)
 		}
 		// 牌面配色（卡壳上的 .node-card[data-cast]）与它的夜版，是「加一台机器」的第四、第五处：
 		// 漏了不会报错，只会让这台机的卡片停在默认白面——所以和立绘、名单一起守住。
@@ -89,17 +92,17 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		if !strings.Contains(string(css), `[data-theme="dark"] .node-card[data-cast="`+id+`"]`) {
 			t.Errorf("anime.css 缺少角色 %q 的夜版牌面配色", id)
 		}
-		if !strings.Contains(string(css), `--cast-art-url: url("/anime/`+id+`.webp")`) {
+		if !strings.Contains(string(css), `--cast-art-url: url("anime/`+id+`.webp")`) {
 			t.Errorf("anime.css 里角色 %q 缺 --cast-art-url（人物层：整张连续立绘）", id)
 		}
-		if !strings.Contains(string(css), `--cast-hands-url: url("/anime/`+id+`-hands.webp")`) {
+		if !strings.Contains(string(css), `--cast-hands-url: url("anime/`+id+`-hands.webp")`) {
 			t.Errorf("anime.css 里角色 %q 缺 --cast-hands-url（双手层：压在 HTML 看板上沿的那双手）", id)
 		}
-		if _, err := os.Stat("anime/" + id + ".webp"); err != nil {
-			t.Errorf("人物图 web/anime/%s.webp 不存在: %v", id, err)
+		if _, err := os.Stat(animeDir + "/anime/" + id + ".webp"); err != nil {
+			t.Errorf("人物图 themes/anime/anime/%s.webp 不存在: %v", id, err)
 		}
-		if _, err := os.Stat("anime/" + id + "-hands.webp"); err != nil {
-			t.Errorf("双手层图 web/anime/%s-hands.webp 不存在（拆层脚本 scripts/anime-split-layers.py）: %v", id, err)
+		if _, err := os.Stat(animeDir + "/anime/" + id + "-hands.webp"); err != nil {
+			t.Errorf("双手层图 themes/anime/anime/%s-hands.webp 不存在（拆层脚本 scripts/anime-split-layers.py）: %v", id, err)
 		}
 	}
 	// 人物图几何（2026-10-10 v2 后的契约）：每台机五个量，少一样那张卡的构图就会崩。
@@ -196,11 +199,11 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	// 眨眼要用同一个人的闭眼帧：图不在、或样式里没引用，那台机就不会眨眼（其它三台照眨，更难发现）。
 	for _, m := range ids {
 		id := m[1]
-		if _, err := os.Stat("anime/" + id + "-blink.webp"); err != nil {
+		if _, err := os.Stat(animeDir + "/anime/" + id + "-blink.webp"); err != nil {
 			t.Errorf("缺闭眼帧 anime/%s-blink.webp（拿立绘 edit 一张，只改眼睛）", id)
 		}
-		if !strings.Contains(string(css), `--cast-blink-url: url("/anime/`+id+`-blink.webp")`) {
-			t.Errorf("anime.css 里角色 %q 没有 --cast-blink-url（/anime/%s-blink.webp）", id, id)
+		if !strings.Contains(string(css), `--cast-blink-url: url("anime/`+id+`-blink.webp")`) {
+			t.Errorf("anime.css 里角色 %q 没有 --cast-blink-url（anime/%s-blink.webp）", id, id)
 		}
 	}
 	if got, want := strings.Count(string(css), "--cast-blink-dur:"), len(ids); got != want {

@@ -51,7 +51,7 @@ function noWheelStepping() {
 
 // 后台模块只在 /admin 才下载：公开页的访客用不到它们。依赖一次性声明成 modulepreload，
 // 并行下载，不等 admin.js 解析完再一层层发现。
-const ADMIN_MODULES = ["admin.js", "admin-state.js", "admin-nodes.js", "admin-tasks.js", "admin-alerts.js", "admin-settings.js", "task-controls.js", "task-editor.js", "agent-setup.js", "regions.js", "region-picker.js"];
+const ADMIN_MODULES = ["admin.js", "admin-state.js", "admin-nodes.js", "admin-tasks.js", "admin-alerts.js", "admin-themes.js", "admin-plugins.js", "admin-market.js", "admin-settings.js", "task-controls.js", "task-editor.js", "agent-setup.js", "regions.js", "region-picker.js"];
 function loadAdmin() {
   for (const name of ADMIN_MODULES) {
     const link = document.createElement("link");

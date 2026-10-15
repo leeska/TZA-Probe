@@ -1,6 +1,6 @@
 // Integration checks against a disposable local Server; never target production.
 // Install jsdom 26 and esbuild 0.25 into a temporary directory, then set
-// TZA_UI_DEPS, TZA_TEST_URL, TZA_TEST_ADMIN_FILE and TZA_TEST_CREDENTIALS_FILE as shown in docs/VERIFICATION.md.
+// TZA_UI_DEPS, TZA_TEST_URL, TZA_TEST_ADMIN_FILE, TZA_TEST_CREDENTIALS_FILE and TZA_TEST_THEMES as shown in docs/VERIFICATION.md.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
@@ -201,6 +201,20 @@ assert(nodeToken.length === 64);
 assert($("#install-command").textContent === `curl -fsSL ${base}/install.sh | sh -s -- --endpoint ${base} --token ${nodeToken}`, "one-line install command must carry endpoint and key");
 $(".close").click();
 const adminHeaders = { Authorization: "Bearer " + token };
+// 复古印刷 / 现代极简 / 二次元不再内置，是仓库 themes/ 下的官方主题包（发到 TZA-CC 市场）。
+// 流水线把它们打成 zip（tools/themepack）放进 TZA_TEST_THEMES，这里像管理员上传一样装上，
+// 后面的皮肤断言才有东西可测。没装之前，内置的只有液态玻璃。
+{
+  const before = await (await fetch(base + "/api/v1/admin/themes", { headers: adminHeaders })).json();
+  assert.deepEqual(before.map((t) => t.id), ["glass"], "没装主题包时只有内置的液态玻璃");
+  assert(process.env.TZA_TEST_THEMES, "需要 TZA_TEST_THEMES（tools/themepack 打出的官方主题包目录）");
+  for (const id of ["press", "shadcn", "anime"]) {
+    const zip = await readFile(path.join(process.env.TZA_TEST_THEMES, id + ".zip"));
+    const r = await fetch(base + "/api/v1/admin/themes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/zip" }, body: zip });
+    assert.equal(r.status, 200, `装官方主题包 ${id}: ${await r.clone().text()}`);
+    assert.equal((await r.json()).id, id);
+  }
+}
 let list = await (
   await fetch(base + "/api/v1/admin/nodes", { headers: adminHeaders })
 ).json();
@@ -1080,8 +1094,8 @@ assert.equal(
 // 皮肤清单与 web/skins.js 的 SKINS 同源，两边对不上会被 web/look_choices_test.go 抓到。
 assert.equal(
   [...skinField.options].map((o) => o.value).join(","),
-  "glass,press,shadcn,anime",
-  "皮肤三档",
+  "glass,anime,press,shadcn",
+  "默认皮肤只列内置的液态玻璃与已安装的主题包",
 );
 // 这三个下拉在页面上是自定义外壳（ui-select.js 把原生 select 换成 .select-trigger + .select-pop），
 // jsdom 里不加载 ui-select.js，所以下列断言只能按源码与样式表文本盯住。教训：选项一旦写回
@@ -1165,6 +1179,18 @@ $("#save-site-name").click();
 await until(() => w.document.title === "TZA Probe", "清空站点名称后标题回到默认");
 assert($(".sidebar .brand .brand-mark") && $(".sidebar .brand").textContent.startsWith("tzaPROBE"), "侧栏回到内置品牌");
 assert.deepEqual(await brandBoot(), { name: "", logo: "" }, "清除后首屏品牌为空");
+// 设置页分子标签：MCP Key、后台账号与 TZA-CC 账号在「账号与安全」，备份在「数据」。
+assert.deepEqual(
+  [...w.document.querySelectorAll("[data-settings-view]")].map((b) => b.textContent),
+  ["外观与品牌", "账号与安全", "数据"],
+  "设置页的三个子标签",
+);
+assert(!$("#generate-mcp-key") && !$("#download-backup"), "「外观与品牌」里不该有 MCP Key 与备份");
+$('[data-settings-view="data"]').click();
+await until(() => $("#download-backup"), "数据子页");
+$('[data-settings-view="account"]').click();
+await until(() => $("#generate-mcp-key"), "账号与安全子页");
+assert($(".market-connect")?.textContent.includes("市场已关闭"), "市场关闭时 TZA-CC 账号一栏写明不需要连接");
 // MCP Key management is reachable from settings and never exposed on later reads.
 $("#generate-mcp-key").click();
 await until(() => $("#mcp-api-key"), "generate MCP key");
@@ -1194,12 +1220,25 @@ $("#confirm-mcp").click();
 await until(() => !$("#revoke-mcp-key"), "revoke MCP key");
 assert.equal((await mcpCall(secondMCPKey)).status, 401);
 
-// 市场页：一次性 Server 用 --cc-url off 关掉了市场（不连官方 CC），页面写明怎么打开，市场接口 503，已安装列表照常出来。
-$('[data-tab="market"]').click();
-await until(() => $(".market-off"), "market page without TZA-CC");
-assert.equal($("#breadcrumb").textContent, "市场");
+// 主题与插件各占侧栏一栏，各带一块市场；不再有单独的「市场」栏。
+assert(!$('[data-tab="market"]'), "市场不再单独成栏");
+// 一次性 Server 用 --cc-url off 关掉了市场（不连官方 CC）：市场块写明怎么打开，市场接口 503，已安装列表照常出来。
+$('[data-tab="themes"]').click();
+await until(() => $("#theme-file") && $(".market-off"), "themes page without TZA-CC");
 assert($(".market-off").textContent.includes("--cc-url"), "未配置时要说明怎么配");
-assert($(".theme-panel"), "未配置时已安装列表照常显示");
+assert.deepEqual(
+  [...w.document.querySelectorAll(".theme-panel .theme-row b")].map((b) => b.textContent),
+  ["液态玻璃", "二次元", "复古印刷", "现代极简"],
+  "主题页列出内置的液态玻璃和刚装的三个官方主题包",
+);
+// 角色包挂在二次元下面：二次元下面有一组（没有角色包时是一句提示）。
+const nested = $(".theme-group.is-nested");
+assert(nested && nested.previousElementSibling?.textContent.includes("二次元"), "角色包那一组紧跟在二次元下面");
+assert(!$('[data-remove-theme="glass"]') && $('[data-remove-theme="press"]'), "内置的不能删，主题包能删");
+$('[data-tab="plugins"]').click();
+// 面包屑在切页时立刻换，内容要等接口回来：等插件页自己的上传入口出现，别拿主题页残留的 .market-off 当成功。
+await until(() => $("#plugin-file"), "plugins page without TZA-CC");
+assert($(".market-off") && $(".theme-panel"), "插件页有已安装列表与关闭说明");
 assert.equal((await fetch(base + "/api/v1/admin/market/catalog", { headers: adminHeaders })).status, 503);
 assert.equal((await (await fetch(base + "/api/v1/admin/market/status", { headers: adminHeaders })).json()).configured, false);
 
@@ -1223,12 +1262,20 @@ const publicDOM = new JSDOM(
   },
 );
 publicDOM.window.fetch = (input, opts) => fetch(new URL(input, base), opts);
+// 主题包的样式表在切到它时才挂上，面板等它加载完再切 data-skin（不先按默认样式画一帧）。jsdom 不加载
+// 样式表、也不发 load 事件，这里替浏览器发：新挂上的主题包样式表一律当作已加载。
+new publicDOM.window.MutationObserver((records) => {
+  for (const r of records) for (const n of r.addedNodes) if (n.matches?.("link[data-theme-css]")) n.onload?.();
+}).observe(publicDOM.window.document.head, { childList: true });
+const themeCSSLoaded = () => new Promise((resolve) => setTimeout(resolve, 0));
 publicDOM.window.HTMLDialogElement.prototype.showModal = function () {
   this.open = true;
 };
 publicDOM.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
 };
+// 与浏览器一样先跑 /theme-default.js（皮肤清单：内置 + 已安装的主题包），再加载面板。
+publicDOM.window.eval(await (await fetch(base + "/theme-default.js")).text());
 publicDOM.window.eval(bundle.outputFiles[0].text);
 await until(
   () => publicDOM.window.document.querySelector(".node-card"),
@@ -1415,18 +1462,27 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   const opts = [...menu.querySelectorAll(".skin-option")];
   assert.deepEqual(
     opts.map((o) => o.dataset.skinOption),
-    ["glass", "press", "shadcn", "anime"],
-    "三张皮肤都要列出来",
+    ["glass", "anime", "press", "shadcn"],
+    "内置的液态玻璃与已安装的主题包都要列出来",
   );
   assert.equal(opts.find((o) => o.classList.contains("on"))?.dataset.skinOption, "glass", "当前皮肤要有选中态");
   for (const o of opts) {
     assert(o.querySelector(".skin-copy b")?.textContent, "每个皮肤要有名字");
     assert(o.querySelector(".skin-copy small")?.textContent, "每个皮肤要有一句说明");
   }
-  // 色板颜色必须来自样式表：页面 CSP 是 style-src 'self'，行内 style 会被浏览器直接忽略。
-  for (const sw of menu.querySelectorAll(".skin-swatch, .skin-swatch i"))
-    assert(!sw.hasAttribute("style"), "色板不能用行内样式（CSP 会忽略）");
+  // 色板不能写成 HTML 里的 style 属性：页面 CSP 是 style-src 'self'，标记里的行内 style 会被浏览器直接忽略。
+  // 内置皮肤的颜色在样式表里；主题包的颜色只有清单知道，由 paintSwatches 经 CSSOM 逐格写（CSP 不拦）。
+  const skinsSource = await readFile(path.join(root, "web/skins.js"), "utf8");
+  assert(!/skin-swatch[^`]*style=/.test(skinsSource), "色板标记里不能带 style 属性（CSP 会忽略）");
+  for (const sw of menu.querySelectorAll('[data-swatch="glass"], [data-swatch="glass"] i'))
+    assert(!sw.hasAttribute("style"), "内置皮肤的色板颜色来自样式表");
+  for (const id of ["press", "shadcn", "anime"])
+    assert(
+      [...menu.querySelectorAll(`[data-swatch="${id}"] i`)].every((cell) => cell.style.background),
+      `主题包 ${id} 的色板要按清单逐格上色`,
+    );
   pubDoc.querySelector('[data-skin-option="press"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  await themeCSSLoaded();
   assert.equal(pubDoc.documentElement.dataset.skin, "press", "选「复古印刷」要落到 <html data-skin>");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "press", "偏好要存进 localStorage");
   assert(menu.hidden, "选完菜单要收起");
@@ -1434,12 +1490,14 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 第三张皮肤：现代极简（shadcn）。
   skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
   pubDoc.querySelector('[data-skin-option="shadcn"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  await themeCSSLoaded();
   assert.equal(pubDoc.documentElement.dataset.skin, "shadcn", "选「现代极简」要落到 <html data-skin>");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "shadcn", "偏好要存进 localStorage");
   assert(/现代极简/.test(skinBtn.textContent), "按钮文字跟着换");
   // 第四张皮肤：二次元（线路机角色立绘）。
   skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
   pubDoc.querySelector('[data-skin-option="anime"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  await themeCSSLoaded();
   assert.equal(pubDoc.documentElement.dataset.skin, "anime", "选「二次元」要落到 <html data-skin>");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "anime", "偏好要存进 localStorage");
   assert(/二次元/.test(skinBtn.textContent), "按钮文字跟着换");
@@ -1512,19 +1570,22 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
 
   // 皮肤表本身：只在 data-skin="<id>" 下生效。每张皮肤各有一条必须有的底座：
   // 印刷＝纸底 + 圆角归零，极简＝中性令牌 + 圆角统一到 --shadcn-radius。
+  // 三张官方皮肤都是主题包：样式表由 /theme-default.js 的清单给出地址（/themes/<id>/…），
+  // 只在选中时挂上；index.html 里不再有它们。
   const homeHTML = await (await fetch(base + "/")).text();
-  for (const id of ["press", "shadcn", "anime"]) {
-    assert(
-      homeHTML.includes(`/${id}.css`),
-      `index.html 必须挂上 ${id}.css，否则皮肤永远不会生效`,
-    );
-  }
-  const pressCSS = await (await fetch(base + "/press.css")).text();
+  const themeList = publicDOM.window.__tzaThemes;
+  const themeCSS = async (id) => {
+    assert(!homeHTML.includes(`/${id}.css`), `${id}.css 不该再写死在 index.html 里`);
+    const href = themeList.find((t) => t.id === id)?.css?.[0];
+    assert(href?.startsWith(`/themes/${id}/`), `清单要给出 ${id} 的样式表地址`);
+    return (await fetch(base + href)).text();
+  };
+  const pressCSS = await themeCSS("press");
   assert(/\[data-skin="press"\]/.test(pressCSS), "皮肤规则要限定在 data-skin=press 下");
   assert(/--press-paper:/.test(pressCSS) && /border-radius: 0 !important/.test(pressCSS), "纸底与圆角归零是皮肤底座");
   assert(/:root\[data-skin="press"\]\[data-theme="dark"\]/.test(pressCSS), "深色下要有自己的一份令牌");
-  const shadcnCSS = await (await fetch(base + "/shadcn.css")).text();
-  const animeCSS = await (await fetch(base + "/anime.css")).text();
+  const shadcnCSS = await themeCSS("shadcn");
+  const animeCSS = await themeCSS("anime");
   // anime.css 是所有皮肤共用的（index.html 里无条件挂），但每条规则都带 html[data-skin="anime"] 前缀；
   // 于是别的皮肤下那三件套是**没有样式的裸元素**——必须靠底座样式表默认藏起来（漏一个就会冒出一颗裸按钮）。
   // 这就是「加动画不要影响到其他皮肤」的第一道闸。
@@ -1731,7 +1792,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   for (const id of ["jp-nosla-gen2", "de-nosla-fra", "us-vmiss-tri", "us-bwh-dc9", "generic"]) {
     const block = new RegExp(`\\.node-card\\[data-cast="${id}"\\] \\{([^}]*)\\}`).exec(animeCSS)?.[1] || "";
     assert(
-      /--cast-hands-url: url\("\/anime\//.test(block) &&
+      /--cast-hands-url: url\("anime\//.test(block) &&
         /--cast-top-frac: 0\.\d+/.test(block) && /--cast-bot-frac: 0\.\d+/.test(block) &&
         /--cast-figure-h: \d+\.\d+px/.test(block) &&
         /--cast-board-top: \d+\.\d+px/.test(block) && /--cast-plate-h: \d+\.\d+px/.test(block),
@@ -1793,7 +1854,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "卷轴不再挂书签飘带（复核说它像凭空浮着的贴纸）；元素、样式、动效三处都要干净",
   );
   assert(
-    /html\[data-skin="anime"\] \.node-card\[data-cast="jp-nosla-gen2"\] \{[^}]*--cast-art-url: url\("\/anime\/jp-nosla-gen2\.webp"\)/s.test(animeCSS),
+    /html\[data-skin="anime"\] \.node-card\[data-cast="jp-nosla-gen2"\] \{[^}]*--cast-art-url: url\("anime\/jp-nosla-gen2\.webp"\)/s.test(animeCSS),
     "每台机的牌面配色里要带自己的人物层图址（人物层就是那半身像）",
   );
   // 点卡片空白处 / 数据行不许弹详情页：详情只由「详细」按钮进（app.js 里不再挂整卡 onclick，
@@ -1863,6 +1924,8 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   });
   bootDOM.window.localStorage.setItem("tza-skin", "press");
   bootDOM.window.localStorage.setItem("tza-theme", "light");
+  // 和 index.html 一样先有 /theme-default.js 的清单：复古印刷等是主题包，不在清单里就认不出来。
+  bootDOM.window.eval(await (await fetch(base + "/theme-default.js")).text());
   bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
   assert.equal(bootDOM.window.document.documentElement.dataset.skin, "press", "首屏就要定好皮肤，不能等 app.js");
   assert.equal(bootDOM.window.document.documentElement.dataset.theme, "light", "明暗同样照旧");

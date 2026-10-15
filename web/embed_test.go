@@ -39,8 +39,11 @@ func TestAssetsRevalidateAndCompress(t *testing.T) {
 	if plain, _ := io.ReadAll(zr); string(plain) != first.Body.String() {
 		t.Fatal("gzip body differs from plain body")
 	}
-	if img := get("/anime/generic.webp", map[string]string{"Accept-Encoding": "gzip"}); img.Header().Get("Content-Encoding") != "" || img.Header().Get("Content-Type") != "image/webp" {
-		t.Fatalf("webp: encoding=%q type=%q", img.Header().Get("Content-Encoding"), img.Header().Get("Content-Type"))
+	// 二次元的立绘与样式在主题包里（themes/anime），不再编进二进制。
+	for _, gone := range []string{"/anime/generic.webp", "/anime.css", "/press.css", "/shadcn.css"} {
+		if w := get(gone, nil); w.Code != http.StatusNotFound {
+			t.Fatalf("%s 应该已移到主题包里，得到 %d", gone, w.Code)
+		}
 	}
 	for _, path := range []string{"/", "/admin", "/admin/tasks"} {
 		if w := get(path, nil); w.Code != 200 || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -102,7 +103,12 @@ func TestUpdateSettingsValidatesBeforeWriting(t *testing.T) {
 	if config, _ := svc.Notification(ctx); config.Channel != "none" {
 		t.Fatalf("channel changed by a rejected update: %+v", config)
 	}
+	// 复古印刷不再内置：没装就拒，装了（Themes 认得它）才收。
 	skin := "press"
+	if _, _, err := svc.UpdateSettings(ctx, nil, model.PanelPatch{DefaultSkin: &skin}); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("uninstalled package skin: %v", err)
+	}
+	svc.Themes = knownSkins{"press"}
 	config, panel, err := svc.UpdateSettings(ctx, &notify.Config{Webhook: "https://example.com/hook"}, model.PanelPatch{DefaultSkin: &skin})
 	if err != nil || config.Channel != "webhook" || panel.DefaultSkin != "press" || panel.LatencyWindowMinutes != model.DefaultLatencyWindowMinutes {
 		t.Fatalf("update: %+v %+v %v", config, panel, err)
@@ -179,3 +185,8 @@ func mustTaskID(t *testing.T, svc *Service) string {
 	}
 	return tasks[0].ID
 }
+
+// knownSkins stands in for the theme store: the listed ids are installed packages.
+type knownSkins []string
+
+func (k knownSkins) Known(id string) bool { return slices.Contains(k, id) }

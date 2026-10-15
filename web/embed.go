@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-//go:embed *.html *.css *.js *.svg anime/*
+//go:embed *.html *.css *.js *.svg
 var files embed.FS
 
 // asset is one embedded file prepared once at startup: its validator and, for

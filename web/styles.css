@@ -533,10 +533,10 @@ h1 {
 }
 
 /* 二次元皮肤的线路机专属元素：人物层 / 双手层 / 闭眼层 / 卷起按钮，由 app.js 只为「角色名单里」
-   的节点渲染（web/anime-cast.js）。anime.css 是所有皮肤共用的（index.html 无条件引入），但里面每条
-   规则都带 html[data-skin="anime"] 前缀——所以别的皮肤下这些都是**没有样式**的裸元素，
-   必须在这里默认藏掉：漏一个，玻璃 / 记者 / shadcn 皮肤下就会冒出一颗裸按钮或一张裸图。
-   二次元皮肤在 anime.css 里各自放开。 */
+   的节点渲染（web/anime-cast.js）。它们的样式在二次元主题包里（themes/anime/anime.css，从市场安装，
+   只在选了二次元时挂上，规则也都带 html[data-skin="anime"] 前缀）——所以别的皮肤下、或者没装二次元时，
+   这些都是**没有样式**的裸元素，必须在这里默认藏掉：漏一个就会冒出一颗裸按钮或一张裸图。
+   二次元主题包里各自放开。 */
 .anime-cast,
 .anime-blink,
 .anime-fold-btn {
@@ -2905,15 +2905,6 @@ pre,
 [data-swatch="glass"] i:nth-child(1) { background: #eef3fc; }
 [data-swatch="glass"] i:nth-child(2) { background: #ffffff; }
 [data-swatch="glass"] i:nth-child(3) { background: #0071e3; }
-[data-swatch="press"] i:nth-child(1) { background: #f8f1df; }
-[data-swatch="press"] i:nth-child(2) { background: #fffaf0; }
-[data-swatch="press"] i:nth-child(3) { background: #b72f24; }
-[data-swatch="shadcn"] i:nth-child(1) { background: #f5f5f5; }
-[data-swatch="shadcn"] i:nth-child(2) { background: #ffffff; }
-[data-swatch="shadcn"] i:nth-child(3) { background: #171717; }
-[data-swatch="anime"] i:nth-child(1) { background: #fdeef6; }
-[data-swatch="anime"] i:nth-child(2) { background: #ffffff; }
-[data-swatch="anime"] i:nth-child(3) { background: #ff4f9a; }
 
 .skin-copy {
   display: flex;
@@ -4672,5 +4663,49 @@ label .muted {
   }
   .theme-row .theme-copy small {
     overflow-wrap: anywhere;
+  }
+}
+
+/* ==========================================================================
+   「主题」「插件」两栏（admin-themes.js / admin-plugins.js）与面板设置的子标签。
+   ========================================================================== */
+/* 设置页的子标签：页头下面一排，和下面的面板拉开一点。 */
+.settings-tabs {
+  margin: 0 0 18px;
+}
+
+/* 角色包挂在二次元下面：缩进一级、左侧一道细线表示从属。没装二次元时的那组不缩进。 */
+.theme-group {
+  display: grid;
+  gap: 8px;
+}
+
+.theme-group.is-nested {
+  margin-left: 22px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+.theme-group > .hint {
+  margin: 2px 0;
+}
+
+/* 市场块的标题行之下是工具条；插件页只有搜索框，靠右放。 */
+.market-panel .market-toolbar:not(:has(.segmented)) {
+  justify-content: flex-end;
+}
+
+.market-panel > .market-keys,
+.market-body > .market-note {
+  margin: 12px 24px 0;
+}
+
+@media (max-width: 760px) {
+  .theme-group.is-nested {
+    margin-left: 8px;
+  }
+  .market-panel > .market-keys,
+  .market-body > .market-note {
+    margin: 12px 16px 0;
   }
 }

@@ -62,7 +62,7 @@ python3 tools/character-pack/make_pack.py build pack.json --work <工作目录> 
 
 ## 6. 交付
 
-- 把 zip 交给用户：后台「面板设置 → 主题 → 上传主题包」。用户给了面板地址和管理员 token 并要求你代传时，
+- 把 zip 交给用户：后台「主题 → 上传主题包 / 角色包」（面板要先装好二次元主题）。用户给了面板地址和管理员 token 并要求你代传时，
   `POST <面板地址>/api/v1/admin/themes`，请求体就是 zip，`Content-Type: application/zip`，`Authorization: Bearer <token>`。
 - 提醒用户：角色按节点的「所在地区」自动匹配（与 `regions` 逐字一致），节点设置里也能手动指定；
   节点的「商家」字段会显示在看板上沿的名牌上；同一 `id` 的角色包再传一次即覆盖升级。

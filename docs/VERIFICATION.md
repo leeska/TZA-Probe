@@ -21,12 +21,15 @@ npm install --prefix /tmp/tza-ui-deps --no-audit --no-fund jsdom@26.1.0 esbuild@
 go build -o bin/tza-server ./cmd/server
 mkdir -p /tmp/tza-ui-data
 ./bin/tza-server init --data /tmp/tza-ui-data > /tmp/tza-ui-credentials
-./bin/tza-server --listen 127.0.0.1:25874 --data /tmp/tza-ui-data
+./bin/tza-server --listen 127.0.0.1:25874 --data /tmp/tza-ui-data --cc-url off
+# 官方主题包（复古印刷 / 现代极简 / 二次元）打成 zip，ui-smoke 会把它们装到这台一次性 Server 上：
+go run ./tools/themepack -out /tmp/tza-ui-themes themes/*
 # 另一个终端：
 TZA_UI_DEPS=/tmp/tza-ui-deps \
 TZA_TEST_URL=http://127.0.0.1:25874 \
 TZA_TEST_ADMIN_FILE=/tmp/tza-ui-data/admin-token \
 TZA_TEST_CREDENTIALS_FILE=/tmp/tza-ui-credentials \
+TZA_TEST_THEMES=/tmp/tza-ui-themes \
 node scripts/ui-smoke.mjs
 ```
 

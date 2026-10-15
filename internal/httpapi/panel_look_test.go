@@ -77,15 +77,19 @@ func TestPanelDefaultLookSettings(t *testing.T) {
 		t.Fatalf("首屏脚本没带内置默认: %s", body)
 	}
 
-	// 存下深色 + 复古印刷。
-	if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"default_theme": "dark", "default_skin": "press"}); code != 204 {
+	// 复古印刷已不内置：没装这个主题包时不能设成默认（装上之后的情形见 theme_api_test.go）。
+	if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"default_skin": "press"}); code != 400 {
+		t.Fatalf("没装的主题包不该能设成默认: %d %s", code, body)
+	}
+	// 存下深色 + 液态玻璃。
+	if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"default_theme": "dark", "default_skin": "glass"}); code != 204 {
 		t.Fatalf("PUT panel: %d %s", code, body)
 	}
-	if theme, skin := look(); theme != "dark" || skin != "press" {
+	if theme, skin := look(); theme != "dark" || skin != "glass" {
 		t.Fatalf("设置没保存: %s / %s", theme, skin)
 	}
 	body := defaults()
-	if !strings.Contains(body, `theme:"dark"`) || !strings.Contains(body, `skin:"press"`) {
+	if !strings.Contains(body, `theme:"dark"`) || !strings.Contains(body, `skin:"glass"`) {
 		t.Fatalf("首屏脚本没跟上设置: %s", body)
 	}
 
@@ -93,7 +97,7 @@ func TestPanelDefaultLookSettings(t *testing.T) {
 	if code, _ := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"latency_window_minutes": 360}); code != 204 {
 		t.Fatal("只改窗口被拒")
 	}
-	if theme, skin := look(); theme != "dark" || skin != "press" {
+	if theme, skin := look(); theme != "dark" || skin != "glass" {
 		t.Fatalf("改窗口顺手把外观冲了: %s / %s", theme, skin)
 	}
 
@@ -106,7 +110,7 @@ func TestPanelDefaultLookSettings(t *testing.T) {
 			t.Fatalf("坏值 %v 该被拒绝，得到 %d %s", bad, code, body)
 		}
 	}
-	if code, _ := request("PUT", "/api/v1/admin/panel", "", map[string]any{"default_skin": "press"}); code != 401 {
+	if code, _ := request("PUT", "/api/v1/admin/panel", "", map[string]any{"default_skin": "glass"}); code != 401 {
 		t.Fatal("匿名改外观没被拒")
 	}
 }

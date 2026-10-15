@@ -59,13 +59,16 @@ type Origin struct {
 const originDir = ".market"
 
 // Builtins are the skins compiled into web/: their stylesheets are always on
-// the page, scoped by html[data-skin]. Order is the order the skin menu shows.
+// the page, scoped by html[data-skin]. Only 液态玻璃 is compiled in; the other
+// official looks (复古印刷 / 现代极简 / 二次元) are packages in themes/ that
+// the market distributes.
 var Builtins = []Manifest{
 	{ID: "glass", Name: "液态玻璃", Hint: "毛玻璃 · 圆角 · 柔和阴影", Chrome: Colors{Light: "#edf2fb", Dark: "#0f141c"}, Swatch: []string{"#eef3fc", "#ffffff", "#0071e3"}, Builtin: true},
-	{ID: "press", Name: "复古印刷", Hint: "纸张方格 · 硬边框 · 衬线标题", Chrome: Colors{Light: "#f8f1df", Dark: "#15120f"}, Swatch: []string{"#f8f1df", "#fffaf0", "#b72f24"}, Builtin: true},
-	{ID: "shadcn", Name: "现代极简", Hint: "中性灰 · 发丝描边 · 小圆角", Chrome: Colors{Light: "#ffffff", Dark: "#0a0a0a"}, Swatch: []string{"#f5f5f5", "#ffffff", "#171717"}, Builtin: true},
-	{ID: "anime", Name: "二次元", Hint: "线路机角色 · 樱花粉", Chrome: Colors{Light: "#fdeef6", Dark: "#150f29"}, Swatch: []string{"#fdeef6", "#ffffff", "#ff4f9a"}, Builtin: true},
 }
+
+// AnimeSkin is the id of the official 二次元 package; character packs only
+// take effect while it is installed (the panel's character code keys on it).
+const AnimeSkin = "anime"
 
 func builtin(id string) bool {
 	for _, b := range Builtins {

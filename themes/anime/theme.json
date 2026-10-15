@@ -1,0 +1,10 @@
+{
+  "id": "anime",
+  "name": "二次元",
+  "hint": "线路机角色 · 樱花粉",
+  "version": "1.0.0",
+  "author": "TZA",
+  "chrome": { "light": "#fdeef6", "dark": "#150f29" },
+  "swatch": ["#fdeef6", "#ffffff", "#ff4f9a"],
+  "styles": ["anime.css"]
+}

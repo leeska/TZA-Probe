@@ -2,7 +2,7 @@
 # TZA-Probe 的检查与构建流水线（不依赖 GitHub Actions，任意 Linux 机器可跑）：
 #   check  gofmt / go vet / go test（有 gcc 时加 -race）/ web/*.js 语法 /
 #          presentation-test.mjs / 角色包生成器自检（有 Pillow 时）/ 一次性 Server 上的 ui-smoke.mjs
-#   build  构建 linux amd64 / arm64 的 Server（内含两个架构的 Agent）+ 两个发行包与 sha256
+#   build  构建 linux amd64 / arm64 的 Server（内含两个架构的 Agent）+ 两个发行包与 sha256 + 官方主题包 zip
 #   all    check 后 build（默认）
 #
 #   bash scripts/pipeline.sh [check|build|all]
@@ -134,6 +134,8 @@ check_ui_smoke() {
   local t0 rc port=${TZA_UI_PORT:-25874} deps=${TZA_UI_DEPS:-/tmp/tza-ui-deps} i code
   say "ui-smoke.mjs（一次性 Server + jsdom）"
   "$GO" build -o "$TMP/tza-server" ./cmd/server || { note "!! 构建一次性 Server 失败"; FAILED=1; return; }
+  # 复古印刷 / 现代极简 / 二次元是 themes/ 下的官方主题包：打成 zip 交给 ui-smoke 装到一次性 Server 上。
+  "$GO" run ./tools/themepack -out "$TMP/themes" themes/* > "$TMP/themepack.log" 2>&1 || { sed 's/^/   !! /' "$TMP/themepack.log"; FAILED=1; return; }
   mkdir -p "$TMP/data"
   "$TMP/tza-server" init --data "$TMP/data" > "$TMP/credentials" || { FAILED=1; return; }
   "$TMP/tza-server" --listen "127.0.0.1:$port" --data "$TMP/data" --cc-url off > "$TMP/server.log" 2>&1 &
@@ -158,7 +160,7 @@ check_ui_smoke() {
     fi || { tail -5 "$TMP/npm.log" | sed 's/^/   /'; FAILED=1; return; }
   fi
   t0=$(now)
-  TZA_UI_DEPS="$deps" TZA_TEST_URL="http://127.0.0.1:$port" TZA_TEST_ADMIN_FILE="$TMP/data/admin-token" TZA_TEST_CREDENTIALS_FILE="$TMP/credentials" \
+  TZA_UI_DEPS="$deps" TZA_TEST_URL="http://127.0.0.1:$port" TZA_TEST_ADMIN_FILE="$TMP/data/admin-token" TZA_TEST_CREDENTIALS_FILE="$TMP/credentials" TZA_TEST_THEMES="$TMP/themes" \
     "$JS" scripts/ui-smoke.mjs 2>&1 | tail -20 | sed 's/^/   /'
   rc=${PIPESTATUS[0]}
   note "ui-smoke $(dur $t0) rc=$rc"; [ "$rc" = 0 ] || FAILED=1
@@ -216,6 +218,9 @@ run_build() {
     fi
   done
   note "server amd64+arm64 与打包: $(dur $t1)"
+  # 官方主题包（复古印刷 / 现代极简 / 二次元）随发行一起出 zip：发到 TZA-CC 市场用，离线部署也能在后台「主题」里上传。
+  rm -rf "$OUT/themes"
+  "$GO" run ./tools/themepack -out "$OUT/themes" themes/* | sed 's/^/   /' || { FAILED=1; return; }
 
   ( cd "$OUT" && sha256 tza-probe-linux-*.tar.gz > SHA256SUMS )
   echo "$V" > "$OUT/VERSION"

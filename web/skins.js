@@ -1,20 +1,20 @@
-// 外观风格（皮肤）：内置四套（液态玻璃、复古印刷、现代极简、二次元）加上后台上传的主题包。
+// 外观风格（皮肤）：内置的液态玻璃加上已安装的主题包（复古印刷、现代极简、二次元是官方主题包，
+// 从后台「主题」页的市场安装；也可以上传别的主题包）。
 // 明暗（data-theme）仍由 theme.js 决定，风格（data-skin）由这里决定，两者正交：
 // 同一套皮肤在浅色与深色下各有一份令牌。偏好存 localStorage 的 tza-skin，
 // theme-boot.js 在样式表生效前已把 data-skin 写到 <html> 上，避免首屏闪一下默认皮肤。
 //
 // 清单的唯一来源是服务端（internal/theme）：/theme-default.js 把它放在 window.__tzaThemes 上，
-// 后台装 / 删主题包之后由 registerThemes() 换成新清单。没有清单时（jsdom 测试、旧缓存）退回内置四套。
+// 后台装 / 删主题包之后由 registerThemes() 换成新清单。没有清单时（jsdom 测试、旧缓存）只认内置的液态玻璃。
 const KEY = "tza-skin";
 
 const BUILTIN = [
   { id: "glass", name: "液态玻璃", hint: "毛玻璃 · 圆角 · 柔和阴影", builtin: true, chrome: { light: "#edf2fb", dark: "#0f141c" }, swatch: ["#eef3fc", "#ffffff", "#0071e3"] },
-  { id: "press", name: "复古印刷", hint: "纸张方格 · 硬边框 · 衬线标题", builtin: true, chrome: { light: "#f8f1df", dark: "#15120f" }, swatch: ["#f8f1df", "#fffaf0", "#b72f24"] },
-  { id: "shadcn", name: "现代极简", hint: "中性灰 · 发丝描边 · 小圆角", builtin: true, chrome: { light: "#ffffff", dark: "#0a0a0a" }, swatch: ["#f5f5f5", "#ffffff", "#171717"] },
-  { id: "anime", name: "二次元", hint: "线路机角色 · 樱花粉", builtin: true, chrome: { light: "#fdeef6", dark: "#150f29" }, swatch: ["#fdeef6", "#ffffff", "#ff4f9a"] },
 ];
 
 // 角色包（type: "characters"）不是可选的外观，它只给二次元主题添角色（anime-cast.js 读它们）。
+// 二次元主题包的 id，角色只在它装着、并且正在用时出现。
+export const ANIME = "anime";
 const registry = (list) => {
   const skins = Array.isArray(list) ? list.filter((t) => t.type !== "characters") : [];
   return skins.length ? skins : BUILTIN;
@@ -27,6 +27,7 @@ export function registerThemes(list) {
   SKINS = registry(list);
   // 角色匹配（anime-cast.js）现读 window.__tzaThemes，一起换成新清单。
   if (Array.isArray(list)) window.__tzaThemes = list;
+  for (const b of document.querySelectorAll("[data-skin-toggle]")) b.hidden = SKINS.length < 2;
 }
 
 const byId = (id) => SKINS.find((s) => s.id === id);
@@ -114,9 +115,11 @@ const nameOf = (id) => byId(id)?.name || id;
 const inner = (id) => `${ICON}<span>${esc(nameOf(id))}</span>`;
 const title = (id) => `外观风格：${nameOf(id)}，点击选择`;
 
+// 只有一套可选（没装任何主题包）时藏起切换按钮：一个选项的菜单没有意义。按钮照常输出，
+// 后台装 / 删主题包后 registerThemes 只切显隐，不用重画侧栏。
 export function skinButton(cls = "") {
   const id = skinPreference();
-  return `<button type="button" class="skin-toggle theme-toggle ${cls}" data-skin-toggle aria-haspopup="listbox" aria-expanded="false" title="${title(id)}" aria-label="${title(id)}">${inner(id)}</button>`;
+  return `<button type="button" class="skin-toggle theme-toggle ${cls}" data-skin-toggle aria-haspopup="listbox" aria-expanded="false" title="${title(id)}" aria-label="${title(id)}"${SKINS.length < 2 ? " hidden" : ""}>${inner(id)}</button>`;
 }
 
 // 弹出层挂在 body 上：公开页重绘 header、后台换标签页都不会把它一起清掉。

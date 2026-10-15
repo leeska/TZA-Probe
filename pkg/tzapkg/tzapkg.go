@@ -41,7 +41,8 @@ type Colors struct {
 }
 
 // Package types: a skin is a selectable look (stylesheets); a character pack
-// adds characters to the built-in 二次元 skin and is not a skin of its own.
+// adds characters to the 二次元 skin (the official "anime" package) and is not
+// a skin of its own.
 const (
 	TypeSkin       = "skin"
 	TypeCharacters = "characters"
@@ -109,8 +110,9 @@ type Palette struct {
 }
 
 // Reserved are the ids of the skins compiled into the panel; no package may
-// take one.
-var Reserved = []string{"glass", "press", "shadcn", "anime"}
+// take one. Only 液态玻璃 is compiled in; 复古印刷 / 现代极简 / 二次元 are the
+// official packages under themes/ in this repository, installed from the market.
+var Reserved = []string{"glass"}
 
 var (
 	idPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)

@@ -13,7 +13,7 @@
    展开态看板从牌子上沿一直铺到卡片底部（下半身被板盖住、数据一眼看全）；收起态看板缩成一条矮板
    （正好盖住原图那块牌子），板条上方露头/上身、下方露出**同一张图里**的裙摆/腿/鞋，整张图连续无拼接。
    立绘由 app.js 按 web/anime-cast.js 的名单渲染 .anime-cast 与 .anime-hands，
-   图片本体在 web/anime/*.webp（go:embed 进二进制），拆图脚本 scripts/anime-split-layers.py。
+   图片本体在本主题包的 anime/*.webp，拆图脚本 scripts/anime-split-layers.py。
 
    明暗仍走 data-theme，所以这是同一套语言的浅色与深色两份令牌。
    规则顺序：令牌 → 底色 → 材质 → 面 → 控件 → 排版 → 图表 → 弹层 → 角色立绘。
@@ -853,7 +853,7 @@ html[data-skin="anime"] .node-card[data-cast] .anime-plate {
    上一版把立绘沿牌子上下沿**切成两段**（上半身层 / 下半身层）、HTML 看板插在中间——
    人物被切成视觉上不连续的两块，两态切换也乱。整条做法推翻。
 
-   现在只有**一张连成一体的人物图**（web/anime/<id>.webp = 原立绘本身，白牌子留在图上），
+   现在只有**一张连成一体的人物图**（anime/<id>.webp = 原立绘本身，白牌子留在图上），
    层级是「完整人物图 < HTML 看板 < 双手层」，看板是 HTML 画的白板、直接盖在人物图上：
      · 展开态：板顶落在原图牌子的**上外沿**（再往上压 3px 板唇，吃掉牌子那道 1px 描边与呼吸位移），
        板一直铺到卡片底部 → 牌子与她的下半身整段被盖住（数据全部在板内、一眼看全、零滚动）。
@@ -872,7 +872,7 @@ html[data-skin="anime"] .node-card[data-cast] .anime-plate {
    跑在真浏览器里时由 app.js 的 layoutCastCards() 实测板高后写这三个变量；CSS 里每台机给一份
    按板高 461px 算出的近似常量兜底（jsdom / 关 JS 时用）。
    立绘由 app.js 按 web/anime-cast.js 的名单渲染 .anime-cast 与 .anime-hands，
-   图片本体在 web/anime/*.webp（go:embed 进二进制），拆图脚本 scripts/anime-split-layers.py。
+   图片本体在本主题包的 anime/*.webp，拆图脚本 scripts/anime-split-layers.py。
    -------------------------------------------------------------------------- */
 
 /* 人物层：整张立绘（透明底），固定像素高、水平居中、顶部留 12px（让开卡片上圆角）。
@@ -894,7 +894,7 @@ html[data-skin="anime"] .anime-cast {
   pointer-events: none;
 }
 
-/* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是 web/anime/<id>.webp。 */
+/* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是本包的 anime/<id>.webp。 */
 html[data-skin="anime"] .anime-cast[data-cast="jp-nosla-gen2"],
 html[data-skin="anime"] .anime-cast[data-cast="de-nosla-fra"],
 html[data-skin="anime"] .anime-cast[data-cast="us-vmiss-tri"],
@@ -1012,8 +1012,8 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast-pack] {
    scripts/anime-split-layers.py 的 PLATE）；--cast-figure-h / --cast-board-top / --cast-plate-h
    是按板高 461px 推出的一组兜底常量（真浏览器里由 app.js 的 layoutCastCards() 覆盖）。 */
 html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
-  --cast-art-url: url("/anime/jp-nosla-gen2.webp");           /* 人物层：整张立绘，一张连续图 */
-  --cast-hands-url: url("/anime/jp-nosla-gen2-hands.webp");   /* 双手层：压在看板上沿的那双手 */
+  --cast-art-url: url("anime/jp-nosla-gen2.webp");           /* 人物层：整张立绘，一张连续图 */
+  --cast-hands-url: url("anime/jp-nosla-gen2-hands.webp");   /* 双手层：压在看板上沿的那双手 */
   --cast-top-frac: 0.302614;   /* 牌子上外沿 = 463/1530（立绘高 1530） */
   --cast-bot-frac: 0.438562;   /* 牌子下外沿 = 671/1530 */
   --cast-figure-h: 626.63px;   /* 图高 = (461 − 3 − 14) / (1 − 0.302614) */
@@ -1028,15 +1028,15 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
   --cast-accent-rgb: 232, 69, 124;
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(232 69 124 / 0.18) 1.3px, transparent 1.6px);
   --cast-motif-size: 15px 15px;
-  --cast-blink-url: url("/anime/jp-nosla-gen2-blink.webp");   /* 同一个人的闭眼帧 */
+  --cast-blink-url: url("anime/jp-nosla-gen2-blink.webp");   /* 同一个人的闭眼帧 */
   --cast-blink-dur: 5.4s;
   --cast-blink-delay: 0.4s;   /* 四个人错开眨眼（用正的初始延迟，别用负 delay） */
 }
 
 /* DE-NoSla-FRA · 家人云 × 德国：暖白牌面 + 黑红金细竖纹 */
 html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
-  --cast-art-url: url("/anime/de-nosla-fra.webp");
-  --cast-hands-url: url("/anime/de-nosla-fra-hands.webp");
+  --cast-art-url: url("anime/de-nosla-fra.webp");
+  --cast-hands-url: url("anime/de-nosla-fra-hands.webp");
   --cast-top-frac: 0.305062;   /* 牌子上外沿 = 464/1521 */
   --cast-bot-frac: 0.426035;   /* 牌子下外沿 = 648/1521 */
   --cast-figure-h: 628.83px;   /* 图高 = (461 − 3 − 14) / (1 − 0.305062) */
@@ -1051,15 +1051,15 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
   --cast-accent-rgb: 168, 118, 28;
   --cast-motif: repeating-linear-gradient(90deg, rgb(24 24 24 / 0.07) 0 7px, rgb(196 30 58 / 0.08) 7px 14px, rgb(240 190 60 / 0.13) 14px 21px);
   --cast-motif-size: auto;
-  --cast-blink-url: url("/anime/de-nosla-fra-blink.webp");
+  --cast-blink-url: url("anime/de-nosla-fra-blink.webp");
   --cast-blink-dur: 6.4s;
   --cast-blink-delay: 2.1s;
 }
 
 /* US-VMISS-TRI · VMISS × 美国：极淡天蓝牌面 + 蓝色小点（官网的蓝点涂鸦） */
 html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
-  --cast-art-url: url("/anime/us-vmiss-tri.webp");
-  --cast-hands-url: url("/anime/us-vmiss-tri-hands.webp");
+  --cast-art-url: url("anime/us-vmiss-tri.webp");
+  --cast-hands-url: url("anime/us-vmiss-tri-hands.webp");
   --cast-top-frac: 0.295635;   /* 牌子上外沿 = 447/1512 */
   --cast-bot-frac: 0.444444;   /* 牌子下外沿 = 672/1512 */
   --cast-figure-h: 620.42px;   /* 图高 = (461 − 3 − 14) / (1 − 0.295635) */
@@ -1074,15 +1074,15 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
   --cast-accent-rgb: 29, 85, 224;
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(29 85 224 / 0.16) 1.3px, transparent 1.6px);
   --cast-motif-size: 15px 15px;
-  --cast-blink-url: url("/anime/us-vmiss-tri-blink.webp");
+  --cast-blink-url: url("anime/us-vmiss-tri-blink.webp");
   --cast-blink-dur: 4.6s;
   --cast-blink-delay: 3.3s;
 }
 
 /* US-BWH-DC9 · 搬瓦工 × 美国：暖琥珀牌面 + 斜向金线 */
 html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
-  --cast-art-url: url("/anime/us-bwh-dc9.webp");
-  --cast-hands-url: url("/anime/us-bwh-dc9-hands.webp");
+  --cast-art-url: url("anime/us-bwh-dc9.webp");
+  --cast-hands-url: url("anime/us-bwh-dc9-hands.webp");
   --cast-top-frac: 0.298177;   /* 牌子上外沿 = 458/1536 */
   --cast-bot-frac: 0.427083;   /* 牌子下外沿 = 656/1536 */
   --cast-figure-h: 622.65px;   /* 图高 = (461 − 3 − 14) / (1 − 0.298177) */
@@ -1097,7 +1097,7 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-accent-rgb: 176, 113, 10;
   --cast-motif: repeating-linear-gradient(135deg, rgb(200 128 20 / 0.14) 0 5px, transparent 5px 15px);
   --cast-motif-size: auto;
-  --cast-blink-url: url("/anime/us-bwh-dc9-blink.webp");
+  --cast-blink-url: url("anime/us-bwh-dc9-blink.webp");
   --cast-blink-dur: 5.9s;
   --cast-blink-delay: 1.2s;
 }
@@ -1105,8 +1105,8 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
 /* GENERIC · 通用人物：名单以外的线路机共用这一张中性立绘（无任何国家 / 商家元素）。
    冷灰蓝牌面 + 极淡圆点；几何与那四台同一套约定，只是上下沿比例按这张画布实测。 */
 html[data-skin="anime"] .node-card[data-cast="generic"] {
-  --cast-art-url: url("/anime/generic.webp");
-  --cast-hands-url: url("/anime/generic-hands.webp");
+  --cast-art-url: url("anime/generic.webp");
+  --cast-hands-url: url("anime/generic-hands.webp");
   --cast-top-frac: 0.284314;   /* 牌子上外沿 = 435/1530（画布 585×1530） */
   --cast-bot-frac: 0.421569;   /* 牌子下外沿 = 645/1530 */
   --cast-figure-h: 610.60px;   /* 图高 = (461 − 6 − 14) / (1 − 0.284314) */
@@ -1122,7 +1122,7 @@ html[data-skin="anime"] .node-card[data-cast="generic"] {
   --cast-accent-rgb: 232, 62, 140;
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(232 62 140 / 0.16) 1.3px, transparent 1.6px);
   --cast-motif-size: 15px 15px;
-  --cast-blink-url: url("/anime/generic-blink.webp");
+  --cast-blink-url: url("anime/generic-blink.webp");
   --cast-blink-dur: 6.1s;
   --cast-blink-delay: 4.0s;
 }
