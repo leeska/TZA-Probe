@@ -28,6 +28,9 @@ const day = (value) => {
   const at = new Date(value);
   return value && !Number.isNaN(at.getTime()) ? at.toLocaleDateString("zh-CN") : "";
 };
+// 价格以分计；付费包（price > 0）要绑定的 TZA-CC 账号拥有它才能装（owned）。
+const yuan = (cents) => "¥" + (cents / 100).toFixed(2);
+const locked = (it) => it.price > 0 && !it.owned;
 const swatch = (colors) =>
   `<span class="skin-swatch" data-colors="${esc((colors || []).join(","))}" aria-hidden="true"><i></i><i></i><i></i></span>`;
 
@@ -103,7 +106,13 @@ function card(it) {
   // 没有封面或封面取不到（.broken）时露出三格色样，角色包没有色样就写类型。
   const fallback = it.type === "plugin" ? glyph(it.kind) : it.swatch?.length ? swatch(it.swatch) : `<span class="muted">${typeName(it.type)}</span>`;
   const cover = `<span class="market-cover${it.cover ? "" : " broken"}">${it.cover ? `<img data-media src="${esc(media(it.cover))}" alt="" loading="lazy">` : ""}${fallback}</span>`;
-  const badge = it.installed?.source === "market" && updateIds.has(it.id) ? '<span class="pill warn">有更新</span>' : it.installed ? `<span class="pill good">${it.installed.source === "market" ? "已安装" : "已有本地版"}</span>` : "";
+  const badge = it.installed?.source === "market" && updateIds.has(it.id)
+    ? '<span class="pill warn">有更新</span>'
+    : it.installed
+      ? `<span class="pill good">${it.installed.source === "market" ? "已安装" : "已有本地版"}</span>`
+      : it.price > 0
+        ? `<span class="pill${it.owned ? " good" : ""}">${it.owned ? "已拥有" : yuan(it.price)}</span>`
+        : "";
   const meta = [it.type === "plugin" && kindName(it.kind), it.latest && "v" + it.latest, it.author?.name, it.downloads ? `${it.downloads} 次下载` : ""].filter(Boolean);
   return `<button type="button" class="market-card${it.type === "plugin" ? " is-plugin" : ""}" data-package="${esc(it.id)}">${cover}<span class="market-card-body"><span class="market-card-title"><b>${esc(it.name)}</b>${badge}</span><small>${esc(it.summary || "")}</small><span class="market-card-meta">${meta.map((m) => `<span>${esc(m)}</span>`).join("")}</span></span></button>`;
 }
@@ -280,8 +289,10 @@ async function detail(id) {
     const current = have?.source === "market" && have.version === v.version;
     const action = current
       ? '<span class="pill good">已安装</span>'
-      : v.compatible
+      : v.compatible && !locked(p)
         ? `<button type="button" class="quiet" data-install-version="${esc(v.version)}">安装此版本</button>`
+        : v.compatible
+          ? ""
         : `<span class="pill warn" title="需要 Probe ${esc(v.probe)}">不兼容</span>`;
     const meta = [day(v.published_at), v.size ? bytes(v.size) : "", v.probe ? "需要 Probe " + v.probe : ""].filter(Boolean).join(" · ");
     return `<div class="market-version"><div><b>v${esc(v.version)}</b><small>${esc(meta)}</small>${v.changelog ? `<p>${esc(v.changelog)}</p>` : ""}</div>${action}</div>`;
@@ -293,12 +304,17 @@ async function detail(id) {
     else if (have.version === best.version) label = `已安装 v${best.version}`;
     else label = `更新到 v${best.version}`;
   }
-  const disabled = !best || (have?.source === "market" && have.version === best.version);
+  if (best && locked(p)) label = `付费包 ${yuan(p.price)}，账号还没有拥有`;
+  const disabled = !best || locked(p) || (have?.source === "market" && have.version === best.version);
+  // 付费包：没绑定账号的先连接；绑定了但没拥有的去 TZA-CC 用兑换码兑换，回来刷新即可安装。
+  const paid = p.price > 0
+    ? `<p class="${locked(p) ? "warn-text" : "hint"}">${locked(p) ? (status.bound ? `这是付费包（${yuan(p.price)}），你连接的 TZA-CC 账号还没有拥有它。在 TZA-CC 用兑换码兑换到这个账号后，回来重新打开即可安装。` : `这是付费包（${yuan(p.price)}）。先在本页连接 TZA-CC 账号，并在 TZA-CC 用兑换码兑换到这个账号。`) : `付费包 · 你的账号已拥有（${yuan(p.price)}）。`}</p>`
+    : "";
   const meta = [p.id, typeName(p.type), p.author?.name, p.downloads ? `${p.downloads} 次下载` : "", day(p.updated_at) && "更新于 " + day(p.updated_at)].filter(Boolean).join(" · ");
   const plugin = p.type === "plugin";
   const d = modal(
     p.name,
-    `<div class="market-detail">${plugin ? `<p>${glyph(p.kind)}</p>` : ""}${shots.length ? `<div class="market-shots">${shots.map((s) => `<span class="market-shot"><img data-media src="${esc(media(s))}" alt="" loading="lazy"></span>`).join("")}</div>` : p.swatch?.length ? `<p>${swatch(p.swatch)}</p>` : ""}<p class="market-meta">${esc(meta)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">在 TZA-CC 查看</a>` : ""}</p>${p.description ? `<p class="market-desc">${esc(p.description)}</p>` : p.summary ? `<p class="market-desc">${esc(p.summary)}</p>` : ""}${have ? `<p class="hint">本机已有 ${have.version ? "v" + esc(have.version) : ""}（${have.source === "market" ? "市场" : "本地上传"}）。</p>` : ""}${plugin ? `<h3>这个插件能做的事</h3>${permList(p.permissions) || '<p class="muted">市场没有列出。</p>'}` : ""}<h3>版本</h3><div class="market-versions">${versions || '<p class="muted">市场没有列出版本。</p>'}</div><div class="form-footer"><button class="primary" id="market-install" ${disabled ? "disabled" : ""}>${esc(label)}</button></div></div>`,
+    `<div class="market-detail">${plugin ? `<p>${glyph(p.kind)}</p>` : ""}${shots.length ? `<div class="market-shots">${shots.map((s) => `<span class="market-shot"><img data-media src="${esc(media(s))}" alt="" loading="lazy"></span>`).join("")}</div>` : p.swatch?.length ? `<p>${swatch(p.swatch)}</p>` : ""}<p class="market-meta">${esc(meta)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">在 TZA-CC 查看</a>` : ""}</p>${paid}${p.description ? `<p class="market-desc">${esc(p.description)}</p>` : p.summary ? `<p class="market-desc">${esc(p.summary)}</p>` : ""}${have ? `<p class="hint">本机已有 ${have.version ? "v" + esc(have.version) : ""}（${have.source === "market" ? "市场" : "本地上传"}）。</p>` : ""}${plugin ? `<h3>这个插件能做的事</h3>${permList(p.permissions) || '<p class="muted">市场没有列出。</p>'}` : ""}<h3>版本</h3><div class="market-versions">${versions || '<p class="muted">市场没有列出版本。</p>'}</div><div class="form-footer"><button class="primary" id="market-install" ${disabled ? "disabled" : ""}>${esc(label)}</button></div></div>`,
   );
   paint(d);
   const run = async (version, button) => {
