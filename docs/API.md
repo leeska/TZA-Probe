@@ -21,7 +21,7 @@
 | PUT /admin/tasks/{id}/enabled | `{"enabled":true|false}`：恢复 / 暂停 |
 | POST /admin/tasks/{id}/run | 立即安排执行；任务暂停或未绑定节点时 409 |
 | PUT /admin/tasks/bindings | 两种写法，一个事务：`{"task_ids":[…],"node_ids":[…]}` 把所选任务换成同一份节点列表；`{"task_ids":[…],"add":[…],"remove":[…]}` 只增删这几个节点，各任务其余绑定不变（后台批量绑定用这种）。两种混用、或 add 与 remove 都为空时 400 |
-| GET /admin/catalog | 内置离线目标目录 |
+| GET /admin/catalog | 任务目标目录：内置离线目录 `{source, snapshot_date, verification, targets:[{id, family, region, carrier, host, ip, port}]}` 加上已安装的目标集插件——这些目标另带 `plugin` / `plugin_name`，`id` 写成 `plugin:<插件 id>:<目标 id>`，`plugins:[{id, name, count}]` 列出并入了哪些插件。删除插件只影响这里，已建好的任务照常运行 |
 | GET /admin/events?before=&limit=&node_id=&kind=&active= | 告警与发送结果，按 id 倒序分页：`limit` 默认 100、上限 500，`before` 传上一页最后一条的 id 续读，`node_id` / `kind` 筛选；`active=1` 只列正在告警的项目，每项取最近一次事件（MCP `recent_events` 的 `active: true` 同义） |
 | GET、PUT、PATCH /admin/notification | 通知出口：查询渠道状态（不回凭据）、设置 Telegram / Webhook / 关闭；PUT 整份提交，PATCH 只改传了的项 |
 | POST /admin/notification/test | 向已配置的渠道发送测试通知 |
@@ -29,6 +29,12 @@
 | GET、PUT /admin/account | 后台账号：GET 回 `{"username":…,"configured":true}`；PUT 提交 `{"current_password":…,"username":…,"password":…}` 修改用户名与密码（用户名 1–32 个非空白字符，密码 8–128 个字符；当前密码错误 400），成功后除本次以外的浏览器会话全部失效。忘记密码在服务器执行 `tza-server reset-password` |
 | GET、POST、DELETE /admin/mcp-key | MCP API Key：GET 只回 `configured` 与已启用时的 `created_at`；POST 生成或重新生成，回一次性 `api_key`；DELETE 撤销。数据库只保存摘要，旧 Key 在重新生成或撤销后立即失效 |
 | GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
+| GET、POST /admin/themes、DELETE /admin/themes/{id} | 主题包清单（内置 + 已安装，市场装的带 `"source":"market"`）、上传 zip、删除，见 [THEMES.md](THEMES.md#接口) |
+| GET /admin/plugins | 已安装的插件：`[{id, kind, name, hint, version, author, source, permissions, settings, targets}]`，`source` 为 `market` 表示从市场装的；通知插件带设置表单 `settings`（key、label、type、required、secret、help、placeholder、default、options），目标集带目标个数 `targets` |
+| POST /admin/plugins/inspect | 请求体是插件 zip（`Content-Type: application/zip`）：只校验、不安装，回同样的结构（面板据此列出权限请管理员确认）；不合规 400 |
+| POST /admin/plugins | 安装上传的插件 zip，回装好的插件；同 id 替换（之前是市场装的就改为本地）。格式见 [PLUGINS.md](PLUGINS.md) |
+| DELETE /admin/plugins/{id} | 删除插件；正被用作通知渠道时 409（先在配置出口换渠道），没有这个插件 404 |
+| /admin/market/* | TZA-CC 主题市场：目录、详情、安装 / 更新、检查更新、实例绑定、预览图代理，见下文「主题市场」 |
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /agent/report | `{protocol:1,metrics:{...}}` |
 | GET /agent/jobs | 获取有限租约任务：按种类分别领取，最多 8 个 TCP + 1 个回程 + 1 个解锁（Agent 须报 `parallel_jobs` 能力，否则整批最多两个） |
@@ -47,14 +53,32 @@
 - `2026-07-28`（无握手）：每个请求在 `_meta` 里声明版本，并在头部镜像 `MCP-Protocol-Version`、`Mcp-Method`（`tools/call` 还有 `Mcp-Name`，非 ASCII 用 `=?base64?…?=`），三者必须与请求体一致，缺失或不符返回 400 与 `-32020 HeaderMismatch`；版本不认识返回 400 与 `-32022 UnsupportedProtocolVersionError`（`data.supported` 列出支持版本）；方法不认识返回 404 与 `-32601`。结果带 `resultType: "complete"` 与 `_meta["io.modelcontextprotocol/serverInfo"]`，`server/discover` 与 `tools/list` 带 `ttlMs` / `cacheScope`。
 - `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
 
-工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`list_alert_rules`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤）、`task_runs`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`create_alert_rule` / `update_alert_rule`（`rule_id` + 要改的字段，合并语义）/ `delete_alert_rule`、`update_settings`、`test_notification`。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`（`rule_id` 缺失按工具错误返回）、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` / `update_alert_rule` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`billing` 等）按字段合并，列表整份替换；`update_alert_rule` 改了 `scope` 时，新范围用不上的列表没重新提交就清掉（`exclude_node_ids` 在 `all` 与 `group` 之间切换时保留，被排除的节点不会因为换了范围就开始告警）。
+工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`list_alert_rules`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤，含已装目标集插件的目标）、`task_runs`、`list_plugins`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`create_alert_rule` / `update_alert_rule`（`rule_id` + 要改的字段，合并语义）/ `delete_alert_rule`、`update_settings`、`test_notification`；市场：`search_market`（只读）与 `install_market_package`（见 [MCP.md](MCP.md)，市场关闭时不可用）。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`（`rule_id` 缺失按工具错误返回）、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` / `update_alert_rule` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`billing` 等）按字段合并，列表整份替换；`update_alert_rule` 改了 `scope` 时，新范围用不上的列表没重新提交就清掉（`exclude_node_ids` 在 `all` 与 `group` 之间切换时保留，被排除的节点不会因为换了范围就开始告警）。
 `create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（两者另外回面板显示项：延迟色带时间窗 `latency_window_minutes`、访客默认明暗 `default_theme` 与皮肤 `default_skin`）。`update_settings` 只改传了的项：不传 `channel` 沿用当前渠道，Telegram 的 `bot_token` / `chat_id` 留空沿用已存的，只传显示项时不动通知配置；关闭通知须显式传 `channel: "none"`，一项都不传返回 `-32602`；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
+
+## 主题市场（TZA-CC）
+
+Server 默认连官方 TZA-CC（`https://tza.cc`），`--cc-url` / `TZA_CC_URL` 可指向别的 CC，设为 `off` 关闭市场（见 [THEMES.md](THEMES.md#市场tza-cc)）。浏览器只请求下面这些本站路由，目录、预览图、安装包都由 Server 代为获取。市场关闭时 `GET /admin/market/status` 回 `{"configured":false,…}`，其余路由 503 `{"error":"TZA-CC 市场已关闭：…"}`。全部需要管理员登录，写操作同样拒绝跨源请求。
+
+| 方法与路径（/api/v1/admin/market…） | 请求 | 响应 |
+| --- | --- | --- |
+| GET /status | — | `{"configured","url","probe","trusted_keys","bound","instance_id","account","bound_at","other_url","pending":{"user_code","verify_url","expires_at","interval"}}`；`other_url` 表示本机存的是另一个 CC 的绑定（不会发给当前 CC）。从不回 token |
+| GET /catalog?type=skin\|characters\|plugin&q=&page= | `q` ≤ 64 字，`page` 1–1000 | `{"items":[{"id","type","name","summary","author":{"name","handle"},"latest","price","downloads","updated_at","swatch","cover","url","kind","permissions","installed":{"version","source":"market\|local"}}],"page","more"}`；`kind`（notify / targets）与 `permissions`（最新兼容版本能做的事）只有插件有；`installed` 是本机同 id 的包，没装就没有；本机还不支持的类型或插件 kind、id 不合规的条目被滤掉，不在 CC 同源上的 `cover` / `url` 被清空 |
+| GET /packages/{id} | — | 上面的字段加 `description`、`screenshots`（CC 同源 URL）、`versions:[{"version","changelog","probe","size","published_at","compatible"}]`（新的在前；`compatible` 要 CC 的判断与本机按 `probe` 范围的判断都成立） |
+| POST /install | `{"id":"matcha","version":"1.2.0"}`，`version` 省略即当前 Probe 能用的最新版 | `{"id","type","kind","name","version","source":"market","permissions"}`：按包里是 theme.json 还是 plugin.json 装进主题或插件目录（插件另回 `kind` 与 `permissions`）。同 id 的已装包（市场或本地）被替换 |
+| GET /updates | — | `{"updates":[{"id","version","latest"}]}`：市场装的包（主题、角色包与插件）里 CC 认为有兼容新版的；没有市场装的包时不请求 CC |
+| POST /connect | 可选 `{"name":"实例名"}`（≤ 40 字，默认 TZA Probe） | `{"user_code","verify_url","expires_at","interval"}`：开始设备码绑定，设备码本身留在 Server |
+| POST /connect/poll | — | `{"status":"pending\|bound\|expired\|none","account","interval"}`；比 `interval` 更快的轮询直接回 pending、不请求 CC |
+| DELETE /connect | — | 取消进行中的绑定并解绑：通知 CC 撤销 token、删除本机 `cc-instance`。204；CC 没确认时仍删本机凭据，回 200 `{"warning":"…"}` |
+| GET /media?url=<CC 上的图片地址> | 只代理 CC 同源（协议 + 主机 + 端口）的地址 | 图片本身：只放行 png / jpeg / webp / gif / avif（不收 SVG），≤ 5 MB，`Cache-Control: private, max-age=3600`；别的地址 400 |
+
+错误：参数不合规 400；市场里没有这个包 / 版本 404；CC 回 409（如版本需要更新的 Probe、账号实例数已满）原样 409；CC 不可达、CC 其他错误、安装包未通过校验（大小、SHA-256、签名、包内 id / 版本不符）502；市场已关闭或没有信任公钥 503。错误正文都是 `{"error":"<中文说明>"}`，CC 返回的说明以「TZA-CC：」开头。安装最长等 3 分钟（下载 ≤ 20 MB）。
 
 ## 通知渠道
 
 Telegram 消息格式与各类事件字段见 [通知模板说明](NOTIFICATIONS.md)。事件正文保存触发或解除当时的数据快照，重试投递不会用最新指标改写；Webhook 的 JSON 字段结构保持不变，但 `event.message` 是可读文本、格式不承诺稳定，接收端应按 `kind`、`active` 等字段判断。
 
-`GET /admin/notification` 返回当前渠道状态，不返回凭据。`PUT /admin/notification` 支持 Telegram、Webhook 或关闭通知（整份提交，空值即清空；Bot Token 留空保留已存的）；`PATCH /admin/notification` 只改传了的项，与 MCP `update_settings` 的通知部分同一套规则（不传 `channel` 沿用当前渠道，留空的凭据沿用已存的，关闭须显式传 `channel: "none"`，一项都不传返回 400），返回改后的渠道状态；`POST /admin/notification/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项是另一个资源：`GET /admin/panel` 返回生效值（`latency_window_minutes` 未设置时 60 分钟），`PUT /admin/panel` 只改传了的项。两者分开，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
+`GET /admin/notification` 返回当前渠道状态，不返回凭据。`PUT /admin/notification` 支持 Telegram、Webhook、通知插件或关闭通知（整份提交，空值即清空；Bot Token 留空保留已存的）；通知插件写 `{"channel":"plugin","plugin":"ntfy","plugin_settings":{"server":"…","topic":"…","token":"…"}}`，按插件声明的设置校验（必填、格式、`url` 类设置的域名），密钥类设置留空沿用已存的值（同一个插件时）；GET 对插件渠道另回 `plugin`、`plugin_name`、非密钥设置 `plugin_settings` 和 `plugin_secrets`（`{"token":true}` 只说明已保存，从不回值），插件被删或不再有效时回 `plugin_error`。`PATCH /admin/notification` 只改传了的项，与 MCP `update_settings` 的通知部分同一套规则（不传 `channel` 沿用当前渠道，留空的凭据沿用已存的，关闭须显式传 `channel: "none"`，一项都不传返回 400），返回改后的渠道状态；`POST /admin/notification/test` 发送测试通知。Telegram Token 只写入服务端，界面不回显，告警、恢复和重试共用同一事件队列。面板显示项是另一个资源：`GET /admin/panel` 返回生效值（`latency_window_minutes` 未设置时 60 分钟），`PUT /admin/panel` 只改传了的项。两者分开，避免「通知那套空值即清空」的语义顺手把 Webhook 或 Token 抹掉。
 
 HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：冲突，`error` 写明是哪一种（如报告过频、租约失效、重复结果、计费周期已变化、任务暂停或未绑定节点时立即执行）；400：无效输入；500：内部错误（详细内容仅记录服务日志）。错误正文统一为 `{"error":"<中文说明>"}`。成功变更通常返回 204；创建节点/轮换令牌返回 200 JSON。
 

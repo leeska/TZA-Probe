@@ -136,17 +136,29 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
   const families = new Set(
     probe.targets.length ? probe.targets.map((x) => x.family) : ["ipv4", "ipv6"],
   );
+  // 目录 = 内置目录 + 已安装的目标集插件（带 plugin / plugin_name）。插件的目标单独成组、
+  // 组名后标出插件名，不与内置目录同名的地区 / 运营商混在一起。
   const groups = new Map();
+  const sources = new Map();
   for (const x of catalog.targets) {
-    const key = x.region + " / " + x.carrier;
+    const key = x.region + " / " + x.carrier + (x.plugin ? " · " + x.plugin_name : "");
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(target(x));
+    if (x.plugin) sources.set(key, x.plugin_name);
   }
+  // 已有任务的目标不记来源：按地址回到它所在的那一组（内置或插件），找不到才算自定义目标。
+  const groupOf = (x) => {
+    const key = x.region + " / " + x.carrier;
+    const same = (y) => y.host === x.host && y.port === x.port && y.family === x.family;
+    if (groups.get(key)?.some(same)) return key;
+    for (const [k, xs] of groups) if (sources.has(k) && xs[0].region === x.region && xs[0].carrier === x.carrier && xs.some(same)) return k;
+    return key;
+  };
   // 每组目标记录自己的 IP 协议：all 是该组可用地址，families 是本任务实际要测的协议；
   // checks 是这组要跑的检测项（延迟 / 回程），只能在任务的检测内容里收窄。
   const selected = new Map();
   for (const x of probe.targets) {
-    const key = x.region + " / " + x.carrier;
+    const key = groupOf(x);
     const pool = groups.get(key) || presets.get(key);
     const matching = pool?.some(
       (y) => y.host === x.host && y.port === x.port && y.family === x.family,
@@ -213,7 +225,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
         <div id="selected-targets" class="selected-targets"></div>
         <div id="batch-checks" class="batch-checks" hidden></div>
         <div class="segmented target-tabs" role="tablist">${[
-          ["catalog", "国内三网"],
+          ["catalog", catalog.plugins?.length ? "国内三网 + 目标集" : "国内三网"],
           ["preset", "常用海外"],
           ["custom", "自定义"],
         ]
@@ -413,7 +425,7 @@ export function taskEditor(existing, catalog, nodes, onSaved) {
       visible
         .map(
           ([key, xs]) =>
-            `<label class="catalog-option"><input type="checkbox" data-target="${esc(key)}" ${selected.has(key) ? "checked" : ""}><span><strong>${esc(key)}</strong><small>${xs.map((x) => (x.family === "ipv4" ? "IPv4" : "IPv6")).join(" · ")}</small></span></label>`,
+            `<label class="catalog-option"><input type="checkbox" data-target="${esc(key)}" ${selected.has(key) ? "checked" : ""}><span><strong>${esc(key)}</strong><small>${xs.length > 2 ? `${xs.length} 个地址 · ${[...new Set(xs.map((x) => (x.family === "ipv4" ? "IPv4" : "IPv6")))].join(" / ")}` : xs.map((x) => (x.family === "ipv4" ? "IPv4" : "IPv6")).join(" · ")}${sources.has(key) ? ` · 来自插件「${esc(sources.get(key))}」` : ""}</small></span></label>`,
         )
         .join("") ||
       '<p class="hint">没有匹配目标，可清除筛选或添加自定义目标。</p>';

@@ -221,25 +221,29 @@ export async function renderAlerts(nodesReady) {
   // 只重读规则的话，MCP 那边刚改过的规则会显示成生效 0 台，直到手动刷新。
   const rulesView = state.alertView === "rules";
   const eventsView = state.alertView === "events";
-  const [settings, firing, rules, events] = await Promise.all([
+  const [settings, firing, rules, events, , plugins] = await Promise.all([
     api("/admin/notification"),
     api("/admin/events?active=1&limit=500"),
     rulesView ? api("/admin/alert-rules") : [],
     eventsView ? api(eventsURL()) : [],
     nodesReady || (rulesView ? loadNodes() : null),
+    api("/admin/plugins").catch(() => []),
   ]);
   const configured = settings.channel !== "none";
   const channelName = settings.telegram_configured
     ? "Telegram 机器人"
     : settings.webhook_configured
       ? "Webhook"
-      : "尚未配置";
+      : settings.plugin_configured
+        ? `${settings.plugin_name || settings.plugin}（插件）`
+        : "尚未配置";
+  notifyPlugins = (plugins || []).filter((p) => p.kind === "notify");
   const views = ALERT_VIEWS.map(([id, label]) => `<button type="button" data-alert-view="${id}" class="${state.alertView === id ? "active" : ""}" aria-pressed="${state.alertView === id}">${label}${id === "active" && firing.length ? ` <b class="count-badge">${firing.length}</b>` : ""}</button>`).join("");
   const heading = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>正在告警的项目、事件记录、通知渠道与每台节点的提醒规则。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><div class="segmented alert-views" role="group" aria-label="告警页内容">${views}</div>`;
   let body = "";
   if (state.alertView === "active") {
     // 没配通知渠道时在这里也提一句：正在告警却没人收到，比没有告警更该知道。
-    const warn = configured ? "" : `<div class="notice"><strong>通知渠道尚未配置</strong><span>下面的告警不会发到任何地方。到「提醒规则」页配置 Telegram 或 Webhook。</span></div>`;
+    const warn = configured ? "" : `<div class="notice"><strong>通知渠道尚未配置</strong><span>下面的告警不会发到任何地方。到「提醒规则」页配置 Telegram、Webhook 或已安装的通知插件。</span></div>`;
     body = `${warn}<section class="panel"><div class="panel-head"><h3>正在告警</h3><span class="muted">每项显示最近一次触发或重复提醒</span></div>${eventTable(eventRows(firing, configured), "当前没有正在告警的项目。")}</section>`;
   } else if (eventsView) {
     const filtered = eventFilter.node_id || eventFilter.kind;
@@ -247,7 +251,7 @@ export async function renderAlerts(nodesReady) {
     const kindOptions = [["", "全部类型"], ...Object.entries(kindName).filter(([k]) => k !== "test")];
     body = `<section class="panel"><div class="panel-head"><h3>事件记录</h3><span class="muted">保存 90 天 · 每次加载 ${EVENT_PAGE} 条</span></div><div class="catalog-filters event-filters"><label>节点<select id="event-node"><option value="">全部节点</option>${nodeOptions.filter(([v]) => v).map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.node_id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label><label>类型<select id="event-kind">${kindOptions.map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.kind ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div>${eventTable(eventRows(events, configured), filtered ? "没有符合筛选条件的事件。" : "暂无事件。提醒规则在「提醒规则」页开启。")}<div class="catalog-toolbar event-more"><button id="more-events" class="quiet" ${events.length < EVENT_PAGE ? "hidden" : ""}>加载更多</button></div></section>`;
   } else {
-    body = `<section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人或 Webhook，发送告警触发与恢复通知。</p><small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置渠道</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel(rules)}${overviewPanel()}`;
+    body = `<section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人、Webhook 或已安装的通知插件（飞书、钉钉、ntfy 等，在「市场」安装），发送告警触发与恢复通知。</p>${settings.plugin_error ? `<p class="warn-text">${esc(settings.plugin_error)}，通知暂时发不出去；请重新配置渠道。</p>` : ""}<small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置渠道</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel(rules)}${overviewPanel()}`;
   }
   content().innerHTML = heading + body;
   content().querySelectorAll("[data-alert-view]").forEach(
@@ -281,6 +285,37 @@ function wireEvents(events, configured) {
       await renderAlerts();
     });
 }
+// 已安装的通知插件（/admin/plugins 里 kind 为 notify 的），配置出口的渠道下拉与插件表单用。
+let notifyPlugins = [];
+
+// 通知插件的设置表单：按插件声明的 settings 逐项画。密钥从不回显，已保存的写「已保存，留空沿用」；
+// 非密钥项填当前值，没有就用插件给的默认值。
+function pluginFields(plugin, current) {
+  const values = current?.plugin_settings || {};
+  const stored = current?.plugin_secrets || {};
+  const fields = (plugin.settings || []).map((item) => {
+    const name = "ps_" + item.key;
+    const secret = item.secret || item.type === "secret";
+    const kept = secret && stored[item.key];
+    const required = item.required && !kept ? " required" : "";
+    const label = `<span>${esc(item.label)}${item.required ? "" : '<span class="muted">（选填）</span>'}</span>`;
+    const help = item.help ? `<small class="field-help">${esc(item.help)}</small>` : "";
+    let control;
+    if (item.type === "select") {
+      const now = values[item.key] ?? item.default ?? "";
+      control = `<select name="${name}"${required}>${item.required ? "" : '<option value="">不设置</option>'}${(item.options || []).map((o) => `<option value="${esc(o.value)}"${o.value === now ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select>`;
+    } else if (secret) {
+      control = `<input name="${name}" type="password" autocomplete="new-password" placeholder="${esc(kept ? "已保存，留空沿用" : item.placeholder || "")}"${required}>`;
+    } else {
+      const value = values[item.key] ?? item.default ?? "";
+      control = `<input name="${name}" type="${item.type === "url" ? "url" : "text"}" value="${esc(value)}" placeholder="${esc(item.placeholder || "")}" autocomplete="off" spellcheck="false"${required}>`;
+    }
+    return `<label>${label}${control}${help}</label>`;
+  }).join("");
+  const perms = (plugin.permissions || []).map((x) => `<li>${esc(x)}</li>`).join("");
+  return `${fields || '<p class="hint">这个插件不需要设置。</p>'}<p class="hint">${esc(plugin.hint || plugin.name)}${plugin.version ? ` · v${esc(plugin.version)}` : ""}${plugin.source === "market" ? " · 市场" : " · 本地上传"}</p>${perms ? `<ul class="plugin-perms">${perms}</ul>` : ""}`;
+}
+
 function wireRules(settings, configured, rules) {
   wireRulesPanel(rules);
   content().querySelector("#test-webhook").onclick = guard(async () => {
@@ -291,20 +326,33 @@ function wireRules(settings, configured, rules) {
     const d = modal(
       "配置通知渠道",
       `<form id="notification-form">
-      <label>通知渠道<select name="channel"><option value="telegram">Telegram 机器人</option><option value="webhook">Webhook</option><option value="none">关闭通知</option></select></label>
+      <label>通知渠道<select name="channel"><option value="telegram">Telegram 机器人</option><option value="webhook">Webhook</option>${notifyPlugins.map((p) => `<option value="plugin:${esc(p.id)}">${esc(p.name)}（插件）</option>`).join("")}<option value="none">关闭通知</option></select></label>
       <div id="telegram-fields" class="form-section"><label>Bot Token<input name="bot_token" type="password" autocomplete="new-password" placeholder="${settings.telegram_configured ? "留空保留当前 Token" : "从 @BotFather 获取"}"></label><label>Chat ID<input name="chat_id" value="${esc(settings.chat_id || "")}" placeholder="个人 / 群组数字 ID，或 @频道名" autocomplete="off"></label>
       <p class="hint">在 Telegram 中通过 @BotFather 创建机器人。私聊接收需先向机器人发送 /start；群组需先加入机器人，频道需授予发消息权限。填写目标会话的 Chat ID 后保存，再点击“发送测试”。</p></div>
       <div id="webhook-fields" class="form-section"><label>Webhook 地址<input name="webhook" type="url" placeholder="https://your-notifier.example/webhook" autocomplete="off"></label></div>
+      <div id="plugin-fields" class="form-section"></div>
       <p class="hint">同一时间使用一个通知渠道。凭据仅保存在服务端，不会回显。重新开启后会继续投递尚未发送的历史事件。</p>
       <div class="form-footer"><button class="primary" type="submit">保存</button></div></form>`,
     );
     const form = d.querySelector("form");
-    form.elements.channel.value = configured ? settings.channel : "telegram";
+    const current = settings.channel === "plugin" ? "plugin:" + settings.plugin : settings.channel;
+    form.elements.channel.value = configured && [...form.elements.channel.options].some((o) => o.value === current) ? current : "telegram";
     const updateChannel = () => {
       const telegram = form.elements.channel.value === "telegram";
       const webhook = form.elements.channel.value === "webhook";
+      const plugin = notifyPlugins.find((p) => "plugin:" + p.id === form.elements.channel.value);
       d.querySelector("#telegram-fields").hidden = !telegram;
       d.querySelector("#webhook-fields").hidden = !webhook;
+      const box = d.querySelector("#plugin-fields");
+      box.hidden = !plugin;
+      // 插件的表单按它的 settings 画：只在换了插件时重画，免得改了一半的输入被清掉。
+      if (plugin && box.dataset.plugin !== plugin.id) {
+        box.dataset.plugin = plugin.id;
+        box.innerHTML = pluginFields(plugin, settings.plugin === plugin.id ? settings : null);
+      } else if (!plugin) {
+        box.dataset.plugin = "";
+        box.innerHTML = "";
+      }
       form.elements.chat_id.required = telegram;
       form.elements.bot_token.required =
         telegram && !settings.telegram_configured;
@@ -316,6 +364,16 @@ function wireRules(settings, configured, rules) {
     form.onsubmit = guard(async (e) => {
       e.preventDefault();
       const f = new FormData(form);
+      const plugin = notifyPlugins.find((p) => "plugin:" + p.id === f.get("channel"));
+      if (plugin) {
+        const values = {};
+        for (const item of plugin.settings || []) values[item.key] = String(f.get("ps_" + item.key) ?? "").trim();
+        await send("/admin/notification", "PUT", { channel: "plugin", plugin: plugin.id, plugin_settings: values });
+        d.close();
+        await renderAlerts();
+        toast(`通知配置已保存：${plugin.name}`);
+        return;
+      }
       await send("/admin/notification", "PUT", {
         channel: f.get("channel"),
         bot_token:

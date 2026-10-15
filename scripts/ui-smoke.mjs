@@ -1158,6 +1158,15 @@ $("#confirm-mcp").click();
 await until(() => !$("#revoke-mcp-key"), "revoke MCP key");
 assert.equal((await mcpCall(secondMCPKey)).status, 401);
 
+// 市场页：一次性 Server 用 --cc-url off 关掉了市场（不连官方 CC），页面写明怎么打开，市场接口 503，已安装列表照常出来。
+$('[data-tab="market"]').click();
+await until(() => $(".market-off"), "market page without TZA-CC");
+assert.equal($("#breadcrumb").textContent, "市场");
+assert($(".market-off").textContent.includes("--cc-url"), "未配置时要说明怎么配");
+assert($(".theme-panel"), "未配置时已安装列表照常显示");
+assert.equal((await fetch(base + "/api/v1/admin/market/catalog", { headers: adminHeaders })).status, 503);
+assert.equal((await (await fetch(base + "/api/v1/admin/market/status", { headers: adminHeaders })).json()).configured, false);
+
 $("#logout").click();
 await until(() => $("#login"), "logout");
 assert.equal(

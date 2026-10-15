@@ -1,0 +1,34 @@
+{
+  "id": "dingtalk",
+  "type": "plugin",
+  "kind": "notify",
+  "name": "钉钉机器人",
+  "hint": "群自定义机器人，支持加签与自定义关键词",
+  "version": "1.0.0",
+  "author": "TZA",
+  "notify": {
+    "hosts": ["oapi.dingtalk.com"],
+    "settings": [
+      { "key": "webhook", "label": "Webhook 地址", "type": "url", "required": true, "secret": true,
+        "placeholder": "https://oapi.dingtalk.com/robot/send?access_token=…",
+        "pattern": "https://oapi\\.dingtalk\\.com/robot/send\\?access_token=[A-Za-z0-9]+" },
+      { "key": "secret", "label": "加签密钥", "type": "secret", "placeholder": "SEC…", "help": "安全设置选了「加签」时填写" },
+      { "key": "keyword", "label": "自定义关键词", "type": "text", "help": "安全设置选了「自定义关键词」时填写其中一个，会加在消息开头" }
+    ],
+    "computed": [
+      { "name": "ts", "value": "{{now.unix_ms}}" },
+      { "name": "sign", "hmac_sha256": { "key": "{{settings.secret}}", "message": "{{computed.ts}}\n{{settings.secret}}" }, "when": "settings.secret" },
+      { "name": "sign_query", "value": "&timestamp={{computed.ts}}&sign={{computed.sign|urlencode}}", "when": "settings.secret" },
+      { "name": "prefix", "value": "{{settings.keyword}}\n", "when": "settings.keyword" }
+    ],
+    "request": {
+      "method": "POST",
+      "url": "{{settings.webhook}}{{computed.sign_query}}",
+      "body": {
+        "msgtype": "text",
+        "text": { "content": "{{computed.prefix}}{{event.text|truncate:4000}}" }
+      }
+    },
+    "success": { "json": { "path": "errcode", "equals": 0 } }
+  }
+}

@@ -3016,12 +3016,16 @@ pre,
   .sidebar-bottom small {
     display: none;
   }
-  /* 四个入口排成 2 × 2：一行排四个时每格只剩 ~80px，「告警与通知」会被拆成一字一行。 */
+  /* 入口排成两列：一行排四五个时每格只剩 ~80px，「告警与通知」会被拆成一字一行。
+     五个入口时最后一个独占一行，不在右边留个空格。 */
   .sidebar nav {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
     gap: 4px;
+  }
+  .sidebar nav button:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
   .sidebar nav button {
     justify-content: center;
@@ -4258,4 +4262,372 @@ td .due.expired + small {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--glass-bg-subtle);
+}
+
+/* ==========================================================================
+   市场（admin-market.js）：TZA-CC 的主题包与角色包。卡片网格自动换列，手机上一列；
+   封面图走本站的 /api/v1/admin/market/media 代理，没有封面时画三格色样。
+   ========================================================================== */
+/* 不用 .panel-head：那里的 button 规则会把分段按钮画成一枚枚推钮。 */
+.market-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.market-search {
+  display: flex;
+  gap: 8px;
+  flex: 0 1 340px;
+  min-width: 0;
+}
+
+.market-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  padding: 18px 24px 22px;
+}
+
+/* 「加载更多」在时，网格下沿的留白交给它。 */
+.market-grid:has(+ .event-more:not(:has(> [hidden]))) {
+  padding-bottom: 4px;
+}
+
+.market-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  text-align: left;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.market-card:hover,
+.market-card:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+.market-card:active {
+  transform: scale(0.99);
+}
+
+.market-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  background: var(--glass-bg-subtle);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.market-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.market-cover > :not(img),
+.market-cover.broken img,
+.market-shot.broken {
+  display: none;
+}
+
+.market-cover.broken > :not(img) {
+  display: inline-flex;
+}
+
+.market-cover .skin-swatch {
+  width: 96px;
+  height: 52px;
+  border-radius: 10px;
+}
+
+.market-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 14px;
+  min-width: 0;
+}
+
+.market-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.market-card-title b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.market-card-body small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  min-height: 1.45em;
+  overflow-wrap: anywhere;
+}
+
+.market-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--subtle, var(--muted));
+  font-size: 11px;
+}
+
+.market-empty {
+  margin: 0;
+  padding: 28px 24px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.market-panel.is-loading {
+  opacity: 0.6;
+}
+
+.market-connect .warn-text,
+.market-empty.warn-text {
+  color: var(--orange);
+}
+
+.market-code {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px dashed rgba(var(--accent-rgb), 0.5);
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  user-select: all;
+}
+
+.market-meta a,
+.market-connect a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.market-detail h3 {
+  font-size: 14px;
+  font-weight: 650;
+  margin: 18px 0 10px;
+}
+
+.market-shots {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+}
+
+.market-shot {
+  flex: 0 0 auto;
+  width: min(360px, 80%);
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--glass-bg-subtle);
+}
+
+.market-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.market-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+
+.market-desc {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.market-versions {
+  display: grid;
+  gap: 8px;
+}
+
+.market-version {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.market-version > div {
+  min-width: 0;
+}
+
+.market-version small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.market-version p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+.market-version button {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+@media (max-width: 760px) {
+  .market-toolbar {
+    padding: 14px 16px;
+  }
+  .market-toolbar .segmented,
+  .market-search {
+    flex: 1 1 100%;
+  }
+  .market-grid {
+    grid-template-columns: 1fr;
+    padding: 14px 16px 16px;
+  }
+  .market-cover {
+    aspect-ratio: 5 / 2;
+  }
+}
+
+/* ==========================================================================
+   插件（docs/PLUGINS.md）：配置出口里按插件 settings 画出的表单、权限清单、列表与卡片里的类型牌。
+   ========================================================================== */
+#plugin-fields {
+  display: grid;
+  gap: 14px;
+}
+
+#plugin-fields .hint {
+  margin-top: 0;
+}
+
+.field-help {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+label .muted {
+  font-weight: 400;
+}
+
+.plugin-perms {
+  margin: 0 0 6px;
+  padding-left: 20px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.webhook-panel .warn-text {
+  color: var(--orange);
+}
+
+.plugin-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  border-radius: 8px;
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.market-cover.broken > .plugin-glyph {
+  min-width: 96px;
+  height: 44px;
+  font-size: 14px;
+  border-radius: 12px;
+}
+
+/* 插件卡片没有封面图：类型牌占一条矮横幅就够，不撑成 16:9 的空白。 */
+.market-card.is-plugin .market-cover {
+  aspect-ratio: auto;
+  height: 64px;
+}
+
+.market-card.is-plugin .market-cover.broken > .plugin-glyph {
+  min-width: 72px;
+  height: 32px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+/* 已安装列表（市场页与面板设置 → 主题共用）：窄屏上名称独占一行，标签与按钮折到下一行，
+   不把名字挤成一字一行；标题行的「上传」按钮也跟着折行。 */
+@media (max-width: 760px) {
+  .theme-panel .panel-head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .theme-panel .panel-actions {
+    margin-left: auto;
+  }
+  .theme-list {
+    margin: 4px 16px 10px;
+  }
+  .theme-panel > .hint {
+    margin: 0 16px 18px;
+  }
+  .theme-row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .theme-row .theme-copy {
+    flex: 1 1 calc(100% - 70px);
+  }
+  .theme-row .theme-copy small {
+    overflow-wrap: anywhere;
+  }
 }

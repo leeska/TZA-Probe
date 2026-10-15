@@ -58,6 +58,9 @@ func (g *gzipResponse) Write(b []byte) (int, error) {
 	return g.ResponseWriter.Write(b)
 }
 
+// Unwrap lets http.ResponseController reach the connection (deadlines).
+func (g *gzipResponse) Unwrap() http.ResponseWriter { return g.ResponseWriter }
+
 func (g *gzipResponse) close() {
 	if g.zw != nil {
 		g.zw.Close()

@@ -1,0 +1,22 @@
+{
+  "id": "public-dns",
+  "type": "plugin",
+  "kind": "targets",
+  "name": "公共 DNS",
+  "hint": "常用公共 DNS 的 TCP 53 端口，IPv4 与 IPv6",
+  "version": "1.0.0",
+  "author": "TZA",
+  "targets": [
+    { "id": "cloudflare-v4", "family": "ipv4", "region": "公共 DNS", "carrier": "其他", "host": "1.1.1.1", "port": 53 },
+    { "id": "cloudflare-v6", "family": "ipv6", "region": "公共 DNS", "carrier": "其他", "host": "2606:4700:4700::1111", "port": 53 },
+    { "id": "google-v4", "family": "ipv4", "region": "公共 DNS", "carrier": "其他", "host": "8.8.8.8", "port": 53 },
+    { "id": "google-v6", "family": "ipv6", "region": "公共 DNS", "carrier": "其他", "host": "2001:4860:4860::8888", "port": 53 },
+    { "id": "quad9-v4", "family": "ipv4", "region": "公共 DNS", "carrier": "其他", "host": "9.9.9.9", "port": 53 },
+    { "id": "quad9-v6", "family": "ipv6", "region": "公共 DNS", "carrier": "其他", "host": "2620:fe::fe", "port": 53 },
+    { "id": "alidns-v4", "family": "ipv4", "region": "公共 DNS", "carrier": "其他", "host": "223.5.5.5", "port": 53 },
+    { "id": "alidns-v6", "family": "ipv6", "region": "公共 DNS", "carrier": "其他", "host": "2400:3200::1", "port": 53 },
+    { "id": "dnspod-v4", "family": "ipv4", "region": "公共 DNS", "carrier": "其他", "host": "119.29.29.29", "port": 53 },
+    { "id": "dnspod-v6", "family": "ipv6", "region": "公共 DNS", "carrier": "其他", "host": "2402:4e00::", "port": 53 },
+    { "id": "114dns-v4", "family": "ipv4", "region": "公共 DNS", "carrier": "其他", "host": "114.114.114.114", "port": 53 }
+  ]
+}

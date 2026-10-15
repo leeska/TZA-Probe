@@ -216,3 +216,54 @@ func TestCharacterPack(t *testing.T) {
 		}
 	}
 }
+
+// 市场装的包记得来源（版本与摘要，存在不对外发的 .market/ 里）；本地再传同一个 id 就忘掉它，
+// 删除时一并删掉。
+func TestMarketOrigin(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	archive := pack(t, file{name: "theme.json", body: manifest}, file{name: "theme.css", body: "a{}"})
+	if _, err := s.InstallMarket(archive, Origin{}); err == nil {
+		t.Fatal("a market install needs its release")
+	}
+	m, err := s.InstallMarket(archive, Origin{Version: "1.0.0", SHA256: strings.Repeat("a", 64), KeyID: "cc"})
+	if err != nil || m.Source != SourceMarket {
+		t.Fatalf("market install: %+v %v", m, err)
+	}
+	if o, ok := s.Origin("matcha"); !ok || o.Version != "1.0.0" || o.KeyID != "cc" {
+		t.Fatalf("origin: %+v %v", o, ok)
+	}
+	if list := s.Installed(); len(list) != 1 || list[0].Source != SourceMarket {
+		t.Fatalf("installed: %+v", list)
+	}
+	// The record is not reachable over HTTP, by id or as a dot file inside a package.
+	serve := func(path string) int {
+		mux := http.NewServeMux()
+		mux.Handle("GET /themes/{id}/{file...}", s)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w.Code
+	}
+	os.WriteFile(filepath.Join(s.Dir, "matcha", ".secret.json"), []byte("{}"), 0o644)
+	for _, path := range []string{"/themes/.market/matcha.json", "/themes/matcha/.secret.json", "/themes/matcha/sub/.x.css"} {
+		if code := serve(path); code != 404 {
+			t.Fatalf("%s: %d", path, code)
+		}
+	}
+	if code := serve("/themes/matcha/theme.css"); code != 200 {
+		t.Fatalf("theme.css: %d", code)
+	}
+
+	if m, err := s.Install(archive); err != nil || m.Source != "" {
+		t.Fatalf("local upload: %+v %v", m, err)
+	}
+	if _, ok := s.Origin("matcha"); ok {
+		t.Fatal("local upload kept the market origin")
+	}
+	s.InstallMarket(archive, Origin{Version: "1.0.0", SHA256: "x"})
+	if err := s.Remove("matcha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, ".market", "matcha.json")); !os.IsNotExist(err) {
+		t.Fatal("remove left the market record")
+	}
+}

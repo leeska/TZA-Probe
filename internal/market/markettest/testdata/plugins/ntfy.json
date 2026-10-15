@@ -1,0 +1,36 @@
+{
+  "id": "ntfy",
+  "type": "plugin",
+  "kind": "notify",
+  "name": "ntfy",
+  "hint": "开源推送服务，支持 ntfy.sh 与自建服务器、访问令牌",
+  "version": "1.0.0",
+  "author": "TZA",
+  "notify": {
+    "hosts": ["*"],
+    "settings": [
+      { "key": "server", "label": "服务器地址", "type": "url", "required": true, "default": "https://ntfy.sh",
+        "pattern": "https?://[^/\\s?#]+/?", "help": "只填服务器根地址，如 https://ntfy.sh 或自建服务器的地址" },
+      { "key": "topic", "label": "主题（topic）", "type": "text", "required": true, "pattern": "[-_A-Za-z0-9]{1,64}",
+        "help": "ntfy.sh 上的主题任何人都能订阅，请用不易猜到的名字" },
+      { "key": "token", "label": "访问令牌", "type": "secret", "placeholder": "tk_…", "help": "主题设了访问控制时填写" }
+    ],
+    "computed": [
+      { "name": "auth", "value": "Bearer {{settings.token}}", "when": "settings.token" },
+      { "name": "tag", "value": "white_check_mark" },
+      { "name": "tag", "value": "rotating_light", "when": "event.urgent" }
+    ],
+    "request": {
+      "method": "POST",
+      "url": "{{settings.server}}",
+      "headers": { "Authorization?": "{{computed.auth}}" },
+      "body": {
+        "topic": "{{settings.topic}}",
+        "title": "{{event.title|truncate:200}}",
+        "message": "{{event.message|truncate:3000}}",
+        "priority": "{{event.priority|number}}",
+        "tags": ["{{computed.tag}}"]
+      }
+    }
+  }
+}

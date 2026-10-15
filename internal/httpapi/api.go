@@ -20,9 +20,11 @@ import (
 
 	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
+	"github.com/leeska/TZA-Probe/internal/market"
 	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/plugin"
 	"github.com/leeska/TZA-Probe/internal/service"
 	"github.com/leeska/TZA-Probe/internal/theme"
 )
@@ -46,6 +48,8 @@ type API struct {
 	Assets        http.Handler
 	Agents        *agentdist.Dist // nil disables /install.sh and /dl/
 	Themes        *theme.Store    // uploaded theme packages; nil means built-in skins only
+	Market        *market.Client  // TZA-CC client; nil means no market (routes answer 503)
+	Plugins       *plugin.Store   // installed declarative plugins; nil means none
 	mu            sync.Mutex
 	sessions      map[string]time.Time
 	loginWindow   time.Time
@@ -106,7 +110,7 @@ func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) 
 
 func (a *API) Handler() http.Handler {
 	a.sessions = map[string]time.Time{}
-	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier, Themes: a.Themes}
+	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier, Themes: a.Themes, Plugins: a.Plugins}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, map[string]any{"version": model.Version, "protocol": model.Protocol})
@@ -195,8 +199,12 @@ func (a *API) Handler() http.Handler {
 	})
 	// MCP uses an independent, revocable API key managed in the panel.
 	a.mcpKeyRoutes(mux)
-	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier, Themes: a.Themes}
-	mux.HandleFunc("POST /mcp", a.mcpAuth(probe.ServeHTTP))
+	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier, Themes: a.Themes, Market: a.Market, Plugins: a.Plugins}
+	mux.HandleFunc("POST /mcp", a.mcpAuth(func(w http.ResponseWriter, r *http.Request) {
+		// install_market_package downloads from TZA-CC and can outlast the 30-second WriteTimeout.
+		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(installDeadline))
+		probe.ServeHTTP(w, r)
+	}))
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		// The modern revision dropped the standalone SSE stream (GET) and
 		// session termination (DELETE), so both answer 405.

@@ -1,0 +1,31 @@
+{
+  "id": "gotify",
+  "type": "plugin",
+  "kind": "notify",
+  "name": "Gotify",
+  "hint": "自建推送服务",
+  "version": "1.0.0",
+  "author": "TZA",
+  "notify": {
+    "hosts": ["*"],
+    "settings": [
+      { "key": "server", "label": "服务器地址", "type": "url", "required": true, "pattern": "https?://[^\\s?#]*[^/\\s?#]",
+        "help": "Gotify 服务器地址，不带末尾斜杠" },
+      { "key": "token", "label": "应用 Token", "type": "secret", "required": true }
+    ],
+    "computed": [
+      { "name": "priority", "value": "4" },
+      { "name": "priority", "value": "8", "when": "event.urgent" }
+    ],
+    "request": {
+      "method": "POST",
+      "url": "{{settings.server}}/message",
+      "headers": { "X-Gotify-Key": "{{settings.token}}" },
+      "body": {
+        "title": "{{event.title}}",
+        "message": "{{event.message}}",
+        "priority": "{{computed.priority|number}}"
+      }
+    }
+  }
+}
