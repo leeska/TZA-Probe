@@ -331,19 +331,13 @@ input[type="checkbox"] {
   padding: 0 32px;
 }
 
-/* Hero Section：一行标语 + 右侧「最近同步」。以前是眉题 + 40px 大标题 + 说明三行，在
-   1440×900 上占掉首屏约四分之一，节点卡片被压到下半屏；现在只留一行，首屏让给数据。 */
+/* Hero Section：只有右侧一条「最近同步」。以前左边还有一行标语（「每一台主机，一眼看清。」），
+   不提供信息、还占一行，去掉了；首屏让给数据。 */
 .hero {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  gap: 16px;
   padding: 20px 0 16px;
-}
-
-.hero h1 {
-  font-size: 24px;
-  margin: 0;
 }
 
 .eyebrow {
@@ -2957,16 +2951,11 @@ pre,
   .public-main {
     padding: 0 16px;
   }
-  /* 手机上首屏留给节点：标语那一块（英文眉题 + 两行大标题 + 说明）在 375px 宽上占掉约半屏，
-     节点要往下滑才看得到。这里整块藏掉，只留「最近同步」压成一条细栏。 */
+  /* 手机上「最近同步」压成一条整宽细栏。 */
   .hero {
     flex-direction: column;
     align-items: stretch;
-    gap: 0;
     padding: 14px 0 14px;
-  }
-  .hero > div:first-child {
-    display: none;
   }
   .hero-meta {
     width: 100%;
