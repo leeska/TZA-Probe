@@ -38,7 +38,7 @@ export async function renderMarket(nodesReady) {
   if (themes) registerThemes(themes);
   const installed = [...(themes || window.__tzaThemes || []).filter((t) => !t.builtin), ...plugins.map((p) => ({ ...p, type: "plugin" }))];
   if (!status.configured) {
-    content().innerHTML = `${heading()}<section class="panel webhook-panel market-off"><div><h3>市场已关闭</h3><p>Server 启动时用 <code>--cc-url off</code>（或环境变量 <code>TZA_CC_URL=off</code>）关掉了市场。去掉它即连官方 TZA-CC；自建 CC 用 <code>--cc-url https://…</code> 指定，签名公钥用 <code>--cc-key</code> / <code>TZA_CC_KEYS</code> 添加。</p><small>不连 TZA-CC，面板的其余功能一样不少；主题包可以在「面板设置 → 主题」里上传 zip，插件在下面「已安装」里上传。</small></div></section>${installedPanel(installed, [])}`;
+    content().innerHTML = `${heading()}<section class="panel webhook-panel market-off"><div><h3>市场已关闭</h3><p>Server 启动时用 <code>--cc-url off</code>（或环境变量 <code>TZA_CC_URL=off</code>）关掉了市场。去掉它即连官方 TZA-CC；测试或私有部署的 CC 用 <code>--cc-url https://…</code> 指定，签名公钥用 <code>--cc-key</code> / <code>TZA_CC_KEYS</code> 添加。</p><small>不连 TZA-CC，面板的其余功能一样不少；主题包可以在「面板设置 → 主题」里上传 zip，插件在下面「已安装」里上传。</small></div></section>${installedPanel(installed, [])}`;
     wire();
     return;
   }
