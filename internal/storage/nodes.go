@@ -1,10 +1,12 @@
 package storage
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -232,4 +234,124 @@ func (s *Store) IsPublic(ctx context.Context, id string) (bool, error) {
 		return false, ErrNotFound
 	}
 	return public, err
+}
+
+// SaveNodes updates several existing nodes in one transaction: the panel's
+// batch edit (分组、地区、公开…) either lands on every chosen node or on none.
+// Like SaveNode, a changed cycle anchor or traffic mode drops the correction.
+func (s *Store) SaveNodes(ctx context.Context, nodes []model.Node) error {
+	for i := range nodes {
+		if err := nodes[i].Validate(); err != nil {
+			return model.Invalid(nodes[i].Name + "：" + err.Error())
+		}
+		nodes[i] = nodes[i].Normalized()
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, n := range nodes {
+		var old string
+		if err := tx.QueryRowContext(ctx, "SELECT config FROM nodes WHERE id=?", n.ID).Scan(&old); errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		} else if err != nil {
+			return err
+		}
+		var prior model.Node
+		if err := json.Unmarshal([]byte(old), &prior); err != nil {
+			return err
+		}
+		query := "UPDATE nodes SET config=? WHERE id=?"
+		if n.Billing.ResetAt != prior.Billing.ResetAt || n.Billing.TrafficMode != prior.Billing.TrafficMode {
+			query = "UPDATE nodes SET config=?,traffic_adjustment=0,adjustment_cycle=0 WHERE id=?"
+		}
+		if _, err := tx.ExecContext(ctx, query, encode(n), n.ID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// RenameGroup moves every node of group from into group to and rewrites the
+// alert rules scoped to from, so a renamed group keeps its rules. to may name
+// an existing group (the two merge) or be "" (未分组). A merge that would leave
+// two rules of the same kind competing on one group is refused and nothing
+// changes. It returns how many nodes moved.
+func (s *Store) RenameGroup(ctx context.Context, from, to string) (int, error) {
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, "SELECT config FROM nodes")
+	if err != nil {
+		return 0, err
+	}
+	var moved []model.Node
+	names := map[string]string{}
+	for rows.Next() {
+		var config string
+		if err = rows.Scan(&config); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		var n model.Node
+		if err = json.Unmarshal([]byte(config), &n); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		names[n.ID] = n.Name
+		if n.Group == from {
+			n.Group = to
+			moved = append(moved, n)
+		}
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, n := range moved {
+		if _, err = tx.ExecContext(ctx, "UPDATE nodes SET config=? WHERE id=?", encode(n), n.ID); err != nil {
+			return 0, err
+		}
+	}
+	rules, err := alertRules(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+	var changed []int
+	for i, r := range rules {
+		if r.Scope != model.ScopeGroup || !slices.Contains(r.Groups, from) {
+			continue
+		}
+		groups := []string{}
+		for _, g := range r.Groups {
+			if g == from {
+				g = to
+			}
+			if !slices.Contains(groups, g) {
+				groups = append(groups, g)
+			}
+		}
+		rules[i].Groups = groups
+		changed = append(changed, i)
+	}
+	for _, i := range changed {
+		r := rules[i]
+		if err = r.Validate(); err != nil {
+			return 0, model.Invalid(err.Error())
+		}
+		if err = r.Overlaps(rules, func(id string) string { return cmp.Or(names[id], id) }); err != nil {
+			return 0, model.Invalid("合并后提醒规则冲突：" + err.Error())
+		}
+		if _, err = tx.ExecContext(ctx, "UPDATE alert_rules SET config=? WHERE id=?", encode(r), r.ID); err != nil {
+			return 0, err
+		}
+	}
+	return len(moved), tx.Commit()
 }

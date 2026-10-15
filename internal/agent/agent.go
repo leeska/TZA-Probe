@@ -26,14 +26,24 @@ type Prober interface {
 	Run(context.Context, model.Job) model.Result
 }
 type Transport interface {
-	Report(context.Context, model.Metrics) error
+	Report(context.Context, model.Metrics) (model.ReportReply, error)
 	Jobs(context.Context) ([]model.Job, error)
 	Finish(context.Context, model.Result) error
+}
+
+// Upgrader applies an upgrade the Server offered (see Updater).
+type Upgrader interface {
+	Update(context.Context, model.AgentUpgrade) error
 }
 type Agent struct {
 	Collector Collector
 	Prober    Prober
 	Transport Transport
+	// Upgrader is set when the Agent runs under a service unit that restarts it
+	// (--self-update); nil leaves upgrades to the install command. Restart is
+	// called once a new binary is in place and must make Run return.
+	Upgrader Upgrader
+	Restart  func()
 }
 
 func (a Agent) Run(ctx context.Context) {
@@ -43,13 +53,27 @@ func (a Agent) Run(ctx context.Context) {
 		defer wg.Done()
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
+		var upgrading sync.Mutex
 		for {
 			m, err := a.Collector.Collect(ctx)
+			var reply model.ReportReply
 			if err == nil {
-				err = a.Transport.Report(ctx, m)
+				if a.Upgrader != nil {
+					m.Capabilities = append(m.Capabilities, model.CapabilitySelfUpdate)
+				}
+				reply, err = a.Transport.Report(ctx, m)
 			}
 			if err != nil && ctx.Err() == nil {
 				slog.Warn("metrics report failed", "error", err)
+			}
+			// 下载十几 MB 不能卡住每 5 秒一次的上报；同一时间只跑一次升级。
+			if reply.Upgrade != nil && a.Upgrader != nil && upgrading.TryLock() {
+				wg.Add(1)
+				go func(up model.AgentUpgrade) {
+					defer wg.Done()
+					defer upgrading.Unlock()
+					a.upgrade(ctx, up)
+				}(*reply.Upgrade)
 			}
 			select {
 			case <-ctx.Done():
@@ -88,6 +112,24 @@ func (a Agent) Run(ctx context.Context) {
 		}
 	}()
 	wg.Wait()
+}
+
+func (a Agent) upgrade(ctx context.Context, up model.AgentUpgrade) {
+	slog.Info("upgrade requested by the Server", "version", up.Version)
+	err := a.Upgrader.Update(ctx, up)
+	switch {
+	case errors.Is(err, ErrAlreadyCurrent):
+		slog.Info("agent binary already current, nothing to upgrade", "version", up.Version)
+	case err != nil:
+		if ctx.Err() == nil {
+			slog.Warn("upgrade failed, keeping the running version", "error", err)
+		}
+	default:
+		slog.Info("upgrade ready, restarting", "version", up.Version)
+		if a.Restart != nil {
+			a.Restart()
+		}
+	}
 }
 
 // pollInterval is how often the Agent asks for jobs.
@@ -159,13 +201,15 @@ func (t *HTTPTransport) request(ctx context.Context, method, path string, body, 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("server returned HTTP %d", resp.StatusCode)
 	}
-	if out != nil {
+	if out != nil && resp.StatusCode != http.StatusNoContent {
 		return json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(out)
 	}
 	return nil
 }
-func (t *HTTPTransport) Report(ctx context.Context, m model.Metrics) error {
-	return t.request(ctx, "POST", "/api/v1/agent/report", model.Report{Protocol: model.Protocol, Metrics: m}, nil)
+func (t *HTTPTransport) Report(ctx context.Context, m model.Metrics) (model.ReportReply, error) {
+	var reply model.ReportReply
+	err := t.request(ctx, "POST", "/api/v1/agent/report", model.Report{Protocol: model.Protocol, Metrics: m}, &reply)
+	return reply, err
 }
 func (t *HTTPTransport) Jobs(ctx context.Context) ([]model.Job, error) {
 	var jobs []model.Job

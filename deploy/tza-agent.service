@@ -4,9 +4,16 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/tza-agent --config /etc/tza-probe/agent.json
+# 一键升级：Agent 把新版本下载到 StateDirectory（沙箱里唯一可写的地方）后以状态 3 退出，
+# 下次启动前由带 + 前缀（不受沙箱限制）的 ExecStartPre 换上；没有待装版本时什么也不做。
+ExecStartPre=-+/usr/local/bin/tza-agent --apply-update
+ExecStart=/usr/local/bin/tza-agent --config /etc/tza-probe/agent.json --self-update
+StateDirectory=tza-agent
+StateDirectoryMode=0700
 Restart=on-failure
 RestartSec=5
+SuccessExitStatus=3
+RestartForceExitStatus=3
 UMask=0077
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_NET_RAW

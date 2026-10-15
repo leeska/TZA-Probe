@@ -74,7 +74,13 @@ const CapabilityUnlock = "unlock"
 // leases them the old way (see AllowsParallelJobs).
 const CapabilityParallelJobs = "parallel_jobs"
 
-var AllCapabilities = []string{CapabilityUnlock, CapabilityParallelJobs}
+// CapabilitySelfUpdate is reported by an Agent started with --self-update by a
+// service unit that can restart it and swap its binary (the install script's
+// systemd / OpenRC units). Only such an Agent is handed an upgrade in the
+// report reply; an older one needs the install command run once by hand.
+const CapabilitySelfUpdate = "self_update"
+
+var AllCapabilities = []string{CapabilityUnlock, CapabilityParallelJobs, CapabilitySelfUpdate}
 
 func KnownCapability(capability string) bool {
 	for _, known := range AllCapabilities {
@@ -112,6 +118,17 @@ func (m Metrics) AllowsParallelJobs() bool {
 	return false
 }
 
+// AllowsSelfUpdate reports whether the host's Agent can upgrade itself when the
+// report reply asks it to (CapabilitySelfUpdate).
+func (m Metrics) AllowsSelfUpdate() bool {
+	for _, capability := range m.Capabilities {
+		if capability == CapabilitySelfUpdate {
+			return true
+		}
+	}
+	return false
+}
+
 // AllowsFamily reports whether the host can run probes for family. A host
 // that has not reported address families yet stays backwards compatible and
 // is allowed to run every configured probe.
@@ -135,4 +152,22 @@ type Sample struct {
 type Report struct {
 	Protocol int     `json:"protocol"`
 	Metrics  Metrics `json:"metrics"`
+}
+
+// ReportReply is the Server's answer to a report. Usually there is nothing to
+// say and the Server answers 204 with no body (which is all an older Agent
+// expects); a body appears only to hand the Agent an instruction.
+type ReportReply struct {
+	// Upgrade asks the Agent to replace itself with the binary the Server
+	// serves, then restart. Set only for an Agent that reported
+	// CapabilitySelfUpdate.
+	Upgrade *AgentUpgrade `json:"upgrade,omitempty"`
+}
+
+// AgentUpgrade names the binary to fetch: Path is a /dl/ path on the same
+// Server and SHA256 its hex digest, checked before anything is replaced.
+type AgentUpgrade struct {
+	Version string `json:"version"`
+	Path    string `json:"path"`
+	SHA256  string `json:"sha256"`
 }

@@ -14,6 +14,7 @@
 #   --uninstall              停止服务并删除程序、配置与服务单元（systemd / OpenRC 均可）
 #
 # 不带 --token 再次执行时保留现有 /etc/tza-probe/agent.json，只更新二进制并重启，即升级。
+# 用这一版脚本装过（或升级过一次）之后，后台「节点管理」就能一键升级，不必再登录机器。
 # 密钥也可通过环境变量 TZA_TOKEN 传入，避免出现在命令行。
 set -eu
 
@@ -97,8 +98,8 @@ if [ -n "$UNINSTALL" ]; then
     rc-service tza-agent stop >/dev/null 2>&1 || true
     rc-update del tza-agent default >/dev/null 2>&1 || true
   fi
-  rm -f "$UNIT" "$INITD" "$BIN"
-  rm -rf /etc/tza-probe
+  rm -f "$UNIT" "$INITD" "$BIN" "$BIN.previous"
+  rm -rf /etc/tza-probe /var/lib/tza-agent
   [ "$INIT" = systemd ] && systemctl daemon-reload
   echo "已卸载 TZA Probe Agent"
   exit 0
@@ -161,8 +162,9 @@ fi
 chmod 0755 "$TMP/tza-agent"
 "$TMP/tza-agent" --version >/dev/null 2>&1 || fail "下载的程序无法运行"
 
-# 先停旧服务再替换，避免向运行中的文件写入
+# 先停旧服务再替换，避免向运行中的文件写入；一键升级下载了一半的旧版本一并清掉
 service_stop
+rm -f /var/lib/tza-agent/tza-agent.new /var/lib/tza-agent/tza-agent.new.sha256 /var/lib/tza-agent/tza-agent.new.part
 [ -f "$BIN" ] && cp -p "$BIN" "$BIN.previous"
 install -m 0755 "$TMP/tza-agent" "$BIN"
 
@@ -197,9 +199,16 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/tza-agent --config /etc/tza-probe/agent.json
+# 一键升级：Agent 把新版本下载到 StateDirectory（沙箱里唯一可写的地方）后以状态 3 退出，
+# 下次启动前由带 + 前缀（不受沙箱限制）的 ExecStartPre 换上；没有待装版本时什么也不做。
+ExecStartPre=-+/usr/local/bin/tza-agent --apply-update
+ExecStart=/usr/local/bin/tza-agent --config /etc/tza-probe/agent.json --self-update
+StateDirectory=tza-agent
+StateDirectoryMode=0700
 Restart=on-failure
 RestartSec=5
+SuccessExitStatus=3
+RestartForceExitStatus=3
 UMask=0077
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_NET_RAW
@@ -221,7 +230,7 @@ else
 #!/sbin/openrc-run
 name="TZA Probe Agent"
 command="/usr/local/bin/tza-agent"
-command_args="--config /etc/tza-probe/agent.json"
+command_args="--config /etc/tza-probe/agent.json --self-update"
 supervisor="supervise-daemon"
 respawn_delay=5
 respawn_max=0
@@ -230,6 +239,8 @@ pidfile="/run/tza-agent.pid"
 output_log="/var/log/tza-agent.log"
 error_log="/var/log/tza-agent.log"
 depend() { need net; after firewall; }
+# 一键升级：没有沙箱时 Agent 自己就能换上新版本；这里补上「下载后、换之前被停掉」的情形。
+start_pre() { /usr/local/bin/tza-agent --apply-update || true; }
 TZA_AGENT_INIT
   chmod 0755 "$INITD"
   rc-update add tza-agent default >/dev/null 2>&1 || true

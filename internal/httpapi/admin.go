@@ -156,6 +156,39 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		respond(w, a.svc.ReorderNodes(r.Context(), v.IDs))
 	})
+	// 批量修改：同一份部分字段（分组、地区、公开…）合并到勾选的每台节点上，全成或全不成。
+	route("POST /api/v1/admin/nodes/batch", func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			IDs   []string        `json:"ids"`
+			Patch json.RawMessage `json:"patch"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		count, err := a.svc.BatchPatchNodes(r.Context(), v.IDs, v.Patch)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, map[string]int{"updated": count})
+	})
+	// 分组改名 / 合并 / 解散（to 为空即回到未分组），作用于这个分组的提醒规则一起改。
+	route("POST /api/v1/admin/groups/rename", func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		count, err := a.svc.RenameGroup(r.Context(), v.From, v.To)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, map[string]int{"moved": count})
+	})
+	a.upgradeRoutes(route)
 	route("POST /api/v1/admin/nodes/{id}/traffic", func(w http.ResponseWriter, r *http.Request) {
 		var v struct {
 			Used  int64 `json:"used"`

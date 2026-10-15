@@ -29,6 +29,8 @@ type Store interface {
 	Nodes(context.Context, time.Time) ([]model.NodeView, error)
 	SaveNode(context.Context, model.Node, bool) (string, string, error)
 	SaveNodeOrder(context.Context, []string) error
+	SaveNodes(context.Context, []model.Node) error
+	RenameGroup(context.Context, string, string) (int, error)
 	DeleteNode(context.Context, string) error
 	Rotate(context.Context, string) (string, error)
 	CorrectTraffic(context.Context, string, int64, int64, time.Time) error
@@ -227,6 +229,72 @@ func (s *Service) PatchNode(ctx context.Context, id string, patch json.RawMessag
 		return model.Node{}, model.Invalid("参数无法合并到当前节点：" + err.Error())
 	}
 	return merged, s.ReplaceNode(ctx, current.ID, merged)
+}
+
+// BatchPatchNodes overlays the same partial edit onto every listed node — the
+// panel's 批量设置分组 / 地区 / 公开 — and stores them all or none. Name and
+// order stay per node: a batch rename makes no sense and order has its own
+// call (ReorderNodes).
+func (s *Service) BatchPatchNodes(ctx context.Context, ids []string, patch json.RawMessage) (int, error) {
+	if len(ids) == 0 || len(ids) > 500 {
+		return 0, model.Invalid("节点数量须在 1—500 之间")
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(patch, &fields); err != nil || len(fields) == 0 {
+		return 0, model.Invalid("批量修改须提交至少一个字段")
+	}
+	for _, key := range []string{"name", "order", "id"} {
+		if _, ok := fields[key]; ok {
+			return 0, model.Invalid("批量修改不能改 " + key)
+		}
+	}
+	all, err := s.Store.Nodes(ctx, time.Now())
+	if err != nil {
+		return 0, err
+	}
+	byID := map[string]model.NodeView{}
+	for _, n := range all {
+		byID[n.ID] = n
+	}
+	seen := map[string]bool{}
+	nodes := make([]model.Node, 0, len(ids))
+	for _, id := range ids {
+		current, ok := byID[id]
+		if !ok {
+			return 0, model.NotFound("节点不存在：" + id)
+		}
+		if seen[id] {
+			return 0, model.Invalid("节点 id 重复：" + id)
+		}
+		seen[id] = true
+		merged, err := Merge(current.Node, patch)
+		if err != nil {
+			return 0, model.Invalid("参数无法合并到节点「" + current.Name + "」：" + err.Error())
+		}
+		merged.ID = id
+		merged = merged.Normalized()
+		if err := merged.Validate(); err != nil {
+			return 0, model.Invalid(current.Name + "：" + err.Error())
+		}
+		if err := s.checkRegions(ctx, merged.Display, current.Display); err != nil {
+			return 0, err
+		}
+		nodes = append(nodes, merged)
+	}
+	return len(nodes), s.Store.SaveNodes(ctx, nodes)
+}
+
+// RenameGroup moves a whole group under a new name (or into 未分组 when to is
+// empty) together with the alert rules scoped to it.
+func (s *Service) RenameGroup(ctx context.Context, from, to string) (int, error) {
+	to = strings.TrimSpace(to)
+	if from == to {
+		return 0, model.Invalid("新旧分组名相同")
+	}
+	if len(to) > 100 {
+		return 0, model.Invalid("分组名不超过 100 字节")
+	}
+	return s.Store.RenameGroup(ctx, from, to)
 }
 
 func (s *Service) DeleteNode(ctx context.Context, id string) error {

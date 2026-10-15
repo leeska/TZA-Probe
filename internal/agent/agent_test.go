@@ -155,7 +155,9 @@ type fakeTransport struct {
 	finished map[string]bool
 }
 
-func (f *fakeTransport) Report(context.Context, model.Metrics) error { return nil }
+func (f *fakeTransport) Report(context.Context, model.Metrics) (model.ReportReply, error) {
+	return model.ReportReply{}, nil
+}
 func (f *fakeTransport) Jobs(context.Context) ([]model.Job, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

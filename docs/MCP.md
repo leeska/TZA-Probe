@@ -80,6 +80,8 @@ MCP Key 具有下表中全部工具的权限，包含写入与删除；当前没
 | `create_node` | 新建节点，返回 ID、一次性节点密钥及 Agent 接入命令 |
 | `update_node` | 按字段修改节点，`node_id` 必填 |
 | `delete_node` | 删除节点、令牌及绑定，`node_id` 必填 |
+| `batch_update_nodes` | 批量修改节点：`node_ids` 与 `patch`（同 `update_node` 的字段），全部成功或全部不改；常用于设分组、地区、公开 |
+| `rename_group` | 分组改名 / 合并 / 解散（`to` 为空），作用于该分组的提醒规则一起改 |
 | `rotate_node_token` | 轮换节点密钥，旧密钥立即失效，返回新密钥与接入命令 |
 | `correct_node_traffic` | 校正本周期已用流量，提交 `node_id`、字节数 `used` 和周期起点 `cycle` |
 | `create_alert_rule` | 新建一条提醒规则 |
@@ -124,7 +126,7 @@ curl -sS -i "$MCP_URL" \
   -H 'Accept: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl-check","version":"1.0"}}}'
 
-# 查询工具清单：应返回 28 个工具。
+# 查询工具清单：应返回 30 个工具。
 curl -sS "$MCP_URL" \
   -H "Authorization: Bearer $MCP_API_KEY" \
   -H 'Content-Type: application/json' \

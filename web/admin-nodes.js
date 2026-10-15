@@ -7,6 +7,7 @@ import { regionCombobox, wireComboboxes } from "./region-picker.js";
 import { alertSummary } from "./admin-alerts.js";
 import { characterChoices } from "./anime-cast.js";
 import { state, content, field, check, select, withCurrent, nodeName, confirmAction, render, go } from "./admin-state.js";
+import { agentLine, batchBar, isStale, loadUpgrades, pickCell, pickHead, wireFleet } from "./admin-fleet.js";
 const defaults = {
   name: "",
   group: "",
@@ -30,7 +31,7 @@ const defaults = {
 };
 export async function nodesPage(nodesReady) {
   // 「正在告警」的数字读不到时只少这一格的数，不挡住节点列表。
-  const [, known, firing] = await Promise.all([nodesReady, knownRegions(), api("/admin/events?active=1&limit=500").catch(() => null)]);
+  const [, known, firing] = await Promise.all([nodesReady, knownRegions(), api("/admin/events?active=1&limit=500").catch(() => null), loadUpgrades()]);
   state.regions = known;
   renderNodes(firing);
 }
@@ -46,13 +47,6 @@ function dueCell(expiresAt) {
 function firingPill(n, firing) {
   const kinds = (firing || []).filter((e) => e.node_id === n.id).map((e) => kindName[e.kind] || e.kind);
   return kinds.length ? ` <span class="pill warn" title="${esc(kinds.join("、"))}">告警 ${kinds.length}</span>` : "";
-}
-// Agent 版本与服务端不一致：服务端内置的安装包就是它自己的版本，在那台机器上不带 --token
-// 重新执行一次安装命令即可升级（命令见「接入 / 重置密钥」弹窗，升级不必换密钥）。
-function agentStale(n) {
-  const v = n.metrics?.version;
-  if (!v || !state.serverVersion || v === state.serverVersion) return "";
-  return ` <span class="agent-stale" title="面板版本 ${esc(state.serverVersion)}。在这台机器上不带 --token 重新执行安装命令即可升级，不用换密钥。">需更新</span>`;
 }
 // 二次元主题里这台节点画哪个角色：留空自动（节点名 → 地区 → 角色包默认 → 通用角色），也可以
 // 指定内置角色或角色包里的任意一个。角色名来自上传的角色包，拼进下拉框前转义。
@@ -82,7 +76,7 @@ function cardRegionMiss(n) {
   return ` <span class="region-miss" title="绑定的探测任务目标在「${esc(where)}」，与卡片地区「${esc(latency === route ? route : `${route} / ${latency}`)}」对不上，公开卡片不显示延迟和回程。在「编辑」里改卡片地区，或给任务加上这个地区的目标。">卡片无探测</span>`;
 }
 function renderNodes(firing) {
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${state.nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${state.nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${state.nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${state.nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div><div id="goto-firing" class="stat-link${firing?.length ? " stat-warn" : ""}" role="button" tabindex="0" title="查看当前告警"><span>正在告警</span><strong>${firing ? firing.length : "—"}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><div class="panel-actions"><button id="sort-nodes" class="quiet" ${state.nodes.length < 2 ? "disabled" : ""} title="按分组、名称、地区或到期时间重排全部节点">⇅ 一键排序</button><button id="refresh-nodes" class="quiet">↻ 刷新</button></div></div><div class="table-scroll"><table class="stack"><thead><tr><th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${state.nodes.map((n) => `<tr data-node="${n.id}"><td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"}${n.vendor ? ` · 商家 ${esc(n.vendor)}` : ""} · 回程地区 ${esc(n.display.route_region || "未设置")}${cardRegionMiss(n)}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span>${firingPill(n, firing)}<small>Agent ${n.metrics ? [n.metrics.version, n.metrics.arch].filter(Boolean).map(esc).join(" · ") : "未接入"}${agentStale(n)}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区">${esc(n.group || "默认")}<small>${esc(n.region || "—")}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${state.nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${state.nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${state.nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${state.nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div><div id="goto-firing" class="stat-link${firing?.length ? " stat-warn" : ""}" role="button" tabindex="0" title="查看当前告警"><span>正在告警</span><strong>${firing ? firing.length : "—"}</strong></div></div><section class="panel"><div class="panel-head"><h3>全部节点</h3><div class="panel-actions"><button id="upgrade-all" class="quiet" title="把版本落后于面板的 Agent 全部升级到 ${esc(state.serverVersion)}" ${state.nodes.some(isStale) ? "" : "hidden"}>⇡ 升级 Agent（<b>${state.nodes.filter(isStale).length}</b>）</button><button id="manage-groups" class="quiet" title="按分组调整成员、改名、合并或解散">分组管理</button><button id="manage-regions" class="quiet" title="按节点所在地区调整成员、改名">地区管理</button><button id="sort-nodes" class="quiet" ${state.nodes.length < 2 ? "disabled" : ""} title="按分组、名称、地区或到期时间重排全部节点">⇅ 一键排序</button><button id="refresh-nodes" class="quiet">↻ 刷新</button></div></div><div class="table-scroll"><table class="stack"><thead><tr>${pickHead}<th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${state.nodes.map((n) => `<tr data-node="${n.id}">${pickCell(n)}<td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"}${n.vendor ? ` · 商家 ${esc(n.vendor)}` : ""} · 回程地区 ${esc(n.display.route_region || "未设置")}${cardRegionMiss(n)}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span>${firingPill(n, firing)}<small data-agent="${n.id}">${agentLine(n)}</small><small>上报 ${n.last_seen ? date(n.last_seen) : "从未"}</small></td><td data-label="分组 / 地区"><button type="button" class="text-button pick-by" data-pick-by="group" data-value="${esc(n.group || "")}" title="选中「${esc(n.group || "默认")}」分组的全部节点">${esc(n.group || "默认")}</button><small>${n.region ? `<button type="button" class="text-button pick-by" data-pick-by="region" data-value="${esc(n.region)}" title="选中地区「${esc(n.region)}」的全部节点">${esc(n.region)}</button>` : "—"}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}</td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="8" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>${batchBar()}`;
   content().querySelectorAll("[data-billing]").forEach((b) => {
     b.onclick = () => {
       const n = state.nodes.find((x) => x.id === b.dataset.billing);
@@ -142,6 +136,7 @@ function renderNodes(firing) {
           )),
     );
   wireReorder();
+  wireFleet();
 }
 // 拖动排序：这张表就是服务端按 order 排出来的（visibleNodes → 先 order 后 name），拖动
 // 只改这个顺序：松手时把整份可见 id 列表交给 POST /admin/nodes/order，由服务端按 0,1,2…

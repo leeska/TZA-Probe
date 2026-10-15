@@ -26,7 +26,7 @@ export function showToken(token, name = "") {
     `<p>密钥仅在此处显示。在 Agent 主机（Linux + systemd，x86_64 / arm64）以 root（或有 sudo 权限的用户）执行下面这一条命令，会自动下载对应架构的 Agent、写入配置并启动服务：</p>
     ${endpointWarning()}
     <div class="command-block"><pre id="install-command">${esc(command)}</pre><button type="button" id="copy-command" class="primary">复制命令</button></div>
-    <p class="hint">命令包含节点密钥，只在需要接入的主机上执行。以后不带 <code>--token</code> 再执行一次即为升级 Agent。</p>
+    <p class="hint">命令包含节点密钥，只在需要接入的主机上执行。以后升级 Agent 在「节点管理」勾选后点「升级 Agent」即可；也可以不带 <code>--token</code> 再执行一次这条命令。</p>
     <details class="more"><summary>可选参数</summary><p class="hint">默认统计全部非 loopback 网卡，三网回程使用内置的 NTrace-core（与 NextTrace 同源，无需另行安装）。需要时在命令末尾追加：<code>--interfaces eth0</code>（只统计指定网卡）、<code>--nexttrace /usr/local/bin/nexttrace</code>（改用外部二进制）、<code>--geo-provider disable-geoip</code>（换 / 关闭 ASN 数据源，默认 <code>IPAPI.com</code>）、<code>--trace-method tcp</code>（探测方式，默认 ICMP）。</p></details>
     <details><summary>手动安装 / 查看 agent.json</summary>
       <p class="hint">不方便让主机联网下载时，可自行编译 Agent 并使用以下配置，安装步骤见 docs/DEPLOYMENT.md。</p>

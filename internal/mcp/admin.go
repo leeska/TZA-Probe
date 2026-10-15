@@ -3,6 +3,7 @@ package mcp
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -37,6 +38,24 @@ var adminTools = []tool{
 			"node_id": map[string]any{"type": "string", "description": "节点 id"},
 		}, "node_id"),
 		Annotations: annotations("Delete node", false, true, false),
+	},
+	{
+		Name:        "batch_update_nodes",
+		Description: "批量修改节点（面板节点列表的多选工具栏）：把同一份部分字段合并到 node_ids 的每台节点上，全部成功或全部不改。常用于设分组（group）、所在地区（region）、卡片地区（display.route_region / display.latency_region）、公开（public）、商家（vendor）。不能改 name 与 order。",
+		InputSchema: schema(map[string]any{
+			"node_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "要修改的节点 id，1—500 个"},
+			"patch":    map[string]any{"type": "object", "description": "要改的字段，结构同 update_node（嵌套对象按字段合并），例如 {\"group\":\"日本\"} 或 {\"display\":{\"route_region\":\"上海\"}}"},
+		}, "node_ids", "patch"),
+		Annotations: annotations("Batch update nodes", false, false, true),
+	},
+	{
+		Name:        "rename_group",
+		Description: "分组改名：from 分组的全部节点移到 to，作用于 from 的提醒规则一起改。to 是已有分组即合并；to 为空字符串即解散（节点回到未分组）。合并后若同类提醒规则冲突则拒绝、什么都不改。",
+		InputSchema: schema(map[string]any{
+			"from": map[string]any{"type": "string", "description": "原分组名；空字符串是未分组"},
+			"to":   map[string]any{"type": "string", "description": "新分组名；空字符串即解散"},
+		}, "from", "to"),
+		Annotations: annotations("Rename group", false, false, true),
 	},
 	{
 		Name:        "rotate_node_token",
@@ -374,6 +393,34 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 			return failure("删除节点失败", err)
 		}
 		return toolResult(map[string]any{"id": args.NodeID, "name": name, "deleted": true}), nil, 0
+
+	case "batch_update_nodes":
+		var args struct {
+			NodeIDs []string        `json:"node_ids"`
+			Patch   json.RawMessage `json:"patch"`
+		}
+		if e := arguments(params.Arguments, &args); e != nil {
+			return nil, e, http.StatusOK
+		}
+		count, err := svc.BatchPatchNodes(ctx, args.NodeIDs, args.Patch)
+		if err != nil {
+			return failure("批量修改节点失败", err)
+		}
+		return toolResult(map[string]any{"updated": count}), nil, 0
+
+	case "rename_group":
+		var args struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}
+		if e := arguments(params.Arguments, &args); e != nil {
+			return nil, e, http.StatusOK
+		}
+		count, err := svc.RenameGroup(ctx, args.From, args.To)
+		if err != nil {
+			return failure("分组改名失败", err)
+		}
+		return toolResult(map[string]any{"from": args.From, "to": args.To, "moved": count}), nil, 0
 
 	case "rotate_node_token":
 		var args nodeArgs

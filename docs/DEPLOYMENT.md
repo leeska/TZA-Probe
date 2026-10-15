@@ -150,7 +150,9 @@ sudo install -m 0755 bin/tza-server /usr/local/bin/tza-server
 sudo systemctl start tza-server
 ```
 
-先升 Server，再升 Agent。Agent 升级使用相同的 stop → 保留旧二进制 → install → start 顺序（或不带 `--token` 重新执行安装命令），不需要重置密钥。协议版本不匹配时不会自动降级。
+先升 Server，再升 Agent。Agent 升级使用相同的 stop → 保留旧二进制 → install → start 顺序（或不带 `--token` 重新执行安装命令），不需要重置密钥。
+
+**一键升级**：用带一键升级的安装脚本装过（或不带 `--token` 重新执行过一次安装命令）的 Agent 以 `--self-update` 启动，在后台「节点管理」勾选节点点「升级 Agent」（或标题栏的「升级 Agent（N）」升级全部落后的）即可：Agent 在下一次上报时拿到新版本的下载路径与 SHA-256，下载到 `/var/lib/tza-agent`、校验并试跑 `--version` 后以状态 3 退出；systemd 单元的 `ExecStartPre=-+/usr/local/bin/tza-agent --apply-update` 在重启前把它换到 `/usr/local/bin/tza-agent`（单元开了 `ProtectSystem=strict`，Agent 自己写不了 /usr），旧版本留在 `tza-agent.previous`。OpenRC 没有沙箱，Agent 自己就地替换，`supervise-daemon` 负责拉起。更早的 Agent 后台会标「需手工升级一次」并给出命令。协议版本不匹配时不会自动降级。
 
 新版本如果改了数据库结构，Server 启动时自动升级数据库。从数据库版本 14 升上来时，Server 会在后台把已有一周的探测结果汇总进网络历史格子（10 台节点约十几秒，1 核机更久，日志 `network history buckets backfilled` 表示完成）；期间面板照常使用，只是 24 小时以上的网络历史仍按旧方式计算。升级后的数据库旧程序打不开，因此回滚必须同时还原旧二进制和升级前的数据备份。
 

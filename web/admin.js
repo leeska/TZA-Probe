@@ -63,6 +63,8 @@ async function render() {
   const area = content();
   // 换页 / 重绘会把行连同「更多」一起换掉；挪到 body 下还开着的菜单一并清掉，不留孤儿。
   document.querySelectorAll("body > .row-menu").forEach((m) => m.remove());
+  // 节点页的批量工具栏随页面一起换掉；它给 toast 与内容区让出的位置也一并收回。
+  document.body.classList.remove("has-batch-bar");
   area?.classList.add("is-loading");
   area?.setAttribute("aria-busy", "true");
   try {

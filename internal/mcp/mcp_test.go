@@ -78,6 +78,28 @@ func (f *fakeSource) SaveNode(_ context.Context, n model.Node, create bool) (str
 	return n.ID, "", nil
 }
 
+func (f *fakeSource) SaveNodes(_ context.Context, nodes []model.Node) error {
+	if f.failure != nil {
+		return f.failure
+	}
+	f.savedNodes = append(f.savedNodes, nodes...)
+	return nil
+}
+
+func (f *fakeSource) RenameGroup(_ context.Context, from, to string) (int, error) {
+	if f.failure != nil {
+		return 0, f.failure
+	}
+	moved := 0
+	for i := range f.nodes {
+		if f.nodes[i].Group == from {
+			f.nodes[i].Group = to
+			moved++
+		}
+	}
+	return moved, nil
+}
+
 func (f *fakeSource) DeleteNode(_ context.Context, id string) error {
 	if f.failure != nil {
 		return f.failure
@@ -443,7 +465,7 @@ func TestModernRevisionRoundTrip(t *testing.T) {
 	entries, _ := list["tools"].([]any)
 	want := []string{
 		"list_nodes", "list_tasks", "node_history", "node_network_history", "node_observations", "recent_events", "latency_samples",
-		"create_node", "update_node", "delete_node", "rotate_node_token", "correct_node_traffic",
+		"create_node", "update_node", "delete_node", "batch_update_nodes", "rename_group", "rotate_node_token", "correct_node_traffic",
 		"list_alert_rules", "create_alert_rule", "update_alert_rule", "delete_alert_rule", "list_catalog",
 		"create_task", "update_task", "delete_task", "control_task", "task_runs",
 		"list_plugins", "get_settings", "update_settings", "test_notification",

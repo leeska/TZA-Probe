@@ -61,6 +61,8 @@ type API struct {
 	observationsSnap snapshot[map[string][]model.Observation]
 	samplesSnap      snapshot[map[string]any]
 	svc              *service.Service
+	// upgrades 是一键升级 Agent 的队列，见 upgrade.go。
+	upgrades upgradeQueue
 }
 
 // snapshot 是匿名访客共用的一份计算结果：有效期内直接复用，过期后同时到达的请求排队等同一次
@@ -185,7 +187,17 @@ func (a *API) Handler() http.Handler {
 			write(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
-		respond(w, a.Store.Report(r.Context(), id, v.Metrics, time.Now()))
+		now := time.Now()
+		if err := a.Store.Report(r.Context(), id, v.Metrics, now); err != nil {
+			fail(w, err)
+			return
+		}
+		// 平常照旧回 204（旧 Agent 只认这个）；排了升级的节点才回一份带指令的正文。
+		if up := a.upgradeReply(id, v.Metrics, now); up != nil {
+			write(w, 200, model.ReportReply{Upgrade: up})
+			return
+		}
+		w.WriteHeader(204)
 	}))
 	mux.HandleFunc("GET /api/v1/agent/jobs", a.agent(func(w http.ResponseWriter, r *http.Request, id string) {
 		jobs, err := a.Store.Lease(r.Context(), id, time.Now())
