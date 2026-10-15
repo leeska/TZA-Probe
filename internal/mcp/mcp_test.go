@@ -1031,6 +1031,21 @@ func TestCatalogAndNotificationTools(t *testing.T) {
 		t.Fatalf("被拒的调用改了外观: %v", again)
 	}
 
+	// 站点名称：没配过是空（内置品牌），能改能清；logo 只能后台上传，这里只读出空地址。
+	if fresh := structured(t, invoke(t, env, "get_settings", `{}`)); fresh["site_name"] != "" || fresh["site_logo"] != "" {
+		t.Fatalf("未配置的站点品牌: %v", fresh)
+	}
+	named := structured(t, invoke(t, env, "update_settings", `{"site_name":"  橙子监控 "}`))
+	if named["site_name"] != "橙子监控" || named["default_skin"] != "press" || named["channel"] != "telegram" {
+		t.Fatalf("站点名称: %v", named)
+	}
+	if _, out := env.modern(t, "1", "tools/call", "update_settings", `{"site_name":"`+strings.Repeat("长", model.MaxSiteNameLen+1)+`"}`); codeOf(t, out) != codeInvalidParams {
+		t.Fatalf("过长的站点名称该被拒: %v", out)
+	}
+	if cleared := structured(t, invoke(t, env, "update_settings", `{"site_name":""}`)); cleared["site_name"] != "" {
+		t.Fatalf("站点名称没清掉: %v", cleared)
+	}
+
 	// The explicit test sends one event and reports the channel, not the URL.
 	if sent := structured(t, invoke(t, env, "test_notification", `{}`)); sent["sent"] != true || sent["channel"] != "telegram" {
 		t.Fatalf("test_notification: %v", sent)

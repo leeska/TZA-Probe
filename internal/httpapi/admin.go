@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/account"
+	"github.com/leeska/TZA-Probe/internal/brand"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/service"
@@ -482,6 +483,26 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		_, err := a.svc.PatchPanel(r.Context(), v)
 		respond(w, err)
+	})
+	// 站点 logo：请求体就是图片本身（不走 JSON）。类型由内容判断，不看 Content-Type。
+	route("PUT /api/v1/admin/panel/logo", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, brand.MaxLogo))
+		if err != nil {
+			write(w, 413, map[string]string{"error": fmt.Sprintf("logo 最大 %d KB", brand.MaxLogo>>10)})
+			return
+		}
+		if err := a.Logo.Save(body); err != nil {
+			if errors.Is(err, brand.ErrInvalid) {
+				write(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+			fail(w, err)
+			return
+		}
+		write(w, 200, map[string]string{"site_logo": a.Logo.URL()})
+	})
+	route("DELETE /api/v1/admin/panel/logo", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, a.Logo.Remove())
 	})
 }
 

@@ -40,4 +40,10 @@ func TestPanelLookChoicesMatchFrontend(t *testing.T) {
 	if def < 0 || boot < 0 || def > boot {
 		t.Errorf("index.html 里的默认外观脚本位置不对: theme-default.js=%d theme-boot.js=%d", def, boot)
 	}
+	// 站点品牌：theme-boot.js 要在首屏前改掉 <title> 与 favicon，所以这两样得写在它前面。
+	title := strings.Index(string(html), "<title>")
+	icon := strings.Index(string(html), `rel="icon"`)
+	if title < 0 || icon < 0 || title > boot || icon > boot {
+		t.Errorf("index.html 的 <title>=%d / icon=%d 得在 theme-boot.js=%d 之前", title, icon, boot)
+	}
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // 面板显示项：与通知出口分开存放（settings 表里一个键一个值），所以用 sqlite3 就能读，
@@ -95,24 +97,58 @@ func ValidatePanelSkin(v string) error {
 	return fmt.Errorf("默认皮肤须为 %s 之一，或一个已安装的主题包", strings.Join(PanelSkins, " / "))
 }
 
+// 站点名称：浏览器标签页标题与公开面板、后台品牌区显示的名字。空值就是内置的 TZA Probe 品牌，
+// 所以没配过的部署外观不变。logo 是上传的图片文件，不在这张表里（见 internal/brand）。
+const (
+	SettingSiteName = "site_name"
+
+	DefaultSiteName = "TZA Probe"
+	MaxSiteNameLen  = 32 // 字符数：品牌区一行放得下，标签页标题也不至于被截成省略号
+)
+
+// SiteName 把存下来的值变成可显示的名字：空值（或手改库留下的空白）就是 ""，由前端显示内置品牌。
+func SiteName(stored string) string {
+	return strings.TrimSpace(stored)
+}
+
+// ValidateSiteName 拦住过长或带控制字符的名字；空串表示恢复默认。
+func ValidateSiteName(v string) error {
+	v = strings.TrimSpace(v)
+	if utf8.RuneCountInString(v) > MaxSiteNameLen {
+		return fmt.Errorf("站点名称最多 %d 个字", MaxSiteNameLen)
+	}
+	for _, r := range v {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("站点名称不能含控制字符")
+		}
+	}
+	return nil
+}
+
 // PanelSettings is the visitor-facing panel configuration as the admin pages
-// and the MCP tools read it: every value already normalized.
+// and the MCP tools read it: every value already normalized. SiteName "" and
+// SiteLogo "" mean the built-in TZA Probe brand; SiteLogo is the uploaded
+// logo's versioned URL.
 type PanelSettings struct {
 	LatencyWindowMinutes int    `json:"latency_window_minutes"`
 	DefaultTheme         string `json:"default_theme"`
 	DefaultSkin          string `json:"default_skin"`
+	SiteName             string `json:"site_name"`
+	SiteLogo             string `json:"site_logo"`
 }
 
-// PanelPatch changes only the fields it carries.
+// PanelPatch changes only the fields it carries. An empty SiteName restores
+// the default; the logo is uploaded separately (PUT /api/v1/admin/panel/logo).
 type PanelPatch struct {
 	LatencyWindowMinutes *int    `json:"latency_window_minutes"`
 	DefaultTheme         *string `json:"default_theme"`
 	DefaultSkin          *string `json:"default_skin"`
+	SiteName             *string `json:"site_name"`
 }
 
 // Empty reports whether the patch changes nothing.
 func (p PanelPatch) Empty() bool {
-	return p.LatencyWindowMinutes == nil && p.DefaultTheme == nil && p.DefaultSkin == nil
+	return p.LatencyWindowMinutes == nil && p.DefaultTheme == nil && p.DefaultSkin == nil && p.SiteName == nil
 }
 
 // Validate checks every carried field before anything is written. installed
@@ -130,6 +166,11 @@ func (p PanelPatch) Validate(installed func(string) bool) error {
 	}
 	if p.DefaultSkin != nil && (installed == nil || !installed(*p.DefaultSkin)) {
 		if err := ValidatePanelSkin(*p.DefaultSkin); err != nil {
+			return err
+		}
+	}
+	if p.SiteName != nil {
+		if err := ValidateSiteName(*p.SiteName); err != nil {
 			return err
 		}
 	}

@@ -67,6 +67,8 @@ type Service struct {
 	Themes interface{ Known(id string) bool }
 	// Plugins are the installed declarative plugins; nil means none.
 	Plugins Plugins
+	// Logo is the uploaded site logo; nil means none (the built-in mark).
+	Logo interface{ URL() string }
 }
 
 // installedSkin reports whether id is an uploaded theme package.
@@ -547,11 +549,20 @@ func (s *Service) Panel(ctx context.Context) (model.PanelSettings, error) {
 	if err != nil {
 		return model.PanelSettings{}, err
 	}
-	return model.PanelSettings{
+	name, err := s.Store.Setting(ctx, model.SettingSiteName)
+	if err != nil {
+		return model.PanelSettings{}, err
+	}
+	panel := model.PanelSettings{
 		LatencyWindowMinutes: model.LatencyWindowMinutes(window),
 		DefaultTheme:         model.PanelTheme(theme),
 		DefaultSkin:          s.panelSkin(skin),
-	}, nil
+		SiteName:             model.SiteName(name),
+	}
+	if s.Logo != nil {
+		panel.SiteLogo = s.Logo.URL()
+	}
+	return panel, nil
 }
 
 // panelSkin normalizes a stored default skin: an installed package stays, an
@@ -590,6 +601,11 @@ func (s *Service) writePanel(ctx context.Context, patch model.PanelPatch) error 
 	}
 	if patch.DefaultSkin != nil {
 		if err := s.Store.SetSetting(ctx, model.SettingDefaultSkin, *patch.DefaultSkin); err != nil {
+			return err
+		}
+	}
+	if patch.SiteName != nil {
+		if err := s.Store.SetSetting(ctx, model.SettingSiteName, strings.TrimSpace(*patch.SiteName)); err != nil {
 			return err
 		}
 	}

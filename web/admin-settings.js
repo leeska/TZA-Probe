@@ -2,6 +2,7 @@ import { THEMES } from "./theme.js";
 import { SKINS, registerThemes, paintSwatches } from "./skins.js";
 import { api, send, toast, guard, modal, esc } from "./api.js";
 import { content, field, confirmAction } from "./admin-state.js";
+import { applyBrand, DEFAULT_NAME } from "./brand.js";
 const MCP_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/MCP.md";
 const THEME_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/THEMES.md";
 const mcpDocs = () => `<p class="hint mcp-doc">接入文档：<a href="${MCP_DOC_URL}" target="_blank" rel="noopener noreferrer">${MCP_DOC_URL}</a></p>`;
@@ -29,7 +30,7 @@ export async function renderSettings(nodesReady) {
   // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
   const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
   const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : "glass";
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>公开面板的显示选项、后台账号、MCP API Key 与数据备份。</p></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片的延迟色带每格一次探测，固定画最近 10 次；早于这个范围的探测不再显示，那几格留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${esc(s.id)}"${s.id === skinNow ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section>${themePanel()}${acct ? `<section class="panel webhook-panel"><div><h3>后台账号</h3><p>${acct.configured ? `当前用户名：<b>${esc(acct.username)}</b>` : "尚未设置账号，请在服务器执行 tza-server reset-password 创建账号。"}</p><small>修改后其他已登录的浏览器需要重新登录。忘记密码时在服务器执行 tza-server reset-password --data 数据目录，会生成新密码。</small></div><div class="webhook-actions"><button id="edit-account" class="primary">${acct.configured ? "修改账号" : "设置账号"}</button></div></section>` : ""}<section class="panel webhook-panel"><div><h3>MCP API Key</h3><p>${mcp.configured ? `已启用 · 生成于 ${esc(new Date(mcp.created_at).toLocaleString())}` : "尚未生成，MCP 接口未启用。"}</p><small>用于 AI 客户端连接并管理节点、任务和设置。仅用于 MCP；重新生成或撤销后旧 Key 立即失效。</small><p>连接地址：<code>${esc(location.origin + "/mcp")}</code></p><p class="hint">请求头：Authorization: Bearer &lt;API Key&gt;</p>${mcpDocs()}</div><div class="webhook-actions"><button id="generate-mcp-key" class="primary">${mcp.configured ? "重新生成" : "生成 API Key"}</button>${mcp.configured ? '<button id="revoke-mcp-key">撤销</button>' : ""}</div></section><section class="panel webhook-panel"><div><h3>数据备份</h3><p>下载整个数据库的一份快照：节点、任务、历史与设置都在里面。不用停服，面板和 Agent 上报照常。</p><small>升级到会改数据库结构的版本之前先下载一份。恢复时先停服，把它放进数据目录、命名为 tza-probe.db（替换原文件），并删掉同目录的 tza-probe.db-wal 与 tza-probe.db-shm，再启动。</small></div><div class="webhook-actions"><a id="download-backup" class="button primary" href="/api/v1/admin/backup" download>下载备份</a></div></section>`;
+  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">PUBLIC PANEL</div><h1>面板设置</h1><p>站点品牌、公开面板的显示选项、后台账号、MCP API Key 与数据备份。</p></div></section>${brandPanel(settings)}<section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片的延迟色带每格一次探测，固定画最近 10 次；早于这个范围的探测不再显示，那几格留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${esc(s.id)}"${s.id === skinNow ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section>${themePanel()}${acct ? `<section class="panel webhook-panel"><div><h3>后台账号</h3><p>${acct.configured ? `当前用户名：<b>${esc(acct.username)}</b>` : "尚未设置账号，请在服务器执行 tza-server reset-password 创建账号。"}</p><small>修改后其他已登录的浏览器需要重新登录。忘记密码时在服务器执行 tza-server reset-password --data 数据目录，会生成新密码。</small></div><div class="webhook-actions"><button id="edit-account" class="primary">${acct.configured ? "修改账号" : "设置账号"}</button></div></section>` : ""}<section class="panel webhook-panel"><div><h3>MCP API Key</h3><p>${mcp.configured ? `已启用 · 生成于 ${esc(new Date(mcp.created_at).toLocaleString())}` : "尚未生成，MCP 接口未启用。"}</p><small>用于 AI 客户端连接并管理节点、任务和设置。仅用于 MCP；重新生成或撤销后旧 Key 立即失效。</small><p>连接地址：<code>${esc(location.origin + "/mcp")}</code></p><p class="hint">请求头：Authorization: Bearer &lt;API Key&gt;</p>${mcpDocs()}</div><div class="webhook-actions"><button id="generate-mcp-key" class="primary">${mcp.configured ? "重新生成" : "生成 API Key"}</button>${mcp.configured ? '<button id="revoke-mcp-key">撤销</button>' : ""}</div></section><section class="panel webhook-panel"><div><h3>数据备份</h3><p>下载整个数据库的一份快照：节点、任务、历史与设置都在里面。不用停服，面板和 Agent 上报照常。</p><small>升级到会改数据库结构的版本之前先下载一份。恢复时先停服，把它放进数据目录、命名为 tza-probe.db（替换原文件），并删掉同目录的 tza-probe.db-wal 与 tza-probe.db-shm，再启动。</small></div><div class="webhook-actions"><a id="download-backup" class="button primary" href="/api/v1/admin/backup" download>下载备份</a></div></section>`;
   // 面板显示项走 /admin/panel：通知那个出口的语义是「空值即清空」，
   // 用同一个 PUT 保存显示项会顺手把 webhook 或 Bot Token 清掉。
   content().querySelector("#save-window").onclick = guard(async () => {
@@ -49,6 +50,7 @@ export async function renderSettings(nodesReady) {
     toast(`前台默认外观：${THEMES.find((t) => t.id === theme).name} · ${SKINS.find((s) => s.id === skin).name}`);
   });
   paintSwatches(content());
+  wireBrand(settings);
   wireThemes();
   content().querySelector("#generate-mcp-key").onclick = guard(async () => {
     if (mcp.configured) {
@@ -67,6 +69,52 @@ export async function renderSettings(nodesReady) {
   });
   content().querySelector("#edit-account")?.addEventListener("click", () => accountForm(acct));
 }
+// 站点品牌：名称换掉标签页标题与品牌区的 PROBE，logo 换掉 t·z·a 字标与 favicon。两项各自保存、
+// 各自清除；都清掉就回到内置的 TZA Probe 品牌。保存后 applyBrand 当场换上本页的标题、图标与侧栏，
+// 公开面板与别的访客下一次打开时由 /theme-default.js 在首屏前带上。
+const LOGO_TYPES = "image/png,image/jpeg,image/gif,image/webp,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,.ico,.svg";
+function brandPanel(settings) {
+  const name = settings.site_name || "";
+  const logo = settings.site_logo || "";
+  const preview = logo ? `<img class="brand-logo" src="${esc(logo)}" alt="当前 logo">` : `<span class="brand-mark">t<span>z</span>a</span>`;
+  return `<section class="panel webhook-panel brand-panel"><div><h3>站点品牌</h3><p>浏览器标签页标题、公开面板与后台左上角显示的名称和 logo。留空即默认的 ${DEFAULT_NAME}。</p><small>logo 同时用作标签页图标，方形图最清楚：PNG、JPEG、GIF、WebP、ICO 或 SVG（不能含脚本），最大 512 KB。存在数据目录的 branding/ 下，不在数据库备份里。</small></div><div class="webhook-actions"><div class="brand-row"><label class="window-field">站点名称<input id="site-name" type="text" maxlength="32" placeholder="${DEFAULT_NAME}" value="${esc(name)}" autocomplete="off"></label><button id="save-site-name" class="primary">保存名称</button></div><div class="brand-row"><span class="brand-preview" aria-label="当前 logo">${preview}</span><label class="button theme-upload">${logo ? "更换 logo" : "上传 logo"}<input id="site-logo-file" type="file" accept="${LOGO_TYPES}" hidden></label>${logo ? '<button id="remove-site-logo">移除 logo</button>' : ""}</div></div></section>`;
+}
+
+function wireBrand(settings) {
+  content().querySelector("#save-site-name").onclick = guard(async () => {
+    const name = content().querySelector("#site-name").value.trim();
+    await send("/admin/panel", "PUT", { site_name: name });
+    applyBrand({ name });
+    await renderSettings();
+    toast(name ? `站点名称已改为「${name}」` : `站点名称已恢复默认（${DEFAULT_NAME}）`);
+  });
+  const input = content().querySelector("#site-logo-file");
+  input.onchange = guard(async () => {
+    const file = input.files[0];
+    input.value = "";
+    if (!file) return;
+    if (file.size > 512 * 1024) throw new Error("logo 最大 512 KB");
+    // 请求体就是图片本身；类型由服务端按内容判断，这里的 Content-Type 只是个说明。
+    const saved = await api("/admin/panel/logo", { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+    applyBrand({ logo: saved.site_logo });
+    await renderSettings();
+    toast("logo 已更新");
+  });
+  content().querySelector("#remove-site-logo")?.addEventListener("click", () =>
+    confirmAction(
+      "移除 logo",
+      `移除后品牌区与浏览器标签页图标回到默认的 ${DEFAULT_NAME} 字标${settings.site_name ? "，站点名称不变" : ""}。`,
+      async () => {
+        await send("/admin/panel/logo", "DELETE");
+        applyBrand({ logo: "" });
+        await renderSettings();
+        toast("logo 已移除");
+      },
+      { label: "移除 logo" },
+    ),
+  );
+}
+
 // 主题：内置四套 + 后台上传的主题包。主题包是一个 zip（theme.json + 样式表 + 图片 / 字体，
 // 不含脚本），装好后访客就能在右上角的外观菜单里选它，也能设成前台默认。格式见 docs/THEMES.md。
 // 列表里除了外观（内置四套 + 主题包），还有角色包：它们不是外观，只给二次元主题添角色，

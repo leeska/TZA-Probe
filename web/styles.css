@@ -252,6 +252,25 @@ input[type="checkbox"] {
   margin-top: 3px;
 }
 
+/* 后台上传的 logo 替换 t·z·a 字标：与字标同高，按比例缩放，不加皮肤给字标的底色与描边。
+   自定义站点名称可能是中文或混排：不再用 PROBE 那样的大字距。 */
+.brand-logo {
+  display: block;
+  height: 32px;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.brand > span.brand-name {
+  letter-spacing: 0.5px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Public Layout */
 .public-header {
   max-width: 1400px;
@@ -3541,6 +3560,30 @@ pre,
 .webhook-actions .window-field .select-shell {
   width: 132px;
   text-align: center;
+}
+
+/* 站点品牌：名称输入框放得下一个中文站名；logo 预览与品牌区同高。窄屏时整组换行，不撑出横向滚动。 */
+.brand-panel .webhook-actions {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.brand-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.webhook-actions .window-field #site-name {
+  width: 180px;
+  text-align: left;
+}
+
+.brand-preview {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ==========================================================================

@@ -5,15 +5,16 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#edf2fb" />
-    <!-- 后台设的默认外观先落地（几十字节，同步阻塞），再让 theme-boot.js 定 data-theme/data-skin；
-         顺序反了首屏会先按内置默认闪一下。 -->
+    <!-- 标题与图标要在 theme-boot.js 之前：它按后台设的站点名称与 logo 当场改掉这两样。 -->
+    <title>TZA Probe</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- 后台设的默认外观与站点品牌先落地（几十字节，同步阻塞），再让 theme-boot.js 定 data-theme/data-skin、
+         标题与图标；顺序反了首屏会先按内置默认闪一下。 -->
     <script src="/theme-default.js"></script>
     <script src="/theme-boot.js"></script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="description" content="TZA Probe · 苹果液态玻璃风格主机与网络基础设施观测系统" />
-    <title>TZA Probe</title>
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/glass.css" />
     <link rel="stylesheet" href="/press.css" />
@@ -37,9 +38,10 @@
     <link rel="modulepreload" href="/carrier-logos.js" />
     <link rel="modulepreload" href="/anime-cast.js" />
     <link rel="modulepreload" href="/ui-select.js" />
+    <link rel="modulepreload" href="/brand.js" />
   </head>
   <body>
-    <div id="app"><div class="loading">正在连接 TZA Probe…</div></div>
+    <div id="app"><div class="loading">正在连接…</div></div>
     <div id="toast" role="status" aria-live="polite"></div>
     <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
   </body>

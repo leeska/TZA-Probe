@@ -28,7 +28,8 @@
 | GET /admin/backup | 下载整个数据库的一致快照（SQLite 文件，`VACUUM INTO` 生成，不用停服）；文件名 `tza-backup-YYYYMMDD-HHMMSS.db` |
 | GET、PUT /admin/account | 后台账号：GET 回 `{"username":…,"configured":true}`；PUT 提交 `{"current_password":…,"username":…,"password":…}` 修改用户名与密码（用户名 1–32 个非空白字符，密码 8–128 个字符；当前密码错误 400），成功后除本次以外的浏览器会话全部失效。忘记密码在服务器执行 `tza-server reset-password` |
 | GET、POST、DELETE /admin/mcp-key | MCP API Key：GET 只回 `configured` 与已启用时的 `created_at`；POST 生成或重新生成，回一次性 `api_key`；DELETE 撤销。数据库只保存摘要，旧 Key 在重新生成或撤销后立即失效 |
-| GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
+| GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：站点名称 `site_name`（标签页标题与品牌区的名字，最多 32 字，空串恢复默认的 TZA Probe）、只读的 logo 地址 `site_logo`（未上传为空）、默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
+| PUT、DELETE /admin/panel/logo | 站点 logo：PUT 的请求体就是图片本身（不走 JSON），类型按内容判断，只收 PNG / JPEG / GIF / WebP / ICO / SVG，最大 512 KB，回 `{"site_logo":"/site-logo?v=…"}`；SVG 含脚本、事件属性、外链引用或 DOCTYPE 时 400，超大 413。DELETE 移除，回到内置字标。文件存在数据目录的 `branding/`，不在数据库备份里 |
 | GET、POST /admin/themes、DELETE /admin/themes/{id} | 主题包清单（内置 + 已安装，市场装的带 `"source":"market"`）、上传 zip、删除，见 [THEMES.md](THEMES.md#接口) |
 | GET /admin/plugins | 已安装的插件：`[{id, kind, name, hint, version, author, source, permissions, settings, targets}]`，`source` 为 `market` 表示从市场装的；通知插件带设置表单 `settings`（key、label、type、required、secret、help、placeholder、default、options），目标集带目标个数 `targets` |
 | POST /admin/plugins/inspect | 请求体是插件 zip（`Content-Type: application/zip`）：只校验、不安装，回同样的结构（面板据此列出权限请管理员确认）；不合规 400 |
@@ -39,6 +40,8 @@
 | POST /agent/report | `{protocol:1,metrics:{...}}` |
 | GET /agent/jobs | 获取有限租约任务：按种类分别领取，最多 8 个 TCP + 1 个回程 + 1 个解锁（Agent 须报 `parallel_jobs` 能力，否则整批最多两个） |
 | POST /agent/results | 上传与租约绑定的结果 |
+
+不在 /api/v1 下的两个品牌相关地址：`GET /site-logo` 公开提供已上传的 logo（没有时 404；带 `nosniff` 和自己的 `default-src 'none'; sandbox` CSP，直接打开 SVG 也跑不了脚本）；`GET /theme-default.js` 是首屏脚本，除默认外观外另写 `window.__tzaBrand={"name":…,"logo":…}`，`theme-boot.js` 据此在首屏前换掉标签页标题与 favicon。
 
 准确字段由 `internal/model` 中的 JSON 标签定义。未登录请求拿到的节点不含提醒规则（`alerts` 为空）。解锁结论只随 `/nodes` 的 `unlock` 字段下发。
 
@@ -54,7 +57,7 @@
 - `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
 
 工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`list_alert_rules`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤，含已装目标集插件的目标）、`task_runs`、`list_plugins`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`create_alert_rule` / `update_alert_rule`（`rule_id` + 要改的字段，合并语义）/ `delete_alert_rule`、`update_settings`、`test_notification`；市场：`search_market`（只读）与 `install_market_package`（见 [MCP.md](MCP.md)，市场关闭时不可用）。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`（`rule_id` 缺失按工具错误返回）、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` / `update_alert_rule` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`billing` 等）按字段合并，列表整份替换；`update_alert_rule` 改了 `scope` 时，新范围用不上的列表没重新提交就清掉（`exclude_node_ids` 在 `all` 与 `group` 之间切换时保留，被排除的节点不会因为换了范围就开始告警）。
-`create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（两者另外回面板显示项：延迟色带时间窗 `latency_window_minutes`、访客默认明暗 `default_theme` 与皮肤 `default_skin`）。`update_settings` 只改传了的项：不传 `channel` 沿用当前渠道，Telegram 的 `bot_token` / `chat_id` 留空沿用已存的，只传显示项时不动通知配置；关闭通知须显式传 `channel: "none"`，一项都不传返回 `-32602`；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
+`create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（两者另外回面板显示项：延迟色带时间窗 `latency_window_minutes`、访客默认明暗 `default_theme` 与皮肤 `default_skin`、站点名称 `site_name` 与 logo 地址 `site_logo`；logo 不能经 MCP 上传）。`update_settings` 只改传了的项：不传 `channel` 沿用当前渠道，Telegram 的 `bot_token` / `chat_id` 留空沿用已存的，只传显示项时不动通知配置；关闭通知须显式传 `channel: "none"`，一项都不传返回 `-32602`；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
 
 ## 主题市场（TZA-CC）
 

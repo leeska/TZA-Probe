@@ -1129,6 +1129,42 @@ const saveLook = async (theme, skin) => {
 };
 await saveLook("dark", "press");
 await saveLook("auto", "glass");
+// 站点品牌：改名称后本页的标签页标题与侧栏品牌当场换掉，首屏脚本也跟上；logo 上传后侧栏、
+// favicon 与设置页预览都用它；两项清掉回到内置的 TZA Probe（t·z·a 字标 + PROBE）。
+const brandBoot = async () => {
+  const js = await (await fetch(base + "/theme-default.js")).text();
+  return JSON.parse(js.match(/^window\.__tzaBrand=(.*);$/m)[1]);
+};
+assert.deepEqual(await brandBoot(), { name: "", logo: "" }, "未配置时首屏品牌为空");
+assert.equal($("#site-name").value, "", "未配置时站点名称为空");
+assert($(".sidebar .brand .brand-mark") && !$("#remove-site-logo"), "未配置时用内置字标、没有移除按钮");
+$("#site-name").value = "  冒烟 <b>监控</b> ";
+$("#save-site-name").click();
+await until(() => $("#site-name")?.value === "冒烟 <b>监控</b>", "重渲染后显示已保存的站点名称");
+assert.equal(w.document.title, "冒烟 <b>监控</b>", "标签页标题当场换掉");
+assert.equal($(".sidebar .brand .brand-name").firstChild.textContent, "冒烟 <b>监控</b>", "侧栏品牌当场换掉（按文本转义）");
+assert(!$(".sidebar .brand b"), "站点名称不能被当成 HTML");
+assert.equal((await brandBoot()).name, "冒烟 <b>监控</b>", "首屏脚本跟上站点名称");
+const smokeLogo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="#2b8a3e"/></svg>';
+const uploaded = await fetch(base + "/api/v1/admin/panel/logo", { method: "PUT", headers: { Cookie: cookie, "Content-Type": "image/svg+xml" }, body: smokeLogo });
+assert.equal(uploaded.status, 200, "上传 logo");
+const { site_logo: logoURL } = await uploaded.json();
+assert.equal((await brandBoot()).logo, logoURL, "首屏脚本跟上 logo");
+assert.equal(await (await fetch(base + logoURL)).text(), smokeLogo, "/site-logo 原样提供上传的图");
+$('[data-tab="settings"]').click();
+await until(() => $("#remove-site-logo"), "上传 logo 后设置页出现移除按钮");
+assert.equal($(".brand-preview img")?.getAttribute("src"), logoURL, "设置页预览用新 logo");
+$("#remove-site-logo").click();
+await until(() => $("#dialog #confirm"), "移除 logo 的确认框");
+$("#dialog #confirm").click();
+await until(() => !$("#remove-site-logo"), "移除 logo 后重渲染");
+assert.equal((await brandBoot()).logo, "", "移除后首屏没有 logo");
+assert.equal(w.document.querySelector('link[rel="icon"]')?.getAttribute("href") ?? "/favicon.svg", "/favicon.svg", "favicon 回到默认");
+$("#site-name").value = "";
+$("#save-site-name").click();
+await until(() => w.document.title === "TZA Probe", "清空站点名称后标题回到默认");
+assert($(".sidebar .brand .brand-mark") && $(".sidebar .brand").textContent.startsWith("tzaPROBE"), "侧栏回到内置品牌");
+assert.deepEqual(await brandBoot(), { name: "", logo: "" }, "清除后首屏品牌为空");
 // MCP Key management is reachable from settings and never exposed on later reads.
 $("#generate-mcp-key").click();
 await until(() => $("#mcp-api-key"), "generate MCP key");

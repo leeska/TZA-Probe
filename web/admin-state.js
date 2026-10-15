@@ -4,7 +4,6 @@ import { api, esc, modal, guard } from "./api.js";
 // admin.js 注册；页面模块不反过来 import admin.js。
 export const state = {
   container: null,
-  brandHTML: "",
   tab: "nodes",
   nodes: [],
   tasks: [],

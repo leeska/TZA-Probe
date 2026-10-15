@@ -90,12 +90,14 @@ type Server struct {
 	Market *market.Client
 	// Plugins are the installed declarative plugins; nil means none.
 	Plugins *plugin.Store
+	// Logo is the uploaded site logo (get_settings reports its URL); nil means none.
+	Logo interface{ URL() string }
 }
 
 // service is the management surface the tools call; it is cheap to build, and
 // building it per call keeps Server a plain struct literal.
 func (s *Server) service() *service.Service {
-	svc := &service.Service{Store: s.Source, Notifier: s.Notifier, Plugins: s.Plugins}
+	svc := &service.Service{Store: s.Source, Notifier: s.Notifier, Plugins: s.Plugins, Logo: s.Logo}
 	if s.Themes != nil {
 		svc.Themes = s.Themes
 	}

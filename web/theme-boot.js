@@ -30,4 +30,16 @@
   root.dataset.theme = dark ? "dark" : "light";
   // 认不出来的值（含 null、已删除的主题包）退回默认皮肤。
   root.dataset.skin = known(skin) ? skin : skinDefault;
+  // 站点品牌：后台设了名称 / logo 就在首屏前换掉标签页标题与 favicon（index.html 把 <title> 与
+  // <link rel="icon"> 放在本脚本之前）。后台保存后的即时替换见 brand.js 的 applyBrand。
+  var brand = window.__tzaBrand || {};
+  var name = typeof brand.name === "string" ? brand.name.trim() : "";
+  if (name) document.title = name;
+  if (typeof brand.logo === "string" && brand.logo) {
+    var icon = document.querySelector('link[rel="icon"]');
+    if (icon) {
+      icon.removeAttribute("type");
+      icon.href = brand.logo;
+    }
+  }
 })();

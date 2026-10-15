@@ -18,6 +18,7 @@ import (
 
 	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
+	"github.com/leeska/TZA-Probe/internal/brand"
 	"github.com/leeska/TZA-Probe/internal/httpapi"
 	"github.com/leeska/TZA-Probe/internal/market"
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -96,7 +97,7 @@ func run() error {
 	}
 	// 同一个发送器给后台的「发送测试」和告警引擎用：通知插件渠道经它查已安装的插件。
 	sender := notify.Transport{Plugins: plugins}
-	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Market: cc, Plugins: plugins}
+	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Market: cc, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
 	wg.Add(2)

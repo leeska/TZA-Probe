@@ -7,6 +7,7 @@ import { searchMatch } from "./search.js";
 import { carrierMark } from "./carrier-logos.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
 import { castId, foldKey, packCharacter } from "./anime-cast.js";
+import { brandHTML } from "./brand.js";
 import "./ui-select.js";
 
 const app = document.querySelector("#app");
@@ -32,7 +33,6 @@ function storedView() {
 }
 let view = storedView();
 
-export const brand = `<a class="brand" href="/" aria-label="TZA Probe 首页"><span class="brand-mark">t<span>z</span>a</span><span>PROBE<small>基础设施观测</small></span></a>`;
 
 // 滚动页面时不要顺手改掉已填好的值：数字、日期时间与下拉在被滚动时先失焦
 // （失焦后浏览器不会再按滚轮改值），页面滚动不受影响。
@@ -68,7 +68,7 @@ async function start() {
   noWheelStepping();
   if (adminPage) {
     const { mountAdmin } = await loadAdmin();
-    await mountAdmin(app, brand);
+    await mountAdmin(app);
     return;
   }
   renderShell();
@@ -91,7 +91,7 @@ function viewSwitch() {
 }
 
 function renderShell() {
-  app.innerHTML = `<header class="public-header">${brand}<nav><span class="live-label"><i></i><span class="live-text">LIVE STATUS</span></span>${skinButton()}${themeButton()}<a href="/admin" class="button quiet admin-link" aria-label="管理控制台"><span class="admin-link-full">管理控制台</span><span class="admin-link-short">后台</span> ↗</a></nav></header><main class="public-main"><section class="hero"><div><h1>每一台主机，<span>一眼看清</span>。</h1></div><div class="hero-meta"><span>最近同步</span><strong id="updated">连接中</strong><small>每秒刷新</small></div></section><section id="overview" class="overview"></section><section class="toolbar"><div class="filter-controls"><div class="search"><span>⌕</span><input id="search" aria-label="搜索节点" placeholder="搜索名称 / 地区 / 分组 / 商家 / 拼音"></div><select id="group-filter" aria-label="节点分组"><option value="">全部分组</option></select></div><div class="view-bar">${viewSwitch()}</div></section><div id="nodes" class="node-grid"></div><footer><span>独立 · 轻量 · 可控</span><span>TZA PROBE · V2</span></footer></main>`;
+  app.innerHTML = `<header class="public-header">${brandHTML()}<nav><span class="live-label"><i></i><span class="live-text">LIVE STATUS</span></span>${skinButton()}${themeButton()}<a href="/admin" class="button quiet admin-link" aria-label="管理控制台"><span class="admin-link-full">管理控制台</span><span class="admin-link-short">后台</span> ↗</a></nav></header><main class="public-main"><section class="hero"><div><h1>每一台主机，<span>一眼看清</span>。</h1></div><div class="hero-meta"><span>最近同步</span><strong id="updated">连接中</strong><small>每秒刷新</small></div></section><section id="overview" class="overview"></section><section class="toolbar"><div class="filter-controls"><div class="search"><span>⌕</span><input id="search" aria-label="搜索节点" placeholder="搜索名称 / 地区 / 分组 / 商家 / 拼音"></div><select id="group-filter" aria-label="节点分组"><option value="">全部分组</option></select></div><div class="view-bar">${viewSwitch()}</div></section><div id="nodes" class="node-grid"></div><footer><span>独立 · 轻量 · 可控</span><span>TZA PROBE · V2</span></footer></main>`;
 
   document.querySelector("#search").oninput = (e) => {
     query = e.target.value;

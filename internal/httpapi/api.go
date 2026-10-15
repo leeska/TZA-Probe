@@ -20,6 +20,7 @@ import (
 
 	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
+	"github.com/leeska/TZA-Probe/internal/brand"
 	"github.com/leeska/TZA-Probe/internal/market"
 	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -50,6 +51,7 @@ type API struct {
 	Themes        *theme.Store    // uploaded theme packages; nil means built-in skins only
 	Market        *market.Client  // TZA-CC client; nil means no market (routes answer 503)
 	Plugins       *plugin.Store   // installed declarative plugins; nil means none
+	Logo          *brand.Store    // uploaded site logo; nil means the built-in mark only
 	mu            sync.Mutex
 	sessions      map[string]time.Time
 	loginWindow   time.Time
@@ -98,6 +100,12 @@ const probesTTL = 5 * time.Second
 // 流量与降速窗口（13 台约 30 条查询）：以前每个开着面板的访客都各算一遍，访客越多 1 核机越吃力。
 // 匿名请求改为共用一份 1 秒内的快照，同时到达的请求排队等同一次计算，再多访客每秒也只算一次。
 // 管理员不走快照：后台改完节点马上要看到结果。
+// siteBrand is the first-paint brand /theme-default.js hands the page.
+type siteBrand struct {
+	Name string `json:"name"`
+	Logo string `json:"logo"`
+}
+
 func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) {
 	if admin {
 		return a.Store.Nodes(r.Context(), time.Now())
@@ -110,7 +118,7 @@ func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) 
 
 func (a *API) Handler() http.Handler {
 	a.sessions = map[string]time.Time{}
-	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier, Themes: a.Themes, Plugins: a.Plugins}
+	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier, Themes: a.Themes, Plugins: a.Plugins, Logo: a.Logo}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, map[string]any{"version": model.Version, "protocol": model.Protocol})
@@ -143,8 +151,10 @@ func (a *API) Handler() http.Handler {
 	// 动态脚本，由 index.html 在 theme-boot.js 之前引用。
 	mux.HandleFunc("GET /theme-default.js", func(w http.ResponseWriter, r *http.Request) {
 		theme, skin := model.DefaultPanelTheme, model.DefaultPanelSkin
+		var site siteBrand
 		if panel, err := a.svc.Panel(r.Context()); err == nil {
 			theme, skin = panel.DefaultTheme, panel.DefaultSkin
+			site = siteBrand{Name: panel.SiteName, Logo: panel.SiteLogo}
 		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -154,8 +164,14 @@ func (a *API) Handler() http.Handler {
 			// 访客存下的皮肤，theme-css.js 要在首屏前挂上已安装主题的样式表。
 			list, _ := json.Marshal(themeList(a.Themes))
 			fmt.Fprintf(w, "window.__tzaThemes=%s;\n", list)
+			// 站点名称与 logo 也要在首屏前就位：theme-boot.js 据此换掉标签页标题与 favicon，
+			// app.js 拼品牌区时直接用，不先闪一下内置的 TZA Probe。空值即内置品牌。
+			brandJS, _ := json.Marshal(site)
+			fmt.Fprintf(w, "window.__tzaBrand=%s;\n", brandJS)
 		}
 	})
+	// 后台上传的站点 logo（没有时 404）；类型白名单、SVG 检查与它自己的 CSP 见 brand.Store。
+	mux.Handle("GET "+brand.Path, a.Logo)
 	mux.HandleFunc("POST /api/v1/agent/report", a.agent(func(w http.ResponseWriter, r *http.Request, id string) {
 		var v model.Report
 		if !decode(w, r, &v) {
@@ -199,7 +215,7 @@ func (a *API) Handler() http.Handler {
 	})
 	// MCP uses an independent, revocable API key managed in the panel.
 	a.mcpKeyRoutes(mux)
-	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier, Themes: a.Themes, Market: a.Market, Plugins: a.Plugins}
+	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier, Themes: a.Themes, Market: a.Market, Plugins: a.Plugins, Logo: a.Logo}
 	mux.HandleFunc("POST /mcp", a.mcpAuth(func(w http.ResponseWriter, r *http.Request) {
 		// install_market_package downloads from TZA-CC and can outlast the 30-second WriteTimeout.
 		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(installDeadline))
