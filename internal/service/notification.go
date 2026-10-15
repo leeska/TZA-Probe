@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
 
 // notificationKey is the settings row holding the channel as JSON. Before it
@@ -77,6 +80,15 @@ func (s *Service) normalizeNotification(ctx context.Context, next notify.Config)
 	if err := next.Validate(); err != nil {
 		return notify.Config{}, model.Invalid(err.Error())
 	}
+	if next.Channel == "plugin" {
+		settings, err := s.pluginSettings(ctx, next.Plugin, next.PluginSettings)
+		if err != nil {
+			return notify.Config{}, err
+		}
+		next.PluginSettings = settings
+	} else {
+		next.Plugin, next.PluginSettings = "", nil
+	}
 	if next.Channel != "telegram" {
 		next.BotToken = ""
 		next.ChatID = ""
@@ -85,6 +97,84 @@ func (s *Service) normalizeNotification(ctx context.Context, next notify.Config)
 		next.Webhook = ""
 	}
 	return next, nil
+}
+
+// pluginSettings checks the settings of a plugin channel against the
+// installed plugin. A blank secret keeps the stored value when the same
+// plugin is already the channel (the form never echoes secrets).
+func (s *Service) pluginSettings(ctx context.Context, id string, values map[string]string) (map[string]string, error) {
+	p, err := s.notifyPlugin(id)
+	if err != nil {
+		return nil, err
+	}
+	merged := map[string]string{}
+	for k, v := range values {
+		merged[k] = v
+	}
+	if old, err := s.loadNotification(ctx); err == nil && old.Channel == "plugin" && old.Plugin == id {
+		for _, key := range p.SecretKeys() {
+			if strings.TrimSpace(merged[key]) == "" && old.PluginSettings[key] != "" {
+				merged[key] = old.PluginSettings[key]
+			}
+		}
+	}
+	settings, err := p.CheckSettings(merged)
+	if err != nil {
+		return nil, model.Invalid(p.Name + "：" + err.Error())
+	}
+	return settings, nil
+}
+
+// notifyPlugin resolves an installed notify plugin, as a model error.
+func (s *Service) notifyPlugin(id string) (tzapkg.Plugin, error) {
+	if s.Plugins == nil {
+		return tzapkg.Plugin{}, model.Invalid("这个 Server 没有启用插件")
+	}
+	p, err := s.Plugins.Plugin(id)
+	if err != nil {
+		return tzapkg.Plugin{}, model.Invalid(fmt.Sprintf("通知插件 %s 不可用：%v", id, err))
+	}
+	if p.Kind != tzapkg.KindNotify {
+		return tzapkg.Plugin{}, model.Invalid(fmt.Sprintf("插件 %s 不是通知插件", id))
+	}
+	return p, nil
+}
+
+// PublicNotification is the credential-free view of a channel: Config.Public
+// plus, for a plugin channel, the plugin's name, the values of its non-secret
+// settings and which secrets are stored (never their values). A plugin that
+// disappeared or no longer parses is reported in plugin_error, so the panel
+// shows why notifications stopped instead of a silently empty channel.
+func (s *Service) PublicNotification(c notify.Config) map[string]any {
+	view := c.Public()
+	if c.Channel != "plugin" {
+		return view
+	}
+	view["plugin_name"] = c.Plugin
+	view["plugin_settings"] = map[string]string{}
+	view["plugin_secrets"] = map[string]bool{}
+	p, err := s.notifyPlugin(c.Plugin)
+	if err != nil {
+		view["plugin_error"] = err.Error()
+		return view
+	}
+	secret := map[string]bool{}
+	for _, key := range p.SecretKeys() {
+		secret[key] = true
+	}
+	values, stored := map[string]string{}, map[string]bool{}
+	for k, v := range c.PluginSettings {
+		if secret[k] {
+			stored[k] = v != ""
+		} else {
+			values[k] = v
+		}
+	}
+	view["plugin_name"], view["plugin_settings"], view["plugin_secrets"] = p.Name, values, stored
+	if _, err := p.CheckSettings(c.PluginSettings); err != nil {
+		view["plugin_error"] = "设置不再符合插件要求：" + err.Error()
+	}
+	return view
 }
 
 // NotificationConfig is the notify.Channels port: the Engine delivers through
@@ -120,10 +210,16 @@ func (s *Service) resolveNotificationPatch(ctx context.Context, patch notify.Con
 	}
 	if patch.Channel == "" {
 		patch.Channel = current.Channel
+		if patch.Plugin != "" && patch.Plugin != current.Plugin {
+			patch.Channel = "plugin"
+		}
 		if patch.Channel == "none" || patch.Channel == "" {
 			patch.Channel = "webhook"
-			if patch.BotToken != "" || patch.ChatID != "" {
+			switch {
+			case patch.BotToken != "" || patch.ChatID != "":
 				patch.Channel = "telegram"
+			case patch.Plugin != "":
+				patch.Channel = "plugin"
 			}
 		}
 	}
@@ -132,6 +228,24 @@ func (s *Service) resolveNotificationPatch(ctx context.Context, patch notify.Con
 	}
 	if patch.Channel == "webhook" && patch.Webhook == "" && current.Channel == "webhook" {
 		patch.Webhook = current.Webhook
+	}
+	if patch.Channel == "plugin" && current.Channel == "plugin" {
+		if patch.Plugin == "" {
+			patch.Plugin = current.Plugin
+		}
+		// 只改传了的设置：没传或留空的沿用当前值（同一个插件时）。
+		if patch.Plugin == current.Plugin {
+			merged := map[string]string{}
+			for k, v := range current.PluginSettings {
+				merged[k] = v
+			}
+			for k, v := range patch.PluginSettings {
+				if strings.TrimSpace(v) != "" {
+					merged[k] = v
+				}
+			}
+			patch.PluginSettings = merged
+		}
 	}
 	return s.normalizeNotification(ctx, patch)
 }
@@ -160,7 +274,7 @@ func (s *Service) TestNotification(ctx context.Context) (string, error) {
 // credential without resubmitting the rest. Closing notifications takes an
 // explicit channel "none".
 func (s *Service) PatchNotification(ctx context.Context, patch notify.Config) (notify.Config, error) {
-	if patch == (notify.Config{}) {
+	if patch.IsZero() {
 		return notify.Config{}, model.Invalid("至少给一项通知设置；关闭通知请传 channel=none")
 	}
 	config, err := s.resolveNotificationPatch(ctx, patch)

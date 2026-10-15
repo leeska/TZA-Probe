@@ -99,7 +99,7 @@ check_go() {
 
 check_web() {
   local t0 rc f
-  say "web/*.js 语法（$JS_KIND）"
+  say "web/*.js 语法（${JS_KIND}）"
   rc=0
   for f in web/*.js; do
     if [ "$JS_KIND" = node ]; then
@@ -136,7 +136,7 @@ check_ui_smoke() {
   "$GO" build -o "$TMP/tza-server" ./cmd/server || { note "!! 构建一次性 Server 失败"; FAILED=1; return; }
   mkdir -p "$TMP/data"
   "$TMP/tza-server" init --data "$TMP/data" > "$TMP/credentials" || { FAILED=1; return; }
-  "$TMP/tza-server" --listen "127.0.0.1:$port" --data "$TMP/data" > "$TMP/server.log" 2>&1 &
+  "$TMP/tza-server" --listen "127.0.0.1:$port" --data "$TMP/data" --cc-url off > "$TMP/server.log" 2>&1 &
   SRV_PID=$!
   code=000
   for i in $(seq 1 30); do
@@ -147,7 +147,7 @@ check_ui_smoke() {
   note "healthz=$code pid=$SRV_PID data=$TMP/data"
   if [ "$code" != 200 ]; then tail -5 "$TMP/server.log" | sed 's/^/   /'; FAILED=1; return; fi
   if [ ! -d "$deps/node_modules/jsdom" ] || [ ! -d "$deps/node_modules/esbuild" ]; then
-    note "装 jsdom@26.1.0 + esbuild@0.25.10 到 $deps（$JS_KIND）"
+    note "装 jsdom@26.1.0 + esbuild@0.25.10 到 ${deps}（${JS_KIND}）"
     mkdir -p "$deps"
     if [ "$JS_KIND" = node ]; then
       [ -n "$NPM" ] || { note "!! 找不到 npm（试 TZA_NPM=/path/to/npm）"; FAILED=1; return; }
@@ -187,7 +187,7 @@ run_build() {
   local V LDFLAGS arch t0 t1 stage
   V=$(version)
   LDFLAGS="-s -w -X github.com/leeska/TZA-Probe/internal/model.Version=$V"
-  say "构建（版本 $V，短 sha $SHA）"
+  say "构建（版本 ${V}，短 sha ${SHA}）"
   rm -rf "$OUT" "$TMP/stage"; mkdir -p "$OUT" "$TMP/stage"
 
   # Server 内嵌两个架构的 Agent（面板「接入」的一行命令要用），所以先编 Agent 再编 Server。

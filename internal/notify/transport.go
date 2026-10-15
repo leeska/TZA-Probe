@@ -13,7 +13,14 @@ import (
 	"github.com/leeska/TZA-Probe/internal/model"
 )
 
-type Transport struct{ Telegram Telegram }
+// Transport delivers to the configured channel. Plugins resolves a "plugin"
+// channel (nil: plugin channels fail with a clear error); RoundTripper is the
+// HTTP transport for plugin requests (tests; nil is the default).
+type Transport struct {
+	Telegram     Telegram
+	Plugins      Plugins
+	RoundTripper http.RoundTripper
+}
 
 func (s Transport) Send(ctx context.Context, c Config, event model.Event) error {
 	if err := c.Validate(); err != nil {
@@ -24,6 +31,8 @@ func (s Transport) Send(ctx context.Context, c Config, event model.Event) error 
 		return s.Telegram.Send(ctx, c, event)
 	case "webhook":
 		return (Webhook{}).Send(ctx, c.Webhook, event)
+	case "plugin":
+		return s.sendPlugin(ctx, c, event)
 	default:
 		return errors.New("通知渠道未启用")
 	}

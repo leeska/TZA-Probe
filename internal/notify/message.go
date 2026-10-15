@@ -161,7 +161,13 @@ func recoveryMessage(n model.NodeView, r model.AlertRule, enabled bool, now time
 	return nodeContext(n, "解除原因："+reason+"\n"+facts)
 }
 
-func telegramMessage(e model.Event) string {
+func telegramMessage(e model.Event) string { return messageText(e, "Telegram", telegramLimit) }
+
+// messageText is the full multi-line message: status, kind, node, the
+// reading, time and event number. channel names the channel on a test
+// message ("" leaves the line out); the reading is cut to keep the whole text
+// within limit UTF-16 code units.
+func messageText(e model.Event, channel string, limit int) string {
 	state := "⚪ 告警解除"
 	if e.Active {
 		state = "🔴 告警触发"
@@ -171,13 +177,9 @@ func telegramMessage(e model.Event) string {
 	}
 	lines := []string{"TZA Probe · " + state}
 	if e.Kind != "test" {
-		kind := telegramTitles[e.Kind]
-		if kind == "" {
-			kind = singleLine(e.Kind)
-		}
-		lines = append(lines, "类型："+kind)
-	} else {
-		lines = append(lines, "通道：Telegram")
+		lines = append(lines, "类型："+kindName(e.Kind))
+	} else if channel != "" {
+		lines = append(lines, "通道："+channel)
 	}
 	if e.NodeName != "" {
 		lines = append(lines, "节点："+singleLine(e.NodeName))
@@ -192,10 +194,21 @@ func telegramMessage(e model.Event) string {
 	if e.Message != "" {
 		// Telegram 拒收超长正文（HTTP 400），那样重试多少次都发不出去；超出时截断正文，
 		// 保留头部身份和尾部的时间、事件编号，便于回后台核对完整记录。
-		budget := telegramLimit - utf16Len(strings.Join(lines, "\n")) - utf16Len(strings.Join(footer, "\n")) - utf16Len("\n\n\n")
+		budget := limit - utf16Len(strings.Join(lines, "\n")) - utf16Len(strings.Join(footer, "\n")) - utf16Len("\n\n\n")
 		lines = append(lines, "", truncateUTF16(e.Message, budget))
 	}
 	return strings.Join(append(lines, footer...), "\n")
+}
+
+// kindName is the Chinese name of an event kind (the raw kind when unknown).
+func kindName(kind string) string {
+	if kind == "test" {
+		return "连接测试"
+	}
+	if name := telegramTitles[kind]; name != "" {
+		return name
+	}
+	return singleLine(kind)
 }
 
 // telegramLimit is sendMessage's text limit, counted in UTF-16 code units.

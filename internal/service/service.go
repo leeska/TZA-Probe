@@ -65,6 +65,8 @@ type Service struct {
 	Notifier notify.Sender
 	// Themes knows the uploaded theme packages; nil means built-in skins only.
 	Themes interface{ Known(id string) bool }
+	// Plugins are the installed declarative plugins; nil means none.
+	Plugins Plugins
 }
 
 // installedSkin reports whether id is an uploaded theme package.
@@ -140,7 +142,8 @@ func (s *Service) ReplaceNode(ctx context.Context, id string, n model.Node) erro
 // checkRegions rejects a card region nothing can ever match. The card shows a
 // result only when the node's region equals a task target's region letter for
 // letter, so 「上海市」 or a typo silently leaves the card empty. A region is
-// known when the built-in catalogue or some task's targets use it. A value the
+// known when the built-in catalogue, an installed target set or some task's
+// targets use it. A value the
 // node already had is let through, so an older node stays editable.
 func (s *Service) checkRegions(ctx context.Context, next, previous model.NodeDisplay) error {
 	changed := []struct{ label, value, before string }{
@@ -159,18 +162,22 @@ func (s *Service) checkRegions(ctx context.Context, next, previous model.NodeDis
 			}
 		}
 		if !known[c.value] {
-			return model.Invalid(fmt.Sprintf("%s「%s」不在内置目录或任何任务的目标地区里，卡片不会有结果；请从候选里选，或先建好这个地区的任务", c.label, c.value))
+			return model.Invalid(fmt.Sprintf("%s「%s」不在内置目录、目标集插件或任何任务的目标地区里，卡片不会有结果；请从候选里选，或先建好这个地区的任务", c.label, c.value))
 		}
 	}
 	return nil
 }
 
 // KnownRegions is every region a card can match: the built-in catalogue's
-// target regions plus the regions of every task's targets.
+// target regions, those of installed target-set plugins, plus the regions of
+// every task's targets.
 func (s *Service) KnownRegions(ctx context.Context) (map[string]bool, error) {
 	out := map[string]bool{}
 	for _, region := range catalogRegions() {
 		out[region] = true
+	}
+	for _, t := range s.pluginTargets() {
+		out[t.Region] = true
 	}
 	tasks, err := s.Store.Tasks(ctx)
 	if err != nil {

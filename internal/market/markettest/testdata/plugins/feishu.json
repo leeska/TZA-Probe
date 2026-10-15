@@ -1,0 +1,35 @@
+{
+  "id": "feishu",
+  "type": "plugin",
+  "kind": "notify",
+  "name": "飞书机器人",
+  "hint": "群自定义机器人 Webhook，支持签名校验",
+  "version": "1.0.0",
+  "author": "TZA",
+  "notify": {
+    "hosts": ["open.feishu.cn", "open.larksuite.com"],
+    "settings": [
+      { "key": "webhook", "label": "Webhook 地址", "type": "url", "required": true, "secret": true,
+        "placeholder": "https://open.feishu.cn/open-apis/bot/v2/hook/…",
+        "pattern": "https://open\\.(feishu\\.cn|larksuite\\.com)/open-apis/bot/v2/hook/[A-Za-z0-9-]+",
+        "help": "群设置 → 群机器人 → 添加自定义机器人后复制的地址" },
+      { "key": "secret", "label": "签名校验密钥", "type": "secret", "help": "机器人安全设置里开启了「签名校验」时填写" }
+    ],
+    "computed": [
+      { "name": "ts", "value": "{{now.unix}}" },
+      { "name": "sign", "hmac_sha256": { "key": "{{computed.ts}}\n{{settings.secret}}", "message": "" }, "when": "settings.secret" },
+      { "name": "signed_at", "value": "{{computed.ts}}", "when": "settings.secret" }
+    ],
+    "request": {
+      "method": "POST",
+      "url": "{{settings.webhook}}",
+      "body": {
+        "timestamp?": "{{computed.signed_at}}",
+        "sign?": "{{computed.sign}}",
+        "msg_type": "text",
+        "content": { "text": "{{event.text|truncate:4000}}" }
+      }
+    },
+    "success": { "json": { "path": "code", "equals": 0 } }
+  }
+}

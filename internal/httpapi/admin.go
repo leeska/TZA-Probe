@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/account"
-	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/service"
 	"github.com/leeska/TZA-Probe/internal/theme"
+	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
 
 // themeView is one skin as the browser needs it: installed packages carry the
@@ -70,6 +71,42 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		w.WriteHeader(204)
 	})
+
+	// ---- plugins：声明式插件（通知渠道 / 探测目标集，见 docs/PLUGINS.md）
+	route("GET /api/v1/admin/plugins", func(w http.ResponseWriter, r *http.Request) {
+		write(w, 200, a.svc.PluginList())
+	})
+	// 上传前先看一眼：只校验、列出它能做的事，不落盘；面板据此请管理员确认。
+	route("POST /api/v1/admin/plugins/inspect", func(w http.ResponseWriter, r *http.Request) {
+		body, ok := zipBody(w, r)
+		if !ok {
+			return
+		}
+		p, err := tzapkg.OpenPlugin(body)
+		if err != nil {
+			write(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		write(w, 200, service.ViewPlugin(p))
+	})
+	route("POST /api/v1/admin/plugins", func(w http.ResponseWriter, r *http.Request) {
+		body, ok := zipBody(w, r)
+		if !ok {
+			return
+		}
+		p, err := a.Plugins.Install(body)
+		if err != nil {
+			write(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		write(w, 200, service.ViewPlugin(p))
+	})
+	route("DELETE /api/v1/admin/plugins/{id}", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, a.svc.RemovePlugin(r.Context(), r.PathValue("id")))
+	})
+
+	// ---- market：TZA-CC 的主题市场（目录、安装、更新、实例绑定、预览图代理），见 market.go
+	a.marketRoutes(route)
 
 	// ---- nodes
 	route("GET /api/v1/admin/nodes", a.nodes)
@@ -283,8 +320,13 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		write(w, 200, out)
 	})
 	route("GET /api/v1/admin/catalog", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(catalog.JSON)
+		// 内置目录 + 已安装的目标集插件（插件目标带 plugin / plugin_name，id 加了 plugin: 前缀）。
+		out, err := a.svc.Catalog()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, out)
 	})
 
 	// ---- events
@@ -311,7 +353,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		write(w, 200, config.Public())
+		write(w, 200, a.svc.PublicNotification(config))
 	})
 	route("PUT /api/v1/admin/notification", func(w http.ResponseWriter, r *http.Request) {
 		var v notify.Config
@@ -333,7 +375,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		write(w, 200, config.Public())
+		write(w, 200, a.svc.PublicNotification(config))
 	})
 	route("POST /api/v1/admin/notification/test", func(w http.ResponseWriter, r *http.Request) {
 		_, err := a.svc.TestNotification(r.Context())
@@ -441,6 +483,16 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		_, err := a.svc.PatchPanel(r.Context(), v)
 		respond(w, err)
 	})
+}
+
+// zipBody reads an uploaded package (the zip itself is the body).
+func zipBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, theme.MaxUpload))
+	if err != nil {
+		write(w, 413, map[string]string{"error": fmt.Sprintf("压缩包最大 %d MB", theme.MaxUpload>>20)})
+		return nil, false
+	}
+	return body, true
 }
 
 // rawBody reads a JSON object for a PATCH: the service merges it field by

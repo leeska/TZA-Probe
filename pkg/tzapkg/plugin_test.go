@@ -1,0 +1,195 @@
+package tzapkg
+
+import (
+	"archive/zip"
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+)
+
+const feishu = `{
+  "id": "feishu-test", "type": "plugin", "kind": "notify", "name": "飞书", "version": "1.0.0",
+  "notify": {
+    "hosts": ["open.feishu.cn", "*.larksuite.com"],
+    "settings": [
+      {"key": "webhook", "label": "Webhook", "type": "url", "required": true, "secret": true},
+      {"key": "secret", "label": "签名密钥", "type": "secret"},
+      {"key": "level", "label": "级别", "type": "select", "default": "4", "options": [{"value": "3", "label": "普通"}, {"value": "4", "label": "高"}]}
+    ],
+    "computed": [
+      {"name": "ts", "value": "{{now.unix}}"},
+      {"name": "sign", "hmac_sha256": {"key": "{{computed.ts}}\n{{settings.secret}}", "message": ""}, "when": "settings.secret"}
+    ],
+    "request": {
+      "method": "POST", "url": "{{settings.webhook}}",
+      "headers": {"X-Level": "{{settings.level}}", "X-Sign?": "{{computed.sign}}"},
+      "body": {"msg_type": "text", "content": {"text": "{{event.title}}\n{{event.message|truncate:10}}"},
+               "timestamp?": "{{computed.sign|trim}}{{computed.ts}}", "sign?": "{{computed.sign}}", "prio": "{{settings.level|number}}", "fixed": 7}
+    },
+    "success": {"json": {"path": "code", "equals": [0, "0"]}}
+  }
+}`
+
+func TestNotifyRender(t *testing.T) {
+	p, err := ParsePlugin([]byte(feishu))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.CheckSettings(map[string]string{"webhook": "https://evil.example/hook"}); err == nil {
+		t.Fatal("undeclared host accepted")
+	}
+	if _, err := p.CheckSettings(map[string]string{"webhook": "http://open.feishu.cn/x"}); err == nil {
+		t.Fatal("http accepted for a fixed host list")
+	}
+	if _, err := p.CheckSettings(map[string]string{}); err == nil {
+		t.Fatal("missing required setting accepted")
+	}
+	settings, err := p.CheckSettings(map[string]string{"webhook": " https://open.feishu.cn/open-apis/bot/v2/hook/abc ", "secret": "s3cret", "junk": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings["level"] != "4" || settings["junk"] != "" {
+		t.Fatalf("settings normalisation: %v", settings)
+	}
+	now := time.Unix(1700000000, 0)
+	req, err := p.RenderNotify(settings, map[string]string{"title": "TZA Probe · 告警触发", "message": "CPU 使用率超过阈值很久了"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac := hmac.New(sha256.New, []byte("1700000000\ns3cret"))
+	wantSign := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	var body map[string]any
+	json.Unmarshal(req.Body, &body)
+	if req.URL != "https://open.feishu.cn/open-apis/bot/v2/hook/abc" || req.Method != "POST" {
+		t.Fatalf("url %s", req.URL)
+	}
+	if body["sign"] != wantSign || req.Headers.Get("X-Sign") != wantSign || body["prio"] != float64(4) || body["fixed"] != float64(7) {
+		t.Fatalf("body %s", req.Body)
+	}
+	if text := body["content"].(map[string]any)["text"]; text != "TZA Probe · 告警触发\nCPU 使用率超过…" {
+		t.Fatalf("text %q", text)
+	}
+
+	// Without the optional secret the signed members disappear.
+	delete(settings, "secret")
+	req, _ = p.RenderNotify(settings, map[string]string{}, now)
+	body = map[string]any{}
+	json.Unmarshal(req.Body, &body)
+	if _, ok := body["sign"]; ok || req.Headers.Get("X-Sign") != "" {
+		t.Fatalf("optional members kept: %s", req.Body)
+	}
+	if body["timestamp"] != "1700000000" {
+		t.Fatalf("timestamp %v", body["timestamp"])
+	}
+
+	if err := p.CheckResponse(200, []byte(`{"code":0}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CheckResponse(200, []byte(`{"code":"0"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CheckResponse(200, []byte(`{"code":19021,"msg":"sign match fail"}`)); err == nil {
+		t.Fatal("rejected answer counted as success")
+	}
+	if err := p.CheckResponse(500, []byte(`{"code":0}`)); err == nil {
+		t.Fatal("HTTP 500 counted as success")
+	}
+}
+
+func TestNotifyWildcardAndForm(t *testing.T) {
+	p, err := ParsePlugin([]byte(`{"id":"gotify-test","type":"plugin","kind":"notify","name":"Gotify",
+		"notify":{"hosts":["*"],"settings":[{"key":"server","label":"服务器","type":"url","required":true},{"key":"token","label":"Token","type":"secret","required":true}],
+		"request":{"url":"{{settings.server}}/message?token={{settings.token|urlencode}}","body_type":"form","body":{"title":"{{event.title}}","extras?":"{{event.node}}"}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := p.CheckSettings(map[string]string{"server": "http://10.0.0.5:8080", "token": "a&b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := p.RenderNotify(s, map[string]string{"title": "标题"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.URL != "http://10.0.0.5:8080/message?token=a%26b" || string(req.Body) != "title="+url.QueryEscape("标题") {
+		t.Fatalf("%s %s", req.URL, req.Body)
+	}
+}
+
+func TestPluginRejects(t *testing.T) {
+	base := func(notify string) string {
+		return `{"id":"bad-test","type":"plugin","kind":"notify","name":"x","notify":` + notify + `}`
+	}
+	cases := map[string]string{
+		"unknown variable":    base(`{"hosts":["a.com"],"request":{"url":"https://a.com/{{event.password}}"}}`),
+		"undeclared setting":  base(`{"hosts":["a.com"],"request":{"url":"https://a.com/{{settings.nope}}"}}`),
+		"computed before def": base(`{"hosts":["a.com"],"computed":[{"name":"a","value":"{{computed.b}}"}],"request":{"url":"https://a.com"}}`),
+		"unknown filter":      base(`{"hosts":["a.com"],"request":{"url":"https://a.com/{{now.unix|exec}}"}}`),
+		"forbidden header":    base(`{"hosts":["a.com"],"request":{"url":"https://a.com","headers":{"Host":"b.com"}}}`),
+		"wildcard no url":     base(`{"hosts":["*"],"request":{"url":"https://a.com"}}`),
+		"bad host":            base(`{"hosts":["https://a.com"],"request":{"url":"https://a.com"}}`),
+		"unclosed":            base(`{"hosts":["a.com"],"request":{"url":"https://a.com/{{now.unix"}}`),
+		"unknown field":       base(`{"hosts":["a.com"],"script":"x","request":{"url":"https://a.com"}}`),
+		"reserved id":         `{"id":"telegram","type":"plugin","kind":"notify","name":"x","notify":{"hosts":["a.com"],"request":{"url":"https://a.com"}}}`,
+		"bad kind":            `{"id":"bad-test","type":"plugin","kind":"script","name":"x"}`,
+		"targets bad family":  `{"id":"bad-test","type":"plugin","kind":"targets","name":"x","targets":[{"id":"a","family":"ipv4","region":"东京","carrier":"其他","host":"2001:db8::1","port":80}]}`,
+		"targets bad carrier": `{"id":"bad-test","type":"plugin","kind":"targets","name":"x","targets":[{"id":"a","family":"ipv4","region":"东京","carrier":"NTT","host":"1.1.1.1","port":80}]}`,
+	}
+	for name, raw := range cases {
+		if _, err := ParsePlugin([]byte(raw)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestRenderedHostEnforced(t *testing.T) {
+	// A url setting is checked, but the template may still build a host from
+	// other text; the rendered URL is checked again.
+	p, err := ParsePlugin([]byte(`{"id":"sneaky-test","type":"plugin","kind":"notify","name":"x",
+		"notify":{"hosts":["a.com"],"settings":[{"key":"sub","label":"子域","type":"text"}],"request":{"url":"https://{{settings.sub}}/x"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.RenderNotify(map[string]string{"sub": "evil.com"}, nil, time.Now()); err == nil {
+		t.Fatal("rendered URL outside hosts accepted")
+	}
+	if _, err := p.RenderNotify(map[string]string{"sub": "a.com"}, nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInspect(t *testing.T) {
+	zipOf := func(files map[string]string) []byte {
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		for name, body := range files {
+			w, _ := zw.Create(name)
+			w.Write([]byte(body))
+		}
+		zw.Close()
+		return buf.Bytes()
+	}
+	info, err := Inspect(zipOf(map[string]string{"feishu/plugin.json": feishu}))
+	if err != nil || info.Type != TypePlugin || info.Kind != KindNotify || len(info.Permissions) == 0 || !strings.Contains(info.Permissions[0], "open.feishu.cn") {
+		t.Fatalf("plugin inspect: %+v %v", info, err)
+	}
+	if _, err := Inspect(zipOf(map[string]string{"plugin.json": feishu, "x.css": "a{}"})); err == nil {
+		t.Fatal("plugin with extra files accepted")
+	}
+	theme := `{"id":"t-one","name":"T","version":"1.0.0","chrome":{"light":"#ffffff","dark":"#000000"},"swatch":["#ffffff","#ffffff","#000000"],"styles":["a.css"]}`
+	if info, err := Inspect(zipOf(map[string]string{"theme.json": theme, "a.css": "a{}"})); err != nil || info.Type != TypeSkin {
+		t.Fatalf("theme inspect: %+v %v", info, err)
+	}
+	targets := `{"id":"jp-targets","type":"plugin","kind":"targets","name":"日本目标","targets":[
+		{"id":"tyo-v4","family":"ipv4","region":"东京","carrier":"其他","host":"1.1.1.1","port":443},
+		{"id":"tyo-dns","family":"ipv6","region":"东京","carrier":"其他","host":"example.jp","port":443}]}`
+	if info, err := Inspect(zipOf(map[string]string{"plugin.json": targets})); err != nil || info.Kind != KindTargets || !strings.Contains(info.Permissions[0], "2 个") {
+		t.Fatalf("targets inspect: %+v %v", info, err)
+	}
+}

@@ -3,12 +3,10 @@ package mcp
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/leeska/TZA-Probe/internal/catalog"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/service"
@@ -86,7 +84,7 @@ var adminTools = []tool{
 	},
 	{
 		Name:        "list_catalog",
-		Description: "内置的离线目标目录（地区 / 运营商 / IP 协议 / 地址），新建任务时用来挑目标。可按地区、运营商、协议筛选。",
+		Description: "目标目录（地区 / 运营商 / IP 协议 / 地址）：内置的离线目录加上已安装的目标集插件（这些目标带 plugin / plugin_name，id 以 plugin: 开头），新建任务时用来挑目标。可按地区、运营商、协议筛选。",
 		InputSchema: schema(map[string]any{
 			"region":  map[string]any{"type": "string", "description": "地区，如 上海 / 香港"},
 			"carrier": map[string]any{"type": "string", "enum": []string{"电信", "联通", "移动", "其他"}, "description": "运营商"},
@@ -133,16 +131,24 @@ var adminTools = []tool{
 		Annotations: annotations("Task execution records", true, false, true),
 	},
 	{
+		Name:        "list_plugins",
+		Description: "列出已安装的声明式插件：kind（notify 通知渠道 / targets 探测目标集）、名称、版本、来源（market 市场 / 本地上传）、它能做的事（permissions）；通知插件带设置表单 settings（update_settings 的 plugin_settings 按它填），目标集带目标个数（目标本身在 list_catalog 里）。",
+		InputSchema: schema(map[string]any{}),
+		Annotations: annotations("List installed plugins", true, false, true),
+	},
+	{
 		Name:        "get_settings",
-		Description: "查看通知渠道状态（Telegram / Webhook / 关闭）与公开面板显示项（延迟色带时间窗、访客默认明暗与皮肤）。不返回任何凭据。",
+		Description: "查看通知渠道状态（Telegram / Webhook / 通知插件 / 关闭）与公开面板显示项（延迟色带时间窗、访客默认明暗与皮肤）。通知插件渠道另回 plugin、plugin_name、非密钥设置 plugin_settings 与 plugin_secrets（哪些密钥已保存）；插件失效时回 plugin_error。不返回任何凭据。",
 		InputSchema: schema(map[string]any{}),
 		Annotations: annotations("Settings", true, false, true),
 	},
 	{
 		Name:        "update_settings",
-		Description: "修改设置，只改传了的项。通知出口：channel 取 telegram、webhook 或 none（关闭通知必须显式传 none）；不传 channel 时沿用当前渠道；Telegram 的 bot_token、chat_id 留空沿用已存的；切换渠道时另一渠道的凭据会被清掉。面板显示项：latency_window_minutes、default_theme、default_skin。",
+		Description: "修改设置，只改传了的项。通知出口：channel 取 telegram、webhook、plugin 或 none（关闭通知必须显式传 none）；不传 channel 时沿用当前渠道；Telegram 的 bot_token、chat_id 留空沿用已存的；channel=plugin 时 plugin 是已安装通知插件的 id（list_plugins），plugin_settings 按插件的 settings 填，没传或留空的项沿用已存值（同一插件时）；切换渠道时另一渠道的凭据会被清掉。面板显示项：latency_window_minutes、default_theme、default_skin。",
 		InputSchema: schema(map[string]any{
-			"channel":                map[string]any{"type": "string", "enum": []string{"telegram", "webhook", "none"}, "description": "通知渠道；不传则沿用当前渠道"},
+			"channel":                map[string]any{"type": "string", "enum": []string{"telegram", "webhook", "plugin", "none"}, "description": "通知渠道；不传则沿用当前渠道"},
+			"plugin":                 map[string]any{"type": "string", "description": "channel=plugin 时：已安装通知插件的 id（list_plugins）"},
+			"plugin_settings":        map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}, "description": "通知插件的设置（键见 list_plugins 的 settings）；密钥留空沿用已存的"},
 			"webhook":                map[string]any{"type": "string", "description": "Webhook 地址（channel=webhook 时必填）"},
 			"bot_token":              map[string]any{"type": "string", "description": "Telegram Bot Token（留空保留已存的）"},
 			"chat_id":                map[string]any{"type": "string", "description": "Telegram Chat ID：数字 ID 或 @频道名（留空保留已存的）"},
@@ -445,7 +451,7 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		return toolResult(withGroupWarning(ctx, svc, rule, map[string]any{"rule": rule, "updated": true})), nil, 0
 
 	case "list_catalog":
-		return listCatalog(params)
+		return listCatalog(svc, params)
 
 	case "create_task":
 		var args taskArgs
@@ -530,6 +536,13 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		}
 		return toolResult(map[string]any{"task_id": args.TaskID, "runs": runs, "count": len(runs)}), nil, 0
 
+	case "list_plugins":
+		if e := arguments(params.Arguments, &struct{}{}); e != nil {
+			return nil, e, http.StatusOK
+		}
+		plugins := svc.PluginList()
+		return toolResult(map[string]any{"plugins": plugins, "count": len(plugins)}), nil, 0
+
 	case "get_settings":
 		if e := arguments(params.Arguments, &struct{}{}); e != nil {
 			return nil, e, http.StatusOK
@@ -542,7 +555,7 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		if err != nil {
 			return toolFailure("读取面板设置失败", err)
 		}
-		return toolResult(settingsView(config, panel)), nil, 0
+		return toolResult(settingsView(svc, config, panel)), nil, 0
 
 	case "update_settings":
 		var args struct {
@@ -555,7 +568,7 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		// 只改传了的项：AI 客户端常只传想改的那一个字段（比如只换 chat_id），按面板表单
 		// 「整份提交、空值即清空」的语义处理会把整个 Telegram 配置清成 none。
 		var notification *notify.Config
-		if args.Channel != "" || args.Webhook != "" || args.BotToken != "" || args.ChatID != "" {
+		if !args.Config.IsZero() {
 			notification = &args.Config
 		}
 		config, panel, err := svc.UpdateSettings(ctx, notification, args.PanelPatch)
@@ -563,7 +576,7 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 			return failure("保存设置失败", err)
 		}
 		// Never echo the credentials back, only what is configured.
-		return toolResult(settingsView(config, panel)), nil, 0
+		return toolResult(settingsView(svc, config, panel)), nil, 0
 
 	case "test_notification":
 		if e := arguments(params.Arguments, &struct{}{}); e != nil {
@@ -583,11 +596,11 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		}
 		return toolResult(map[string]any{"sent": true, "channel": channel}), nil, 0
 	}
-	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + params.Name}, http.StatusOK
+	return s.callMarketTool(ctx, params)
 }
 
 // listCatalog filters the built-in offline target list.
-func listCatalog(params call) (map[string]any, *rpcError, int) {
+func listCatalog(svc *service.Service, params call) (map[string]any, *rpcError, int) {
 	var args struct {
 		Region  string `json:"region"`
 		Carrier string `json:"carrier"`
@@ -604,21 +617,9 @@ func listCatalog(params call) (map[string]any, *rpcError, int) {
 	if args.Family != "" && !oneOf(args.Family, "ipv4", "ipv6") {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "family 须为 ipv4 或 ipv6"}, http.StatusOK
 	}
-	var snapshot struct {
-		Source       string `json:"source"`
-		SnapshotDate string `json:"snapshot_date"`
-		Targets      []struct {
-			ID      string `json:"id"`
-			Family  string `json:"family"`
-			Region  string `json:"region"`
-			Carrier string `json:"carrier"`
-			Host    string `json:"host"`
-			Port    int    `json:"port"`
-			Source  string `json:"source"`
-		} `json:"targets"`
-	}
-	if err := json.Unmarshal(catalog.JSON, &snapshot); err != nil {
-		return toolError("内置目录无法解析：" + err.Error()), nil, 0
+	snapshot, err := svc.Catalog()
+	if err != nil {
+		return toolError("目标目录无法读取：" + err.Error()), nil, 0
 	}
 	matches := make([]any, 0, len(snapshot.Targets))
 	for _, t := range snapshot.Targets {
@@ -631,18 +632,22 @@ func listCatalog(params call) (map[string]any, *rpcError, int) {
 		if args.Family != "" && t.Family != args.Family {
 			continue
 		}
-		matches = append(matches, map[string]any{"id": t.ID, "family": t.Family, "region": t.Region, "carrier": t.Carrier, "host": t.Host, "port": t.Port})
+		entry := map[string]any{"id": t.ID, "family": t.Family, "region": t.Region, "carrier": t.Carrier, "host": t.Host, "port": t.Port}
+		if t.Plugin != "" {
+			entry["plugin"], entry["plugin_name"] = t.Plugin, t.PluginName
+		}
+		matches = append(matches, entry)
 	}
 	return toolResult(map[string]any{
-		"source": snapshot.Source, "snapshot_date": snapshot.SnapshotDate,
+		"source": snapshot.Source, "snapshot_date": snapshot.SnapshotDate, "plugins": snapshot.Plugins,
 		"targets": matches, "count": len(matches), "total": len(snapshot.Targets),
 	}), nil, 0
 }
 
 // settingsView is what get_settings and update_settings answer with: the
 // credential-free notification view plus the panel display settings.
-func settingsView(config notify.Config, panel model.PanelSettings) map[string]any {
-	view := config.Public()
+func settingsView(svc *service.Service, config notify.Config, panel model.PanelSettings) map[string]any {
+	view := svc.PublicNotification(config)
 	view[model.SettingLatencyWindowMinutes] = panel.LatencyWindowMinutes
 	view[model.SettingDefaultTheme] = panel.DefaultTheme
 	view[model.SettingDefaultSkin] = panel.DefaultSkin

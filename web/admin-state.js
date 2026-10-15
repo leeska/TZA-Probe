@@ -1,5 +1,5 @@
 import { api, esc, modal, guard } from "./api.js";
-// 后台各页共用的状态与表单小工具。页面模块（admin-nodes / tasks / alerts / settings）
+// 后台各页共用的状态与表单小工具。页面模块（admin-nodes / tasks / alerts / market / settings）
 // 只经由这里互相知道对方：跨页跳转用 go()，重绘当前页用 render()，两者都由外壳
 // admin.js 注册；页面模块不反过来 import admin.js。
 export const state = {

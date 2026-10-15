@@ -13,6 +13,8 @@
 - **公开面板**：卡片与列表两种视图，浅色 / 深色主题与多套外观风格；搜索认中文、全拼、拼音首字母、英文与代号（香港 = `xianggang` / `xg` / `hk`）。
 - **管理后台**：节点管理与拖动排序、密钥轮换、任务目录检索与批量绑定、用量校正、告警事件与投递状态。
 - **MCP 接口** `/mcp`：AI 客户端用后台生成的 MCP API Key 读写整站，能力与管理面板一致。
+- **主题与市场**：上传 zip 主题包 / 角色包换外观；后台「市场」从官方 TZA-CC 浏览、一键安装与更新（`--cc-url` 可改连自建 CC，`off` 关闭），安装前校验平台签名，浏览器不直连市场，监控数据不出本机。
+- **声明式插件**：通知渠道（飞书、钉钉、企业微信、Bark、ntfy、Gotify……）与探测目标集，从市场安装或手动上传。插件只是一份 `plugin.json`（数据与模板，由 Probe 解释），不含代码；安装前列出它能做的事、发往哪些域名，由你确认。格式见 [插件说明](docs/PLUGINS.md)。
 
 ## 一键部署
 
@@ -116,7 +118,7 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 { "mcpServers": { "tza-probe": { "type": "http", "url": "https://probe.example.com/mcp", "headers": { "Authorization": "Bearer MCP_API_KEY" } } } }
 ```
 
-共 25 个工具，包含查询和修改节点、任务、提醒规则、通知及面板设置。`update_*` 只修改提交的字段。完整的 Key 管理、客户端配置、工具清单、curl 自检和排错步骤见 [MCP 接入指南](docs/MCP.md)；协议字段见 [HTTP 协议](docs/API.md)。
+共 28 个工具，包含查询和修改节点、任务、提醒规则、通知（含通知插件）及面板设置，列出已装插件，以及搜索、安装 TZA-CC 市场的主题包与插件。`update_*` 只修改提交的字段。完整的 Key 管理、客户端配置、工具清单、curl 自检和排错步骤见 [MCP 接入指南](docs/MCP.md)；协议字段见 [HTTP 协议](docs/API.md)。
 
 ## 升级顺序
 
@@ -126,6 +128,7 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 
 - [部署说明](docs/DEPLOYMENT.md)：手工安装、反代、升级、备份与恢复。
 - [MCP 接入指南](docs/MCP.md)：API Key、客户端配置、工具能力与连接排错。
+- [插件](docs/PLUGINS.md)：声明式通知渠道与探测目标集的格式、模板变量与安全边界。
 - [主题包与角色包](docs/THEMES.md)：自己做一套外观风格，或给二次元主题添按地区匹配的角色（zip 上传，只含样式表与图片），格式、颜色变量与示例。
 - [组件边界](docs/ARCHITECTURE.md)、[HTTP 协议](docs/API.md)、[项目范围](docs/SCOPE.md)。
 - [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为只能在真实环境验证。
@@ -141,7 +144,7 @@ GITHUB_TOKEN=... bash scripts/release.sh vX.Y.Z dist   # 打 tag、建 Release�
 
 `UI_SMOKE=0` 跳过前端集成检查，`OUT=<目录>` 换产物目录，`TZA_NODE` / `TZA_NPM` 指定 Node 与 npm，`TZA_BUN` 指定 Bun。
 
-本项目不做插件市场、远程终端、任意命令、文件管理、多数据库和自动更新。
+本项目不做远程终端、任意命令、文件管理、多数据库和自动更新。插件只做声明式的（通知渠道、探测目标集，数据与模板由 Probe 解释执行）：不做可执行代码的插件、前端注入脚本、Agent 端插件或任何远程命令通道。主题与插件市场经 TZA-CC 提供，可选。
 
 ## License
 

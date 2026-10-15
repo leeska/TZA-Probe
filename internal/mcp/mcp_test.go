@@ -408,6 +408,7 @@ var readOnly = map[string]bool{
 	"list_nodes": true, "list_tasks": true, "node_history": true, "node_network_history": true,
 	"node_observations": true, "recent_events": true, "latency_samples": true,
 	"list_alert_rules": true, "list_catalog": true, "task_runs": true, "get_settings": true,
+	"search_market": true, "list_plugins": true,
 }
 
 func TestModernRevisionRoundTrip(t *testing.T) {
@@ -445,7 +446,8 @@ func TestModernRevisionRoundTrip(t *testing.T) {
 		"create_node", "update_node", "delete_node", "rotate_node_token", "correct_node_traffic",
 		"list_alert_rules", "create_alert_rule", "update_alert_rule", "delete_alert_rule", "list_catalog",
 		"create_task", "update_task", "delete_task", "control_task", "task_runs",
-		"get_settings", "update_settings", "test_notification",
+		"list_plugins", "get_settings", "update_settings", "test_notification",
+		"search_market", "install_market_package",
 	}
 	if len(entries) != len(want) {
 		t.Fatalf("tool count: %d", len(entries))

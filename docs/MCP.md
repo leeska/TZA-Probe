@@ -1,6 +1,6 @@
 # MCP 接入指南
 
-TZA Probe 在 `POST /mcp` 提供 MCP 接口，AI 客户端可查询节点、探测结果和告警，也可管理节点、任务、提醒规则及通知和面板设置。服务端与后台共用业务校验，写入会立即反映到面板。
+TZA Probe 在 `POST /mcp` 提供 MCP 接口，AI 客户端可查询节点、探测结果和告警，也可管理节点、任务、提醒规则及通知和面板设置，从 TZA-CC 市场搜索、安装主题包与插件，并把通知插件设为告警渠道。服务端与后台共用业务校验，写入会立即反映到面板。
 
 ## 1. 生成 API Key
 
@@ -45,7 +45,7 @@ TZA Probe 在 `POST /mcp` 提供 MCP 接口，AI 客户端可查询节点、探�
 
 地址是 `/mcp`，不带 `/api/v1` 前缀，也没有单独的 `/sse` 地址。用浏览器直接打开地址会发送 GET 并得到 405，这不代表服务不可用。若客户端只能填写 URL、不能携带自定义认证头，无法直接连接当前端点；本服务没有 OAuth 登录流程。
 
-连接成功后应能列出 **25 个工具**。可以先让客户端执行只读查询，例如：“列出所有节点，告诉我哪些离线”或“查看当前正在告警的项目”。
+连接成功后应能列出 **28 个工具**。可以先让客户端执行只读查询，例如：“列出所有节点，告诉我哪些离线”或“查看当前正在告警的项目”。
 
 ## 3. 权限与凭据
 
@@ -74,7 +74,7 @@ MCP Key 具有下表中全部工具的权限，包含写入与删除；当前没
 | `recent_events` | 查询事件，可按节点、类型、时间分页；`active: true` 只看当前告警 |
 | `latency_samples` | 查询各节点、运营商、协议、地区的逐次 TCP 延迟样本 |
 | `list_alert_rules` | 查询提醒规则及其范围、阈值和间隔 |
-| `list_catalog` | 查询内置目标目录，可筛选地区、运营商与协议 |
+| `list_catalog` | 查询目标目录（内置 + 已装目标集插件），可筛选地区、运营商与协议 |
 | `task_runs` | 查询指定任务的领取、完成时间和失败原因 |
 | `get_settings` | 查询通知渠道状态与公开面板显示项，不回显通知凭据 |
 | `create_node` | 新建节点，返回 ID、一次性节点密钥及 Agent 接入命令 |
@@ -89,8 +89,11 @@ MCP Key 具有下表中全部工具的权限，包含写入与删除；当前没
 | `update_task` | 按字段修改任务，`task_id` 必填 |
 | `delete_task` | 删除任务及结果，`task_id` 必填 |
 | `control_task` | 暂停、恢复、立即执行或替换节点绑定 |
-| `update_settings` | 按字段修改通知渠道或公开面板显示项 |
+| `update_settings` | 按字段修改通知渠道（含 `channel: "plugin"` + `plugin` + `plugin_settings`）或公开面板显示项 |
 | `test_notification` | 向已配置的通知渠道发送测试消息 |
+| `list_plugins` | 只读：已安装的插件，`kind`（notify / targets）、来源、`permissions`，通知插件带设置表单 `settings`（填 `update_settings` 的 `plugin_settings` 用） |
+| `search_market` | 只读：搜索 TZA-CC 市场（`type` = `skin` / `characters` / `plugin`、`q`、`page`；插件带 `kind` 与 `permissions`），每项标出本机已装的版本与来源；传 `id` 看详情与版本列表（含 `compatible`），传 `updates: true` 只列有兼容新版的市场包 |
+| `install_market_package` | 从市场安装或更新主题包 / 角色包 / 插件（插件请先把 `search_market` 返回的 `permissions` 给用户确认），`id` 必填，`version` 省略即当前 Probe 能用的最新版；验签不过整包拒收。会替换同 id 的已装包 |
 
 常用操作规则：
 
@@ -98,9 +101,11 @@ MCP Key 具有下表中全部工具的权限，包含写入与删除；当前没
 - `control_task` 的 `action` 可取 `pause`、`resume`、`run`、`bind`；`bind` 同时提交 `node_ids`。空列表表示不绑定任何节点，停止调度，不代表全部节点。`run` 只是安排任务，实际执行要等 Agent 领取。
 - 提醒规则 `scope` 可取 `all`、`group`、`nodes`；同类型优先级为指定节点 > 分组 > 全部节点。同类型、同范围覆盖同一节点的重复规则会被拒绝。
 - `update_settings` 不传通知项时不会改通知配置；关闭通知须显式传 `channel: "none"`。通知 Token / Webhook 不在查询结果中回显。
+- 通知插件：先 `list_plugins` 看 `settings`，再 `update_settings` 传 `{"channel":"plugin","plugin":"ntfy","plugin_settings":{"topic":"…"}}`。设置不符合插件要求（必填、格式、域名）返回 `-32602`。之后只改某一项时只传那一项（`plugin_settings` 里没传或留空的沿用已存值，同一个插件时）。密钥类设置从不回显，`get_settings` 只在 `plugin_secrets` 里说明哪些已保存；插件被删或失效时回 `plugin_error`。`list_catalog` 的结果包含已装目标集插件的目标（带 `plugin`）。
 - 回程标签按实际观测命名，跳地址已脱敏；未知标签或超时不能当成已确认线路。
+- 两个市场工具默认连官方 TZA-CC；Server 用 `--cc-url off` 关掉市场时返回 `isError: true` 与「市场已关闭」；它们会访问外部服务，`annotations.openWorldHint` 为 true。类型、版本号等参数不合法返回 `-32602`；包不存在、CC 不可达、安装包未通过校验按工具错误返回原因。没有绑定、解绑工具：账号绑定要在浏览器里登录 TZA-CC，请在后台「市场」页操作。
 
-MCP 不提供后台账号修改、MCP Key 管理、数据库备份、远程终端或任意命令执行工具。账号、Key 和备份在后台操作；`resources/list` 与 `prompts/list` 返回空列表。
+MCP 不提供后台账号修改、MCP Key 管理、数据库备份、TZA-CC 账号绑定、远程终端或任意命令执行工具。账号、Key 和备份在后台操作；`resources/list` 与 `prompts/list` 返回空列表。
 
 ## 5. 用 curl 检查连接
 
@@ -119,7 +124,7 @@ curl -sS -i "$MCP_URL" \
   -H 'Accept: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl-check","version":"1.0"}}}'
 
-# 查询工具清单：应返回 25 个工具。
+# 查询工具清单：应返回 28 个工具。
 curl -sS "$MCP_URL" \
   -H "Authorization: Bearer $MCP_API_KEY" \
   -H 'Content-Type: application/json' \
