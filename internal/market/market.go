@@ -316,13 +316,15 @@ type Installed struct {
 // installed package has an update comes from Updates (CC's compatibility
 // check), not from comparing Latest here.
 type Item struct {
-	ID        string   `json:"id"`
-	Type      string   `json:"type"`
-	Name      string   `json:"name"`
-	Summary   string   `json:"summary,omitempty"`
-	Author    Author   `json:"author"`
-	Latest    string   `json:"latest"`
-	Price     float64  `json:"price"`
+	ID      string  `json:"id"`
+	Type    string  `json:"type"`
+	Name    string  `json:"name"`
+	Summary string  `json:"summary,omitempty"`
+	Author  Author  `json:"author"`
+	Latest  string  `json:"latest"`
+	Price   float64 `json:"price"` // in cents; 0 is free
+	// Owned: free, or the bound TZA-CC account owns this paid package.
+	Owned     bool     `json:"owned"`
 	Downloads int64    `json:"downloads"`
 	UpdatedAt string   `json:"updated_at,omitempty"`
 	Swatch    []string `json:"swatch,omitempty"`
