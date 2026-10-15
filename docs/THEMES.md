@@ -180,7 +180,7 @@ html[data-skin="matcha"] body::before {
 
 TZA-CC 是 TZA Probe 的云端市场。Server 默认使用官方 TZA-CC（`https://tza.cc`，内置其签名公钥），后台「市场」页里
 按主题 / 角色包 / 插件浏览、搜索、看详情（说明、截图、版本与更新说明），一键安装或更新。插件（通知渠道、探测目标集）的格式与安装确认见 [PLUGINS.md](PLUGINS.md)，验签与来源、更新规则与主题包相同。
-`--cc-url`（或 `TZA_CC_URL`）可改连自建 CC，设为 `off` 关闭市场，见 [部署说明](DEPLOYMENT.md#tza-cc-市场可选)。
+`--cc-url`（或 `TZA_CC_URL`）可改连测试或私有部署的 CC，设为 `off` 关闭市场，见 [部署说明](DEPLOYMENT.md#tza-cc-市场可选)。
 
 - **不连 CC 也一样能用**：市场只是多一个来源，「面板设置 → 主题」上传 zip 的路径不变；CC 停服或断网，已经装好的包照常使用。
 - **浏览器不直连 CC**：目录、预览图和安装包都由 Server 代为获取（预览图走 `/api/v1/admin/market/media` 代理，只取 CC 同源地址上的 png / jpeg / webp / gif / avif，≤ 5 MB），面板的 CSP 不用放开，CC 也看不到访客。

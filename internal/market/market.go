@@ -38,12 +38,12 @@ import (
 )
 
 // DefaultURL is the official TZA-CC; --cc-url / TZA_CC_URL point the market
-// at another (self-hosted or test) CC, and "off" in either place turns it off.
+// at another (test or privately deployed) CC, and "off" in either place turns it off.
 const DefaultURL = "https://tza.cc"
 
 // OfficialKeys are the signing keys of the official TZA-CC, in the
 // "<key id>:<base64>" form of --cc-key; --cc-key / TZA_CC_KEYS add keys for a
-// self-hosted or test CC. A rotation ships the new key here next to the old
+// test or privately deployed CC. A rotation ships the new key here next to the old
 // one before CC starts signing with it.
 var OfficialKeys = []string{"tzacc-2026:kB6Y9ur5Byl5S4Ycz0JR9mkL8UVyKMi2l1I+0wlP49k="}
 
@@ -160,7 +160,7 @@ func (c *Client) URL() string {
 }
 
 // fetchable is the rule for download and image URLs (and their redirects):
-// https, or http when CC itself is plain http (a self-hosted or test CC).
+// https, or http when CC itself is plain http (a test or privately deployed CC).
 func (c *Client) fetchable(u *url.URL) bool {
 	return u.Host != "" && u.User == nil && (u.Scheme == "https" || (u.Scheme == "http" && c.base.Scheme == "http"))
 }

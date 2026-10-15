@@ -116,7 +116,7 @@ sudo systemctl enable --now tza-agent
 | 参数 | 环境变量 | 说明 |
 | --- | --- | --- |
 | `--cc-url URL` | `TZA_CC_URL` | TZA-CC 地址，如 `https://cc.example.com`（可带路径前缀）。参数优先于环境变量；都不设时用官方地址 `https://tza.cc`；`off`（不分大小写）关闭市场 |
-| `--cc-key ID:BASE64`（可重复） | `TZA_CC_KEYS`（逗号分隔） | 额外信任的 TZA-CC 签名公钥（自建 CC 或测试用，`cc pubkey` 打印的就是这个格式），与内置的官方公钥合并（官方 CC 不用配）。同一个 key id 出现两次且内容不同时拒绝启动 |
+| `--cc-key ID:BASE64`（可重复） | `TZA_CC_KEYS`（逗号分隔） | 额外信任的 TZA-CC 签名公钥（测试或私有部署的 CC 用，格式为 `<key id>:<base64>`），与内置的官方公钥合并（官方 CC 不用配）。同一个 key id 出现两次且内容不同时拒绝启动 |
 
 ```sh
 tza-server --data /var/lib/tza-probe --cc-url https://cc.example.com --cc-key 'tzacc-2026-1a2b3c4d:1PcvnQ8z…'
