@@ -226,7 +226,7 @@ const GROUP = {
   title: "分组管理",
   noun: "分组",
   empty: "未分组",
-  hint: "改名会连同作用于这个分组的提醒规则一起改；改成已有的分组名即合并。解散后节点回到未分组。",
+  hint: "点左边的分组查看成员；点「加入」「移出」当场生效。改名会连同作用于这个分组的提醒规则一起改，改成已有的名字即合并。",
   nameField: (value) => `<label>分组名<input name="name" value="${esc(value)}" maxlength="100" required autocomplete="off"></label>`,
   rename: (from, to) => send("/admin/groups/rename", "POST", { from, to }),
   dissolve: "解散",
@@ -236,121 +236,153 @@ const REGION = {
   title: "地区管理",
   noun: "地区",
   empty: "未设置地区",
-  hint: "这里管的是「节点所在地区」（卡片上显示的位置）。卡片按哪个地区挑探测结果，在勾选节点后的「设地区」里改。",
+  hint: "这里管的是「节点所在地区」（卡片上显示的位置），点「加入」「移出」当场生效。卡片按哪个地区挑探测结果，在勾选节点后的「设地区」里改。",
   nameField: (value) => regionCombobox("地区", "name", value, regionOptions(state.regions, state.nodes.map((n) => n.region))),
   rename: (from, to) =>
     send("/admin/nodes/batch", "POST", { ids: state.nodes.filter((n) => (n.region || "") === from).map((n) => n.id), patch: { region: to } }),
   dissolve: "清除",
 };
 
-function manager(kind) {
-  const rows = buckets(kind.key)
-    .map(
-      ([value, count]) =>
-        `<tr><td>${value ? esc(value) : `<span class="muted">${kind.empty}</span>`}</td><td>${count} 台</td><td><div class="row-actions">${
-          value
-            ? `<button type="button" data-members="${esc(value)}">调整成员</button><button type="button" data-rename="${esc(value)}">改名</button><button type="button" class="danger" data-dissolve="${esc(value)}">${kind.dissolve}</button>`
-            : `<button type="button" data-select="">勾选这些节点</button>`
-        }</div></td></tr>`,
-    )
-    .join("");
-  const d = modal(
-    kind.title,
-    `<p class="hint">${kind.hint}</p><div class="table-scroll"><table class="manager-table"><thead><tr><th>${kind.noun}</th><th>节点</th><th>操作</th></tr></thead><tbody>${rows || `<tr><td colspan="3" class="empty-cell">还没有节点</td></tr>`}</tbody></table></div><div class="form-footer"><button type="button" class="primary" id="new-bucket">＋ 新建${kind.noun}</button></div>`,
-  );
-  d.querySelector("#new-bucket").onclick = guard(() => members(kind, null));
-  d.querySelectorAll("[data-members]").forEach((b) => (b.onclick = guard(() => members(kind, b.dataset.members))));
-  d.querySelectorAll("[data-rename]").forEach((b) => (b.onclick = guard(() => renameDialog(kind, b.dataset.rename))));
-  d.querySelectorAll("[data-select]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        d.close();
-        for (const box of content().querySelectorAll("[data-pick]")) {
-          const n = state.nodes.find((x) => x.id === box.dataset.pick);
-          box.checked = (n?.[kind.key] || "") === b.dataset.select;
-        }
-        syncPicked();
-      }),
-  );
-  d.querySelectorAll("[data-dissolve]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        const value = b.dataset.dissolve;
-        confirmAction(
-          `${kind.dissolve}${kind.noun} · ${value}`,
-          `「${value}」里的 ${state.nodes.filter((n) => n[kind.key] === value).length} 台节点将变为${kind.empty}。`,
-          async () => {
-            await kind.rename(value, "");
-            await render();
-            toast(`已${kind.dissolve}「${value}」`);
-            manager(kind);
-          },
-          { label: kind.dissolve },
-        );
-      }),
-  );
-}
+// 分组 / 地区管理：一个两栏弹窗，不再层层套弹窗。左栏是全部分组（含「未分组」）和新建，右栏是选中那一组：
+// 顶部就地改名 / 解散，下面是成员（点「移出」）和其余节点（按所在分组归堆，点「加入」或整堆「全部加入」）。
+// 每次点击当场生效（一次批量请求），没有最后的「保存」；节点只能在一个分组里，所以「加入」就是从原分组移过来，
+// 行上写明它原来在哪。
+function manager(kind, selected) {
+  const d = modal(kind.title, `<p class="hint">${kind.hint}</p><div class="bucket-board"></div>`);
+  d.classList.add("wide-dialog");
+  d.addEventListener("close", () => d.classList.remove("wide-dialog"), { once: true });
+  const board = d.querySelector(".bucket-board");
+  const view = { current: selected ?? buckets(kind.key)[0]?.[0] ?? "", fresh: null, mode: "", q: "" };
+  const of = (n) => n[kind.key] || "";
+  const label = (v) => (v ? esc(v) : `<span class="muted">${kind.empty}</span>`);
+  const nodeRow = (n, action) =>
+    `<li class="bucket-node" data-search="${esc(`${n.name} ${n.group || ""} ${n.region || ""}`.toLowerCase())}"><span class="bucket-node-name">${esc(n.name)}</span><small>${esc(kind === GROUP ? n.region || "" : n.group || "")}</small>${action}</li>`;
 
-function renameDialog(kind, from) {
-  const d = modal(
-    `${kind.noun}改名 · ${from}`,
-    `<form>${kind.nameField(from)}<p class="hint">${kind === GROUP ? "改成已有的分组名，两个分组会合并。" : "改成已有的地区，两个地区会合并。"}</p><div class="form-footer"><button class="primary" type="submit">保存</button></div></form>`,
-  );
-  const form = d.querySelector("form");
-  wireComboboxes(form);
-  form.onsubmit = guard(async (e) => {
-    e.preventDefault();
-    const to = form.elements.namedItem("name").value.trim();
-    if (!to) throw new Error(`${kind.noun}名不能为空`);
-    if (to === from) return manager(kind);
-    await kind.rename(from, to);
-    await render();
-    toast(`已改名为「${to}」`);
-    manager(kind);
-  });
-}
+  const paint = () => {
+    const list = buckets(kind.key);
+    if (view.fresh && list.some(([v]) => v === view.fresh)) view.fresh = null;
+    if (view.current !== view.fresh && !list.some(([v]) => v === view.current)) view.current = list[0]?.[0] ?? "";
+    // 新建还没落地的那一组排在「未分组」前面（buckets 已把未分组放在最后）。
+    const named = list.filter(([v]) => v);
+    const rows = [...named, ...(view.fresh ? [[view.fresh, 0]] : []), ...list.filter(([v]) => !v)]
+      .map(([v, c]) => `<button type="button" class="bucket${v === view.current ? " on" : ""}" data-bucket="${esc(v)}" aria-pressed="${v === view.current}"><span>${label(v)}</span><small>${c}</small></button>`)
+      .join("");
+    const create = `<form class="bucket-new">${kind === REGION ? regionCombobox("", "name", "", regionOptions(state.regions, state.nodes.map((n) => n.region)), { placeholder: "新建地区" }) : `<input name="name" maxlength="100" placeholder="新建分组" autocomplete="off" aria-label="新分组名">`}<button type="submit" class="quiet" aria-label="新建">＋</button></form>`;
 
-// 成员勾选：勾上的移进这个分组 / 地区，原来在里面、被取消勾选的移出（变为未分组 / 未设置）。
-// value 为 null 是新建：先填名字。
-function members(kind, value) {
-  const fresh = value === null;
-  const list = state.nodes
-    .map((n) => {
-      const current = n[kind.key] || "";
-      return `<label class="checkbox member-row" data-search="${esc(`${n.name} ${current} ${n.region || ""}`.toLowerCase())}"><input type="checkbox" name="member" value="${n.id}" ${!fresh && current === value ? "checked" : ""}><span>${esc(n.name)}</span><small>${current ? esc(current) : kind.empty}</small></label>`;
-    })
-    .join("");
-  const d = modal(
-    fresh ? `新建${kind.noun}` : `调整成员 · ${value}`,
-    `<form>${fresh ? kind.nameField("") : ""}<div class="member-tools"><input type="search" name="filter" placeholder="按名称、${kind.noun}筛选" autocomplete="off"><button type="button" data-all="1">全选可见</button><button type="button" data-all="0">全不选</button></div><div class="member-list">${list}</div><p class="hint">勾上的节点移到这个${kind.noun}${fresh ? "" : `；原来在「${esc(value)}」里、取消勾选的变为${kind.empty}`}。</p><div class="form-footer"><button class="primary" type="submit">保存</button></div></form>`,
-  );
-  const form = d.querySelector("form");
-  wireComboboxes(form);
-  const filter = form.elements.namedItem("filter");
-  filter.oninput = () => {
-    const q = filter.value.trim().toLowerCase();
-    for (const row of form.querySelectorAll(".member-row")) row.hidden = !!q && !row.dataset.search.includes(q);
+    const cur = view.current;
+    const inside = state.nodes.filter((n) => of(n) === cur);
+    let head;
+    if (view.mode === "rename" && cur) {
+      head = `<form class="bucket-rename">${kind.nameField(cur)}<div class="bucket-head-actions"><button type="button" class="quiet" data-cancel>取消</button><button type="submit" class="primary">保存</button></div><p class="hint">${kind === GROUP ? "改成已有的分组名即合并；作用于这个分组的提醒规则跟着改名。" : "改成已有的地区即合并。"}</p></form>`;
+    } else if (view.mode === "dissolve" && cur) {
+      head = `<div class="bucket-confirm"><p>${kind.dissolve}「${esc(cur)}」？里面的 ${inside.length} 台节点将变为${kind.empty}。</p><div class="bucket-head-actions"><button type="button" class="quiet" data-cancel>取消</button><button type="button" class="danger" data-confirm-dissolve>${kind.dissolve}</button></div></div>`;
+    } else {
+      head = `<div class="bucket-head"><h3>${label(cur)}<small>${inside.length} 台</small></h3>${cur ? `<div class="bucket-head-actions"><button type="button" class="quiet" data-mode="rename">改名</button><button type="button" class="danger" data-mode="dissolve" ${inside.length ? "" : "disabled"}>${kind.dissolve}</button></div>` : ""}</div>`;
+    }
+    const members = inside.length
+      ? `<ul class="bucket-nodes">${inside.map((n) => nodeRow(n, cur ? `<button type="button" class="bucket-act" data-out="${n.id}" title="移到${kind.empty}">移出</button>` : "")).join("")}</ul>`
+      : `<p class="bucket-empty">${view.fresh === cur ? `新${kind.noun}，从下面加入节点后才会保存。` : "这里还没有节点。"}</p>`;
+    const sources = list
+      .filter(([v]) => v !== cur)
+      .map(([v]) => {
+        const nodes = state.nodes.filter((n) => of(n) === v);
+        return `<div class="bucket-src"><div class="bucket-src-head"><span>${label(v)}</span><button type="button" class="bucket-act" data-all-from="${esc(v)}">全部加入</button></div><ul class="bucket-nodes">${nodes.map((n) => nodeRow(n, `<button type="button" class="bucket-act add" data-in="${n.id}">加入</button>`)).join("")}</ul></div>`;
+      })
+      .join("");
+    board.innerHTML = `<aside class="bucket-side"><div class="bucket-list" role="group" aria-label="${kind.noun}">${rows || `<p class="bucket-empty">还没有${kind.noun}</p>`}</div>${create}</aside><section class="bucket-main">${head}<div class="bucket-section"><div class="bucket-label">成员</div>${members}</div><div class="bucket-section"><div class="bucket-label">添加节点<input type="search" class="bucket-search" placeholder="搜索名称 / 分组 / 地区" value="${esc(view.q)}" autocomplete="off" aria-label="搜索要加入的节点"></div>${sources || '<p class="bucket-empty">其余节点都已在这里。</p>'}</div></section>`;
+    wireComboboxes(board);
+    applySearch();
+    board.querySelector(".bucket-rename input")?.focus();
   };
-  form.querySelectorAll("[data-all]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        for (const row of form.querySelectorAll(".member-row:not([hidden]) input")) row.checked = b.dataset.all === "1";
-      }),
-  );
-  form.onsubmit = guard(async (e) => {
-    e.preventDefault();
-    const target = fresh ? form.elements.namedItem("name").value.trim() : value;
-    if (!target) throw new Error(`${kind.noun}名不能为空`);
-    const checked = new Set([...form.querySelectorAll("input[name=member]:checked")].map((b) => b.value));
-    const moveIn = state.nodes.filter((n) => checked.has(n.id) && (n[kind.key] || "") !== target).map((n) => n.id);
-    const moveOut = fresh ? [] : state.nodes.filter((n) => !checked.has(n.id) && (n[kind.key] || "") === target).map((n) => n.id);
-    if (!moveIn.length && !moveOut.length) return manager(kind);
-    if (moveIn.length) await send("/admin/nodes/batch", "POST", { ids: moveIn, patch: { [kind.key]: target } });
-    if (moveOut.length) await send("/admin/nodes/batch", "POST", { ids: moveOut, patch: { [kind.key]: "" } });
-    await render();
-    toast(`「${target}」：移入 ${moveIn.length} 台${moveOut.length ? `，移出 ${moveOut.length} 台` : ""}`);
-    manager(kind);
+
+  const applySearch = () => {
+    const q = view.q.trim().toLowerCase();
+    for (const src of board.querySelectorAll(".bucket-src")) {
+      let shown = 0;
+      for (const row of src.querySelectorAll(".bucket-node")) {
+        row.hidden = !!q && !row.dataset.search.includes(q);
+        if (!row.hidden) shown++;
+      }
+      src.hidden = !shown;
+    }
+  };
+
+  // 一次批量改动：期间整块变灰挡住连点，完成后重读节点、原地重画。
+  const apply = async (ids, value, message) => {
+    if (!ids.length) return;
+    board.classList.add("busy");
+    try {
+      await send("/admin/nodes/batch", "POST", { ids, patch: { [kind.key]: value } });
+      await render();
+      toast(message);
+    } finally {
+      board.classList.remove("busy");
+      paint();
+    }
+  };
+  const name = (id) => state.nodes.find((n) => n.id === id)?.name || id;
+  const target = () => view.current;
+  const where = (v) => (v ? `「${v}」` : kind.empty);
+
+  board.onclick = guard(async (e) => {
+    const t = e.target.closest("button");
+    if (!t || board.classList.contains("busy")) return;
+    if (t.dataset.bucket !== undefined) {
+      Object.assign(view, { current: t.dataset.bucket, mode: "" });
+      return paint();
+    }
+    if (t.dataset.mode) return (view.mode = t.dataset.mode), paint();
+    if (t.hasAttribute("data-cancel")) return (view.mode = ""), paint();
+    if (t.dataset.in) return apply([t.dataset.in], target(), `${name(t.dataset.in)} 已移到${where(target())}`);
+    if (t.dataset.out) return apply([t.dataset.out], "", `${name(t.dataset.out)} 已移到${kind.empty}`);
+    if (t.dataset.allFrom !== undefined) {
+      const q = view.q.trim().toLowerCase();
+      const ids = state.nodes.filter((n) => of(n) === t.dataset.allFrom && (!q || `${n.name} ${n.group || ""} ${n.region || ""}`.toLowerCase().includes(q))).map((n) => n.id);
+      return apply(ids, target(), `${ids.length} 台已从${where(t.dataset.allFrom)}移到${where(target())}`);
+    }
+    if (t.hasAttribute("data-confirm-dissolve")) {
+      const from = view.current;
+      board.classList.add("busy");
+      try {
+        await kind.rename(from, "");
+        await render();
+        toast(`已${kind.dissolve}「${from}」`);
+        Object.assign(view, { current: "", mode: "" });
+      } finally {
+        board.classList.remove("busy");
+        paint();
+      }
+    }
   });
+  board.oninput = (e) => {
+    if (!e.target.classList.contains("bucket-search")) return;
+    view.q = e.target.value;
+    applySearch();
+  };
+  board.onsubmit = guard(async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const value = form.elements.namedItem("name").value.trim();
+    if (!value) throw new Error(`${kind.noun}名不能为空`);
+    if (form.classList.contains("bucket-new")) {
+      // 分组 / 地区只存在于节点上：新建的先挂在列表里，等加入第一台节点才算数。
+      Object.assign(view, buckets(kind.key).some(([v]) => v === value) ? { current: value } : { current: value, fresh: value }, { mode: "" });
+      return paint();
+    }
+    const from = view.current;
+    if (value === from) return (view.mode = ""), paint();
+    board.classList.add("busy");
+    try {
+      await kind.rename(from, value);
+      await render();
+      toast(`「${from}」已改名为「${value}」`);
+      Object.assign(view, { current: value, mode: "" });
+    } finally {
+      board.classList.remove("busy");
+      paint();
+    }
+  });
+  paint();
 }
 
 // ---------------------------------------------------------------- 一键升级 Agent
