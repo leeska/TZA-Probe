@@ -50,6 +50,19 @@ export function skinPreference() {
   return byId(v) ? v : defaultSkin();
 }
 
+// 当前皮肤在 theme.json 里声明的能力（features）与布局（layout），见 docs/THEMES.md。
+// 读 <html data-skin>（首屏由 theme-boot.js 写好，运行中由 applySkin 换），认不出来就按偏好。
+const currentSkin = () => byId(document.documentElement.dataset.skin) || byId(skinPreference());
+export const skinFeature = (name) => (currentSkin()?.features || []).includes(name);
+export const skinLayout = () => currentSkin()?.layout || {};
+
+// 密度写在 <html data-density> 上（styles.css 按它收紧卡片）；没声明就不写。规则与 theme-boot.js 相同。
+function applyLayout(skin) {
+  const density = byId(skin)?.layout?.density;
+  if (density === "compact" || density === "cozy") document.documentElement.dataset.density = density;
+  else delete document.documentElement.dataset.density;
+}
+
 // 浏览器地址栏 / 状态栏的底色：每套皮肤在清单里自带一对（浅色 / 深色）。
 export function skinChrome() {
   return byId(skinPreference())?.chrome || BUILTIN[0].chrome;
@@ -80,11 +93,20 @@ function syncThemeCSS(skin) {
   );
 }
 
+// 基础层：声明了 "base": "plain" 的主题包不要液态玻璃的材质层（glass.css），其余的都要。
+// 首屏由 theme-css.js 定好；样式表一直在页面上，切换只改 disabled，同步生效。
+function syncBaseCSS(skin) {
+  const glass = document.querySelector('link[data-base-css="glass"]');
+  if (glass) glass.disabled = byId(skin)?.base === "plain";
+}
+
 // 与 theme.js 各管一半：这里只管 data-skin、按钮文字与 meta 底色，明暗由 applyTheme 负责。
 export function applySkin(skin = skinPreference()) {
   syncThemeCSS(skin);
+  syncBaseCSS(skin);
   document.documentElement.dataset.skin = skin;
   applyOptions(skin);
+  applyLayout(skin);
   const label = title(skin);
   for (const b of document.querySelectorAll("[data-skin-toggle]")) {
     b.innerHTML = inner(skin);

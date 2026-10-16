@@ -2,7 +2,7 @@ import { api, send, esc, toast, modal, guard } from "./api.js";
 import { bytes, bandwidth, date, days, gib, mbps, osLabel, percent, statusName } from "./format.js";
 import { detail } from "./detail.js";
 import { applyTheme, themeButton } from "./theme.js";
-import { applySkin, skinButton } from "./skins.js";
+import { applySkin, skinButton, skinFeature, skinLayout } from "./skins.js";
 import { searchMatch } from "./search.js";
 import { carrierMark } from "./carrier-logos.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
@@ -22,16 +22,19 @@ let nodes = [],
   generation = 0;
 
 // 展示方式：card = 每台主机一张卡（默认），list = 一行一台、字段横向对齐。
-// 只存在浏览器本地，刷新与换页保持；存不进去（隐私模式等）就退回卡片视图。
+// 只存在浏览器本地，刷新与换页保持；访客没选过就用当前主题声明的 layout.default_view，
+// 也没声明（或存不进去，隐私模式等）就是卡片视图。
 const VIEW_KEY = "tza-view";
 function storedView() {
   try {
-    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "card";
+    const v = localStorage.getItem(VIEW_KEY);
+    return v === "list" || v === "card" ? v : null;
   } catch {
-    return "card";
+    return null;
   }
 }
-let view = storedView();
+const skinView = () => (skinLayout().default_view === "list" ? "list" : "card");
+let view = storedView() || skinView();
 
 
 // 滚动页面时不要顺手改掉已填好的值：数字、日期时间与下拉在被滚动时先失焦
@@ -325,6 +328,24 @@ function markLive(ok) {
   setText(meta?.querySelector("small"), stale ? "连接中断 · 正在重试" : "每秒刷新");
 }
 
+// 换皮肤：新皮肤可能声明了别的板面段落（layout.card_sections）与默认视图，卡片按新清单重绘；
+// 访客自己选过视图就不动。要排在下面 layoutCastCards / alignCardRows 两个监听之前（同一事件按注册顺序跑）。
+document.addEventListener("tza:skin", () => {
+  // 公开页才有卡片；首屏的 /nodes 还没回来（列表还空着）就等 refresh 自己画，别先画一屏「尚无公开节点」。
+  if (!document.querySelector("#nodes")?.children.length) return;
+  const next = storedView() || skinView();
+  if (next !== view) {
+    view = next;
+    for (const b of document.querySelectorAll("[data-view]")) {
+      const on = b.dataset.view === view;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    applyView();
+  }
+  renderCards();
+});
+
 // 人物图 / 板顶 / 收起态板条只取决于皮肤里每台机的 --cast-top-frac 与几个常量（板高是常量，
 // 不量内容），所以只在卡片重绘、折叠、换皮肤时算：以前每秒的轻刷新也算一遍，每张卡读一次
 // 计算样式再写三个变量，逐卡强制样式重算，数值却从来不变。
@@ -349,7 +370,8 @@ const ROW_SECTIONS = [".node-sub", ".metrics-grid", ".card-stats"];
 function alignCardRows() {
   const list = document.querySelector("#nodes");
   if (!list) return;
-  const anime = document.documentElement.dataset.skin === "anime";
+  // 声明了 characters 能力的皮肤（二次元）：角色卡上半张是人物，不参与拉齐。
+  const cast = skinFeature("characters");
   const rows = new Map();
   const fills = [];
   for (const card of list.querySelectorAll(".node-card")) {
@@ -362,7 +384,7 @@ function alignCardRows() {
       fills.push(x);
       return x;
     });
-    if (list.classList.contains("node-list") || (anime && card.dataset.cast)) continue;
+    if (list.classList.contains("node-list") || (cast && card.dataset.cast)) continue;
     const top = Math.round(card.offsetTop);
     if (!rows.has(top)) rows.set(top, []);
     rows.get(top).push(sections);
@@ -749,18 +771,30 @@ document.addEventListener(
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
 // 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
 const cardShell = (n, inner) => {
-  // 二次元皮肤：卡壳上也挂一份角色 id。人物层 `.anime-cast` 是卡片**内部**的元素，
+  // 二次元皮肤：卡壳上也挂一份角色 id。背景层 `card-backdrop`（人物）是卡片**内部**的元素，
   // 卡片自己读不到它的 data-cast，而皮肤样式表要按角色给整张牌面上色
   // （`.node-card[data-cast="…"]`），所以这里再挂一份——两处都由 castId() 出，不会漂。
   const a = shellAttrs(n);
-  return `<article data-part="node-card" class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}" data-cast="${esc(a["data-cast"])}"${a["data-cast-pack"] ? ` data-cast-pack="${esc(a["data-cast-pack"])}"` : ""} data-fold-key="${esc(a["data-fold-key"])}">${inner}</article>`;
+  const attrs = Object.entries(a)
+    .filter(([, v]) => v)
+    .map(([k, v]) => ` ${k}="${esc(v)}"`)
+    .join("");
+  return `<article data-part="node-card" class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}"${attrs}>${inner}</article>`;
 };
 
 // 卡壳上随节点设置变的那几个属性。10 秒一轮只按内容补丁（patchInto 不碰卡壳本身），
 // 所以 renderCards 每轮也按这里对一遍——后台给节点换了角色，卡片不用整块重绘就跟上。
 function shellAttrs(n) {
   const cast = castId(n);
-  return { "data-cast": cast, "data-cast-pack": cast.includes("/") ? cast.split("/")[0] : "", "data-fold-key": foldKey(n) };
+  // data-region / data-group / data-vendor 给主题包按地区、分组、商家选装饰图（稳定接口，见 docs/THEMES.md）。
+  return {
+    "data-cast": cast,
+    "data-cast-pack": cast.includes("/") ? cast.split("/")[0] : "",
+    "data-fold-key": foldKey(n),
+    "data-region": n.region || "",
+    "data-group": n.group || "",
+    "data-vendor": n.vendor || "",
+  };
 }
 
 function card(n) {
@@ -1120,27 +1154,25 @@ function gridInner(n) {
   const f = nodeFacts(n);
   // 卡片上没有可用地址族时不再挂「无探测」标签：卡底那行（「仅主机指标」或「未检测到可用的
   // 公网 IP 地址」）已经说明了同一件事，两处同时出现只是重复。详情页与列表仍保留固定标签。
-  // 二次元皮肤（data-skin="anime"）的线路机立绘：只有名单里的节点才渲染这一层，
-  // 其余皮肤下 .anime-cast / .anime-hands 都是 display:none（见 styles.css）。
-  //
-  // 三层顺序就是这个函数返回的顺序 = DOM 顺序 = 看到的先后：
-  //   ① 完整人物图 .anime-cast（**整张立绘，一张连续的图**：头/肩/双臂/双手在牌子上沿以上，
-  //      牌子下沿以下紧接裙摆/大腿/白袜/皮鞋。不再上下切两段——用户 2026-10-10 否掉了那版）
-  //   ② HTML 看板 .card-body（板面、板沿、节点数据都是 HTML 自己画的，直接盖在人物图上）
-  //   ③ 双手层 .anime-hands（带 alpha 的双手，z-index 3 压在看板上沿，修补被板沿吃掉的指尖）
-  // 展开态看板从牌子上沿铺到卡片底部（下半身被盖住）；收起态板缩成一条、上下露出同一张图的身体。
+  // 卡片的三个装饰槽（docs/THEMES.md「卡片装饰槽」）：任何主题包都能用 CSS 给它们挂背景图、角标、名牌，
+  // 默认 display:none（styles.css）。DOM 顺序就是叠放顺序：
+  //   ① 背景层 card-backdrop（垫在看板下面；里面一层 card-backdrop-layer 给第二张图用）
+  //   ② HTML 看板 .card-body
+  //   ③ 前景层 card-overlay（压在看板之上）
+  //   ④ 名牌 card-plate（只在节点填了商家时有，内容是商家名）
+  // 二次元（声明了 characters 能力）就是走这套槽位：背景层是整张立绘（头/肩/双手在牌子上沿以上，
+  // 裙摆在下沿以下，一张连续的图）、背景里那层是闭眼帧，前景层是双手（压住看板上沿、修补被板沿
+  // 吃掉的指尖），名牌挂在看板上沿正中、两只手之间——它得是卡片上单独的一层，放在看板里会被裁掉。
+  // 选哪张立绘由卡壳与背景层上的 data-cast 决定（anime-cast.js 的 castId），别的主题可以不理它，
+  // 按卡壳上的 data-region / data-group / data-vendor 选图。
   // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
   // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这个标记区分。
   const cast = castId(n);
   const fkey = foldKey(n);
-  const figure = cast
-    ? `<div data-part="cast" class="anime-cast" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
-    : "";
-  const hands = cast ? `<div class="anime-hands" data-bleed aria-hidden="true"></div>` : "";
-  // 二次元皮肤里，商家名牌挂在看板上沿正中、两只手之间（anime.css）。它得是卡片上单独的一层：
-  // 看板盒子会裁掉超出板沿的部分，双手层又整块压在看板之上，放在板里就会被切掉一半。
-  // 别的皮肤用 node-sub 里那枚小牌（vendorPlate），这一层默认 display:none（styles.css）。
-  const plate = cast && n.vendor ? `<div data-part="cast-plate" class="anime-plate" aria-hidden="true">${esc(n.vendor)}</div>` : "";
+  const figureA11y = skinFeature("characters") ? 'role="img" aria-label="线路机角色立绘"' : 'aria-hidden="true"';
+  const figure = `<div data-part="card-backdrop" class="card-backdrop" data-cast="${cast}" data-bleed ${figureA11y}><span data-part="card-backdrop-layer" class="card-backdrop-layer" data-bleed aria-hidden="true"></span></div>`;
+  const hands = `<div data-part="card-overlay" class="card-overlay" data-bleed aria-hidden="true"></div>`;
+  const plate = n.vendor ? `<div data-part="card-plate" class="card-plate" aria-hidden="true">${esc(n.vendor)}</div>` : "";
   // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心
   // 不被它们挤动——收起 / 展开时名字落在同一坐标（折叠只影响板面上其余的内容/数据）。
   const cardTop =
@@ -1153,7 +1185,22 @@ function gridInner(n) {
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
   // 「详细」是内容里唯一能进详情页的控件（卡片空白、数据行都不再导航）。
-  return `${figure}<div data-part="card-body" class="card-body">${cardTop}<div id="body-${n.id}"><div data-part="node-sub" class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p>${f.hasIPv4 || f.hasIPv6 ? familySwitch(n, f) : ""}</div><div data-part="metrics-grid" class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}${plate}`;
+  // 板面各段按主题声明的 layout.card_sections 排序与取舍（没声明就是默认的四段全显示）。
+  const sections = {
+    "node-sub": () => `<div data-part="node-sub" class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p>${f.hasIPv4 || f.hasIPv6 ? familySwitch(n, f) : ""}</div>`,
+    "metrics-grid": () => `<div data-part="metrics-grid" class="metrics-grid">${metricsInner(n)}</div>`,
+    "card-stats": () => statsBand(n, f),
+    network: () => networkSections(n, f),
+  };
+  const body = cardSections().map((name) => sections[name]()).join("");
+  return `${figure}<div data-part="card-body" class="card-body">${cardTop}<div id="body-${n.id}">${body}</div></div>${hands}${plate}`;
+}
+
+// 卡片视图的板面段落：主题在 theme.json 的 layout.card_sections 里声明顺序与取舍，认不出的名字跳过。
+const CARD_SECTIONS = ["node-sub", "metrics-grid", "card-stats", "network"];
+function cardSections() {
+  const declared = skinLayout().card_sections;
+  return Array.isArray(declared) ? declared.filter((name, i) => CARD_SECTIONS.includes(name) && declared.indexOf(name) === i) : CARD_SECTIONS;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。

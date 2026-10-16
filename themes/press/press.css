@@ -39,7 +39,6 @@
   --glass-inner-rim: none;
   --glass-shadow: 3px 3px 0 0 #15120f;
   --glass-shadow-lg: 6px 6px 0 0 #15120f;
-  --blur: none;
   --progress-track: rgba(21, 18, 15, 0.14);
 
   --press-paper: #f8f1df;
@@ -111,8 +110,6 @@ html[data-skin="press"] body {
 html[data-skin="press"] body::before {
   inset: 0;
   z-index: -1;
-  animation: none;
-  will-change: auto;
   background:
     linear-gradient(90deg, rgba(183, 47, 36, 0.055), transparent 14%, transparent 86%, rgba(183, 47, 36, 0.055)),
     repeating-linear-gradient(0deg, transparent 0 9px, rgba(21, 18, 15, 0.022) 9px 10px);
@@ -133,18 +130,8 @@ html[data-skin="press"][data-theme="dark"] body::before {
 }
 
 /* --------------------------------------------------------------------------
-   3. 材质：印刷面上没有毛玻璃，圆角一律归零
+   3. 材质：圆角一律归零（本包是 "base": "plain"，本来就没有毛玻璃与光斑）
    -------------------------------------------------------------------------- */
-
-/* 模糊整片关掉（玻璃皮肤有 15 处 backdrop-filter，逐个覆盖只会漏）。
-   字面量 !important 是有意的：这是皮肤的定义性声明，不是临时补丁。 */
-html[data-skin="press"] *,
-html[data-skin="press"] *::before,
-html[data-skin="press"] *::after,
-html[data-skin="press"] *::backdrop {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
 
 /* 圆角归零（含 .node-grid.node-list .node-card 这类三权重的规则，所以用 !important），
    随后单独把真正的圆形标记还原——状态点、运营商点、图表光标点。 */

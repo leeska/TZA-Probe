@@ -50,6 +50,9 @@ matcha.zip
 | `swatch` | 菜单里那块三格色样，三个 `#rrggbb`：底色、面、强调色。 |
 | `styles` | 包内样式表的相对路径，1–8 个，按顺序加载。 |
 | `settings` | 可省略：这套主题的设置菜单，见下面的[主题设置](#主题设置)。 |
+| `base` | 可省略：叠在哪一层上，`"glass"`（默认，液态玻璃）或 `"plain"`（只有组件层），见[基础层](#基础层)。 |
+| `layout` | 可省略：卡片的布局变体（板面段落、密度、默认视图），见[布局变体](#布局变体)。 |
+| `features` | 可省略：面板为这套主题打开的能力。目前只有 `"characters"`（在卡片装饰槽里画角色、角色包对它生效），只有二次元（id `anime`）能声明，见[卡片装饰槽](#卡片装饰槽)。 |
 
 ## 主题设置
 
@@ -93,7 +96,7 @@ v1.0.0 的二次元包没有 `settings`，面板也会给它补上这一项。�
 
 ## 怎么写样式表
 
-主题包的样式表**叠在基础样式（液态玻璃的那一套组件与令牌）之上**，只在访客选中这套主题时加载，并排在内置样式表之后。
+主题包的样式表**叠在面板的基础样式之上**（默认是液态玻璃，见[基础层](#基础层)），只在访客选中这套主题时加载，并排在内置样式表之后。
 所以最简单的主题只改颜色变量就够了——版式、组件全部沿用默认。
 
 **稳定接口 = 设计令牌（CSS 变量）+ `data-part` 钩子。** 下面表格里列出的变量和 `[data-part="…"]` 属性跨版本保持不变，
@@ -191,12 +194,12 @@ html[data-skin="matcha"] [data-part="node-card"].is-offline { --card-bg: #f3f1ea
 | `data-part` | 是什么 |
 | --- | --- |
 | `public-header` / `hero-meta` / `overview` / `overview-tile` / `toolbar` / `node-grid` | 公开页：顶栏、最近同步、总览区与其中的格子、搜索筛选条、节点列表容器（列表视图时还带 `.node-list`） |
-| `node-card` | 一台节点的卡片（`.is-online` / `.is-offline` 表示状态；二次元下另有 `data-cast`） |
+| `node-card` | 一台节点的卡片（`.is-online` / `.is-offline` 表示状态）。卡壳上还带 `data-region` / `data-group` / `data-vendor`（节点的所在地区、分组、商家，没填就没有这个属性），可以按它们选装饰图；二次元下另有 `data-cast` |
 | `card-body` / `card-top` / `node-sub` | 卡片内容、头部（状态点 + 名字 + 标签）、地区 · 分组那一行 |
 | `metrics-grid` / `metric` | CPU / 内存 / 磁盘 / 周期用量四格，及其中每一格 |
 | `card-stats` | 速率、累计流量、到期与价格那条信息带 |
 | `vendor-plate` | 商家名牌 |
-| `cast` / `cast-plate` | 二次元角色立绘层与看板上沿的商家名牌（只有二次元有样式） |
+| `card-backdrop` / `card-backdrop-layer` / `card-overlay` / `card-plate` | 卡片装饰槽：背景层、背景层里的第二层、前景层、商家名牌，默认不显示，见[卡片装饰槽](#卡片装饰槽) |
 | `detail-stats` / `chart` | 详情弹窗的统计格、每张历史图表 |
 | `sidebar` / `admin-top` / `page-heading` / `panel` | 后台：侧栏、顶栏、页标题、面板 |
 
@@ -220,7 +223,63 @@ html[data-skin="matcha"] body::before {
 ### 商家名牌
 
 节点填了「商家」时，卡片和列表里会多一枚 `[data-part="vendor-plate"]`（默认是地区 · 分组后面的一枚强调色小牌），
-主题可以按它重画。二次元主题的角色卡另有一层 `[data-part="cast-plate"]`，把商家挂在看板上沿当名牌。
+主题可以按它重画。卡片上另有一个装饰槽 `[data-part="card-plate"]`，内容也是商家名，可以画成独立的一块名牌（二次元把它挂在看板上沿，明信片示例画成邮戳），见[卡片装饰槽](#卡片装饰槽)。
+
+### 基础层
+
+面板的基础样式分两层：**组件层**（版式、颜色、描边与投影，所有皮肤都有）和**液态玻璃材质层**（毛玻璃、玻璃的大圆角、
+`body::before` 上那四团彩色光斑）。`theme.json` 的 `base` 决定主题叠在哪儿：
+
+- `"glass"`（默认，不写就是它）：两层都在，主题在玻璃之上改。只想换配色、底纸的主题用它，抹茶就是这样。
+- `"plain"`：只有组件层。面是平的（底色、描边与投影仍来自颜色变量），没有模糊、没有光斑，也没有玻璃那一套大圆角，
+  不必再写 `backdrop-filter: none !important` 之类的整片覆盖。风格和玻璃差得远的主题（复古印刷、二次元、明信片示例）用它。
+
+`plain` 下 `body` 没有底色，记得在 `html[data-skin="<id>"] body` 上铺自己的底；`body::before` 仍是一个铺满视口的固定层，
+想画底纹就给它 `background`。
+
+> 旧版面板不认 `base`，会把 `plain` 的主题叠在玻璃上显示。发到市场时请给这样的版本声明需要的 Probe 版本。
+
+### 布局变体
+
+`layout` 声明卡片视图的版式，面板读清单后在渲染时生效，主题仍然不带脚本：
+
+```json
+"layout": {
+  "card_sections": ["node-sub", "metrics-grid", "card-stats"],
+  "density": "compact",
+  "default_view": "card"
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `card_sections` | 卡片头部（名字、标签、「详细」）下面的板面段落，按写的顺序排，没写的段落不显示。可用：`node-sub`（地区 · 分组与地址族开关）、`metrics-grid`（CPU / 内存 / 磁盘 / 周期用量）、`card-stats`（速率、累计、到期与价格）、`network`（延迟色带与三网回程）。每项最多一次；写成 `[]` 就只剩头部。不写即默认的四段全显示。只影响卡片视图，列表视图不变。 |
+| `density` | `"cozy"`（默认）或 `"compact"`：紧凑时卡片内边距、卡片间距、四格指标的间距各收一档。面板写成 `<html data-density="compact">`，样式表也可以按它再调。 |
+| `default_view` | `"card"` 或 `"list"`：访客没在右上角选过展示方式时的默认视图。访客选过就以访客的为准。 |
+
+不合规的 `layout`（不认识的段落名、重复、取值不对）会让整个包被拒收，错误信息指出是哪一项。
+
+### 卡片装饰槽
+
+每张卡片（卡片视图）都有四个装饰元素，**默认不显示**，主题用 CSS 放开并画上东西——背景图、角标、名牌都行：
+
+| `data-part` | 位置 | 内容 |
+| --- | --- | --- |
+| `card-backdrop` | 卡片第一个子元素，在看板（`card-body`）下面 | 空，画背景用 |
+| `card-backdrop-layer` | `card-backdrop` 里面的一层 | 空，给第二张图（比如二次元的闭眼帧）用 |
+| `card-overlay` | 卡片里看板之后，叠在看板上面 | 空，画前景（角标、折角、二次元的双手） |
+| `card-plate` | 最后，只在节点填了商家时有 | 商家名文本 |
+
+它们都在卡片的 `overflow: hidden` 之内；带 `data-bleed` 的层允许铺到卡片边框（越过内边距）。叠放顺序靠 `position` / `z-index` 自己定，
+卡片本身没有定位，要用绝对定位时先给 `[data-part="node-card"]` 写 `position: relative`。按节点挑图用卡壳上的 `data-region` / `data-group` / `data-vendor`：
+
+```css
+html[data-skin="postcard"] [data-part="card-backdrop"] { display: block; position: absolute; inset: 0; background: url("img/stripes.webp"); }
+html[data-skin="postcard"] [data-part="node-card"][data-region="日本"] [data-part="card-backdrop"] { background-image: url("img/japan.webp"); }
+```
+
+二次元的角色立绘就是这套槽位：背景层是人物、背景层里那层是闭眼帧、前景层是双手、名牌挂在看板上沿。它在 `theme.json` 里声明了
+`"features": ["characters"]`，面板因此会按节点挑角色（卡壳与背景层上的 `data-cast`，见[角色包](#角色包)），并且不再把同一排卡片的段落拉齐（人物卡的上半张是立绘）。
 
 ### 再往深改
 
@@ -324,4 +383,7 @@ TZA-CC 是 TZA Probe 的云端市场。Server 默认使用官方 TZA-CC（`https
 
 ## 示例
 
-仓库里的 [`examples/themes/matcha`](../examples/themes/matcha) 是一个只用稳定接口（颜色、圆角、字体、卡片令牌、图表色与一条 `data-part` 规则）加底纸的完整示例，可以直接打包上传，也可以复制一份改成自己的。
+仓库里有两个完整示例，可以直接打包上传，也可以复制一份改成自己的：
+
+- [`examples/themes/matcha`](../examples/themes/matcha)：叠在液态玻璃上，只用稳定接口（颜色、圆角、字体、卡片令牌、图表色与一条 `data-part` 规则）加底纸。
+- [`examples/themes/postcard`](../examples/themes/postcard)：`"base": "plain"`，用布局变体（只留三段、紧凑密度）和三个卡片装饰槽（信封斜纹、邮戳名牌、折角），按 `data-region` 换配色，不带图片。

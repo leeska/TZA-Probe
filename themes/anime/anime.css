@@ -12,7 +12,7 @@
    ③ 双手层（带 alpha 的双手，压在看板上沿，修补被板沿吃掉的那几像素指尖）。
    展开态看板从牌子上沿一直铺到卡片底部（下半身被板盖住、数据一眼看全）；收起态看板缩成一条矮板
    （正好盖住原图那块牌子），板条上方露头/上身、下方露出**同一张图里**的裙摆/腿/鞋，整张图连续无拼接。
-   立绘由 app.js 按 web/anime-cast.js 的名单渲染 .anime-cast 与 .anime-hands，
+   立绘画在卡片的通用装饰槽里：背景层 card-backdrop 是人物、前景层 card-overlay 是双手（角色由 web/anime-cast.js 挑），
    图片本体在本主题包的 anime/*.webp，拆图脚本 scripts/anime-split-layers.py。
 
    明暗仍走 data-theme，所以这是同一套语言的浅色与深色两份令牌。
@@ -97,7 +97,6 @@
   --glass-inner-rim: 0 0 #0000;
   --glass-shadow: var(--anime-shadow-sm);
   --glass-shadow-lg: var(--anime-shadow-md);
-  --blur: none;
   --progress-track: #ffe3f0;
 
   /* 「牌子」：立绘里那块白牌子的面与描边，卡片自己接着往下画 */
@@ -167,12 +166,11 @@ html[data-skin="anime"] body {
 }
 
 /* 底纸：粉 / 天蓝 / 薰衣草三团柔光 + 两层错开的星点。挂在 body::before（与玻璃皮肤同一个
-   fixed 层），所以滚动时不重绘；不做漂移动画——卡片里已有眨眼与呼吸，底纸再动就太闹了。 */
+   fixed 层），所以滚动时不重绘；不做漂移动画——卡片里已有眨眼与呼吸，底纸再动就太闹了。
+   本包是 "base": "plain"，没有玻璃的光斑与漂移动画，这里只铺自己的底纸。 */
 html[data-skin="anime"] body::before {
   display: block;
   inset: 0;
-  animation: none;
-  will-change: auto;
   background:
     radial-gradient(circle, var(--anime-star) 1.4px, transparent 1.9px) 0 0 / 34px 34px,
     radial-gradient(circle, var(--anime-star-2) 1px, transparent 1.5px) 17px 17px / 34px 34px,
@@ -183,20 +181,10 @@ html[data-skin="anime"] body::before {
 }
 
 /* --------------------------------------------------------------------------
-   3. 材质：没有毛玻璃；圆角回到 anime 的 8px 尺度
+   3. 材质：圆角回到 anime 的 8px 尺度（本包是 "base": "plain"，本来就没有毛玻璃）
    -------------------------------------------------------------------------- */
 
-/* 模糊整片关掉（玻璃皮肤有 15 处 backdrop-filter，逐个覆盖只会漏）。
-   字面量 !important 是有意的：这是皮肤的定义性声明，不是临时补丁。 */
-html[data-skin="anime"] *,
-html[data-skin="anime"] *::before,
-html[data-skin="anime"] *::after,
-html[data-skin="anime"] *::backdrop {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
-
-/* 统一到 --radius（玻璃皮肤的面是 20-28px 的大圆角）。含 .node-grid.node-list .node-card
+/* 统一到 --radius（组件层里还有各自的圆角）。含 .node-grid.node-list .node-card
    这类三权重的规则，所以只能 !important；随后按 anime 的尺度逐级还原，
    再单独把真正的圆形标记放回去。 */
 html[data-skin="anime"] * {
@@ -814,7 +802,7 @@ html[data-skin="anime"] ::-webkit-scrollbar-thumb {
 
 /* 商家名牌：角色卡上挂在看板上沿正中、两只手之间，像一枚别在牌子上的名牌——角色本身只按地区区分，
    商家靠这块 HTML 名牌换字（用户：「只做地区，选中该主题时可以替换名牌上的字」）。
-   它是卡片上单独的一层（app.js 的 .anime-plate）：看板盒子会裁掉超出板沿的部分、双手层又整块压在
+   它是卡片上单独的一层（app.js 的 [data-part="card-plate"]）：看板盒子会裁掉超出板沿的部分、双手层又整块压在
    看板上，放进板里会被切掉一半。高度按板顶算（--cast-board-top，与看板同一个变量），收起态板顶不动，
    名牌也就照样挂在板条上。颜色跟角色牌面走（--cast-accent）。板里那枚默认小牌只在卡片视图藏掉——
    列表视图没有看板，照旧用那枚小牌。 */
@@ -822,7 +810,7 @@ html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast]
   display: none;
 }
 
-html[data-skin="anime"] .node-card[data-cast] .anime-plate {
+html[data-skin="anime"] .node-card[data-cast] [data-part="card-plate"] {
   display: block;
   position: absolute;
   top: calc(var(--cast-board-top, 201.66px) - 22px);
@@ -871,7 +859,7 @@ html[data-skin="anime"] .node-card[data-cast] .anime-plate {
      板条高 = 图高 × (牌子下沿比例 − 牌子上沿比例) + 2 × 板唇
    跑在真浏览器里时由 app.js 的 layoutCastCards() 实测板高后写这三个变量；CSS 里每台机给一份
    按板高 461px 算出的近似常量兜底（jsdom / 关 JS 时用）。
-   立绘由 app.js 按 web/anime-cast.js 的名单渲染 .anime-cast 与 .anime-hands，
+   立绘画在卡片的通用装饰槽里：背景层 card-backdrop 是人物、前景层 card-overlay 是双手（角色由 web/anime-cast.js 挑），
    图片本体在本主题包的 anime/*.webp，拆图脚本 scripts/anime-split-layers.py。
    -------------------------------------------------------------------------- */
 
@@ -879,7 +867,7 @@ html[data-skin="anime"] .node-card[data-cast] .anime-plate {
    background-size: auto 100% → 图高 = 盒子高（--cast-figure-h），图宽按原图比例推出；
    position: top center 让她的水平中心与卡片中心（= 看板中心）对齐。
    pointer-events: none —— 点立绘空白处不该弹详情（只有内容里的「详细」按钮能进）。 */
-html[data-skin="anime"] .anime-cast {
+html[data-skin="anime"] [data-part="card-backdrop"] {
   display: block;
   position: absolute;
   left: 0;
@@ -895,17 +883,17 @@ html[data-skin="anime"] .anime-cast {
 }
 
 /* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是本包的 anime/<id>.webp。 */
-html[data-skin="anime"] .anime-cast[data-cast="jp-nosla-gen2"],
-html[data-skin="anime"] .anime-cast[data-cast="de-nosla-fra"],
-html[data-skin="anime"] .anime-cast[data-cast="us-vmiss-tri"],
-html[data-skin="anime"] .anime-cast[data-cast="us-bwh-dc9"],
-html[data-skin="anime"] .anime-cast[data-cast="generic"] {
+html[data-skin="anime"] [data-part="card-backdrop"][data-cast="jp-nosla-gen2"],
+html[data-skin="anime"] [data-part="card-backdrop"][data-cast="de-nosla-fra"],
+html[data-skin="anime"] [data-part="card-backdrop"][data-cast="us-vmiss-tri"],
+html[data-skin="anime"] [data-part="card-backdrop"][data-cast="us-bwh-dc9"],
+html[data-skin="anime"] [data-part="card-backdrop"][data-cast="generic"] {
   background-image: var(--cast-art-url);
 }
 
 /* 夜版：人物与双手一起压一档亮度（同一张图、同一套处理，手才不会与手腕断色）。 */
-html[data-skin="anime"][data-theme="dark"] .anime-cast,
-html[data-skin="anime"][data-theme="dark"] .anime-hands {
+html[data-skin="anime"][data-theme="dark"] [data-part="card-backdrop"],
+html[data-skin="anime"][data-theme="dark"] [data-part="card-overlay"] {
   /* 夜版只轻微压一档：压太狠时深色的鞋 / 裤和夜色糊在一起（gpt 提的对比度问题）。 */
   filter: brightness(0.93) saturate(0.97);
 }
@@ -1419,8 +1407,8 @@ html[data-skin="anime"] .node-card[data-cast].is-tilt {
     rotateY(calc(var(--tilt-nx, 0) * 3.4deg));
   transition: transform 0.3s ease-out;
 }
-html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-cast,
-html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-hands {
+html[data-skin="anime"] .node-card[data-cast].is-tilt [data-part="card-backdrop"],
+html[data-skin="anime"] .node-card[data-cast].is-tilt [data-part="card-overlay"] {
   transform: translate3d(calc(var(--tilt-nx, 0) * -9px), calc(var(--tilt-ny, 0) * -6px), 0);
   transition: transform 0.3s ease-out;
 }
@@ -1441,7 +1429,7 @@ html[data-skin="anime"] .node-card[data-cast].is-tilt .anime-hands {
 
 /* 闭眼帧：整张人物图的另一个版本（眼睛闭上），与人物层同一张图、同一缩放定位（auto 100% /
    top center），所以整图切换时脸上不会留下方形 / 椭圆补丁。 */
-html[data-skin="anime"] .anime-cast .anime-blink {
+html[data-skin="anime"] [data-part="card-backdrop"] [data-part="card-backdrop-layer"] {
   display: block;
   position: absolute;
   left: 0;
@@ -1455,18 +1443,18 @@ html[data-skin="anime"] .anime-cast .anime-blink {
   background-position: top center;
   background-size: auto 100%;
 }
-html[data-skin="anime"] .anime-cast .anime-blink {
+html[data-skin="anime"] [data-part="card-backdrop"] [data-part="card-backdrop-layer"] {
   animation: anime-blink var(--cast-blink-dur, 5s) steps(1, end) infinite;
   animation-delay: var(--cast-blink-delay, 0s);
 }
 /* 主题设置「眨眼与呼吸」关掉（theme.json 的 settings → <html data-opt-motion="off">）：立绘静止、睁着眼。
    写在呼吸规则之后、选择器多一个属性，压得过它们。 */
-html[data-skin="anime"][data-opt-motion="off"] .anime-cast .anime-blink { animation: none; opacity: 0; }
+html[data-skin="anime"][data-opt-motion="off"] [data-part="card-backdrop"] [data-part="card-backdrop-layer"] { animation: none; opacity: 0; }
 
 @media (prefers-reduced-motion: no-preference) {
   /* 人物与双手同一相位呼吸：手在她身上，得跟着一起动 */
-  html[data-skin="anime"] .anime-cast,
-  html[data-skin="anime"] .anime-hands { animation: anime-breathe 5.4s ease-in-out infinite; }
+  html[data-skin="anime"] [data-part="card-backdrop"],
+  html[data-skin="anime"] [data-part="card-overlay"] { animation: anime-breathe 5.4s ease-in-out infinite; }
 }
 
 /* --------------------------------------------------------------------------
@@ -1477,7 +1465,7 @@ html[data-skin="anime"][data-opt-motion="off"] .anime-cast .anime-blink { animat
    画在看板上面（修补被板沿吃掉的那几像素指尖）。
    pointer-events: none：它压着的板面上还有数据与按钮，别让这层把点击吃掉。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] .anime-hands {
+html[data-skin="anime"] [data-part="card-overlay"] {
   display: block;
   position: absolute;
   left: 0;
@@ -1512,8 +1500,8 @@ html[data-skin="anime"][data-theme="dark"] .node-card:not([data-cast]) .card-bod
 }
 
 /* 列表视图不摆立绘：一行一台的密度下放不下人物（元素照旧渲染，只是不显示） */
-html[data-skin="anime"] .node-grid.node-list .anime-cast,
-html[data-skin="anime"] .node-grid.node-list .anime-hands {
+html[data-skin="anime"] .node-grid.node-list [data-part="card-backdrop"],
+html[data-skin="anime"] .node-grid.node-list [data-part="card-overlay"] {
   display: none;
 }
 
@@ -1531,7 +1519,7 @@ html[data-skin="anime"] .node-grid.node-list .anime-hands {
      · 卡片视图为了「立绘通铺到卡边」对 [data-cast] 写的 padding-left/right:0（和 [data-rolled]
        的 padding-bottom:0）在列表里收回 16px 20px，六格起点才与无立绘行对齐。
      · 关掉卡片视图的裸眼 3D 倾斜：列表里整行跟着指针转会变成「有立绘的行会动、别的行不动」。
-   立绘两层（.anime-cast / .anime-hands）在列表里根本不被 app.js 渲染，
+   立绘两层（[data-part="card-backdrop"] / [data-part="card-overlay"]）在列表里根本不被 app.js 渲染，
    元素级的 display:none 兜底见上面 N+6 下方那两条。
    -------------------------------------------------------------------------- */
 html[data-skin="anime"] .node-grid.node-list .node-card[data-cast] {
@@ -1600,5 +1588,5 @@ html[data-skin="anime"] .node-grid.node-list .node-card {
 }
 
 /* 主题设置「眨眼与呼吸」关掉时也停掉呼吸（规则排在上面的呼吸动画之后，优先级更高）。 */
-html[data-skin="anime"][data-opt-motion="off"] .anime-cast,
-html[data-skin="anime"][data-opt-motion="off"] .anime-hands { animation: none; }
+html[data-skin="anime"][data-opt-motion="off"] [data-part="card-backdrop"],
+html[data-skin="anime"][data-opt-motion="off"] [data-part="card-overlay"] { animation: none; }

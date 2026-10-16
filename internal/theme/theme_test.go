@@ -302,3 +302,67 @@ func TestAnimeAlwaysHasCharacterMenu(t *testing.T) {
 		}
 	}
 }
+
+// theme.json 的外观声明：base（基础层）、features（能力）、layout（布局变体）。合规的原样落进清单，
+// 不合规的整包拒收、磁盘上不留东西，错误信息指出是哪一项。
+func TestLookDeclarations(t *testing.T) {
+	css := file{name: "theme.css", body: "a{}"}
+	with := func(extra string) []byte {
+		return pack(t, file{name: "theme.json", body: strings.Replace(manifest, `"styles"`, extra+`,"styles"`, 1)}, css)
+	}
+	s := &Store{Dir: t.TempDir()}
+	m, err := s.Install(with(`"base":"plain","layout":{"card_sections":["metrics-grid","node-sub"],"density":"compact","default_view":"list"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Base != "plain" || m.Layout == nil || strings.Join(m.Layout.CardSections, ",") != "metrics-grid,node-sub" || m.Layout.Density != "compact" || m.Layout.DefaultView != "list" {
+		t.Fatalf("declarations must survive install: %+v %+v", m, m.Layout)
+	}
+	if got := s.Installed(); len(got) != 1 || got[0].Base != "plain" || got[0].Layout == nil {
+		t.Fatalf("declarations must survive a re-read: %+v", got)
+	}
+	// 一段都不写也合法：板面只剩头部（名字、标签、详细）。
+	if _, err := (&Store{Dir: t.TempDir()}).Install(with(`"layout":{"card_sections":[]}`)); err != nil {
+		t.Fatalf("an empty card_sections is allowed: %v", err)
+	}
+	for name, c := range map[string]struct{ extra, want string }{
+		"unknown base":     {`"base":"neon"`, "base"},
+		"unknown feature":  {`"features":["sparkles"]`, "sparkles"},
+		"characters":       {`"features":["characters"]`, "characters"},
+		"unknown section":  {`"layout":{"card_sections":["chart"]}`, `"chart"`},
+		"repeated section": {`"layout":{"card_sections":["network","network"]}`, "重复"},
+		"bad density":      {`"layout":{"density":"tight"}`, "density"},
+		"bad view":         {`"layout":{"default_view":"table"}`, "default_view"},
+	} {
+		s := &Store{Dir: t.TempDir()}
+		_, err := s.Install(with(c.extra))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: want an error naming %q, got %v", name, c.want, err)
+		}
+		if entries, _ := os.ReadDir(s.Dir); len(entries) != 0 {
+			t.Errorf("%s: a rejected package must leave nothing on disk, found %v", name, entries)
+		}
+	}
+	// 角色包不是外观，不带这些声明。
+	chars := `{"id":"europe","type":"characters","name":"欧洲","base":"plain","characters":[{"id":"de","name":"德国","art":"de.webp","plate":{"top":0.3,"bottom":0.45},"palette":{"light":{"board":"#ffffff","line":"#ffffff","track":"#ffffff","accent":"#ffffff"},"dark":{"board":"#000000","line":"#000000","track":"#000000","accent":"#000000"}}}]}`
+	if _, err := (&Store{Dir: t.TempDir()}).Install(pack(t, file{name: "theme.json", body: chars}, file{name: "de.webp", body: "RIFF"})); err == nil || !strings.Contains(err.Error(), "base") {
+		t.Errorf("a character pack with base must be refused, got %v", err)
+	}
+}
+
+// 二次元声明 characters 能力；早于 features 的老包（v1.1.0 及更早）由 Store 补上，面板只认这个能力。
+func TestAnimeHasCharactersFeature(t *testing.T) {
+	for name, body := range map[string]string{
+		"declared": strings.Replace(strings.Replace(manifest, `"matcha"`, `"anime"`, 1), `"styles"`, `"features":["characters"],"styles"`, 1),
+		"legacy":   strings.Replace(manifest, `"matcha"`, `"anime"`, 1),
+	} {
+		s := &Store{Dir: t.TempDir()}
+		if _, err := s.Install(pack(t, file{name: "theme.json", body: body}, file{name: "theme.css", body: "a{}"})); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got := s.Installed()
+		if len(got) != 1 || strings.Join(got[0].Features, ",") != "characters" {
+			t.Errorf("%s: anime features = %+v", name, got)
+		}
+	}
+}

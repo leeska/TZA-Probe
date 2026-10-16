@@ -17,9 +17,9 @@ const animeDir = "../themes/anime"
 //
 // 图层结构（2026-10-10 v2，用户原话「上下体不要分开，现在状态很乱」）：
 //
-//	① 完整人物图 .anime-cast —— **整张立绘，一张连续的图**（不是上/下半身两段拼接）
+//	① 完整人物图 card-backdrop —— **整张立绘，一张连续的图**（不是上/下半身两段拼接）
 //	② HTML 看板 .card-body   —— 直接盖在人物图上；展开态从牌子上沿铺到卡片底部
-//	③ 双手层 .anime-hands    —— 同一张图的手部切片，压在看板上沿
+//	③ 双手层 card-overlay    —— 同一张图的手部切片，压在看板上沿
 //
 // 任何一次「为了补空白 / 遮下半身而把人物切两段」的改动都要先在这里红。
 func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
@@ -38,11 +38,11 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	if !strings.Contains(string(app), `from "./anime-cast.js"`) {
 		t.Error("app.js 必须从 anime-cast.js 取角色名单")
 	}
-	if !strings.Contains(string(app), `class="anime-cast"`) {
-		t.Error("app.js 要渲染 .anime-cast 人物层（整张立绘）")
+	if !strings.Contains(string(app), `class="card-backdrop"`) {
+		t.Error("app.js 要渲染背景装饰槽 card-backdrop（二次元的人物层，整张立绘）")
 	}
-	if !strings.Contains(string(app), `class="anime-hands"`) {
-		t.Error("app.js 要渲染 .anime-hands 双手层（压在 HTML 看板上沿的那一层）")
+	if !strings.Contains(string(app), `class="card-overlay"`) {
+		t.Error("app.js 要渲染前景装饰槽 card-overlay（二次元的双手层，压在 HTML 看板上沿）")
 	}
 	// 人物层必须是**一张完整连续的图**：旧的「上/下半身两段分别裁切定位」那套元素与样式一个都不许留。
 	if strings.Contains(string(app), "anime-stage") || strings.Contains(string(app), "anime-legs") {
@@ -120,9 +120,9 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	// 人物层只画**整张立绘**：按图高缩放（background-size: auto 100%），顶对齐居中，绝对定位、不吃指针。
 	// 改回「66% 卡宽按比例裁一段」= 又变成上下两段拼接（用户否掉的那版）；
 	// 去掉 background-position: top center 或换背景尺寸 = 人物相对看板错位。
-	figure := regexp.MustCompile(`(?s)html\[data-skin="anime"\] \.anime-cast \{(.*?)\n\}`).FindStringSubmatch(string(css))
+	figure := regexp.MustCompile(`(?s)html\[data-skin="anime"\] \[data-part="card-backdrop"\] \{(.*?)\n\}`).FindStringSubmatch(string(css))
 	if figure == nil {
-		t.Fatal("anime.css 里找不到 .anime-cast 的规则")
+		t.Fatal("anime.css 里找不到 card-backdrop 的规则")
 	}
 	for _, want := range []string{
 		"position: absolute",
@@ -134,14 +134,14 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		"z-index: 1",
 	} {
 		if !strings.Contains(figure[1], want) {
-			t.Errorf("anime.css 的 .anime-cast 少了 %q（整张连续人物图：按图高缩放、顶对齐居中、看板之下）", want)
+			t.Errorf("anime.css 的 card-backdrop 少了 %q（整张连续人物图：按图高缩放、顶对齐居中、看板之下）", want)
 		}
 	}
 	// 双手层与人物层共用同一套几何（同一个 --cast-figure-h / --cast-fig-top / auto 100% / top center），
 	// 否则手会从手腕上错开；z-index 3 才压在看板上沿、修补被板沿吃掉的那几像素指尖。
-	handsRule := regexp.MustCompile(`(?sm)^html\[data-skin="anime"\] \.anime-hands \{(.*?)\n\}`).FindStringSubmatch(string(css))
+	handsRule := regexp.MustCompile(`(?sm)^html\[data-skin="anime"\] \[data-part="card-overlay"\] \{(.*?)\n\}`).FindStringSubmatch(string(css))
 	if handsRule == nil {
-		t.Fatal("anime.css 里找不到 .anime-hands 的主规则")
+		t.Fatal("anime.css 里找不到 card-overlay 的主规则")
 	}
 	for _, want := range []string{
 		"position: absolute",
@@ -154,7 +154,7 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 		"pointer-events: none",
 	} {
 		if !strings.Contains(handsRule[1], want) {
-			t.Errorf("anime.css 的 .anime-hands 少了 %q（要与人物层同一套几何，手才不会从手腕上错开）", want)
+			t.Errorf("anime.css 的 card-overlay 少了 %q（要与人物层同一套几何，手才不会从手腕上错开）", want)
 		}
 	}
 	// 两态卡高必须**恒等**：收起与展开不能改变卡片尺寸。
@@ -221,8 +221,8 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	if !strings.Contains(string(css), ".node-card[data-cast] .card-body {") {
 		t.Error("anime.css 缺少 .node-card[data-cast] .card-body（HTML 看板：板沿 + 板面）")
 	}
-	if !strings.Contains(string(css), ".anime-hands {") {
-		t.Error("anime.css 缺少 .anime-hands（双手层：压在 HTML 看板上沿那一层）")
+	if !strings.Contains(string(css), `[data-part="card-overlay"] {`) {
+		t.Error("anime.css 缺少 card-overlay（双手层：压在 HTML 看板上沿那一层）")
 	}
 	if strings.Contains(string(css), "anime-roll") {
 		t.Error("anime.css 里不该再有卷轴（.anime-roll）：名字现在印在 HTML 看板正中的固定坐标上")

@@ -596,24 +596,28 @@ h1 {
   flex-direction: column;
 }
 
-/* 二次元皮肤的线路机专属元素：人物层 / 双手层 / 闭眼层 / 卷起按钮，由 app.js 只为「角色名单里」
-   的节点渲染（web/anime-cast.js）。它们的样式在二次元主题包里（themes/anime/anime.css，从市场安装，
-   只在选了二次元时挂上，规则也都带 html[data-skin="anime"] 前缀）——所以别的皮肤下、或者没装二次元时，
-   这些都是**没有样式**的裸元素，必须在这里默认藏掉：漏一个就会冒出一颗裸按钮或一张裸图。
-   二次元主题包里各自放开。 */
-.anime-cast,
-.anime-blink,
-.anime-fold-btn {
-  display: none;
+/* 紧凑密度：主题在 theme.json 里声明 layout.density: "compact"（面板写成 <html data-density>），
+   卡片内边距、卡片间距与四格指标的间距各收一档。主题自己定义了 --card-pad 时以主题的为准。 */
+html[data-density="compact"] .node-grid {
+  gap: var(--space-3-5);
 }
 
-/* 双手层（多图层里压在看板上沿那一层）同样只属于二次元皮肤。 */
-.anime-hands {
-  display: none;
+html[data-density="compact"] .node-card {
+  padding: var(--card-pad, var(--space-3-5) var(--space-4) var(--space-3));
 }
 
-/* 看板上沿的商家名牌（二次元皮肤专用的那一份；别的皮肤用 node-sub 里的 .vendor-plate）。 */
-.anime-plate {
+html[data-density="compact"] .metrics-grid {
+  gap: var(--space-2) var(--space-3);
+}
+
+/* 卡片装饰槽（app.js 的 gridInner 给每张卡都渲染，见 docs/THEMES.md「卡片装饰槽」）：背景层、背景层里
+   那一层、前景层、商家名牌。默认都不显示——主题包用 [data-part="card-backdrop"] 等选择器放开并画上图，
+   二次元的立绘、闭眼帧、双手与看板名牌就是这样画的。没有主题放开时它们是没有样式的裸元素，必须在这里
+   藏掉：漏一个就会冒出一张裸图或一块裸名牌。 */
+[data-part="card-backdrop"],
+[data-part="card-backdrop-layer"],
+[data-part="card-overlay"],
+[data-part="card-plate"] {
   display: none;
 }
 
@@ -1867,8 +1871,6 @@ details.row-more.more > summary:hover {
   background: var(--glass-bg-elevated, #fff);
   border: 1px solid var(--glass-border, var(--line));
   box-shadow: var(--glass-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.16));
-  -webkit-backdrop-filter: var(--blur);
-  backdrop-filter: var(--blur);
 }
 
 body > .row-menu button {
@@ -2040,8 +2042,6 @@ dialog .form-footer {
   padding: 14px var(--dialog-pad) var(--dialog-pad);
   border-top: 1px solid var(--line);
   background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
 }
 
 .hint {
@@ -3699,8 +3699,6 @@ pre,
   background: var(--glass-bg-elevated);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-lg);
-  -webkit-backdrop-filter: var(--blur);
-  backdrop-filter: var(--blur);
   text-align: left;
 }
 
@@ -4913,8 +4911,6 @@ td .text-button.pick-by:hover {
   background: rgba(29, 29, 31, 0.94);
   color: #fff;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 .batch-bar[hidden] {

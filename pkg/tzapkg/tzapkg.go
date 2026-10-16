@@ -67,11 +67,77 @@ type Manifest struct {
 	// Settings is the theme's own settings menu, declared by its developer:
 	// what an administrator can switch for this look. See SkinSetting.
 	Settings []SkinSetting `json:"settings,omitempty"`
-	Builtin  bool          `json:"builtin,omitempty"`
-	Rev      string        `json:"rev,omitempty"`
+	// Base is the built-in visual layer the skin's stylesheets stack on:
+	// BaseGlass (the default, also when empty) or BasePlain (structure only,
+	// no liquid-glass surfaces, blur or backdrop).
+	Base string `json:"base,omitempty"`
+	// Features are panel behaviours the skin opts into; see FeatureCharacters.
+	Features []string `json:"features,omitempty"`
+	// Layout declares card layout variants the panel applies while the skin
+	// is on. Nil keeps the panel's defaults.
+	Layout  *Layout `json:"layout,omitempty"`
+	Builtin bool    `json:"builtin,omitempty"`
+	Rev     string  `json:"rev,omitempty"`
 	// Source is SourceMarket for a package installed from TZA-CC, empty for a
 	// local upload.
 	Source string `json:"source,omitempty"`
+}
+
+// Base layers a skin may stack on.
+const (
+	BaseGlass = "glass"
+	BasePlain = "plain"
+)
+
+// FeatureCharacters: the skin draws character figures in the card slots,
+// picked per node from its own cast and the installed character packs; the
+// panel stops height-aligning card rows for it. Only the 二次元 package
+// (AnimeID) may declare it, since character packs belong to it.
+const FeatureCharacters = "characters"
+
+// Layout is a skin's declarative card layout. CardSections lists the card
+// view's body sections in display order; a section left out is hidden. The
+// panel renders it; the package still carries no script.
+type Layout struct {
+	CardSections []string `json:"card_sections,omitempty"`
+	Density      string   `json:"density,omitempty"`
+	DefaultView  string   `json:"default_view,omitempty"`
+}
+
+// CardSections are the section names Layout.CardSections may use: the
+// region · group line, the four meters, the rate / expiry band and the
+// network (latency / route) blocks.
+var CardSections = []string{"node-sub", "metrics-grid", "card-stats", "network"}
+
+// checkLayout validates a skin's layout declaration.
+func checkLayout(l *Layout) error {
+	if l == nil {
+		return nil
+	}
+	if len(l.CardSections) > len(CardSections) {
+		return fmt.Errorf("layout.card_sections 最多 %d 项", len(CardSections))
+	}
+	seen := map[string]bool{}
+	for _, sec := range l.CardSections {
+		if !slices.Contains(CardSections, sec) {
+			return fmt.Errorf("layout.card_sections 里的 %q 不认识：只能用 %s", sec, strings.Join(CardSections, " / "))
+		}
+		if seen[sec] {
+			return fmt.Errorf("layout.card_sections 里的 %q 重复", sec)
+		}
+		seen[sec] = true
+	}
+	switch l.Density {
+	case "", "cozy", "compact":
+	default:
+		return fmt.Errorf(`layout.density 须为 "cozy" 或 "compact"，不是 %q`, l.Density)
+	}
+	switch l.DefaultView {
+	case "", "card", "list":
+	default:
+		return fmt.Errorf(`layout.default_view 须为 "card" 或 "list"，不是 %q`, l.DefaultView)
+	}
+	return nil
 }
 
 // AnimeID is the id of the official 二次元 package, the one skin that draws
@@ -387,6 +453,9 @@ func Parse(raw []byte) (Manifest, error) {
 		if len(m.Settings) > 0 {
 			return Manifest{}, errors.New("角色包没有设置菜单（settings 留空）：它出现在二次元主题的设置里")
 		}
+		if m.Base != "" || len(m.Features) > 0 || m.Layout != nil {
+			return Manifest{}, errors.New("角色包不带 base / features / layout：这些是主题的外观声明")
+		}
 		if len(m.Characters) == 0 || len(m.Characters) > maxCharacters {
 			return Manifest{}, fmt.Errorf("角色包须有 1–%d 个角色（characters）", maxCharacters)
 		}
@@ -413,6 +482,24 @@ func Parse(raw []byte) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("styles 须列出 1–%d 个样式表", maxStyles)
 	}
 	if err := checkSkinSettings(m.ID, m.Settings); err != nil {
+		return Manifest{}, err
+	}
+	if m.Base != "" && m.Base != BaseGlass && m.Base != BasePlain {
+		return Manifest{}, fmt.Errorf(`base 须为 "glass"（液态玻璃，默认）或 "plain"（只有结构、不带玻璃视觉），不是 %q`, m.Base)
+	}
+	seenFeature := map[string]bool{}
+	for _, f := range m.Features {
+		switch {
+		case f != FeatureCharacters:
+			return Manifest{}, fmt.Errorf(`features 里的 %q 不认识：目前只有 "characters"`, f)
+		case m.ID != AnimeID:
+			return Manifest{}, errors.New(`features 里的 "characters" 只有二次元主题（id anime）能声明：角色包属于它`)
+		case seenFeature[f]:
+			return Manifest{}, fmt.Errorf("features 里的 %q 重复", f)
+		}
+		seenFeature[f] = true
+	}
+	if err := checkLayout(m.Layout); err != nil {
 		return Manifest{}, err
 	}
 	for _, c := range m.Swatch {

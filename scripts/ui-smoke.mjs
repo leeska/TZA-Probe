@@ -1534,7 +1534,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "anime", "偏好要存进 localStorage");
   assert(/二次元/.test(skinBtn.textContent), "按钮文字跟着换");
   // 名单外的节点也摆立绘：落到「通用人物」generic（所有线路机在二次元皮肤下都有人物、观感统一）。
-  const genericCasts = [...pubDoc.querySelectorAll(".anime-cast")];
+  const genericCasts = [...pubDoc.querySelectorAll('[data-part="card-backdrop"]')];
   assert(genericCasts.length > 0, "名单外的节点也要摆立绘：落到通用人物 generic（web/anime-cast.js）");
   assert(
     genericCasts.every((el) => el.dataset.cast === "generic"),
@@ -1546,12 +1546,12 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   const foldHost = pubDoc.createElement("div");
   foldHost.innerHTML =
     '<article class="node-card" data-node="fold-fixture" data-cast="us-bwh-dc9">' +
-    '<div class="anime-cast" data-cast="us-bwh-dc9" data-bleed><span class="anime-blink"></span></div>' +
+    '<div data-part="card-backdrop" class="card-backdrop" data-cast="us-bwh-dc9" data-bleed><span data-part="card-backdrop-layer" class="card-backdrop-layer"></span></div>' +
     '<button class="anime-fold-btn" type="button" data-fold="us-bwh-dc9" aria-expanded="true"></button>' +
     '<div class="card-body"><div class="card-top">' +
     '<button class="fold-name" type="button" data-fold="us-bwh-dc9" aria-expanded="true">' +
     '<span class="node-dot"></span><span class="fold-name-text">US-BWH-DC9</span></button>' +
-    '</div></div><div class="anime-hands"></div></article>';
+    '</div></div><div data-part="card-overlay" class="card-overlay"></div></article>';
   pubDoc.body.appendChild(foldHost);
   const foldCard = foldHost.querySelector(".node-card");
   const foldClick = (el) =>
@@ -1587,7 +1587,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   const blankClick = (el) => el.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
   const beforeBlank = !!detailOpenOnBlank();
   blankClick(foldCard);                       // 卡片空白处
-  blankClick(foldHost.querySelector(".anime-cast"));  // 立绘空白处
+  blankClick(foldHost.querySelector('[data-part="card-backdrop"]'));  // 立绘空白处
   assert.equal(
     !!detailOpenOnBlank(),
     beforeBlank,
@@ -1623,14 +1623,14 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 于是别的皮肤下那三件套是**没有样式的裸元素**——必须靠底座样式表默认藏起来（漏一个就会冒出一颗裸按钮）。
   // 这就是「加动画不要影响到其他皮肤」的第一道闸。
   const baseCSS = resolveTokens(await (await fetch(base + "/styles.css")).text());
-  for (const cls of [".anime-cast", ".anime-hands", ".anime-blink", ".anime-fold-btn"]) {
+  for (const part of ["card-backdrop", "card-backdrop-layer", "card-overlay", "card-plate"]) {
     assert(
-      new RegExp("\\" + cls + "[^{]*\\{[^}]*display: none", "s").test(baseCSS),
-      `底座样式表要把 ${cls} 默认藏掉（anime.css 的规则都带皮肤前缀，别的皮肤下它没有样式）`,
+      new RegExp('\\[data-part="' + part + '"\\][^{]*\\{[^}]*display: none', "s").test(baseCSS),
+      `底座样式表要把装饰槽 ${part} 默认藏掉（主题包的规则都带皮肤前缀，别的皮肤下它没有样式）`,
     );
   }
   assert(
-    /html\[data-skin="anime"\] \.anime-cast \{[^}]*display: block/s.test(animeCSS),
+    /html\[data-skin="anime"\] \[data-part="card-backdrop"\] \{[^}]*display: block/s.test(animeCSS),
     "二次元皮肤里立绘要放开显示",
   );
   assert(/\[data-skin="shadcn"\]/.test(shadcnCSS), "皮肤规则要限定在 data-skin=shadcn 下");
@@ -1697,10 +1697,17 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       /:root\[data-skin="anime"\]\[data-theme="dark"\]\s*\{[^}]*--anime-bg: #150f29[^}]*--anime-fg: #f7efff/s.test(animeCSS),
     "二次元皮肤要有浅色与深色两份令牌（2026-10-14 加浓：浅色樱花粉底纸 / 夜版星空紫）",
   );
+  // 没有毛玻璃靠清单里的 "base": "plain"（不加载液态玻璃的材质层），样式表不再整片关模糊。
+  const installedLooks = await (await fetch(base + "/api/v1/admin/themes", { headers: adminHeaders })).json();
   assert(
     /border-radius: var\(--anime-radius\) !important/.test(animeCSS) &&
-      /backdrop-filter: none !important/.test(animeCSS),
-    "圆角统一到二次元的尺度、且没有毛玻璃，是这张皮肤的定义性声明",
+      installedLooks.find((t) => t.id === "anime")?.base === "plain" &&
+      !/backdrop-filter/.test(animeCSS.replace(/\/\*[\s\S]*?\*\//g, "")),
+    "圆角统一到二次元的尺度、且没有毛玻璃（base: plain，样式表里不再关模糊），是这张皮肤的定义性声明",
+  );
+  assert(
+    installedLooks.find((t) => t.id === "press")?.base === "plain" && !/backdrop-filter/.test(pressCSS.replace(/\/\*[\s\S]*?\*\//g, "")),
+    "复古印刷同样是 base: plain，样式表里不再整片关模糊",
   );
   // 立绘层：默认（styles.css）不显示，二次元皮肤里放开；图片按 data-cast 挂在样式表上
   // （页面 CSP 是 style-src 'self'，行内 background-image 会被丢掉）。
@@ -1708,8 +1715,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 逐条列出来，免得以后新增一个元素只加在 anime.css 里、别的皮肤冒裸元素。
   assert(
     // 立绘（人物层）/ 双手层 / 闭眼层 / 卷起按钮默认都不显示（逐条见上面的循环）。
-    /\.anime-cast,\s*\n?\.anime-blink,\s*\n?\.anime-fold-btn \{\s*display: none;\s*\}/.test(cssSource) &&
-      /\.anime-hands \{\s*display: none;\s*\}/.test(cssSource),
+    /\[data-part="card-backdrop"\],\s*\n?\[data-part="card-backdrop-layer"\],\s*\n?\[data-part="card-overlay"\],\s*\n?\[data-part="card-plate"\] \{\s*display: none;\s*\}/.test(cssSource),
     "人物层 / 双手层 / 闭眼层 / 卷起按钮默认都不显示：只在二次元皮肤里放开（别的皮肤下是没样式的裸图 / 裸 div）",
   );
   // 人物层是**一张完整连续的立绘**（用户 2026-10-10 原话「上下体不要分开，现在状态很乱」，
@@ -1724,7 +1730,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     !/--cast-stripe/.test(animeCSS) && !/cast-emblem/.test(animeCSS) && !/data-plate-tall/.test(animeCSS) && !/\.card-body::after/.test(animeCSS),
     "不再为补板面空白加徽记 / 斜纹装饰（--cast-stripe、cast-emblem、data-plate-tall、板条 ::after 都要清干净）",
   );
-  const castLayerRule = /html\[data-skin="anime"\] \.anime-cast \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
+  const castLayerRule = /html\[data-skin="anime"\] \[data-part="card-backdrop"\] \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
   assert(
     /position: absolute/.test(castLayerRule) && /height: var\(--cast-figure-h/.test(castLayerRule) &&
       /background-size: auto 100%/.test(castLayerRule) && /background-position: top center/.test(castLayerRule) &&
@@ -1732,7 +1738,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "人物层：绝对定位、固定像素高（--cast-figure-h）、整张图按图高缩放（auto 100%）、顶对齐居中、不吃指针事件",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-cast\[data-cast="jp-nosla-gen2"\],[\s\S]*?\.anime-cast\[data-cast="generic"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
+    /html\[data-skin="anime"\] \[data-part="card-backdrop"\]\[data-cast="jp-nosla-gen2"\],[\s\S]*?\[data-part="card-backdrop"\]\[data-cast="generic"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
     "五个角色（四台专属 + 通用人物）的立绘层都要挂上自己的图（同一条逗号选择器，五个 data-cast 都得在里面）",
   );
   // 夜版：牌子的底色/描边要有暗色那一份，卡片子树的浅色令牌只能作用在浅色下，
@@ -1746,16 +1752,16 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "浅色那套令牌只能作用在浅色下，夜版要让暗色令牌落进卡片",
   );
   assert(
-    /html\[data-skin="anime"\]\[data-theme="dark"\] \.anime-cast,[\s\S]*?\.anime-hands \{[\s\S]*?filter: brightness\(0\.93\)/s.test(animeCSS),
+    /html\[data-skin="anime"\]\[data-theme="dark"\] \[data-part="card-backdrop"\],[\s\S]*?\[data-part="card-overlay"\] \{[\s\S]*?filter: brightness\(0\.93\)/s.test(animeCSS),
     "夜版把人物（整张图）与双手两层一起压一档亮度（两层同一张图、同一套处理，手才不会从手腕上断色；只轻压一档，深色鞋/裤不和夜色糊在一起）",
   );
-  // 一张完整人物图（2026-10-10 v2）：① 完整人物图 .anime-cast（看板下沿以下是同一张图的裙/腿/鞋）
-  // → ② HTML 看板 .card-body（直接盖在人物图上）→ ③ 双手层 .anime-hands 压在看板上沿。
+  // 一张完整人物图（2026-10-10 v2）：① 完整人物图 card-backdrop（看板下沿以下是同一张图的裙/腿/鞋）
+  // → ② HTML 看板 .card-body（直接盖在人物图上）→ ③ 双手层 card-overlay 压在看板上沿。
   // 缺一条就退回旧毛病（板顶/手边透出原图牌子的描边残线、手被 CSS 抠出硬边、手浮在板外）。
   // 双手层的**主规则**：`@media (prefers-reduced-motion: no-preference)` 里的呼吸动画那条也以同一
   // 选择器开头（缩进 2 空格），只按选择器抓会先抓到它、抓出一段只有 animation 的规则。锚在行首只取
   // 缩进为 0 的那条主规则。
-  const handsRule = /^html\[data-skin="anime"\] \.anime-hands \{([^}]*)\}/m.exec(animeCSS)?.[1] || "";
+  const handsRule = /^html\[data-skin="anime"\] \[data-part="card-overlay"\] \{([^}]*)\}/m.exec(animeCSS)?.[1] || "";
   assert(
     /position: absolute/.test(handsRule) && /z-index: 3/.test(handsRule) &&
       /background-image: var\(--cast-hands-url\)/.test(handsRule) &&
@@ -1790,7 +1796,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "板内数据区要 overflow: visible：全部数据排进板里、一眼看全，不裁也不滚",
   );
   assert(
-    /html\[data-skin="anime"\] \.anime-cast \{[^}]*z-index: 1/s.test(animeCSS) &&
+    /html\[data-skin="anime"\] \[data-part="card-backdrop"\] \{[^}]*z-index: 1/s.test(animeCSS) &&
       /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body > \[id\] > :not\(\.node-sub\) \{ visibility: hidden;/s.test(animeCSS),
     "人物层 z-index 1（看板 z-index 2 盖在上面）；收起态只藏板内数据（visibility: hidden 仍占位 → 板盒高度 = 展开态板高 → 两态卡高恒定；.card-top 留着，板沿与名字坐标都不动）",
   );
@@ -1836,7 +1842,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     !/\.anime-roll\b/.test(animeCSS) && !/\.anime-roll\b/.test(appSource),
     "卷轴（.anime-roll、卷轴透明度滑块、牌面上的字）整条去掉：名字现在印在 HTML 看板正中的固定坐标上",
   );
-  const blinkRule = /html\[data-skin="anime"\] \.anime-cast \.anime-blink \{([^}]*)\}/
+  const blinkRule = /html\[data-skin="anime"\] \[data-part="card-backdrop"\] \[data-part="card-backdrop-layer"\] \{([^}]*)\}/
     .exec(animeCSS)?.[1] || "";
   assert(
     // 逐条查、不靠顺序：这条规则里属性顺序以后会变，正则串起来写会假失败。
@@ -1854,8 +1860,8 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 注释里正好写着「不放在 prefers-reduced-motion 里」，不剥注释会被当成命中（假失败）。
   const animeNoComments = animeCSS.replace(/\/\*[\s\S]*?\*\//g, "");
   assert(
-    /html\[data-skin="anime"\] \.anime-cast \.anime-blink \{[^}]*display: block[^}]*background-image: var\(--cast-blink-url\)/s.test(animeNoComments) &&
-      /html\[data-skin="anime"\] \.anime-cast \.anime-blink \{[^}]*animation: anime-blink var\(--cast-blink-dur, 5s\)/s.test(animeNoComments) &&
+    /html\[data-skin="anime"\] \[data-part="card-backdrop"\] \[data-part="card-backdrop-layer"\] \{[^}]*display: block[^}]*background-image: var\(--cast-blink-url\)/s.test(animeNoComments) &&
+      /html\[data-skin="anime"\] \[data-part="card-backdrop"\] \[data-part="card-backdrop-layer"\] \{[^}]*animation: anime-blink var\(--cast-blink-dur, 5s\)/s.test(animeNoComments) &&
       !/prefers-reduced-motion[\s\S]{0,600}animation: anime-blink/.test(animeNoComments),
     "眨眼是纯透明度切换，不放进 prefers-reduced-motion —— 系统开了「减少动态效果」也该看得到她眨眼",
   );
@@ -1868,12 +1874,12 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     /\.node-card\[data-cast\]\.is-tilt \{[^}]*rotateX\(calc\(var\(--tilt-ny, 0\) \* -3deg\)\)[^}]*rotateY\(calc\(var\(--tilt-nx, 0\) \* 3\.4deg\)\)/s.test(animeCSS),
     "卡片要按指针转一点——层间差速就是裸眼 3D 的来源",
   );
-  // 两个立绘层的位移写在同一条多选择器规则里（.anime-cast, .anime-hands），
+  // 两个立绘层的位移写在同一条多选择器规则里（card-backdrop, card-overlay），
   // 选择器后面是逗号不是 `{`，所以抓这条规则整块（到第一个 `}`）再逐条查。
-  const tiltShift = /\.node-card\[data-cast\]\.is-tilt \.anime-cast,[\s\S]*?\n\}/.exec(animeCSS)?.[0] || "";
+  const tiltShift = /\.node-card\[data-cast\]\.is-tilt \[data-part="card-backdrop"\],[\s\S]*?\n\}/.exec(animeCSS)?.[0] || "";
   assert(
     /translate3d\(calc\(var\(--tilt-nx, 0\) \* -9px\), calc\(var\(--tilt-ny, 0\) \* -6px\), 0\)/.test(tiltShift) &&
-      /\.is-tilt \.anime-hands \{/.test(tiltShift),
+      /\.is-tilt \[data-part="card-overlay"\] \{/.test(tiltShift),
     "3D 倾斜时人物层 / 双手层要压在同一条位移规则里（手连着人，位移不同就会错位）",
   );
   assert(

@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -159,6 +160,10 @@ func (s *Store) read(id string) (Manifest, error) {
 	}
 	if id == AnimeSkin {
 		m.Settings = withCharacters(m.Settings)
+		// 二次元在有 features 之前（v1.1.0 及更早）就画角色：老包没声明也补上，面板只认这个能力。
+		if !slices.Contains(m.Features, tzapkg.FeatureCharacters) {
+			m.Features = append(m.Features, tzapkg.FeatureCharacters)
+		}
 	}
 	return m, nil
 }

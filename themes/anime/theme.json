@@ -2,11 +2,13 @@
   "id": "anime",
   "name": "二次元",
   "hint": "线路机角色 · 樱花粉",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "TZA",
   "chrome": { "light": "#fdeef6", "dark": "#150f29" },
   "swatch": ["#fdeef6", "#ffffff", "#ff4f9a"],
+  "base": "plain",
   "styles": ["anime.css"],
+  "features": ["characters"],
   "settings": [
     { "id": "characters", "type": "characters", "label": "角色包", "hint": "关掉的角色包不参与挑角色" },
     { "id": "motion", "type": "toggle", "label": "眨眼与呼吸", "hint": "关掉后立绘静止", "default": "on" }

@@ -30,6 +30,11 @@
   root.dataset.theme = dark ? "dark" : "light";
   // 认不出来的值（含 null、已删除的主题包）退回默认皮肤。
   root.dataset.skin = known(skin) ? skin : skinDefault;
+  // 布局密度（theme.json 的 layout.density）：首屏前写成 data-density，规则与 skins.js 的 applyLayout 相同。
+  for (var j = 0; j < list.length; j++) {
+    var density = list[j].id === root.dataset.skin && list[j].layout && list[j].layout.density;
+    if (density === "compact" || density === "cozy") root.dataset.density = density;
+  }
   // 主题设置（管理员在「主题」页调的、主题在 theme.json 里声明的菜单）：首屏前写成 data-opt-*，
   // 样式表据此选择。规则与 skins.js 的 applyOptions 相同。
   for (var k = 0; k < list.length; k++) {

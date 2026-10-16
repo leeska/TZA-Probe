@@ -1,0 +1,126 @@
+/* 明信片：示例主题包（docs/THEMES.md）。演示三样东西，全部只用稳定接口、不带任何图片：
+   1. "base": "plain"——不加载液态玻璃的材质层（毛玻璃、大圆角、彩色光斑），这里不用写一条覆盖；
+   2. theme.json 的 layout——板面只留地区·分组、四格指标和信息带（不显示延迟与回程），紧凑密度；
+   3. 卡片装饰槽——背景层画航空信封的红蓝斜纹边，名牌画成邮戳，前景层画右下角的折角。 */
+
+:root[data-skin="postcard"] {
+  --ink: #2a2622;
+  --muted: #7a7065;
+  --subtle: #aaa092;
+  --line: rgba(42, 38, 34, 0.12);
+  --accent: #c8372d;
+  --accent-rgb: 200, 55, 45;
+
+  --glass-bg: #fffdf8;
+  --glass-bg-subtle: #f6f1e6;
+  --glass-bg-elevated: #ffffff;
+  --glass-border: #e3dccd;
+  --glass-border-subtle: #ece6d9;
+  --glass-inner-rim: 0 0 #0000;
+  --glass-shadow: 0 1px 2px rgb(42 38 34 / 0.08);
+  --glass-shadow-lg: 0 8px 22px rgb(42 38 34 / 0.12);
+  --progress-track: #ece6d9;
+
+  --radius-scale: 0.4;
+  /* 卡片底部多留一条，给邮戳与折角 */
+  --card-pad: var(--space-3-5) var(--space-4) 46px;
+  --font-display: Georgia, "Songti SC", "Noto Serif CJK SC", serif;
+
+  /* 信封斜纹的两种颜色，深色下另配一份 */
+  --postcard-red: #c8372d;
+  --postcard-blue: #2f4f8f;
+}
+
+:root[data-skin="postcard"][data-theme="dark"] {
+  --ink: #eeeae3;
+  --muted: #a39b90;
+  --subtle: #6d675f;
+  --line: rgba(238, 234, 227, 0.12);
+  --accent: #ef6b5f;
+  --accent-rgb: 239, 107, 95;
+
+  --glass-bg: #1f2027;
+  --glass-bg-subtle: #25262e;
+  --glass-bg-elevated: #282a33;
+  --glass-border: #34363f;
+  --glass-border-subtle: #2c2e36;
+  --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --glass-shadow-lg: 0 8px 22px rgb(0 0 0 / 0.5);
+  --progress-track: #30323b;
+
+  --postcard-red: #ef6b5f;
+  --postcard-blue: #7f9fe0;
+}
+
+html[data-skin="postcard"] body {
+  background: #f4efe4;
+}
+
+html[data-skin="postcard"][data-theme="dark"] body {
+  background: #16171c;
+}
+
+/* 卡片：装饰槽是绝对定位的层，卡片本身要当定位容器；看板（card-body）压在背景层之上。 */
+html[data-skin="postcard"] [data-part="node-card"] {
+  position: relative;
+}
+
+html[data-skin="postcard"] [data-part="card-body"] {
+  position: relative;
+  z-index: 1;
+}
+
+/* 背景层：卡片四周一圈航空信封的红蓝斜纹（下面再垫一层纸色，只露出 6px 的边）。 */
+html[data-skin="postcard"] [data-part="card-backdrop"] {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
+    repeating-linear-gradient(-45deg, var(--postcard-red) 0 10px, transparent 10px 20px, var(--postcard-blue) 20px 30px, transparent 30px 40px) border-box;
+  border: 6px solid transparent;
+}
+
+/* 按卡壳上的 data-region 换配色：日本的信封换成红白。 */
+html[data-skin="postcard"] [data-part="node-card"][data-region="日本"] [data-part="card-backdrop"] {
+  --postcard-blue: #ffffff;
+}
+
+/* 名牌：节点填了商家时出现，画成右下角一枚斜盖的邮戳；node-sub 里那枚默认小牌就不要了。 */
+html[data-skin="postcard"] [data-part="card-plate"] {
+  display: block;
+  position: absolute;
+  right: 36px;
+  bottom: 12px;
+  z-index: 2;
+  padding: var(--space-1) var(--space-2-5);
+  border: 2px dashed var(--postcard-red);
+  border-radius: var(--radius-pill);
+  color: var(--postcard-red);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: rotate(-8deg);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+html[data-skin="postcard"] [data-part="vendor-plate"] {
+  display: none;
+}
+
+/* 前景层：右下角折起的一角。 */
+html[data-skin="postcard"] [data-part="card-overlay"] {
+  display: block;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+  background: linear-gradient(135deg, transparent 50%, var(--glass-border) 50%);
+}

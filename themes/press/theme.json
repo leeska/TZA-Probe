@@ -2,9 +2,10 @@
   "id": "press",
   "name": "复古印刷",
   "hint": "纸张方格 · 硬边框 · 衬线标题",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "TZA",
   "chrome": { "light": "#f8f1df", "dark": "#15120f" },
   "swatch": ["#f8f1df", "#fffaf0", "#b72f24"],
+  "base": "plain",
   "styles": ["press.css"]
 }
