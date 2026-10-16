@@ -2,18 +2,19 @@
 
 ## 0. 一键安装（推荐）
 
-Linux 主机（amd64 / arm64），一条命令装成 systemd 服务：
+Linux 主机（amd64 / arm64），一条命令装成 systemd 服务。按来源分两种方式：
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
-```
+| 方式 | 命令 | 依赖 | Agent |
+| --- | --- | --- | --- |
+| 从 Release 一键安装（默认） | `curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh \| sudo sh`<br>指定版本加 `-s -- --release vX.Y.Z` | curl、sha256sum | 发布包内嵌；发布签过名时可在后台一键升级 |
+| 从源码构建 | `curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh \| sudo sh -s -- --source`<br>指定分支 / tag 用 `--ref REF` | git、Go 1.27 | 本机编译放进 `<数据目录>/agents/`，未签名 |
 
-脚本拉取当前 `main` 源码构建（需要 Go 1.27 与 git），也可以 `--version vX.Y.Z` 直接取 GitHub Release 的发布包（免 Go 与 git）：
-
+- Release 方式不写版本时装最新发布（`/releases/latest`），下载后按 `.sha256` 校验；`--version vX.Y.Z` 与 `--release vX.Y.Z` 等价。
 - 安装 `/usr/local/bin/tza-server`，旧二进制保留为 `tza-server.previous`，重复执行即升级。
 - 创建 `tza-probe` 系统账户与 `/var/lib/tza-probe`（0700），数据目录不会被覆盖。
 - 安装 `deploy/tza-server.service` 并 `systemctl enable --now`，等待 `/healthz` 通过后打印管理地址与密钥位置。
 - 源码构建时顺带编译 amd64 / arm64 两个 Agent 放进 `<数据目录>/agents/`，后台的一键安装命令开箱可用（Server 分发 Agent 时优先用数据目录里这份，升级 Agent 不必重编 Server）。在服务器上编出来的 Agent 没有签名，不能一键升级；要用一键升级见下文「一键升级」。
+- 两种方式可以互相切换，重跑对应命令即可。源码构建放进 `<数据目录>/agents/` 的 Agent 带 `.source-build` 标记，改用 Release 安装时会被清掉，换回发布包内嵌的 Agent；没有标记的（手工放的）保留并给出提示。
 - 其他参数：`--listen ADDR`（默认 `127.0.0.1:25774`）、`--data DIR`（默认 `/var/lib/tza-probe`）、`--no-systemd`（只装二进制与数据目录）。无 systemd 的环境下脚本会跳过服务注册并打印手动启动命令。
 
 Docker 部署用 `deploy/docker-compose.yml`（数据放命名卷）：

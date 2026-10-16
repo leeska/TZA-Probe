@@ -1,10 +1,16 @@
 #!/bin/sh
 # TZA Probe Server 一键安装（Linux amd64 / arm64）。
 #
-# 从源码构建 main 分支（需要 git 与 Go）：
+# 两种安装方式，二选一：
+#
+# 从 GitHub Release 安装（默认，推荐）：下载预编译发布包，免 Go 与 git，发布包内嵌两种架构的
+# Agent（签过名的发布可以在后台一键升级 Agent）。不写版本就装最新发布：
 #   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
-# 从 GitHub Release 安装（免 Go 与 git，发布包同时带两种架构的 Agent）：
-#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --version v1.0.0
+#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
+#
+# 从源码构建（需要 git 与 Go）：拉取 main（或 --ref 指定的分支 / tag）在本机编译 Server 与两种
+# 架构的 Agent。本机编出的 Agent 没有签名，节点只能重跑接入命令升级：
+#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
 #
 # 脚本只做五件事：取到 tza-server、装到 /usr/local/bin、建好数据目录、生成管理密钥与
 # 后台账号、装 systemd 服务。
@@ -15,13 +21,16 @@ set -eu
 
 REPO="leeska/TZA-Probe"
 RAW="https://raw.githubusercontent.com/${REPO}/main"
+MODE="release"
 VERSION=""
+REF="main"
 LISTEN="127.0.0.1:25774"
 DATA="/var/lib/tza-probe"
 BIN="/usr/local/bin/tza-server"
 UNIT="/etc/systemd/system/tza-server.service"
 SERVICE_USER="tza-probe"
 SYSTEMD="auto"
+PICKED=""
 
 usage() {
   cat <<'EOF'
@@ -29,8 +38,13 @@ TZA Probe Server 一键安装（Linux amd64 / arm64）
 
   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- [选项]
 
-选项
-  --version vX.Y.Z   从 GitHub Release 安装，免 git 与 Go
+安装方式（二选一，默认 --release）
+  --release [vX.Y.Z] 从 GitHub Release 下载预编译发布包，免 git 与 Go；不写版本装最新发布
+  --source           从源码构建（需要 git 与 Go），默认 main 分支
+  --ref REF          源码构建用的分支或 tag，默认 main（隐含 --source）
+  --version vX.Y.Z   同 --release vX.Y.Z
+
+其他选项
   --listen ADDR      监听地址，默认 127.0.0.1:25774（跨主机接入请配置 HTTPS 反代）
   --data DIR         数据目录，默认 /var/lib/tza-probe（保存后台账号、数据库与兼容 API 凭据）
   --no-systemd       只安装二进制与数据目录，不注册 systemd 服务
@@ -40,7 +54,12 @@ EOF
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --version) VERSION="${2:?--version 需要 vX.Y.Z}"; shift 2 ;;
+    --release)
+      MODE="release"; PICKED="${PICKED}r"; shift
+      case "${1:-}" in v[0-9]*) VERSION="$1"; shift ;; esac ;;
+    --version) MODE="release"; PICKED="${PICKED}r"; VERSION="${2:?--version 需要 vX.Y.Z}"; shift 2 ;;
+    --source) MODE="source"; PICKED="${PICKED}s"; shift ;;
+    --ref) MODE="source"; PICKED="${PICKED}s"; REF="${2:?--ref 需要分支或 tag}"; shift 2 ;;
     --listen) LISTEN="${2:?--listen 需要地址}"; shift 2 ;;
     --data) DATA="${2:?--data 需要目录}"; shift 2 ;;
     --no-systemd) SYSTEMD="no"; shift ;;
@@ -48,6 +67,11 @@ while [ $# -gt 0 ]; do
     *) echo "未知参数：$1" >&2; usage >&2; exit 2 ;;
   esac
 done
+case "$PICKED" in *r*s*|*s*r*) PICKED="both" ;; esac
+if [ "$PICKED" = "both" ]; then
+  echo "从源码构建（--source/--ref）与从 Release 安装（--release/--version）只能选一种" >&2; exit 2
+fi
+case "$VERSION" in ""|v*) ;; *) echo "版本号要以 v 开头，例如 v1.0.0：$VERSION" >&2; exit 2 ;; esac
 
 if [ "$(id -u)" != "0" ]; then
   # 通过 curl | sh 执行时脚本本体就在标准输入上，不能用 sudo 重新执行自己，
@@ -71,9 +95,19 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 UNIT_SRC=""
 
-if [ -n "$VERSION" ]; then
+if [ "$MODE" = "release" ]; then
   need curl
   need sha256sum
+  echo "安装方式：GitHub Release 预编译发布包"
+  if [ -z "$VERSION" ]; then
+    # /releases/latest 会跳到 /releases/tag/<最新 tag>，从最终地址里取版本号。
+    LATEST="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest" || true)"
+    VERSION="${LATEST##*/tag/}"
+    case "$VERSION" in
+      v[0-9]*) echo "最新发布：${VERSION}" ;;
+      *) echo "查不到最新发布版本，请用 --release vX.Y.Z 指定，或改用 --source 从源码构建" >&2; exit 1 ;;
+    esac
+  fi
   PACK="tza-probe-linux-${ARCH}.tar.gz"
   URL="https://github.com/${REPO}/releases/download/${VERSION}/${PACK}"
   echo "下载 ${URL}"
@@ -92,8 +126,9 @@ if [ -n "$VERSION" ]; then
 else
   need git
   need go
+  echo "安装方式：从源码构建 ${REF}"
   echo "克隆 ${REPO} 并构建（需要能访问 github.com 与 Go 模块代理）"
-  git clone --depth 1 "https://github.com/${REPO}.git" "${WORK}/src"
+  git clone --depth 1 --branch "$REF" "https://github.com/${REPO}.git" "${WORK}/src"
   VERSION="1.0.0-dev+$(git -C "${WORK}/src" rev-parse --short HEAD)"
   LDFLAGS="-s -w -X github.com/${REPO}/internal/model.Version=${VERSION}"
   (cd "${WORK}/src" && CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" \
@@ -123,12 +158,22 @@ if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --gid "$SERVICE_USER" --home-dir "$DATA" --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
 install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA"
+# 数据目录里的 Agent 优先于 Server 内嵌的那份。源码构建放进去的打上标记，之后改用 Release
+# 安装时据此清掉，不然发布包里签过名的 Agent 会一直被旧的本机构建挡住。
+MARK="${DATA}/agents/.source-build"
 if [ -n "${AGENTS:-}" ] && [ -d "${AGENTS:-}" ]; then
   install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_USER" "${DATA}/agents"
   for arch in amd64 arm64; do
     install -m 0600 -o "$SERVICE_USER" -g "$SERVICE_USER" \
       "${AGENTS}/tza-agent-linux-${arch}" "${DATA}/agents/tza-agent-linux-${arch}"
   done
+  echo "$VERSION" > "$MARK"
+  chown "$SERVICE_USER:$SERVICE_USER" "$MARK"
+elif [ -f "$MARK" ]; then
+  rm -f "${DATA}/agents/tza-agent-linux-amd64" "${DATA}/agents/tza-agent-linux-arm64" "$MARK"
+  echo "已移除之前源码构建放入 ${DATA}/agents 的 Agent，改用发布包内嵌的 Agent"
+elif [ -f "${DATA}/agents/tza-agent-linux-amd64" ] || [ -f "${DATA}/agents/tza-agent-linux-arm64" ]; then
+  echo "注意：${DATA}/agents 里已有 Agent，会优先于发布包内嵌的 Agent 分发；不需要请删掉后重启服务" >&2
 fi
 
 # 服务启动前生成管理密钥与后台账号：密码只在这里打印一次，不进 systemd 日志。
@@ -191,7 +236,8 @@ UNIT
 fi
 
 echo
-echo "已安装：${BIN}（版本 ${VERSION}）"
+if [ "$MODE" = "release" ]; then FROM="GitHub Release"; else FROM="源码构建 ${REF}"; fi
+echo "已安装：${BIN}（版本 ${VERSION}，来自 ${FROM}）"
 echo "数据目录：${DATA}"
 if [ "$started" = "yes" ]; then
   if [ "$RUNNING" = "$VERSION" ]; then

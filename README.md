@@ -19,13 +19,23 @@
 
 ## 一键部署
 
-Linux 主机（amd64 / arm64），一条命令装成 systemd 服务：
+Linux 主机（amd64 / arm64），一条命令装成 systemd 服务。两种方式二选一：
+
+**从 Release 一键安装（推荐）**：下载 GitHub Release 的预编译发布包，免 Go 与 git，内嵌两种架构的 Agent。不写版本装最新发布：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0   # 指定版本
 ```
 
-脚本拉取 `main` 源码构建（需要 Go 1.27 与 git），安装 `/usr/local/bin/tza-server` 与 systemd 单元，建好 `/var/lib/tza-probe` 并放入 amd64 / arm64 两个 Agent。重复执行即升级：旧二进制保留为 `tza-server.previous`，服务自动重启并核对运行的是新版本。可选参数：`--version vX.Y.Z`（改用 GitHub Release，免 Go 与 git）、`--listen ADDR`、`--data DIR`、`--no-systemd`。
+**从源码构建**：拉取 `main`（或 `--ref` 指定的分支 / tag）在本机编译 Server 与 amd64 / arm64 两个 Agent，需要 Go 1.27 与 git。本机编出的 Agent 没有签名，不能在后台一键升级：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --ref dev           # 构建指定分支或 tag
+```
+
+两种方式都安装 `/usr/local/bin/tza-server` 与 systemd 单元、建好 `/var/lib/tza-probe`。重复执行即升级（可以在两种方式之间切换）：旧二进制保留为 `tza-server.previous`，服务自动重启并核对运行的是新版本。其他参数：`--listen ADDR`、`--data DIR`、`--no-systemd`。
 
 装完脚本会打印后台用户名、密码（密码只在首次安装时显示一次，登录后可在“面板设置 → 后台账号”修改；忘记密码执行 `sudo tza-server reset-password --data /var/lib/tza-probe`）。访问 `http://127.0.0.1:25774/admin` 用用户名密码登录。MCP API Key 在“面板设置”中生成。跨主机接入需在前面配置 HTTPS 反代，见 [部署说明](docs/DEPLOYMENT.md)。
 
