@@ -145,7 +145,7 @@ GITHUB_TOKEN=... bash scripts/release.sh vX.Y.Z dist   # 打 tag、建 Release�
 
 `UI_SMOKE=0` 跳过前端集成检查，`OUT=<目录>` 换产物目录，`TZA_NODE` / `TZA_NPM` 指定 Node 与 npm，`TZA_BUN` 指定 Bun。
 
-本项目不做远程终端、任意命令、文件管理、多数据库和自动更新。插件只做声明式的（通知渠道、探测目标集，数据与模板由 Probe 解释执行）：不做可执行代码的插件、前端注入脚本、Agent 端插件或任何远程命令通道。主题与插件市场经 TZA-CC 提供，可选。
+本项目不做远程终端、任意命令、文件管理、多数据库和自动更新。Agent 一键升级只装运维者用自己私钥签过名的新版本，签名私钥不放在 Server 上，Server 不能借它在节点上运行别的程序，见 [部署说明](docs/DEPLOYMENT.md)。插件只做声明式的（通知渠道、探测目标集，数据与模板由 Probe 解释执行）：不做可执行代码的插件、前端注入脚本、Agent 端插件或任何远程命令通道。主题与插件市场经 TZA-CC 提供，可选。
 
 ## License
 

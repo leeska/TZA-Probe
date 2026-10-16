@@ -424,8 +424,13 @@ func TestLoginCookiesAndJSONValidation(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	cookies := w.Result().Cookies()
-	if len(cookies) != 1 || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
+	if len(cookies) != 2 || cookies[0].Name != "tza_session" || cookies[1].Name != deviceCookie {
 		t.Fatal(cookies)
+	}
+	for _, c := range cookies {
+		if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode {
+			t.Fatal(c)
+		}
 	}
 	r = httptest.NewRequest("GET", "https://probe.example/api/v1/session", nil)
 	r.AddCookie(cookies[0])

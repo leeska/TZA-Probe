@@ -55,7 +55,8 @@ type API struct {
 	mu            sync.Mutex
 	sessions      map[string]time.Time
 	loginWindow   time.Time
-	loginAttempts int
+	loginFailures map[string]int // 当前一分钟内各限流桶的失败次数，见 login_limit.go
+	deviceKey     []byte         // 设备 Cookie 的签名密钥
 	// 匿名面板共用的快照，见 panelNodes / allObservations / latencySamples。
 	nodesSnap        snapshot[[]model.NodeView]
 	observationsSnap snapshot[map[string][]model.Observation]
@@ -120,6 +121,7 @@ func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) 
 
 func (a *API) Handler() http.Handler {
 	a.sessions = map[string]time.Time{}
+	a.deviceKey = deviceSigningKey(a.AdminToken)
 	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier, Themes: a.Themes, Plugins: a.Plugins, Logo: a.Logo}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -251,6 +253,22 @@ func (a *API) Handler() http.Handler {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Write(agentdist.Script())
 	})
+	// 运维者的升级公钥：安装脚本把它钉在节点上，此后 Agent 只接受它签过名的升级。
+	// 公钥本身不是秘密；没有配置时 404，节点照常安装，只是不能一键升级。
+	mux.HandleFunc("GET /dl/"+agentdist.KeyFile, func(w http.ResponseWriter, r *http.Request) {
+		if a.Agents == nil {
+			http.NotFound(w, r)
+			return
+		}
+		key, err := a.Agents.UpgradeKey()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(key)
+	})
 	mux.HandleFunc("GET /dl/{name}", func(w http.ResponseWriter, r *http.Request) {
 		arch, sum, ok := agentdist.ParseDownload(r.PathValue("name"))
 		if a.Agents == nil || !ok {
@@ -358,12 +376,12 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	if a.loginLimited(now, false) {
+	if a.loginLimited(r, now, false) {
 		write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 		return
 	}
 	if !a.checkAccount(v.Username, v.Password) {
-		if a.loginLimited(now, true) {
+		if a.loginLimited(r, now, true) {
 			write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 			return
 		}
@@ -371,21 +389,6 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.startSession(w, r, now)
-}
-
-// loginLimited reports whether wrong logins in the current minute passed the
-// limit, counting one more first when failed is set.
-func (a *API) loginLimited(now time.Time, failed bool) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if now.Sub(a.loginWindow) > time.Minute {
-		a.loginAttempts = 0
-		a.loginWindow = now
-	}
-	if failed {
-		a.loginAttempts++
-	}
-	return a.loginAttempts > 30
 }
 
 func (a *API) checkAccount(username, password string) bool {
@@ -424,11 +427,8 @@ func (a *API) startSession(w http.ResponseWriter, r *http.Request, now time.Time
 	}
 	a.sessions[model.Hash(token)] = now.Add(12 * time.Hour)
 	a.mu.Unlock()
-	secure := r.TLS != nil
-	if u, err := url.Parse(r.Header.Get("Origin")); err == nil && u.Scheme == "https" {
-		secure = true
-	}
-	http.SetCookie(w, &http.Cookie{Name: "tza_session", Value: token, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: 43200})
+	http.SetCookie(w, &http.Cookie{Name: "tza_session", Value: token, Path: "/", HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode, MaxAge: 43200})
+	a.setDeviceCookie(w, r, now)
 	w.WriteHeader(204)
 }
 

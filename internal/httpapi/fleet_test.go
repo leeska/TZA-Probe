@@ -3,7 +3,12 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,8 +19,10 @@ import (
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/agentdist"
+	"github.com/leeska/TZA-Probe/internal/agentsig"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 	"github.com/leeska/TZA-Probe/web"
 )
 
@@ -210,10 +217,10 @@ func TestAgentUpgradeQueue(t *testing.T) {
 		}
 		return code, reply
 	}
-	if code, _ := report(modernKey, metrics("0.9", true)); code != 204 {
+	if code, _ := report(modernKey, metrics("0.9.0", true)); code != 204 {
 		t.Fatalf("nothing queued must stay 204: %d", code)
 	}
-	report(legacyKey, metrics("0.9", false))
+	report(legacyKey, metrics("0.9.0", false))
 
 	code, data := e.request("POST", "/api/v1/admin/agents/upgrade", e.admin, map[string]any{"ids": []string{modern, legacy, fresh}})
 	if code != 200 {
@@ -221,16 +228,52 @@ func TestAgentUpgradeQueue(t *testing.T) {
 	}
 	var queued struct{ Results map[string]string }
 	json.Unmarshal(data, &queued)
-	if queued.Results[modern] != upgradeQueued || queued.Results[legacy] != upgradeManual || queued.Results[fresh] != upgradeNever {
+	// Server 手里只有没签名的安装包：不下发，标「未签名」。
+	if queued.Results[modern] != upgradeUnsigned || queued.Results[legacy] != upgradeManual || queued.Results[fresh] != upgradeNever {
 		t.Fatalf("results: %v", queued.Results)
 	}
-	code, reply := report(modernKey, metrics("0.9", true))
-	sum, _ := (&agentdist.Dist{Dir: dir}).Sum("amd64")
-	if code != 200 || reply.Upgrade == nil || reply.Upgrade.Path != "/dl/tza-agent-linux-amd64" || reply.Upgrade.SHA256 != sum || reply.Upgrade.Version != model.Version {
-		t.Fatalf("queued node must get the upgrade: %d %+v", code, reply.Upgrade)
+	if code, _ := e.request("GET", "/dl/"+agentdist.KeyFile, "", nil); code != 404 {
+		t.Fatalf("no key configured: %d", code)
+	}
+
+	// 运维者在自己电脑上签好，把 .sig 与公钥放进 agents 目录。
+	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+	sum := sha256.Sum256([]byte("new-agent"))
+	writeSig := func(version string, binarySum string) agentsig.Signature {
+		sig := agentsig.Sign(key, "ops", "amd64", version, binarySum)
+		raw, _ := json.Marshal(sig)
+		os.WriteFile(filepath.Join(dir, agentdist.Name("amd64")+".sig"), raw, 0o644)
+		return sig
+	}
+	os.WriteFile(filepath.Join(dir, agentdist.KeyFile), []byte(tzapkg.FormatPublicKey("ops", pub)+"\n"), 0o644)
+	if code, data := e.request("GET", "/dl/"+agentdist.KeyFile, "", nil); code != 200 || !bytes.HasPrefix(data, []byte("ops:")) {
+		t.Fatalf("upgrade key: %d %s", code, data)
+	}
+	// 签的是别的二进制（换了安装包忘了重签）：仍然不下发。
+	writeSig("1.1.0", hex.EncodeToString(make([]byte, 32)))
+	if _, err := (&agentdist.Dist{Dir: dir}).Signature("amd64"); !errors.Is(err, agentdist.ErrUnsigned) {
+		t.Fatalf("stale signature: %v", err)
+	}
+	// 签名版本不比节点新：算已是最新。
+	writeSig("0.8.0", hex.EncodeToString(sum[:]))
+	code, data = e.request("POST", "/api/v1/admin/agents/upgrade", e.admin, map[string]any{"ids": []string{modern}})
+	json.Unmarshal(data, &queued)
+	if code != 200 || queued.Results[modern] != upgradeCurrent {
+		t.Fatalf("older signed release: %d %v", code, queued.Results)
+	}
+	sig := writeSig("1.1.0", hex.EncodeToString(sum[:]))
+	code, data = e.request("POST", "/api/v1/admin/agents/upgrade", e.admin, map[string]any{"ids": []string{modern}})
+	json.Unmarshal(data, &queued)
+	if code != 200 || queued.Results[modern] != upgradeQueued {
+		t.Fatalf("signed release: %d %v", code, queued.Results)
+	}
+	code, reply := report(modernKey, metrics("0.9.0", true))
+	if code != 200 || reply.Upgrade == nil || reply.Upgrade.Path != "/dl/tza-agent-linux-amd64" || reply.Upgrade.SHA256 != sig.SHA256 ||
+		reply.Upgrade.Version != "1.1.0" || reply.Upgrade.Arch != "amd64" || reply.Upgrade.KeyID != "ops" || reply.Upgrade.Sig != sig.Sig {
+		t.Fatalf("queued node must get the signed upgrade: %d %+v", code, reply.Upgrade)
 	}
 	// 下发一次就够：之后的上报不再重复下发，直到它以新版本回来。
-	if code, _ = report(modernKey, metrics("0.9", true)); code != 204 {
+	if code, _ = report(modernKey, metrics("0.9.0", true)); code != 204 {
 		t.Fatalf("upgrade must be sent once: %d", code)
 	}
 	state := func() map[string]upgradeItem {
@@ -242,11 +285,11 @@ func TestAgentUpgradeQueue(t *testing.T) {
 	if state()[modern].State != upgradeSent {
 		t.Fatalf("state: %+v", state())
 	}
-	if code, _ = report(modernKey, metrics(model.Version, true)); code != 204 {
+	if code, _ = report(modernKey, metrics("1.1.0", true)); code != 204 {
 		t.Fatalf("upgraded report: %d", code)
 	}
 	if _, ok := state()[modern]; ok {
-		t.Fatal("a report at the panel version must clear the entry")
+		t.Fatal("a report at the offered version must clear the entry")
 	}
 	if code, _ = e.request("POST", "/api/v1/admin/agents/upgrade", e.admin, map[string]any{"ids": []string{modern}}); code != 200 {
 		t.Fatal(code)

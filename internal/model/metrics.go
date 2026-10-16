@@ -166,8 +166,13 @@ type ReportReply struct {
 
 // AgentUpgrade names the binary to fetch: Path is a /dl/ path on the same
 // Server and SHA256 its hex digest, checked before anything is replaced.
+// Arch, KeyID and Sig are the operator's signature of (Arch, Version, SHA256)
+// (see package agentsig); the Agent refuses an upgrade without a valid one.
 type AgentUpgrade struct {
 	Version string `json:"version"`
 	Path    string `json:"path"`
 	SHA256  string `json:"sha256"`
+	Arch    string `json:"arch,omitempty"`
+	KeyID   string `json:"key_id,omitempty"`
+	Sig     string `json:"sig,omitempty"`
 }

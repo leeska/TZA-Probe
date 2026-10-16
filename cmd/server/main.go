@@ -44,6 +44,10 @@ func run() error {
 			return initCommand(os.Args[2:])
 		case "reset-password":
 			return resetPasswordCommand(os.Args[2:])
+		case "agent-keygen":
+			return agentKeygenCommand(os.Args[2:])
+		case "agent-sign":
+			return agentSignCommand(os.Args[2:])
 		}
 	}
 	addr := flag.String("listen", "127.0.0.1:25774", "HTTP listen address; put TLS reverse proxy in front")

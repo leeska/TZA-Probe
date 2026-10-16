@@ -14,7 +14,9 @@
 #   --uninstall              停止服务并删除程序、配置与服务单元（systemd / OpenRC 均可）
 #
 # 不带 --token 再次执行时保留现有 /etc/tza-probe/agent.json，只更新二进制并重启，即升级。
-# 用这一版脚本装过（或升级过一次）之后，后台「节点管理」就能一键升级，不必再登录机器。
+# Server 配了升级公钥时，脚本把它钉在 /etc/tza-probe/upgrade-key.pub：此后 Agent 只接受
+# 用对应私钥签过名、且比自己新的版本，后台「节点管理」就能一键升级，不必再登录机器。
+# 私钥不在 Server 上，Server 被人接管也推不了自己的程序；换公钥要在节点上重跑一次本脚本。
 # 密钥也可通过环境变量 TZA_TOKEN 传入，避免出现在命令行。
 set -eu
 
@@ -27,6 +29,7 @@ TRACE_METHOD=""
 ALLOW_HTTP=""
 UNINSTALL=""
 CONFIG=/etc/tza-probe/agent.json
+KEYFILE=/etc/tza-probe/upgrade-key.pub
 BIN=/usr/local/bin/tza-agent
 UNIT=/etc/systemd/system/tza-agent.service
 INITD=/etc/init.d/tza-agent
@@ -161,12 +164,31 @@ fi
 [ "$ACTUAL" = "$EXPECTED" ] || fail "校验和不匹配，下载不完整，请重试"
 chmod 0755 "$TMP/tza-agent"
 "$TMP/tza-agent" --version >/dev/null 2>&1 || fail "下载的程序无法运行"
+# 升级公钥：与程序一样来自这台 Server（执行本脚本就是信任它的时刻）。没有配置时照常安装，
+# 只是不能一键升级；已经钉过的公钥保留。
+PINNED=""
+if fetch "$ENDPOINT/dl/upgrade-key.pub" "$TMP/key" 2>/dev/null; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ""|"#"*) continue ;;
+    esac
+    printf '%s\n' "$line" | grep -Eq '^[a-z0-9][a-z0-9.-]{0,31}:[A-Za-z0-9+/]{43}=$' || fail "Server 提供的升级公钥格式不正确"
+    PINNED=true
+  done < "$TMP/key"
+fi
 
 # 先停旧服务再替换，避免向运行中的文件写入；一键升级下载了一半的旧版本一并清掉
 service_stop
-rm -f /var/lib/tza-agent/tza-agent.new /var/lib/tza-agent/tza-agent.new.sha256 /var/lib/tza-agent/tza-agent.new.part
+rm -f /var/lib/tza-agent/tza-agent.new /var/lib/tza-agent/tza-agent.new.sha256 /var/lib/tza-agent/tza-agent.new.sig /var/lib/tza-agent/tza-agent.new.part
 [ -f "$BIN" ] && cp -p "$BIN" "$BIN.previous"
 install -m 0755 "$TMP/tza-agent" "$BIN"
+install -d -m 0700 /etc/tza-probe
+if [ -n "$PINNED" ]; then
+  install -m 0600 "$TMP/key" "$KEYFILE"
+  echo "已记下 Server 的升级公钥：$KEYFILE"
+elif [ ! -f "$KEYFILE" ]; then
+  echo "提示: 这台 Server 没有配置升级公钥，Agent 不接受一键升级；以后升级请重跑本命令" >&2
+fi
 
 if [ -z "$UPGRADE" ]; then
   [ -n "$NEXTTRACE" ] || NEXTTRACE=$(command -v nexttrace 2>/dev/null || true)
@@ -200,8 +222,9 @@ Wants=network-online.target
 
 [Service]
 # 一键升级：Agent 把新版本下载到 StateDirectory（沙箱里唯一可写的地方）后以状态 3 退出，
-# 下次启动前由带 + 前缀（不受沙箱限制）的 ExecStartPre 换上；没有待装版本时什么也不做。
-ExecStartPre=-+/usr/local/bin/tza-agent --apply-update
+# 下次启动前由带 + 前缀（不受沙箱限制）的 ExecStartPre 按 /etc/tza-probe/upgrade-key.pub
+# 再验一遍签名后换上；没有待装版本时什么也不做。
+ExecStartPre=-+/usr/local/bin/tza-agent --config /etc/tza-probe/agent.json --apply-update
 ExecStart=/usr/local/bin/tza-agent --config /etc/tza-probe/agent.json --self-update
 StateDirectory=tza-agent
 StateDirectoryMode=0700
@@ -240,7 +263,7 @@ output_log="/var/log/tza-agent.log"
 error_log="/var/log/tza-agent.log"
 depend() { need net; after firewall; }
 # 一键升级：没有沙箱时 Agent 自己就能换上新版本；这里补上「下载后、换之前被停掉」的情形。
-start_pre() { /usr/local/bin/tza-agent --apply-update || true; }
+start_pre() { /usr/local/bin/tza-agent --config /etc/tza-probe/agent.json --apply-update || true; }
 TZA_AGENT_INIT
   chmod 0755 "$INITD"
   rc-update add tza-agent default >/dev/null 2>&1 || true

@@ -20,7 +20,8 @@ export async function loadUpgrades() {
 }
 
 export const isStale = (n) => !!(n.metrics?.version && state.serverVersion && n.metrics.version !== state.serverVersion);
-// 新安装脚本装的 Agent 带 self_update，能一键升级；更早的要在机器上手工执行一次安装命令。
+// 钉了升级公钥、带 --self-update 的 Agent 报 self_update，能一键升级；更早的（或节点上没有公钥的）
+// 要在机器上手工执行一次安装命令。
 const selfUpdating = (n) => !!n.metrics?.capabilities?.includes("self_update");
 const upgradeCommand = () => `curl -fsSL ${location.origin}/install.sh | sh -s -- --endpoint ${location.origin}`;
 
@@ -28,8 +29,9 @@ const UPGRADE_BADGES = {
   queued: ["排队升级", "", "下一次上报（约 5 秒）时下发；离线的机器上线后再升级"],
   sent: ["升级中…", "", "已下发，Agent 正在下载、校验并重启"],
   failed: ["升级未完成", "warn", ""],
-  manual: ["需手工升级一次", "warn", "这台的 Agent 早于一键升级，请在机器上执行一次升级命令"],
+  manual: ["需手工升级一次", "warn", "这台的 Agent 不接受一键升级（版本较早，或节点上没有升级公钥），请在机器上执行一次升级命令"],
   unavailable: ["无安装包", "warn", ""],
+  unsigned: ["安装包未签名", "warn", "服务端的 Agent 安装包没有可用签名，不能一键升级；见部署说明「一键升级」"],
 };
 // 状态格里「Agent 版本 · 架构」那一行：版本落后标「需更新」，排了升级的标进度。
 export function agentLine(n) {
@@ -412,6 +414,7 @@ async function upgradeAgents(ids) {
   if (by.current) parts.push(`${by.current.length} 台已是最新`);
   if (by.never) parts.push(`${by.never.length} 台从未接入`);
   if (by.unavailable) parts.push(`${by.unavailable.length} 台的架构没有安装包`);
+  if (by.unsigned) parts.push(`${by.unsigned.length} 台的安装包没有签名，不能一键升级`);
   if (by.manual?.length) manualUpgrade(by.manual, parts);
   else toast(parts.join("，") || "没有可升级的节点");
 }
@@ -422,7 +425,7 @@ function manualUpgrade(ids, parts) {
   const command = upgradeCommand();
   const d = modal(
     `需要手工升级一次 · ${ids.length} 台`,
-    `${parts.length ? `<p>${esc(parts.join("，"))}。</p>` : ""}<p>${esc(nameList(ids, 20))} 的 Agent 早于一键升级，不会自己换版本。在这些机器上以 root（或有 sudo 权限的用户）执行一次下面的命令：保留现有配置与密钥，只更新程序和服务单元。之后它们就能在这里一键升级了。</p><div class="command-block"><pre>${esc(command)}</pre><button type="button" id="copy-upgrade" class="primary">复制命令</button></div><div class="form-footer"><button type="button" class="primary" id="upgrade-done">知道了</button></div>`,
+    `${parts.length ? `<p>${esc(parts.join("，"))}。</p>` : ""}<p>${esc(nameList(ids, 20))} 的 Agent 不接受一键升级（版本较早，或节点上还没有升级公钥）。在这些机器上以 root（或有 sudo 权限的用户）执行一次下面的命令：保留现有配置与密钥，更新程序和服务单元，并记下本服务器的升级公钥。之后它们就能在这里一键升级了。</p><div class="command-block"><pre>${esc(command)}</pre><button type="button" id="copy-upgrade" class="primary">复制命令</button></div><div class="form-footer"><button type="button" class="primary" id="upgrade-done">知道了</button></div>`,
   );
   d.querySelector("#copy-upgrade").onclick = guard(async () => {
     await navigator.clipboard.writeText(command);

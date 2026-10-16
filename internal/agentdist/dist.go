@@ -11,7 +11,9 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -20,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/leeska/TZA-Probe/internal/agentsig"
 )
 
 //go:embed bin install.sh
@@ -67,6 +71,74 @@ func (d *Dist) open(arch string) (fs.File, bool, error) {
 		return nil, false, ErrMissing
 	}
 	return f, false, nil
+}
+
+// KeyFile is the operator's public upgrade key, beside the binaries. The
+// install script pins it on the node; see package agentsig.
+const KeyFile = "upgrade-key.pub"
+
+// readFile reads an auxiliary file (a signature or the key) from Dir, else
+// from the embedded copies.
+func (d *Dist) readFile(name string) ([]byte, error) {
+	if d.Dir != "" {
+		if data, err := os.ReadFile(filepath.Join(d.Dir, name)); err == nil {
+			return data, nil
+		}
+	}
+	if d.noEmbed {
+		return nil, ErrMissing
+	}
+	data, err := files.ReadFile("bin/" + name)
+	if err != nil {
+		return nil, ErrMissing
+	}
+	return data, nil
+}
+
+// UpgradeKey returns the public key file nodes pin, or ErrMissing.
+func (d *Dist) UpgradeKey() ([]byte, error) {
+	data, err := d.readFile(KeyFile)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := agentsig.ParseKeys(string(data)); err != nil {
+		return nil, fmt.Errorf("%s: %w", KeyFile, err)
+	}
+	return data, nil
+}
+
+// ErrUnsigned means the binary for an architecture has no usable signature, so
+// it cannot be offered as a one-click upgrade.
+var ErrUnsigned = errors.New("agent binary not signed")
+
+// Signature returns the operator's signature of the binary for arch, checked
+// against the binary actually served and against the published key, so a
+// stale or foreign .sig is reported here rather than refused by every node.
+func (d *Dist) Signature(arch string) (agentsig.Signature, error) {
+	sum, err := d.Sum(arch)
+	if err != nil {
+		return agentsig.Signature{}, err
+	}
+	raw, err := d.readFile(Name(arch) + ".sig")
+	if err != nil {
+		return agentsig.Signature{}, fmt.Errorf("%w: no %s.sig", ErrUnsigned, Name(arch))
+	}
+	var sig agentsig.Signature
+	if err := json.Unmarshal(raw, &sig); err != nil {
+		return agentsig.Signature{}, fmt.Errorf("%w: %s.sig is not valid JSON", ErrUnsigned, Name(arch))
+	}
+	if sig.Arch != arch || sig.SHA256 != sum {
+		return agentsig.Signature{}, fmt.Errorf("%w: %s.sig belongs to another binary", ErrUnsigned, Name(arch))
+	}
+	keyData, err := d.UpgradeKey()
+	if err != nil {
+		return agentsig.Signature{}, fmt.Errorf("%w: no %s", ErrUnsigned, KeyFile)
+	}
+	keys, _ := agentsig.ParseKeys(string(keyData))
+	if err := sig.Verify(keys); err != nil {
+		return agentsig.Signature{}, fmt.Errorf("%w: %v", ErrUnsigned, err)
+	}
+	return sig, nil
 }
 
 // Available reports which architectures can currently be served.

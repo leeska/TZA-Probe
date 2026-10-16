@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/agentdist"
+	"github.com/leeska/TZA-Probe/internal/agentsig"
 	"github.com/leeska/TZA-Probe/internal/model"
 )
 
@@ -14,8 +16,11 @@ import (
 //
 // 队列只放在内存里：它是「下一次上报时顺手告诉它」的一次性指令，Server 重启丢了重新点一下
 // 即可，不值得为它加一张表。离线的节点照样排队，回来时第一次上报就会升级；排了 24 小时还没
-// 回来的丢掉。只有带 self_update 能力（新安装脚本装的、带 --self-update 启动）的 Agent 会被
-// 下发；更早的 Agent 要在机器上手工执行一次安装命令，之后就都能一键升级了。
+// 回来的丢掉。只有带 self_update 能力（新安装脚本装的、带 --self-update 启动且钉了升级公钥）
+// 的 Agent 会被下发；更早的 Agent 要在机器上手工执行一次安装命令，之后就都能一键升级了。
+//
+// 下发的只能是运维者签过名的安装包（见 internal/agentsig）：Server 手里没有签名私钥，
+// 没有 .sig 的架构标「未签名」、不下发，Agent 那边也会拒收没签名或比自己旧的版本。
 
 // Upgrade states shown in the panel.
 const (
@@ -25,6 +30,7 @@ const (
 	upgradeManual      = "manual"      // Agent 太旧，不会自升级
 	upgradeCurrent     = "current"     // 已是面板版本
 	upgradeUnavailable = "unavailable" // 服务端没有这个架构的安装包
+	upgradeUnsigned    = "unsigned"    // 有安装包但没有可用的签名，不能一键升级
 	upgradeNever       = "never"       // 从未接入
 )
 
@@ -37,6 +43,7 @@ const (
 type upgradeItem struct {
 	State       string `json:"state"`
 	Error       string `json:"error,omitempty"`
+	Version     string `json:"version,omitempty"` // 下发的版本；以它上报即算升级完成
 	RequestedAt int64  `json:"requested_at"`
 	SentAt      int64  `json:"sent_at,omitempty"`
 }
@@ -59,9 +66,27 @@ func (q *upgradeQueue) expire(now time.Time) {
 	}
 }
 
+// offer finds the signed release an Agent reporting m could upgrade to. state
+// is upgradeQueued when there is one, else the reason there is none.
+func (a *API) offer(m model.Metrics) (sig agentsig.Signature, state, reason string) {
+	if a.Agents == nil {
+		return sig, upgradeUnavailable, "服务端没有 Agent 安装包"
+	}
+	sig, err := a.Agents.Signature(m.Arch)
+	switch {
+	case errors.Is(err, agentdist.ErrUnsigned):
+		return sig, upgradeUnsigned, "服务端的 " + m.Arch + " 安装包没有可用签名（" + err.Error() + "）；用 tza-server agent-sign 签好再放进 agents 目录"
+	case err != nil:
+		return sig, upgradeUnavailable, "服务端没有 " + m.Arch + " 架构的 Agent 安装包"
+	case !agentsig.Newer(sig.Version, m.Version):
+		return sig, upgradeCurrent, ""
+	}
+	return sig, upgradeQueued, ""
+}
+
 // upgradeReply is what the report handler sends back: an upgrade instruction
 // when this node is queued and its Agent can take one, nil otherwise. A report
-// carrying the panel's version clears the node's entry: the upgrade is done.
+// carrying the offered version clears the node's entry: the upgrade is done.
 func (a *API) upgradeReply(id string, m model.Metrics, now time.Time) *model.AgentUpgrade {
 	q := &a.upgrades
 	q.mu.Lock()
@@ -70,7 +95,7 @@ func (a *API) upgradeReply(id string, m model.Metrics, now time.Time) *model.Age
 	if it == nil {
 		return nil
 	}
-	if m.Version == model.Version {
+	if m.Version == model.Version || (it.Version != "" && m.Version == it.Version) {
 		delete(q.items, id)
 		return nil
 	}
@@ -81,17 +106,17 @@ func (a *API) upgradeReply(id string, m model.Metrics, now time.Time) *model.Age
 		it.State = upgradeManual
 		return nil
 	}
-	var sum string
-	var err error
-	if a.Agents != nil {
-		sum, err = a.Agents.Sum(m.Arch)
-	}
-	if a.Agents == nil || err != nil {
-		it.State, it.Error = upgradeUnavailable, "服务端没有 "+m.Arch+" 架构的 Agent 安装包"
+	sig, state, reason := a.offer(m)
+	if state == upgradeCurrent {
+		delete(q.items, id)
 		return nil
 	}
-	it.State, it.SentAt = upgradeSent, now.Unix()
-	return &model.AgentUpgrade{Version: model.Version, Path: "/dl/" + agentdist.Name(m.Arch), SHA256: sum}
+	if state != upgradeQueued {
+		it.State, it.Error = state, reason
+		return nil
+	}
+	it.State, it.SentAt, it.Version = upgradeSent, now.Unix(), sig.Version
+	return &model.AgentUpgrade{Version: sig.Version, Path: "/dl/" + agentdist.Name(m.Arch), SHA256: sig.SHA256, Arch: sig.Arch, KeyID: sig.KeyID, Sig: sig.Sig}
 }
 
 func (a *API) upgradeRoutes(route func(string, http.HandlerFunc)) {
@@ -105,11 +130,16 @@ func (a *API) upgradeRoutes(route func(string, http.HandlerFunc)) {
 			items[id] = *it
 		}
 		q.mu.Unlock()
-		var archs []string
+		archs, signed := []string{}, []string{}
 		if a.Agents != nil {
 			archs = a.Agents.Available()
+			for _, arch := range archs {
+				if _, err := a.Agents.Signature(arch); err == nil {
+					signed = append(signed, arch)
+				}
+			}
 		}
-		write(w, 200, map[string]any{"version": model.Version, "archs": archs, "items": items})
+		write(w, 200, map[string]any{"version": model.Version, "archs": archs, "signed": signed, "items": items})
 	})
 	// 把勾选的节点排进升级队列；每台给出结果（排队 / 已是新版 / 需手工升级一次 …）。
 	route("POST /api/v1/admin/agents/upgrade", func(w http.ResponseWriter, r *http.Request) {
@@ -155,12 +185,8 @@ func (a *API) upgradeRoutes(route func(string, http.HandlerFunc)) {
 				state = upgradeCurrent
 			case !m.AllowsSelfUpdate():
 				state = upgradeManual
-			case a.Agents == nil:
-				state = upgradeUnavailable
 			default:
-				if _, err := a.Agents.Sum(m.Arch); err != nil {
-					state = upgradeUnavailable
-				}
+				_, state, _ = a.offer(*m)
 			}
 			results[id] = state
 			if state == upgradeQueued {

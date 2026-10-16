@@ -13,7 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 - 安装 `/usr/local/bin/tza-server`，旧二进制保留为 `tza-server.previous`，重复执行即升级。
 - 创建 `tza-probe` 系统账户与 `/var/lib/tza-probe`（0700），数据目录不会被覆盖。
 - 安装 `deploy/tza-server.service` 并 `systemctl enable --now`，等待 `/healthz` 通过后打印管理地址与密钥位置。
-- 源码构建时顺带编译 amd64 / arm64 两个 Agent 放进 `<数据目录>/agents/`，后台的一键安装命令开箱可用（Server 分发 Agent 时优先用数据目录里这份，升级 Agent 不必重编 Server）。
+- 源码构建时顺带编译 amd64 / arm64 两个 Agent 放进 `<数据目录>/agents/`，后台的一键安装命令开箱可用（Server 分发 Agent 时优先用数据目录里这份，升级 Agent 不必重编 Server）。在服务器上编出来的 Agent 没有签名，不能一键升级；要用一键升级见下文「一键升级」。
 - 其他参数：`--listen ADDR`（默认 `127.0.0.1:25774`）、`--data DIR`（默认 `/var/lib/tza-probe`）、`--no-systemd`（只装二进制与数据目录）。无 systemd 的环境下脚本会跳过服务注册并打印手动启动命令。
 
 Docker 部署用 `deploy/docker-compose.yml`（数据放命名卷）：
@@ -152,7 +152,31 @@ sudo systemctl start tza-server
 
 先升 Server，再升 Agent。Agent 升级使用相同的 stop → 保留旧二进制 → install → start 顺序（或不带 `--token` 重新执行安装命令），不需要重置密钥。
 
-**一键升级**：用带一键升级的安装脚本装过（或不带 `--token` 重新执行过一次安装命令）的 Agent 以 `--self-update` 启动，在后台「节点管理」勾选节点点「升级 Agent」（或标题栏的「升级 Agent（N）」升级全部落后的；只升一台就点那一行的「升级」或状态格里的「需更新 ⇡」）即可：Agent 在下一次上报时拿到新版本的下载路径与 SHA-256，下载到 `/var/lib/tza-agent`、校验并试跑 `--version` 后以状态 3 退出；systemd 单元的 `ExecStartPre=-+/usr/local/bin/tza-agent --apply-update` 在重启前把它换到 `/usr/local/bin/tza-agent`（单元开了 `ProtectSystem=strict`，Agent 自己写不了 /usr），旧版本留在 `tza-agent.previous`。OpenRC 没有沙箱，Agent 自己就地替换，`supervise-daemon` 负责拉起。更早的 Agent 后台会标「需手工升级一次」并给出命令。协议版本不匹配时不会自动降级。
+**一键升级**只下发运维者签过名的 Agent。签名私钥只放在你自己的电脑上，Server 手里只有签好的安装包、`.sig` 与公钥；节点安装时钉住公钥，之后只接受这把密钥签过、且比自己新的版本。所以 Server 或后台账号即使被人接管，也推不了自己的程序，也不能把节点退回旧版本——最多让一键升级停摆。
+
+1. 在自己电脑上生成一次密钥（私钥另行备份，丢了就要换钥）：
+
+   ```sh
+   tza-server agent-keygen --id ops-2026 --out ~/tza-agent-signing/agent.key
+   ```
+
+   同目录会写出公钥 `upgrade-key.pub`。
+
+2. 每次发版，用带版本号的 ldflags（`-X github.com/leeska/TZA-Probe/internal/model.Version=X.Y.Z`）编好 Agent 后签名；版本须是 `X.Y.Z`，不带 `-dev` 之类后缀：
+
+   ```sh
+   tza-server agent-sign --key ~/tza-agent-signing/agent.key --version X.Y.Z tza-agent-linux-amd64 tza-agent-linux-arm64
+   ```
+
+   `bash scripts/pipeline.sh build` 设了 `TZA_AGENT_KEY=~/tza-agent-signing/agent.key` 时会自动签名，并把签名与公钥一起嵌进 Server。
+
+3. 把两个二进制、各自的 `.sig` 和 `upgrade-key.pub` 放进 Server 数据目录的 `agents/`（属主 `tza-probe`）。`/dl/upgrade-key.pub` 随即可取。
+
+4. 每台节点执行一次安装命令（首次接入用「接入」给出的命令；已接入的不带 `--token` 再执行一次），安装脚本把公钥钉到 `/etc/tza-probe/upgrade-key.pub`。之后在后台「节点管理」勾选节点点「升级 Agent」（或标题栏的「升级 Agent（N）」、那一行的「升级」、状态格里的「需更新 ⇡」）即可。
+
+Agent 在下一次上报时拿到新版本的下载路径、SHA-256 与签名，先验签（密钥、架构、版本须比自己新），再下载到 `/var/lib/tza-agent`、核对摘要并试跑 `--version`，然后以状态 3 退出；systemd 单元的 `ExecStartPre=-+/usr/local/bin/tza-agent --config /etc/tza-probe/agent.json --apply-update` 在重启前按钉住的公钥再验一遍，才把它换到 `/usr/local/bin/tza-agent`（单元开了 `ProtectSystem=strict`，Agent 自己写不了 /usr 和 /etc），旧版本留在 `tza-agent.previous`。OpenRC 没有沙箱，Agent 验签后就地替换，`supervise-daemon` 负责拉起。
+
+后台的提示：「安装包未签名」表示 `agents/` 里缺 `.sig`、`.sig` 签的不是当前这个二进制，或缺公钥；「需手工升级一次」表示节点上的 Agent 较早、或还没钉公钥，按弹窗里的命令在机器上执行一次即可。没配签名时节点照常安装和运行，只是升级要在机器上重跑安装命令。换钥：生成新钥、用新钥签名、替换 `agents/upgrade-key.pub`，再在每台节点重跑一次安装命令。
 
 新版本如果改了数据库结构，Server 启动时自动升级数据库。从数据库版本 14 升上来时，Server 会在后台把已有一周的探测结果汇总进网络历史格子（10 台节点约十几秒，1 核机更久，日志 `network history buckets backfilled` 表示完成）；期间面板照常使用，只是 24 小时以上的网络历史仍按旧方式计算。升级后的数据库旧程序打不开，因此回滚必须同时还原旧二进制和升级前的数据备份。
 

@@ -40,8 +40,8 @@
 | POST /mcp | Model Context Protocol 工具（读取与写入，不在 /api/v1 前缀下，见下节） |
 | POST /admin/nodes/batch | 批量修改：`{"ids":[…],"patch":{…}}`，同一份部分字段（结构同 PATCH /admin/nodes/{id}，嵌套对象按字段合并）合并到每台节点，一个事务，全成或全不改；常用 `group`、`region`、`display.route_region`、`public`。不能改 `name` / `order`；回 `{"updated":N}` |
 | POST /admin/groups/rename | `{"from":…,"to":…}`：整组改名，作用于 `from` 的提醒规则一起改；`to` 是已有分组即合并（合并后同类规则冲突则 400、不改），为空即解散回未分组。回 `{"moved":N}` |
-| GET、POST /admin/agents/upgrade | 一键升级 Agent。POST `{"ids":[…]}` 把节点排进升级队列，回每台的结果 `results`：`queued`（下一次上报时下发）、`current`（已是面板版本）、`manual`（Agent 早于一键升级，需在机器上不带 `--token` 执行一次安装命令）、`unavailable`（服务端没有该架构的安装包）、`never`（从未接入）。GET 回 `{version, archs, items:{<id>:{state, error, requested_at, sent_at}}}`，`state` 另有 `sent`（已下发，等它以新版本上报）与 `failed`（下发 5 分钟后版本仍未变）。队列只在内存里，Server 重启后重新点即可 |
-| POST /agent/report | `{protocol:1,metrics:{...}}`；平常回 204。排了升级、且 Agent 报了 `self_update` 能力时回 200 `{"upgrade":{"version","path","sha256"}}`：Agent 从同一台 Server 的 `path` 下载、校验摘要、替换自身后以状态 3 退出，由 systemd / OpenRC 重启 |
+| GET、POST /admin/agents/upgrade | 一键升级 Agent。POST `{"ids":[…]}` 把节点排进升级队列，回每台的结果 `results`：`queued`（下一次上报时下发）、`current`（已是签名版本或更新）、`manual`（Agent 较早或节点上没钉升级公钥，需在机器上不带 `--token` 执行一次安装命令）、`unsigned`（该架构的安装包没有可用签名）、`unavailable`（服务端没有该架构的安装包）、`never`（从未接入）。GET 回 `{version, archs, signed, items:{<id>:{state, error, version, requested_at, sent_at}}}`，`signed` 是签名可用的架构，`state` 另有 `sent`（已下发，等它以新版本上报）与 `failed`（下发 5 分钟后版本仍未变）。队列只在内存里，Server 重启后重新点即可 |
+| POST /agent/report | `{protocol:1,metrics:{...}}`；平常回 204。排了升级、且 Agent 报了 `self_update` 能力时回 200 `{"upgrade":{"version","path","sha256","arch","key_id","sig"}}`：`sig` 是运维者对 `(arch, version, sha256)` 的 Ed25519 签名（`internal/agentsig`），Agent 只在签名来自钉住的公钥、架构相符、版本比自己新时才从同一台 Server 的 `path` 下载、校验摘要、替换自身并以状态 3 退出，由 systemd / OpenRC 重启 |
 | GET /agent/jobs | 获取有限租约任务：按种类分别领取，最多 8 个 TCP + 1 个回程 + 1 个解锁（Agent 须报 `parallel_jobs` 能力，否则整批最多两个） |
 | POST /agent/results | 上传与租约绑定的结果 |
 

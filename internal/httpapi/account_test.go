@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,8 +42,10 @@ func TestAccountLoginAndChange(t *testing.T) {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
 		var got *http.Cookie
-		if c := w.Result().Cookies(); len(c) == 1 {
-			got = c[0]
+		for _, c := range w.Result().Cookies() {
+			if c.Name == "tza_session" {
+				got = c
+			}
 		}
 		return w, got
 	}
@@ -117,8 +120,9 @@ func TestPasswordLoginRateLimit(t *testing.T) {
 	api := &API{Store: s, AdminToken: model.Secret(), AccountDir: dir, Assets: web.Handler()}
 	handler := api.Handler()
 	// 预先记满失败次数，省得在测试里真算 30 次 PBKDF2。
+	anonymous := httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil)
 	for i := 0; i < 30; i++ {
-		api.loginLimited(time.Now(), true)
+		api.loginLimited(anonymous, time.Now(), true)
 	}
 	r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"username":"admin","password":"wrong-password"}`))
 	r.Header.Set("Content-Type", "application/json")
@@ -133,5 +137,84 @@ func TestPasswordLoginRateLimit(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != 429 {
 		t.Fatalf("password login while limited: %d", w.Code)
+	}
+}
+
+// A browser that has logged in before keeps its own limit: filling the shared
+// bucket with wrong passwords does not lock the administrator out, while a
+// forged or outdated device cookie falls back to the shared bucket.
+func TestDeviceCookieSurvivesSharedLimit(t *testing.T) {
+	dir := t.TempDir()
+	s, err := storage.Open(filepath.Join(dir, "device.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := account.Save(dir, "admin", "right-password"); err != nil {
+		t.Fatal(err)
+	}
+	api := &API{Store: s, AdminToken: model.Secret(), AccountDir: dir, Assets: web.Handler()}
+	handler := api.Handler()
+	login := func(password string, cookie *http.Cookie) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"username":"admin","password":"`+password+`"}`))
+		r.Header.Set("Content-Type", "application/json")
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	w := login("right-password", nil)
+	if w.Code != 204 {
+		t.Fatalf("first login: %d", w.Code)
+	}
+	var device *http.Cookie
+	for _, c := range w.Result().Cookies() {
+		if c.Name == deviceCookie {
+			device = c
+		}
+	}
+	if device == nil || !device.HttpOnly || device.Path != "/api/v1/" {
+		t.Fatalf("device cookie: %+v", device)
+	}
+	anonymous := httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil)
+	for i := 0; i <= sharedLoginLimit; i++ {
+		api.loginLimited(anonymous, time.Now(), true)
+	}
+	if w := login("right-password", nil); w.Code != 429 {
+		t.Fatalf("anonymous login while shared bucket is full: %d", w.Code)
+	}
+	if w := login("right-password", device); w.Code != 204 {
+		t.Fatalf("device login while shared bucket is full: %d", w.Code)
+	}
+	forged := &http.Cookie{Name: deviceCookie, Value: strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + ".forged"}
+	if w := login("right-password", forged); w.Code != 429 {
+		t.Fatalf("forged device cookie: %d", w.Code)
+	}
+	// 改密码后旧设备 Cookie 签的是旧哈希，退回共享桶。
+	if err := account.Save(dir, "admin", "another-password"); err != nil {
+		t.Fatal(err)
+	}
+	if w := login("another-password", device); w.Code != 429 {
+		t.Fatalf("device cookie after password change: %d", w.Code)
+	}
+	// 设备自己的桶也有上限。
+	api.mu.Lock()
+	api.loginFailures = nil
+	api.mu.Unlock()
+	w = login("another-password", nil)
+	for _, c := range w.Result().Cookies() {
+		if c.Name == deviceCookie {
+			device = c
+		}
+	}
+	probe := httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil)
+	probe.AddCookie(device)
+	for i := 0; i <= deviceLoginLimit; i++ {
+		api.loginLimited(probe, time.Now(), true)
+	}
+	if w := login("another-password", device); w.Code != 429 {
+		t.Fatalf("device past its own limit: %d", w.Code)
 	}
 }

@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/leeska/TZA-Probe/internal/agent"
@@ -46,6 +48,8 @@ func run() error {
 	selfUpdate := flag.Bool("self-update", false, "accept upgrades offered by the Server (needs a service manager that restarts the Agent)")
 	applyUpdate := flag.Bool("apply-update", false, "install an upgrade staged by --self-update, then exit (run before start, with write access to the binary)")
 	flag.Parse()
+	// 升级公钥由安装脚本放在配置文件旁边；没有它就不接受任何升级。
+	keyPath := filepath.Join(filepath.Dir(*path), agent.KeyFile)
 	if *version {
 		slog.Info(model.Version)
 		return nil
@@ -54,9 +58,13 @@ func run() error {
 		// 由 systemd 的 ExecStartPre=-+ 或 OpenRC 的 start_pre 调用：没有待装的版本就什么也不做，
 		// 换失败只记一笔，不挡住旧版本照常启动。
 		exe, err := os.Executable()
+		keys, keyErr := agent.LoadKeys(keyPath)
+		if err == nil {
+			err = keyErr
+		}
 		if err == nil {
 			var applied bool
-			if applied, err = agent.ApplyStaged(agent.DefaultStateDir, exe); applied {
+			if applied, err = agent.ApplyStaged(agent.DefaultStateDir, exe, keys); applied {
 				slog.Info("staged agent upgrade installed")
 			}
 		}
@@ -103,12 +111,22 @@ func run() error {
 	app := agent.Agent{Collector: &agent.SystemCollector{Interfaces: cfg.Interfaces, Mount: cfg.Mount}, Prober: prober, Transport: transport}
 	restart := false
 	if *selfUpdate {
-		updater, err := agent.NewUpdater(cfg.Endpoint)
-		if err != nil {
-			return err
+		keys, err := agent.LoadKeys(keyPath)
+		switch {
+		case err != nil:
+			return fmt.Errorf("upgrade key %s: %w", keyPath, err)
+		case len(keys) == 0:
+			// 没钉公钥的节点不报 self_update，后台会提示在机器上重跑一次安装命令。
+			slog.Warn("one-click upgrade disabled: no upgrade key pinned; rerun the install command to pin the Server's key", "path", keyPath)
+			*selfUpdate = false
+		default:
+			updater, err := agent.NewUpdater(cfg.Endpoint, keys)
+			if err != nil {
+				return err
+			}
+			app.Upgrader = updater
+			app.Restart = func() { restart = true; cancel() }
 		}
-		app.Upgrader = updater
-		app.Restart = func() { restart = true; cancel() }
 	}
 	slog.Info("TZA Probe Agent started", "version", model.Version, "self_update", *selfUpdate)
 	app.Run(ctx)

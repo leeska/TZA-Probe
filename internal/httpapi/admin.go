@@ -521,12 +521,12 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			return
 		default:
 			now := time.Now()
-			if a.loginLimited(now, false) {
+			if a.loginLimited(r, now, false) {
 				write(w, 429, map[string]string{"error": "尝试过于频繁，请稍后重试"})
 				return
 			}
 			if !acct.Check(acct.Username, v.CurrentPassword) {
-				a.loginLimited(now, true)
+				a.loginLimited(r, now, true)
 				write(w, 400, map[string]string{"error": "当前密码不正确"})
 				return
 			}
@@ -536,6 +536,8 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			return
 		}
 		a.dropOtherSessions(r)
+		// 设备 Cookie 签的是旧密码哈希，改完给这台浏览器换一张新的。
+		a.setDeviceCookie(w, r, time.Now())
 		write(w, 200, map[string]any{"username": username, "configured": true})
 	})
 

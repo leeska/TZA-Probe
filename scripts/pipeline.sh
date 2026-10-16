@@ -15,6 +15,8 @@
 #   TZA_NODE / TZA_NPM  指定 Node / npm（默认取 PATH 里的）
 #   TZA_PY              指定带 Pillow、numpy 的 Python（角色包生成器自检用；没有就跳过）
 #   TZA_BUN             指定 Bun；没有 Node 时用它跑前端检查（默认 PATH 里的 bun 或 ~/.bun/bin/bun）
+#   TZA_AGENT_KEY       build 时用这把私钥（tza-server agent-keygen 生成）给 Agent 签名，供一键升级；
+#                       版本须是 X.Y.Z（打了 tag 或设 VERSION）
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -44,7 +46,7 @@ cleanup() {
   # 编进 agentdist 的 Agent 二进制不能留在这个检出里：它们是被忽略的未跟踪文件，
   # git checkout --force 不会清掉，之后在同一检出里直接 `go build ./cmd/server`
   # 就会把这份旧 Agent 内嵌进去。构建时用过就删掉，恢复干净检出。
-  if [ "$BUILT_AGENTS" = 1 ]; then rm -f internal/agentdist/bin/tza-agent-linux-*; fi
+  if [ "$BUILT_AGENTS" = 1 ]; then rm -f internal/agentdist/bin/tza-agent-linux-* internal/agentdist/bin/upgrade-key.pub; fi
   rm -rf "$TMP"
   return 0
 }
@@ -202,6 +204,15 @@ run_build() {
   done
   t1=$(now)
   note "agent amd64+arm64: $(dur $t0)  $(ls -l internal/agentdist/bin | awk 'NR>1{printf "%s %s  ", $9, $5}')"
+  # 一键升级只认运维者签过名的 Agent。TZA_AGENT_KEY 指向 agent-keygen 生成的私钥（只在本机），
+  # 同目录的 upgrade-key.pub 随签名一起内嵌进 Server；不给就出未签名的包，节点只能重跑安装命令升级。
+  if [ -n "${TZA_AGENT_KEY:-}" ]; then
+    "$GO" run ./cmd/server agent-sign --key "$TZA_AGENT_KEY" --version "$V" \
+      internal/agentdist/bin/tza-agent-linux-amd64 internal/agentdist/bin/tza-agent-linux-arm64 | sed 's/^/   /' || { FAILED=1; return; }
+    cp "$(dirname "$TZA_AGENT_KEY")/upgrade-key.pub" internal/agentdist/bin/upgrade-key.pub || { FAILED=1; return; }
+  else
+    note "未设置 TZA_AGENT_KEY：Agent 未签名，这一版不能一键升级"
+  fi
 
   for arch in amd64 arm64; do
     stage="$TMP/stage/$arch"; mkdir -p "$stage"

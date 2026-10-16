@@ -2,8 +2,10 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,10 +13,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/agentsig"
 	"github.com/leeska/TZA-Probe/internal/model"
 )
 
@@ -30,6 +34,10 @@ import (
 //
 // 两种情形都先在可执行文件旁边写好 .new 再 rename 覆盖，换到一半断电也不会留下半个文件；
 // 旧版本留作 .previous，与安装脚本的手工升级一致。
+//
+// 升级只认运维者的签名（internal/agentsig）：公钥由安装脚本钉在 /etc/tza-probe/upgrade-key.pub，
+// Server 手里没有私钥。没签名、签名不对、架构不对或不比自己新的版本一律拒收；
+// 以完整权限执行的 --apply-update 换文件前再验一遍，沙箱里的进程放进状态目录的东西不会被直接信任。
 
 // DefaultStateDir is where a downloaded upgrade waits to be applied.
 const DefaultStateDir = "/var/lib/tza-agent"
@@ -45,16 +53,52 @@ const stagedName = "tza-agent.new"
 // ErrAlreadyCurrent means the running binary already is the one offered.
 var ErrAlreadyCurrent = errors.New("agent binary already current")
 
+// KeyFile is where the install script pins the operator's upgrade key, beside
+// the configuration.
+const KeyFile = "upgrade-key.pub"
+
+// LoadKeys reads the pinned upgrade keys. No file, or a file without keys,
+// means the Agent accepts no upgrades.
+func LoadKeys(path string) (map[string]ed25519.PublicKey, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return agentsig.ParseKeys(string(data))
+}
+
 // Updater downloads and applies the upgrade a report reply names.
 type Updater struct {
 	Endpoint   string // Server origin, as in the Agent configuration
 	Executable string // the running binary, to be replaced
 	StateDir   string // where the download is staged
+	Keys       map[string]ed25519.PublicKey
 	Client     *http.Client
 }
 
+// verify checks an offered or staged upgrade: signed by a pinned key, built
+// for this architecture and newer than the running Agent.
+func verify(sig agentsig.Signature, keys map[string]ed25519.PublicKey) error {
+	if len(keys) == 0 {
+		return errors.New("no upgrade key pinned on this node; rerun the install command")
+	}
+	if err := sig.Verify(keys); err != nil {
+		return err
+	}
+	if sig.Arch != runtime.GOARCH {
+		return fmt.Errorf("upgrade is for %s, this node runs %s", sig.Arch, runtime.GOARCH)
+	}
+	if !agentsig.Newer(sig.Version, model.Version) {
+		return fmt.Errorf("upgrade %s is not newer than the running %s", sig.Version, model.Version)
+	}
+	return nil
+}
+
 // NewUpdater prepares an Updater for the running binary.
-func NewUpdater(endpoint string) (*Updater, error) {
+func NewUpdater(endpoint string, keys map[string]ed25519.PublicKey) (*Updater, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -66,6 +110,7 @@ func NewUpdater(endpoint string) (*Updater, error) {
 		Endpoint:   strings.TrimSuffix(endpoint, "/"),
 		Executable: exe,
 		StateDir:   DefaultStateDir,
+		Keys:       keys,
 		// 二进制十几 MB，按 JSON 接口定的 15 秒超时下不完；也不跟随跳转，与上报一致。
 		Client: &http.Client{Timeout: 10 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 	}, nil
@@ -85,6 +130,10 @@ func (u *Updater) Update(ctx context.Context, up model.AgentUpgrade) error {
 	if sum, err := fileSum(u.Executable); err == nil && sum == want {
 		return ErrAlreadyCurrent
 	}
+	sig := agentsig.Signature{KeyID: up.KeyID, Arch: up.Arch, Version: up.Version, SHA256: want, Sig: up.Sig}
+	if err := verify(sig, u.Keys); err != nil {
+		return fmt.Errorf("upgrade refused: %w", err)
+	}
 	if err := os.MkdirAll(u.StateDir, 0o700); err != nil {
 		return err
 	}
@@ -100,13 +149,17 @@ func (u *Updater) Update(ctx context.Context, up model.AgentUpgrade) error {
 	if err := exec.CommandContext(check, tmp, "--version").Run(); err != nil {
 		return fmt.Errorf("downloaded agent does not run: %w", err)
 	}
-	if err := os.WriteFile(staged+".sha256", []byte(want+"\n"), 0o600); err != nil {
+	sigJSON, err := json.Marshal(sig)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(staged+".sig", sigJSON, 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, staged); err != nil {
 		return err
 	}
-	if _, err := ApplyStaged(u.StateDir, u.Executable); err != nil && !readOnly(err) {
+	if _, err := ApplyStaged(u.StateDir, u.Executable, u.Keys); err != nil && !readOnly(err) {
 		return err
 	}
 	// 只读（systemd 沙箱）时文件留在状态目录，重启前由 ExecStartPre 换上。
@@ -145,25 +198,34 @@ func (u *Updater) download(ctx context.Context, path, dest, want string) error {
 }
 
 // ApplyStaged replaces exe with the binary staged in stateDir, if any, after
-// checking it against the digest stored next to it. It reports whether a
-// binary was installed. A staged file that fails the check is discarded so
-// the next start does not trip over it again.
-func ApplyStaged(stateDir, exe string) (bool, error) {
+// checking the signature stored next to it against keys and the binary
+// against that signature. It reports whether a binary was installed. A staged
+// file that fails the check is discarded so the next start does not trip over
+// it again.
+func ApplyStaged(stateDir, exe string, keys map[string]ed25519.PublicKey) (bool, error) {
 	staged := filepath.Join(stateDir, stagedName)
 	if _, err := os.Stat(staged); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
 	discard := func(err error) (bool, error) {
 		os.Remove(staged)
-		os.Remove(staged + ".sha256")
+		os.Remove(staged + ".sig")
+		os.Remove(staged + ".sha256") // 早于签名的版本留下的
 		return false, err
 	}
-	want, err := os.ReadFile(staged + ".sha256")
+	raw, err := os.ReadFile(staged + ".sig")
 	if err != nil {
-		return discard(fmt.Errorf("staged agent has no checksum: %w", err))
+		return discard(fmt.Errorf("staged agent has no signature: %w", err))
 	}
-	if sum, err := fileSum(staged); err != nil || sum != strings.TrimSpace(string(want)) {
-		return discard(errors.New("staged agent does not match its checksum"))
+	var sig agentsig.Signature
+	if err := json.Unmarshal(raw, &sig); err != nil {
+		return discard(errors.New("staged agent signature is not valid JSON"))
+	}
+	if err := verify(sig, keys); err != nil {
+		return discard(fmt.Errorf("staged agent refused: %w", err))
+	}
+	if sum, err := fileSum(staged); err != nil || sum != sig.SHA256 {
+		return discard(errors.New("staged agent does not match its signature"))
 	}
 	// 先在目标目录写好 .new 再 rename：/var/lib 与 /usr/local 常不在同一文件系统，
 	// 直接 rename 过去会失败；同目录内的 rename 则是原子的。
@@ -181,7 +243,7 @@ func ApplyStaged(stateDir, exe string) (bool, error) {
 		return false, err
 	}
 	os.Remove(staged)
-	os.Remove(staged + ".sha256")
+	os.Remove(staged + ".sig")
 	return true, nil
 }
 
