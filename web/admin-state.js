@@ -15,6 +15,9 @@ export const state = {
   alertView: "active",
   // 面板设置的子页：外观与品牌 / 账号与安全 / 数据。
   settingsView: "look",
+  // 主题、插件页的子页：已安装 / 市场。
+  themesView: "installed",
+  pluginsView: "installed",
 };
 let shellRender = async () => {};
 export function setRenderer(fn) {

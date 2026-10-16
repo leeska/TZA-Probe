@@ -4498,9 +4498,22 @@ td .due.expired + small {
   padding: var(--space-4-5) var(--space-6) var(--space-5-5);
 }
 
-/* 「加载更多」在时，网格下沿的留白交给它。 */
-.market-grid:has(+ .event-more:not(:has(> [hidden]))) {
+/* 翻页条在时，网格下沿的留白交给它。 */
+.market-grid:has(+ .list-pager) {
   padding-bottom: var(--space-1);
+}
+
+/* 市场与已安装列表的上一页 / 下一页：居中一排，中间是页码。 */
+.list-pager {
+  justify-content: center;
+  margin: 0;
+  padding: var(--space-3) var(--space-6) var(--space-4);
+}
+
+.list-pager > span {
+  min-width: 6em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .market-card {

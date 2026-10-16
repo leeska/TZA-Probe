@@ -1240,9 +1240,16 @@ assert.equal((await mcpCall(secondMCPKey)).status, 401);
 // 主题与插件各占侧栏一栏，各带一块市场；不再有单独的「市场」栏。
 assert(!$('[data-tab="market"]'), "市场不再单独成栏");
 // 一次性 Server 用 --cc-url off 关掉了市场（不连官方 CC）：市场块写明怎么打开，市场接口 503，已安装列表照常出来。
+// 主题、插件页都分「已安装」「市场」两个子页，默认在已安装。
 $('[data-tab="themes"]').click();
-await until(() => $("#theme-file") && $(".market-off"), "themes page without TZA-CC");
+await until(() => $("#theme-file"), "themes page");
+assert(!$(".market-off") && $('[data-subview="installed"]').getAttribute("aria-selected") === "true", "主题页默认是已安装子页，不带市场");
+assert(!$(".theme-panel .list-pager"), "一页放得下时没有翻页条");
+$('[data-subview="market"]').click();
+await until(() => $(".market-off") && !$("#theme-file"), "themes market without TZA-CC");
 assert($(".market-off").textContent.includes("--cc-url"), "未配置时要说明怎么配");
+$('[data-subview="installed"]').click();
+await until(() => $("#theme-file"), "back to installed themes");
 assert.deepEqual(
   [...w.document.querySelectorAll(".theme-panel .theme-list > .theme-row > .theme-copy > b")].map((b) => b.textContent),
   ["现代极简", "液态玻璃", "二次元", "复古印刷"],
@@ -1270,7 +1277,9 @@ assert(!$('[data-remove-theme="glass"]') && !$('[data-remove-theme="shadcn"]') &
 $('[data-tab="plugins"]').click();
 // 面包屑在切页时立刻换，内容要等接口回来：等插件页自己的上传入口出现，别拿主题页残留的 .market-off 当成功。
 await until(() => $("#plugin-file"), "plugins page without TZA-CC");
-assert($(".market-off") && $(".theme-panel"), "插件页有已安装列表与关闭说明");
+assert($(".theme-panel") && !$(".market-off"), "插件页默认是已安装列表");
+$('[data-subview="market"]').click();
+await until(() => $(".market-off") && !$("#plugin-file"), "plugins market without TZA-CC");
 assert.equal((await fetch(base + "/api/v1/admin/market/catalog", { headers: adminHeaders })).status, 503);
 assert.equal((await (await fetch(base + "/api/v1/admin/market/status", { headers: adminHeaders })).json()).configured, false);
 

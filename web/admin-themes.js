@@ -1,7 +1,7 @@
 import { api, send, toast, guard, esc } from "./api.js";
 import { registerThemes } from "./skins.js";
-import { content, confirmAction } from "./admin-state.js";
-import { addonMarket, addonScope, catalogPanel, loadMarket, marketPill, sourceBits, swatch, wireMarket } from "./admin-market.js";
+import { state, content, confirmAction } from "./admin-state.js";
+import { addonMarket, addonScope, catalogPanel, loadMarket, marketPill, pager, sourceBits, subTabs, swatch, wireMarket } from "./admin-market.js";
 const THEME_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/THEMES.md";
 // 主题：内置的现代极简、液态玻璃 + 已安装的主题包，下面是主题市场。官方的其它外观也是主题包，
 // 和别人做的主题一样从市场装。CSS 主题沿用核心组件；独立前台主题在隔离文档里运行自己的 HTML / JavaScript。
@@ -11,32 +11,46 @@ const THEME_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/THEMES
 // 对所有访客生效。附加包（"type": "addon"）不是外观，只给 for 写的那套主题添装饰项，所以列在那套主题
 // 下面、在它的设置菜单里开关；那套主题没装时它们不生效，单独成一组提示一句。
 export async function renderThemes(nodesReady) {
+  const view = state.themesView === "market" ? "market" : "installed";
   // 本页不用节点列表；切页时外壳传来的节点请求一起等，顶栏在线计数随之刷新。页内重画不传。
-  const [, themes, panel] = await Promise.all([nodesReady, api("/admin/themes"), api("/admin/panel").catch(() => ({}))]);
+  const [, themes, panel] = await Promise.all([nodesReady, api("/admin/themes"), view === "installed" ? api("/admin/panel").catch(() => ({})) : {}]);
   registerThemes(themes);
-  // 设置菜单里有附加包开关的主题，各带一块自己的附加包市场。
+  // 设置菜单里有附加包开关的主题，各带一块自己的附加包市场；市场子页只取主题目录。
   const hosts = themes.filter((t) => t.type !== "addon" && (t.settings || []).some((st) => st.type === "addons"));
-  const updates = await loadMarket(() => renderThemes(), themes, ["themes", ...hosts.map((t) => addonScope(t.id))]);
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>访客在公开面板右上角能选的外观。内置现代极简（默认）与液态玻璃，其余从市场安装或上传 zip。</p></div><div class="heading-actions">${marketPill()}</div></section>${installedPanel(themes, updates, panel.default_skin)}${catalogPanel("themes")}`;
+  const scopes = view === "market" ? ["themes"] : hosts.map((t) => addonScope(t.id));
+  const updates = await loadMarket(() => renderThemes(), themes, scopes);
+  const body = view === "market" ? catalogPanel("themes") : installedPanel(themes, updates, panel.default_skin);
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>访客在公开面板右上角能选的外观。内置现代极简（默认）与液态玻璃，其余从市场安装或上传 zip。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "主题分类")}${body}`;
+  content().querySelectorAll("[data-subview]").forEach((b) =>
+    (b.onclick = guard(async () => {
+      state.themesView = b.dataset.subview;
+      await renderThemes();
+    })),
+  );
   wireMarket();
-  wireInstalled(themes);
+  if (view === "installed") wireInstalled(themes);
 }
 
 // 展开着的设置菜单：页内重画（保存、装 / 删包）之后保持展开。
 const opened = new Set();
+// 已安装列表每页几套主题（设置菜单跟着它的主题走；附加包的两组各算一项，排在最后）。
+const PER_PAGE = 8;
+let installedPage = 1;
 
 function installedPanel(list, updates, defaultSkin) {
   const skins = list.filter((t) => t.type !== "addon");
   const addons = list.filter((t) => t.type === "addon");
-  const rows = skins.map((t) => skinRow(t, updates, defaultSkin) + settingsMenu(t, addons.filter((a) => a.for === t.id), updates)).join("");
+  const rows = skins.map((t) => skinRow(t, updates, defaultSkin) + settingsMenu(t, addons.filter((a) => a.for === t.id), updates));
   // 依附的主题已装但它的设置里没有附加包开关：附加包照样生效，列在一组里方便更新与删除。
   const loose = addons.filter((a) => skins.some((t) => t.id === a.for && !(t.settings || []).some((st) => st.type === "addons")));
   // 依附的主题被删了、附加包还在：留着它们（再装那套主题就恢复），但写明现在不生效。
   const orphans = addons.filter((a) => !skins.some((t) => t.id === a.for));
-  const groups =
-    (loose.length ? `<div class="theme-group">${loose.map((t) => addonRow(t, updates)).join("")}</div>` : "") +
-    (orphans.length ? `<div class="theme-group"><p class="hint">下面的附加包依附的主题没装，暂不生效；装回那套主题即恢复。</p>${orphans.map((t) => addonRow(t, updates)).join("")}</div>` : "");
-  return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">「市场」是从 TZA-CC 装的，有新版时在这里提示；「本地」是手动上传的 zip。</span></div><div class="panel-actions"><label class="button primary theme-upload">上传主题包 / 附加包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${rows}${groups}</div><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级（之后按本地包对待，不再提示更新）。主题包存在数据目录的 themes/ 下，不在数据库备份里；前台默认外观在「面板设置」里选。</p></section>`;
+  if (loose.length) rows.push(`<div class="theme-group">${loose.map((t) => addonRow(t, updates)).join("")}</div>`);
+  if (orphans.length) rows.push(`<div class="theme-group"><p class="hint">下面的附加包依附的主题没装，暂不生效；装回那套主题即恢复。</p>${orphans.map((t) => addonRow(t, updates)).join("")}</div>`);
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  installedPage = Math.min(Math.max(1, installedPage), pages);
+  const shown = rows.slice((installedPage - 1) * PER_PAGE, installedPage * PER_PAGE).join("");
+  return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">「市场」是从 TZA-CC 装的，有新版时在这里提示；「本地」是手动上传的 zip。</span></div><div class="panel-actions"><label class="button primary theme-upload">上传主题包 / 附加包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${shown}</div>${pager(installedPage, installedPage < pages, "installed-page", pages)}<p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级（之后按本地包对待，不再提示更新）。主题包存在数据目录的 themes/ 下，不在数据库备份里；前台默认外观在「面板设置」里选。</p></section>`;
 }
 
 function skinRow(t, updates, defaultSkin) {
@@ -102,6 +116,12 @@ function addonRow(t, updates, enable = "") {
 }
 
 function wireInstalled(list) {
+  content().querySelectorAll("[data-installed-page]").forEach((b) =>
+    (b.onclick = guard(async () => {
+      installedPage = Number(b.dataset.installedPage);
+      await renderThemes();
+    })),
+  );
   const input = content().querySelector("#theme-file");
   input.onchange = guard(async () => {
     const file = input.files[0];

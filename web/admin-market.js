@@ -63,7 +63,7 @@ export async function loadMarket(rerenderPage, installed = [], scope = "") {
   }
   const [updates] = await Promise.all([
     installed.some((t) => t.source === "market") ? api("/admin/market/updates").then((v) => v.updates).catch(() => []) : [],
-    ...scopes.map((s) => fetchCatalog(s, false)),
+    ...scopes.map((s) => fetchCatalog(s)),
   ]);
   updateIds = new Set(updates.map((u) => u.id));
   return updates;
@@ -83,27 +83,41 @@ export function marketPill() {
   return status.bound ? '<span class="pill good">已连接 TZA-CC</span>' : '<span class="pill">未连接 TZA-CC 账号</span>';
 }
 
-// 一页的市场：类型切换（主题页是主题，插件页是插件）、搜索、卡片与「加载更多」。
+// 一页的市场：类型切换（主题页是主题，插件页是插件）、搜索、卡片与上一页 / 下一页。
 export function catalogPanel(scope) {
   if (!status.configured) {
     return `<section data-part="panel" class="panel webhook-panel market-off"><div><h3>市场已关闭</h3><p>Server 启动时用 <code>--cc-url off</code>（或环境变量 <code>TZA_CC_URL=off</code>）关掉了市场。去掉它即连官方 TZA-CC；测试或私有部署的 CC 用 <code>--cc-url https://…</code> 指定，签名公钥用 <code>--cc-key</code> / <code>TZA_CC_KEYS</code> 添加。</p><small>不连 TZA-CC 也可以在上面上传 zip 手动安装。</small></div></section>`;
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text market-keys">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
-  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题（附加包在它所依附主题的「设置」里）"}；不连接 TZA-CC 账号也能直接安装。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
+  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题（附加包在「已安装」里它所依附主题的「设置」里）"}；不连接 TZA-CC 账号也能直接安装。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
 }
 
-async function fetchCatalog(scope, append) {
+// 主题、插件页的两个子页「已安装」「市场」，样子与面板设置的子标签一样。
+export const SUBVIEWS = [
+  ["installed", "已安装"],
+  ["market", "市场"],
+];
+export const subTabs = (current, label) =>
+  `<div class="segmented settings-tabs" role="tablist" aria-label="${esc(label)}">${SUBVIEWS.map(([id, name]) => `<button type="button" role="tab" data-subview="${id}" class="${current === id ? "active" : ""}" aria-selected="${current === id}">${name}</button>`).join("")}</div>`;
+
+// 翻页条：只有一页时不出现。attr 是按钮上带目标页码的 data 属性名；total 知道时写「第 n / 共 m 页」。
+export function pager(page, hasNext, attr, total = 0) {
+  if (page <= 1 && !hasNext) return "";
+  return `<nav class="catalog-toolbar list-pager" aria-label="翻页"><button type="button" class="quiet" data-${attr}="${page - 1}" ${page > 1 ? "" : "disabled"}>上一页</button><span>第 ${page}${total ? ` / ${total}` : ""} 页</span><button type="button" class="quiet" data-${attr}="${page + 1}" ${hasNext ? "" : "disabled"}>下一页</button></nav>`;
+}
+
+async function fetchCatalog(scope) {
   const view = viewOf(scope);
   const params = new URLSearchParams({ type: view.type, page: String(view.page) });
   if (view.for) params.set("for", view.for);
   if (view.q) params.set("q", view.q);
   try {
     const page = await api("/admin/market/catalog?" + params);
-    view.items = append ? [...view.items, ...page.items] : page.items;
+    view.items = page.items;
     view.more = page.more;
     view.error = "";
   } catch (e) {
-    if (!append) view.items = [];
+    view.items = [];
     view.more = false;
     view.error = e.message;
   }
@@ -118,7 +132,7 @@ function catalogHTML(scope) {
     ? `<p class="market-empty warn-text">${esc(view.error)}</p>`
     : `<p class="market-empty">${view.q ? `没有找到「${esc(view.q)}」相关的${typeName(view.type)}。` : `市场里还没有${typeName(view.type)}。`}</p>`;
   const note = view.for && !skinInstalled(view.for) ? `<p class="hint market-note">这些附加包依附「${esc(skinName(view.for))}」：先装好那套主题，再装附加包。</p>` : "";
-  return `<div class="market-toolbar">${tabs}<form class="market-search" role="search"><input class="market-q" type="search" maxlength="64" placeholder="搜索名称、作者" value="${esc(view.q)}" aria-label="搜索市场"><button type="submit" class="primary">搜索</button></form></div>${note}${cards ? `<div class="market-grid">${cards}</div>` : empty}<div class="catalog-toolbar event-more"><button class="quiet market-more" ${view.more ? "" : "hidden"}>加载更多</button></div>`;
+  return `<div class="market-toolbar">${tabs}<form class="market-search" role="search"><input class="market-q" type="search" maxlength="64" placeholder="搜索名称、作者" value="${esc(view.q)}" aria-label="搜索市场"><button type="submit" class="primary">搜索</button></form></div>${note}${cards ? `<div class="market-grid">${cards}</div>` : empty}${pager(view.page, view.more, "market-page")}`;
 }
 
 function card(it) {
@@ -210,10 +224,10 @@ function wireCatalog(box) {
   const view = viewOf(scope);
   const body = box.querySelector(".market-body");
   paint(body);
-  const reload = async (append = false) => {
+  const reload = async () => {
     box.classList.add("is-loading");
     try {
-      await fetchCatalog(scope, append);
+      await fetchCatalog(scope);
       body.innerHTML = catalogHTML(scope);
     } finally {
       box.classList.remove("is-loading");
@@ -233,10 +247,14 @@ function wireCatalog(box) {
     view.page = 1;
     await reload();
   });
-  body.querySelector(".market-more").onclick = guard(async () => {
-    view.page += 1;
-    await reload(true);
-  });
+  body.querySelectorAll("[data-market-page]").forEach((b) =>
+    (b.onclick = guard(async () => {
+      view.page = Number(b.dataset.marketPage);
+      await reload();
+      // 翻到新的一页从市场块顶上看起。
+      box.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    })),
+  );
   body.querySelectorAll(".market-card").forEach((b) => (b.onclick = guard(() => detail(b.dataset.package))));
 }
 
