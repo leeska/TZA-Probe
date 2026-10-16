@@ -4302,6 +4302,20 @@ td .due.expired + small {
   margin: 0 12px;
 }
 
+/* 二次元设置菜单里的角色包市场：与主题市场同一套卡片，去掉面板级的左右留白。 */
+.theme-settings .market-panel .market-toolbar,
+.theme-settings .market-panel .market-grid,
+.theme-settings .market-panel .market-empty {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.theme-settings .market-panel .market-toolbar {
+  justify-content: flex-start;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
 .theme-settings .segmented button.active {
   background: rgba(var(--accent-rgb), 0.12);
   color: var(--accent);

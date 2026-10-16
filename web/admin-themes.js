@@ -1,7 +1,7 @@
 import { api, send, toast, guard, esc } from "./api.js";
 import { ANIME, registerThemes } from "./skins.js";
 import { content, confirmAction } from "./admin-state.js";
-import { catalogPanel, loadMarket, marketPill, sourceBits, swatch, wireMarket } from "./admin-market.js";
+import { catalogPanel, characterMarket, loadMarket, marketPill, sourceBits, swatch, wireMarket } from "./admin-market.js";
 const THEME_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/THEMES.md";
 // 主题：内置的现代极简、液态玻璃 + 已安装的主题包，下面是市场（主题 / 角色包）。复古印刷、二次元是
 // 官方主题包，和别人做的主题一样从市场装。主题包与角色包都只含样式表、图片和字体，不能带脚本。
@@ -14,7 +14,8 @@ export async function renderThemes(nodesReady) {
   // 本页不用节点列表；切页时外壳传来的节点请求一起等，顶栏在线计数随之刷新。页内重画不传。
   const [, themes, panel] = await Promise.all([nodesReady, api("/admin/themes"), api("/admin/panel").catch(() => ({}))]);
   registerThemes(themes);
-  const updates = await loadMarket(() => renderThemes(), themes, "themes");
+  const anime = themes.some((t) => t.id === ANIME && t.type !== "characters");
+  const updates = await loadMarket(() => renderThemes(), themes, anime ? ["themes", "characters"] : "themes");
   content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>访客在公开面板右上角能选的外观。内置现代极简（默认）与液态玻璃，其余从市场安装或上传 zip。</p></div><div class="heading-actions">${marketPill()}</div></section>${installedPanel(themes, updates, panel.default_skin)}${catalogPanel("themes")}`;
   wireMarket();
   wireInstalled(themes);
@@ -73,7 +74,7 @@ function settingsMenu(t, packs, updates) {
     if (st.type === "characters") {
       const off = new Set(Array.isArray(opts[st.id]) ? opts[st.id] : []);
       const rows = packs.map((p) => packRow(p, updates, toggle(t.id, st.id, p.id, !off.has(p.id), `启用 ${p.name}`))).join("");
-      return `<div class="opt-group"><div class="opt-row">${head}</div><div class="theme-row is-pack"><span class="theme-copy"><b>内置角色</b><small>主题自带的线路机专属立绘；关掉后这些节点也按地区 / 默认挑角色，最后落到通用角色</small></span>${toggle(t.id, st.id, "builtin", !off.has("builtin"), "启用内置角色")}</div>${rows || '<p class="hint">还没有角色包：更多角色在下方市场的「角色包」里，也可以上传自己做的角色包。</p>'}</div>`;
+      return `<div class="opt-group"><div class="opt-row">${head}</div><div class="theme-row is-pack"><span class="theme-copy"><b>内置角色</b><small>主题自带的线路机专属立绘；关掉后这些节点也按地区 / 默认挑角色，最后落到通用角色</small></span>${toggle(t.id, st.id, "builtin", !off.has("builtin"), "启用内置角色")}</div>${rows || '<p class="hint">还没有角色包：从下面的市场添加，也可以上传自己做的角色包。</p>'}${characterMarket()}</div>`;
     }
     return "";
   };

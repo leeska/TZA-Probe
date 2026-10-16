@@ -1240,6 +1240,7 @@ assert(animeMenu?.hidden && animeMenu.previousElementSibling?.textContent.includ
 animeGear.click();
 assert(!animeMenu.hidden && animeGear.getAttribute("aria-expanded") === "true", "点「设置」展开菜单");
 assert(animeMenu.textContent.includes("角色包") && animeMenu.textContent.includes("内置角色") && animeMenu.textContent.includes("眨眼与呼吸"), "菜单按 theme.json 的 settings 画出角色包与动效开关");
+assert(!animeMenu.querySelector("[data-scope]"), "市场关着时设置菜单里没有角色包市场");
 const motionSwitch = () => $('#theme-settings-anime [data-opt-key="motion"]');
 assert.equal(motionSwitch().getAttribute("aria-checked"), "true", "没调过时用 default（on）");
 motionSwitch().click();

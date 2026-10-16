@@ -2,20 +2,20 @@ import { api, send, toast, guard, modal, esc } from "./api.js";
 import { bytes } from "./format.js";
 import { ANIME } from "./skins.js";
 import { state, content, confirmAction } from "./admin-state.js";
-// TZA-CC 市场的共用部分：「主题」页（主题包与角色包）和「插件」页各带一块市场，TZA-CC 账号在
+// TZA-CC 市场的共用部分：「主题」页（主题包）和「插件」页各带一块市场；角色包是二次元主题的附加内容，
+// 它的市场挂在二次元的设置菜单里（characterMarket），不是主题市场的一个分类，TZA-CC 账号在
 // 「面板设置 → 账号与安全」。浏览器只请求本服务器的 /admin/market/*，目录、预览图与安装包都由服务器
 // 代为获取（预览图走 /admin/market/media 代理），CSP 不用放开，TZA-CC 也看不到访客。
 // 安装前服务器核对大小、SHA-256、平台签名与包内 id / 版本；插件装之前先把它能做的事列出来请管理员确认。
 const SCOPES = {
-  themes: [
-    ["skin", "主题"],
-    ["characters", "角色包"],
-  ],
+  themes: [["skin", "主题"]],
+  characters: [["characters", "角色包"]],
   plugins: [["plugin", "插件"]],
 };
 const KINDS = { notify: "通知渠道", targets: "探测目标集" };
 const views = {
   themes: { type: "skin", q: "", page: 1, items: [], more: false, error: "" },
+  characters: { type: "characters", q: "", page: 1, items: [], more: false, error: "" },
   plugins: { type: "plugin", q: "", page: 1, items: [], more: false, error: "" },
 };
 let status = { configured: false };
@@ -48,6 +48,7 @@ export const hasUpdate = (id) => updateIds.has(id);
 
 // 进页时读一次市场状态；installed 里有市场装的包时顺带查更新，scope 给了就把那一页的目录也取回来。
 export async function loadMarket(rerenderPage, installed = [], scope = "") {
+  const scopes = (Array.isArray(scope) ? scope : [scope]).filter(Boolean);
   rerender = rerenderPage;
   stopPoll();
   status = await api("/admin/market/status").catch(() => ({ configured: false }));
@@ -57,10 +58,16 @@ export async function loadMarket(rerenderPage, installed = [], scope = "") {
   }
   const [updates] = await Promise.all([
     installed.some((t) => t.source === "market") ? api("/admin/market/updates").then((v) => v.updates).catch(() => []) : [],
-    scope ? fetchCatalog(scope, false) : null,
+    ...scopes.map((s) => fetchCatalog(s, false)),
   ]);
   updateIds = new Set(updates.map((u) => u.id));
   return updates;
+}
+
+// 二次元设置菜单里的角色包市场：没开市场就不出现，样子与主题市场同一套（搜索、卡片、详情里安装）。
+export function characterMarket() {
+  if (!status.configured) return "";
+  return `<div class="market-panel is-nested" data-scope="characters"><div class="opt-row"><span class="theme-copy"><b>从市场添加角色包</b><small>TZA-CC 上的二次元角色包，装好后出现在上面的列表里</small></span></div><div class="market-body">${catalogHTML("characters")}</div></div>`;
 }
 
 // 页头右侧的账号状态。
@@ -75,7 +82,7 @@ export function catalogPanel(scope) {
     return `<section class="panel webhook-panel market-off"><div><h3>市场已关闭</h3><p>Server 启动时用 <code>--cc-url off</code>（或环境变量 <code>TZA_CC_URL=off</code>）关掉了市场。去掉它即连官方 TZA-CC；测试或私有部署的 CC 用 <code>--cc-url https://…</code> 指定，签名公钥用 <code>--cc-key</code> / <code>TZA_CC_KEYS</code> 添加。</p><small>不连 TZA-CC 也可以在上面上传 zip 手动安装。</small></div></section>`;
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text market-keys">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
-  return `<section class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题与角色包"}；免费包不连接账号也能装，付费包要先在「面板设置 → 账号与安全」连接 TZA-CC。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
+  return `<section class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题（二次元的角色包在它的「设置」里）"}；免费包不连接账号也能装，付费包要先在「面板设置 → 账号与安全」连接 TZA-CC。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
 }
 
 async function fetchCatalog(scope, append) {
@@ -103,7 +110,7 @@ function catalogHTML(scope) {
     ? `<p class="market-empty warn-text">${esc(view.error)}</p>`
     : `<p class="market-empty">${view.q ? `没有找到「${esc(view.q)}」相关的${typeName(view.type)}。` : `市场里还没有${typeName(view.type)}。`}</p>`;
   const note = view.type === "characters" && !animeInstalled() ? '<p class="hint market-note">角色包只给二次元主题添角色：先在「主题」里装好二次元，再装角色包。</p>' : "";
-  return `<div class="market-toolbar">${tabs}<form class="market-search" role="search"><input id="market-q" type="search" maxlength="64" placeholder="搜索名称、作者" value="${esc(view.q)}" aria-label="搜索市场"><button type="submit" class="primary">搜索</button></form></div>${note}${cards ? `<div class="market-grid">${cards}</div>` : empty}<div class="catalog-toolbar event-more"><button id="market-more" class="quiet" ${view.more ? "" : "hidden"}>加载更多</button></div>`;
+  return `<div class="market-toolbar">${tabs}<form class="market-search" role="search"><input class="market-q" type="search" maxlength="64" placeholder="搜索名称、作者" value="${esc(view.q)}" aria-label="搜索市场"><button type="submit" class="primary">搜索</button></form></div>${note}${cards ? `<div class="market-grid">${cards}</div>` : empty}<div class="catalog-toolbar event-more"><button class="quiet market-more" ${view.more ? "" : "hidden"}>加载更多</button></div>`;
 }
 
 function card(it) {
@@ -175,7 +182,7 @@ export function paint(root) {
 // 市场块与已安装列表里的「详情」「更新到」按钮。
 export function wireMarket(root = content()) {
   paint(root);
-  wireCatalog(root.querySelector("#market-catalog"));
+  root.querySelectorAll("[data-scope]").forEach(wireCatalog);
   root.querySelectorAll(".theme-panel [data-package]").forEach((b) => (b.onclick = guard(() => detail(b.dataset.package))));
   root.querySelectorAll("[data-market-update]").forEach((b) =>
     (b.onclick = guard(async () => {
@@ -214,11 +221,11 @@ function wireCatalog(box) {
   );
   body.querySelector(".market-search").onsubmit = guard(async (e) => {
     e.preventDefault();
-    view.q = body.querySelector("#market-q").value.trim();
+    view.q = body.querySelector(".market-q").value.trim();
     view.page = 1;
     await reload();
   });
-  body.querySelector("#market-more").onclick = guard(async () => {
+  body.querySelector(".market-more").onclick = guard(async () => {
     view.page += 1;
     await reload(true);
   });
