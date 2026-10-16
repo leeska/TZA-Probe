@@ -2,12 +2,36 @@
 
 ## 0. 一键安装（推荐）
 
-Linux 主机（amd64 / arm64），一条命令装成 systemd 服务。按来源分两种方式：
+Linux 主机（amd64 / arm64），一条命令装成 systemd 服务。按来源分两种方式，二选一：
 
-| 方式 | 命令 | 依赖 | Agent |
-| --- | --- | --- | --- |
-| 从 Release 一键安装（默认） | `curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh \| sudo sh`<br>指定版本加 `-s -- --release vX.Y.Z` | curl、sha256sum | 发布包内嵌；发布签过名时可在后台一键升级 |
-| 从源码构建 | `curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh \| sudo sh -s -- --source`<br>指定分支 / tag 用 `--ref REF` | git、Go 1.27 | 本机编译放进 `<数据目录>/agents/`，未签名 |
+| 方式 | 依赖 | Agent |
+| --- | --- | --- |
+| 从 Release 一键安装（默认） | curl、sha256sum | 发布包内嵌；发布签过名时可在后台一键升级 |
+| 从源码构建 | git、Go 1.27 | 本机编译放进 `<数据目录>/agents/`，未签名 |
+
+**从 Release 安装最新发布：**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
+```
+
+**从 Release 安装指定版本**（把 `v1.0.0` 换成要装的版本）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
+```
+
+**从源码构建 `main` 分支：**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
+```
+
+**从源码构建指定分支或 tag**（把 `dev` 换成要构建的分支或 tag）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --ref dev
+```
 
 - Release 方式不写版本时装最新发布（`/releases/latest`），下载后按 `.sha256` 校验；`--version vX.Y.Z` 与 `--release vX.Y.Z` 等价。
 - 安装 `/usr/local/bin/tza-server`，旧二进制保留为 `tza-server.previous`，重复执行即升级。

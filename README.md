@@ -21,18 +21,32 @@
 
 Linux 主机（amd64 / arm64），一条命令装成 systemd 服务。两种方式二选一：
 
-**从 Release 一键安装（推荐）**：下载 GitHub Release 的预编译发布包，免 Go 与 git，内嵌两种架构的 Agent。不写版本装最新发布：
+**从 Release 一键安装（推荐）**：下载 GitHub Release 的预编译发布包，免 Go 与 git，内嵌两种架构的 Agent。
+
+安装最新发布：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0   # 指定版本
 ```
 
-**从源码构建**：拉取 `main`（或 `--ref` 指定的分支 / tag）在本机编译 Server 与 amd64 / arm64 两个 Agent，需要 Go 1.27 与 git。本机编出的 Agent 没有签名，不能在后台一键升级：
+安装指定版本（把 `v1.0.0` 换成要装的版本）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
+```
+
+**从源码构建**：在本机编译 Server 与 amd64 / arm64 两个 Agent，需要 Go 1.27 与 git。本机编出的 Agent 没有签名，不能在后台一键升级。
+
+构建 `main` 分支：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --ref dev           # 构建指定分支或 tag
+```
+
+构建指定分支或 tag（把 `dev` 换成要构建的分支或 tag）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --ref dev
 ```
 
 两种方式都安装 `/usr/local/bin/tza-server` 与 systemd 单元、建好 `/var/lib/tza-probe`。重复执行即升级（可以在两种方式之间切换）：旧二进制保留为 `tza-server.previous`，服务自动重启并核对运行的是新版本。其他参数：`--listen ADDR`、`--data DIR`、`--no-systemd`。

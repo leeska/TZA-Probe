@@ -4,12 +4,15 @@
 # 两种安装方式，二选一：
 #
 # 从 GitHub Release 安装（默认，推荐）：下载预编译发布包，免 Go 与 git，发布包内嵌两种架构的
-# Agent（签过名的发布可以在后台一键升级 Agent）。不写版本就装最新发布：
+# Agent（签过名的发布可以在后台一键升级 Agent）。
+# 安装最新发布：
 #   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
+# 安装指定版本：
 #   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
 #
 # 从源码构建（需要 git 与 Go）：拉取 main（或 --ref 指定的分支 / tag）在本机编译 Server 与两种
-# 架构的 Agent。本机编出的 Agent 没有签名，节点只能重跑接入命令升级：
+# 架构的 Agent。本机编出的 Agent 没有签名，节点只能重跑接入命令升级。
+# 构建 main（指定分支或 tag 把 --source 换成 --ref REF）：
 #   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
 #
 # 脚本只做五件事：取到 tza-server、装到 /usr/local/bin、建好数据目录、生成管理密钥与
