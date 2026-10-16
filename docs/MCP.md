@@ -94,8 +94,8 @@ MCP Key 具有下表中全部工具的权限，包含写入与删除；当前没
 | `update_settings` | 按字段修改通知渠道（含 `channel: "plugin"` + `plugin` + `plugin_settings`）或公开面板显示项（含站点名称 `site_name`，空串恢复默认；logo 只能在后台上传） |
 | `test_notification` | 向已配置的通知渠道发送测试消息 |
 | `list_plugins` | 只读：已安装的插件，`kind`（notify / targets）、来源、`permissions`，通知插件带设置表单 `settings`（填 `update_settings` 的 `plugin_settings` 用） |
-| `search_market` | 只读：搜索 TZA-CC 市场（`type` = `skin` / `characters` / `plugin`、`q`、`page`；插件带 `kind` 与 `permissions`），每项标出本机已装的版本与来源；传 `id` 看详情与版本列表（含 `compatible`），传 `updates: true` 只列有兼容新版的市场包 |
-| `install_market_package` | 从市场安装或更新主题包 / 角色包 / 插件（插件请先把 `search_market` 返回的 `permissions` 给用户确认），`id` 必填，`version` 省略即当前 Probe 能用的最新版；验签不过整包拒收。会替换同 id 的已装包 |
+| `search_market` | 只读：搜索 TZA-CC 市场（`type` = `skin` / `addon` / `plugin`，附加包可再用 `for` 只看某个主题的、`q`、`page`；插件带 `kind` 与 `permissions`），每项标出本机已装的版本与来源；传 `id` 看详情与版本列表（含 `compatible`），传 `updates: true` 只列有兼容新版的市场包 |
+| `install_market_package` | 从市场安装或更新主题包 / 附加包 / 插件（插件请先把 `search_market` 返回的 `permissions` 给用户确认），`id` 必填，`version` 省略即当前 Probe 能用的最新版；验签不过整包拒收。会替换同 id 的已装包 |
 
 常用操作规则：
 

@@ -3,8 +3,11 @@ package web
 import (
 	"compress/gzip"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -39,11 +42,22 @@ func TestAssetsRevalidateAndCompress(t *testing.T) {
 	if plain, _ := io.ReadAll(zr); string(plain) != first.Body.String() {
 		t.Fatal("gzip body differs from plain body")
 	}
-	// 二次元的立绘与样式在主题包里（themes/anime），不再编进二进制。
-	for _, gone := range []string{"/anime/generic.webp", "/anime.css", "/press.css"} {
-		if w := get(gone, nil); w.Code != http.StatusNotFound {
-			t.Fatalf("%s 应该已移到主题包里，得到 %d", gone, w.Code)
+	// 官方主题包（仓库的 themes/）的样式表与图片只在包里，不编进二进制：包里的每个文件都不该在这里。
+	packaged := 0
+	filepath.WalkDir(filepath.Join("..", "themes"), func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Base(p) == "theme.json" {
+			return err
 		}
+		packaged++
+		rel, _ := filepath.Rel(filepath.Join("..", "themes"), p)
+		parts := strings.SplitN(filepath.ToSlash(rel), "/", 2)
+		if w := get("/"+parts[len(parts)-1], nil); w.Code != http.StatusNotFound {
+			t.Errorf("主题包里的 %s 不该编进二进制，得到 %d", rel, w.Code)
+		}
+		return nil
+	})
+	if packaged == 0 {
+		t.Fatal("没找到仓库里的官方主题包（../themes）")
 	}
 	for _, path := range []string{"/", "/admin", "/admin/tasks"} {
 		if w := get(path, nil); w.Code != 200 || w.Header().Get("Content-Type") != "text/html; charset=utf-8" {

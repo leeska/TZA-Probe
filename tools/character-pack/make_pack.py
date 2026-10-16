@@ -362,6 +362,37 @@ def process_one(raw_path):
     return fit_canvas(im, board)
 
 
+def blink_timing(key):
+    """同一个角色每次都一样、不同角色错开的眨眼节奏（几张卡同时眨眼很假）：按「包 id/角色 id」散列。"""
+    h = 7
+    for ch in key:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
+    return f"{5 + (h % 17) / 10:.1f}s", f"{0.2 + ((h >> 5) % 13) / 10:.1f}s"
+
+
+def decoration(entry, pack_id):
+    """一个角色 → 附加包里的一个装饰项。图片与数值的名字是二次元主题的约定（themes/anime/README.md）：
+    面板把它们原样写成卡片上的 --deco-<名字>，二次元的样式表再接到自己的变量上。"""
+    d = {"id": entry["id"], "name": entry["name"]}
+    for k in ("nodes", "regions", "default"):
+        if entry.get(k):
+            d[k] = entry[k]
+    d["images"] = {k: entry[k] for k in ("art", "hands", "blink") if entry.get(k)}
+    dur, delay = blink_timing(f"{pack_id}/{entry['id']}")
+    v = {"plate-top": str(entry["plate"]["top"]), "plate-bottom": str(entry["plate"]["bottom"]), "blink-dur": dur, "blink-delay": delay}
+    for mode, suffix in (("light", "light"), ("dark", "dark")):
+        pal = entry["palette"][mode]
+        accent = pal["accent"].lstrip("#")
+        v[f"board-{suffix}"] = pal["board"]
+        v[f"cell-{suffix}"] = pal.get("cell") or ("rgb(255 255 255 / 0.62)" if mode == "light" else pal["board"])
+        v[f"line-{suffix}"] = pal["line"]
+        v[f"track-{suffix}"] = pal["track"]
+        v[f"accent-{suffix}"] = pal["accent"]
+        v[f"accent-rgb-{suffix}"] = ", ".join(str(int(accent[i:i + 2], 16)) for i in (0, 2, 4))
+    d["vars"] = v
+    return d
+
+
 def build(spec, work, out_zip):
     raw_dir, layer_dir = os.path.join(work, "raw"), os.path.join(work, "layers")
     os.makedirs(layer_dir, exist_ok=True)
@@ -407,11 +438,12 @@ def build(spec, work, out_zip):
         previews.append((cid, p))
         print(f"[{cid}] 牌子 {plate['top']:.3f}–{plate['bottom']:.3f} · 强调色 {entry['palette']['light']['accent']} · 闭眼帧 {'有' if 'blink' in entry else '无'}")
 
-    manifest = {"id": spec["id"], "type": "characters", "name": spec["name"]}
+    # 附加包：依附官方二次元主题（id anime），每个角色是一个装饰项（docs/THEMES.md「附加包」）。
+    manifest = {"id": spec["id"], "type": "addon", "for": "anime", "name": spec["name"]}
     for k in ("version", "author"):
         if spec.get(k):
             manifest[k] = spec[k]
-    manifest["characters"] = chars
+    manifest["decorations"] = [decoration(c, spec["id"]) for c in chars]
     for name, image in files.items():
         image.save(os.path.join(layer_dir, name), "WEBP", quality=86, method=6)
     with open(os.path.join(layer_dir, "theme.json"), "w", encoding="utf-8") as f:
@@ -455,6 +487,10 @@ def selftest():
     pal = palette_from(art, b)
     hue = colorsys.rgb_to_hsv(*[int(pal["light"]["accent"][i:i + 2], 16) / 255 for i in (1, 3, 5)])[0]
     assert 0.42 < hue < 0.58, f"配色：强调色该取灰青，得到 {pal['light']['accent']}"
+    deco = decoration({"id": "test", "name": "测试", "regions": ["德国"], "art": "test.webp", "hands": "test-hands.webp", "plate": {"top": 0.3, "bottom": 0.45}, "palette": pal}, "europe")
+    assert deco["images"] == {"art": "test.webp", "hands": "test-hands.webp"} and deco["regions"] == ["德国"], f"装饰项：{deco}"
+    assert deco["vars"]["plate-top"] == "0.3" and deco["vars"]["accent-rgb-light"].count(",") == 2, f"装饰项数值：{deco['vars']}"
+    assert all(len(k) <= 24 and len(v) <= 64 for k, v in deco["vars"].items()), "装饰项数值超出清单的长度限制"
     print("selftest ok")
 
 

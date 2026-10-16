@@ -248,7 +248,7 @@ func adminToken(dir string) (token string, err error) {
 		}
 	}
 	if len(token) < 32 {
-		return "", errors.New("administrator key must contain at least 32 characters")
+		return "", errors.New("administrator key must be at least 32 bytes long")
 	}
 	return token, nil
 }

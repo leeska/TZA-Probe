@@ -612,8 +612,7 @@ html[data-density="compact"] .metrics-grid {
 
 /* 卡片装饰槽（app.js 的 gridInner 给每张卡都渲染，见 docs/THEMES.md「卡片装饰槽」）：背景层、背景层里
    那一层、前景层、商家名牌。默认都不显示——主题包用 [data-part="card-backdrop"] 等选择器放开并画上图，
-   二次元的立绘、闭眼帧、双手与看板名牌就是这样画的。没有主题放开时它们是没有样式的裸元素，必须在这里
-   藏掉：漏一个就会冒出一张裸图或一块裸名牌。 */
+   没有主题放开时它们是没有样式的裸元素，必须在这里藏掉：漏一个就会冒出一张裸图或一块裸名牌。 */
 [data-part="card-backdrop"],
 [data-part="card-backdrop-layer"],
 [data-part="card-overlay"],
@@ -622,7 +621,7 @@ html[data-density="compact"] .metrics-grid {
 }
 
 /* 卡片本身不再可点：进节点详情只走内容里那枚「详细」按钮（用户点名：点卡片空白区、点数据行、
-   点立绘空白处都不该弹详情页）。 */
+   点装饰图空白处都不该弹详情页）。 */
 .node-card { cursor: default; }
 
 /* 卡片头部两行：第一行只有状态点 + 名字（右侧是发行版 / 架构胶囊），第二行才是地区·分组与
@@ -3890,7 +3889,7 @@ pre,
 }
 
 /* 隐藏没命中的建议：必须带上 .select-pop 这一层，光写 .combo-opt[hidden]（0,2,0）会被
-   glass.css 的 .select-opt{display:flex}（同权重、后加载）以及 anime / shadcn 的
+   glass.css 的 .select-opt{display:flex}（同权重、后加载）以及各皮肤的
    html[data-skin=…] :is(…)（0,2,1）盖掉，结果是「筛过的项仍然全都显示」。 */
 .select-pop .combo-opt[hidden] {
   display: none;
@@ -4373,7 +4372,7 @@ td .due.expired + small {
   margin: 0 var(--space-3);
 }
 
-/* 二次元设置菜单里的角色包市场：与主题市场同一套卡片，去掉面板级的左右留白。 */
+/* 主题设置菜单里的附加包市场：与主题市场同一套卡片，去掉面板级的左右留白。 */
 .theme-settings .market-panel .market-toolbar,
 .theme-settings .market-panel .market-grid,
 .theme-settings .market-panel .market-empty {
@@ -4392,7 +4391,7 @@ td .due.expired + small {
   color: var(--accent);
 }
 
-/* 开关：主题设置里的 toggle 与角色包启用。 */
+/* 开关：主题设置里的 toggle 与附加包启用。 */
 .opt-switch {
   position: relative;
   flex: 0 0 auto;
@@ -4427,7 +4426,7 @@ td .due.expired + small {
 }
 
 /* 商家名牌（app.js 的 vendorPlate）：默认是地区 · 分组后面的一枚强调色小牌。
-   主题可以整套重画（二次元主题把它挂在看板上沿），类名 .vendor-plate 是对主题开放的。 */
+   主题可以按 [data-part="vendor-plate"] 整套重画，也可以改用装饰槽里的 card-plate。 */
 .vendor-plate {
   display: inline-block;
   margin-left: var(--space-1-5);
@@ -4443,7 +4442,7 @@ td .due.expired + small {
   white-space: nowrap;
 }
 
-/* 角色包那一行：前四个角色的立绘缩略图（只露上半身），代替主题的色样。 */
+/* 附加包那一行：前四个装饰项各自第一张图的缩略图（只露上半部），代替主题的色样。 */
 .pack-thumbs {
   display: inline-flex;
   flex: 0 0 auto;
@@ -4461,7 +4460,7 @@ td .due.expired + small {
 }
 
 /* ==========================================================================
-   市场（admin-market.js）：TZA-CC 的主题包与角色包。卡片网格自动换列，手机上一列；
+   市场（admin-market.js）：TZA-CC 的主题包与附加包。卡片网格自动换列，手机上一列；
    封面图走本站的 /api/v1/admin/market/media 代理，没有封面时画三格色样。
    ========================================================================== */
 /* 不用 .panel-head：那里的 button 规则会把分段按钮画成一枚枚推钮。 */
@@ -4836,7 +4835,7 @@ label .muted {
   margin: 0 0 var(--space-4-5);
 }
 
-/* 角色包挂在二次元下面：缩进一级、左侧一道细线表示从属。没装二次元时的那组不缩进。 */
+/* 附加包挂在它依附的主题下面：缩进一级、左侧一道细线表示从属。主题没装时的那组不缩进。 */
 .theme-group {
   display: grid;
   gap: var(--space-2);

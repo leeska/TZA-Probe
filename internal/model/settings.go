@@ -56,8 +56,8 @@ const (
 )
 
 // PanelThemes / PanelSkins 是内置的两组取值，与 web/theme.js 的 ORDER、internal/theme 的
-// Builtins 一一对应（httpapi 的测试会拿它们对一遍）。内置皮肤是现代极简（默认）与液态玻璃；复古印刷、
-// 二次元是官方主题包（仓库的 themes/，从市场安装），装好后由 Service.Themes 认。
+// Builtins 一一对应（httpapi 的测试会拿它们对一遍）。内置皮肤是现代极简（默认）与液态玻璃；官方的
+// 其它外观是主题包（仓库的 themes/，从市场安装），装好后由 Service.Themes 认。
 var PanelThemes = []string{"auto", "light", "dark"}
 var PanelSkins = []string{"shadcn", "glass"}
 

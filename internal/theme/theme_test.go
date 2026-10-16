@@ -151,7 +151,7 @@ func TestInstallRejects(t *testing.T) {
 
 func TestNilStoreIsBuiltinsOnly(t *testing.T) {
 	var s *Store
-	if len(s.List()) != len(Builtins) || !s.Known("glass") || s.Known("anime") || s.Known("matcha") {
+	if len(s.List()) != len(Builtins) || !s.Known("glass") || s.Known("postcard") || s.Known("matcha") {
 		t.Fatal("a nil store lists the built-ins only")
 	}
 	if _, err := s.Install(nil); err == nil {
@@ -164,56 +164,55 @@ func TestNilStoreIsBuiltinsOnly(t *testing.T) {
 	}
 }
 
-const packManifest = `{"id":"europe","type":"characters","name":"欧洲","characters":[
- {"id":"germany","name":"德国","regions":["德国"],"art":"de.webp","hands":"de-hands.webp",
-  "plate":{"top":0.307,"bottom":0.446},
-  "palette":{"light":{"board":"#eef8f7","line":"#a8d8d3","track":"#d3eeeb","accent":"#2a8f86"},
-             "dark":{"board":"#14262a","line":"#2b4d52","track":"#1d363a","accent":"#6fd3c9"}}}]}`
+const addonManifest = `{"id":"europe","type":"addon","for":"matcha","name":"欧洲","decorations":[
+ {"id":"germany","name":"德国","regions":["德国"],"images":{"art":"de.webp","hands":"de-hands.webp"},"vars":{"plate-top":"0.307","board":"#eef8f7"}}]}`
 
-// A character pack adds figures to the 二次元 skin: it installs like any
-// package but is not a skin a visitor (or the default setting) can pick.
-func TestCharacterPack(t *testing.T) {
+// An add-on extends one skin with decorations: it installs like any package
+// but is not a skin a visitor (or the default setting) can pick.
+func TestAddon(t *testing.T) {
 	s := &Store{Dir: t.TempDir()}
-	m, err := s.Install(pack(t, file{name: "theme.json", body: packManifest}, file{name: "de.webp", body: "RIFF"}, file{name: "de-hands.webp", body: "RIFF"}))
+	m, err := s.Install(pack(t, file{name: "theme.json", body: addonManifest}, file{name: "de.webp", body: "RIFF"}, file{name: "de-hands.webp", body: "RIFF"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Type != TypeCharacters || len(m.Characters) != 1 || m.Characters[0].Regions[0] != "德国" {
+	if m.Type != TypeAddon || m.For != "matcha" || len(m.Decorations) != 1 || m.Decorations[0].Regions[0] != "德国" || m.Decorations[0].Images["hands"] != "de-hands.webp" {
 		t.Fatalf("manifest: %+v", m)
 	}
 	if s.Known("europe") {
-		t.Fatal("a character pack is not a skin")
+		t.Fatal("an add-on is not a skin")
 	}
 	if got := s.List(); got[len(got)-1].ID != "europe" {
-		t.Fatal("character packs are listed with the rest")
+		t.Fatal("add-ons are listed with the rest")
 	}
 
-	css := file{name: "a.css", body: "a{}"}
 	art := file{name: "de.webp", body: "RIFF"}
 	hands := file{name: "de-hands.webp", body: "RIFF"}
 	swap := func(from, to string) file {
-		return file{name: "theme.json", body: strings.Replace(packManifest, from, to, 1)}
+		return file{name: "theme.json", body: strings.Replace(addonManifest, from, to, 1)}
 	}
-	skin := strings.Replace(manifest, `"styles"`, `"characters":[{"id":"x"}],"styles"`, 1)
 	for name, archive := range map[string][]byte{
-		"styles in a pack":    pack(t, swap(`"type":"characters",`, `"type":"characters","styles":["a.css"],`), art, hands, css),
-		"characters in skin":  pack(t, file{name: "theme.json", body: skin}, file{name: "theme.css", body: "a{}"}),
-		"unknown type":        pack(t, swap(`"characters",`, `"plugin",`), art, hands),
-		"missing art file":    pack(t, file{name: "theme.json", body: packManifest}, hands),
-		"missing hands file":  pack(t, file{name: "theme.json", body: packManifest}, art),
-		"svg art":             pack(t, swap(`"de.webp"`, `"de.svg"`), hands, file{name: "de.svg", body: "<svg/>"}),
-		"plate too thin":      pack(t, swap(`"bottom":0.446`, `"bottom":0.31`), art, hands),
-		"plate out of range":  pack(t, swap(`"top":0.307`, `"top":0.05`), art, hands),
-		"bad accent":          pack(t, swap(`"accent":"#2a8f86"`, `"accent":"teal"`), art, hands),
-		"missing dark":        pack(t, swap(`"dark":{"board":"#14262a","line":"#2b4d52","track":"#1d363a","accent":"#6fd3c9"}`, `"dark":{}`), art, hands),
-		"bad character id":    pack(t, swap(`"id":"germany"`, `"id":"Germany!"`), art, hands),
-		"no characters":       pack(t, file{name: "theme.json", body: `{"id":"empty","type":"characters","name":"空"}`}),
-		"duplicate character": pack(t, swap(`}}}]}`, `}}},{"id":"germany","name":"又一个","art":"de.webp","plate":{"top":0.3,"bottom":0.4},"palette":{"light":{"board":"#ffffff","line":"#ffffff","track":"#ffffff","accent":"#ffffff"},"dark":{"board":"#000000","line":"#000000","track":"#000000","accent":"#000000"}}}]}`), art, hands),
+		"styles in an add-on": pack(t, swap(`"type":"addon",`, `"type":"addon","styles":["a.css"],`), art, hands, file{name: "a.css", body: "a{}"}),
+		"missing image file":  pack(t, file{name: "theme.json", body: addonManifest}, hands),
+		"no host":             pack(t, swap(`"for":"matcha",`, ``), art, hands),
+		"svg image":           pack(t, swap(`"de.webp"`, `"de.svg"`), hands, file{name: "de.svg", body: "<svg/>"}),
+		"unsafe var":          pack(t, swap(`"board":"#eef8f7"`, `"board":"red;}x{"`), art, hands),
+		"no decorations":      pack(t, file{name: "theme.json", body: `{"id":"empty","type":"addon","for":"matcha","name":"空"}`}),
 	} {
 		s := &Store{Dir: t.TempDir()}
 		if _, err := s.Install(archive); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+		if entries, _ := os.ReadDir(s.Dir); len(entries) != 0 {
+			t.Errorf("%s: a rejected package must leave nothing on disk, found %v", name, entries)
+		}
+	}
+	// A skin's own decorations reference files in its package too.
+	skin := strings.Replace(manifest, `"styles"`, `"decorations":[{"id":"a","name":"A","default":true,"images":{"art":"img/a.webp"}}],"styles"`, 1)
+	if _, err := (&Store{Dir: t.TempDir()}).Install(pack(t, file{name: "theme.json", body: skin}, file{name: "theme.css", body: "a{}"})); err == nil {
+		t.Error("a skin decoration pointing at a missing image must be refused")
+	}
+	if _, err := (&Store{Dir: t.TempDir()}).Install(pack(t, file{name: "theme.json", body: skin}, file{name: "theme.css", body: "a{}"}, file{name: "img/a.webp", body: "RIFF"})); err != nil {
+		t.Errorf("a skin with its own decorations: %v", err)
 	}
 }
 
@@ -289,21 +288,7 @@ func TestBuiltinShadowsOldPackage(t *testing.T) {
 	}
 }
 
-// 早于主题设置的二次元包（v1.0.0 没有 settings）也得有「角色包」菜单：角色包就在那里开关。
-func TestAnimeAlwaysHasCharacterMenu(t *testing.T) {
-	s := &Store{Dir: t.TempDir()}
-	old := strings.Replace(manifest, `"matcha"`, `"anime"`, 1)
-	if _, err := s.Install(pack(t, file{name: "theme.json", body: old}, file{name: "theme.css", body: "a{}"})); err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range s.Installed() {
-		if m.ID == "anime" && (len(m.Settings) != 1 || m.Settings[0].Type != "characters") {
-			t.Fatalf("anime settings: %+v", m.Settings)
-		}
-	}
-}
-
-// theme.json 的外观声明：base（基础层）、features（能力）、layout（布局变体）。合规的原样落进清单，
+// theme.json 的外观声明：base（基础层）、layout（布局变体）。合规的原样落进清单，
 // 不合规的整包拒收、磁盘上不留东西，错误信息指出是哪一项。
 func TestLookDeclarations(t *testing.T) {
 	css := file{name: "theme.css", body: "a{}"}
@@ -327,12 +312,11 @@ func TestLookDeclarations(t *testing.T) {
 	}
 	for name, c := range map[string]struct{ extra, want string }{
 		"unknown base":     {`"base":"neon"`, "base"},
-		"unknown feature":  {`"features":["sparkles"]`, "sparkles"},
-		"characters":       {`"features":["characters"]`, "characters"},
 		"unknown section":  {`"layout":{"card_sections":["chart"]}`, `"chart"`},
 		"repeated section": {`"layout":{"card_sections":["network","network"]}`, "重复"},
 		"bad density":      {`"layout":{"density":"tight"}`, "density"},
 		"bad view":         {`"layout":{"default_view":"table"}`, "default_view"},
+		"for on a skin":    {`"for":"glass"`, "for"},
 	} {
 		s := &Store{Dir: t.TempDir()}
 		_, err := s.Install(with(c.extra))
@@ -343,26 +327,9 @@ func TestLookDeclarations(t *testing.T) {
 			t.Errorf("%s: a rejected package must leave nothing on disk, found %v", name, entries)
 		}
 	}
-	// 角色包不是外观，不带这些声明。
-	chars := `{"id":"europe","type":"characters","name":"欧洲","base":"plain","characters":[{"id":"de","name":"德国","art":"de.webp","plate":{"top":0.3,"bottom":0.45},"palette":{"light":{"board":"#ffffff","line":"#ffffff","track":"#ffffff","accent":"#ffffff"},"dark":{"board":"#000000","line":"#000000","track":"#000000","accent":"#000000"}}}]}`
-	if _, err := (&Store{Dir: t.TempDir()}).Install(pack(t, file{name: "theme.json", body: chars}, file{name: "de.webp", body: "RIFF"})); err == nil || !strings.Contains(err.Error(), "base") {
-		t.Errorf("a character pack with base must be refused, got %v", err)
-	}
-}
-
-// 二次元声明 characters 能力；早于 features 的老包（v1.1.0 及更早）由 Store 补上，面板只认这个能力。
-func TestAnimeHasCharactersFeature(t *testing.T) {
-	for name, body := range map[string]string{
-		"declared": strings.Replace(strings.Replace(manifest, `"matcha"`, `"anime"`, 1), `"styles"`, `"features":["characters"],"styles"`, 1),
-		"legacy":   strings.Replace(manifest, `"matcha"`, `"anime"`, 1),
-	} {
-		s := &Store{Dir: t.TempDir()}
-		if _, err := s.Install(pack(t, file{name: "theme.json", body: body}, file{name: "theme.css", body: "a{}"})); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		got := s.Installed()
-		if len(got) != 1 || strings.Join(got[0].Features, ",") != "characters" {
-			t.Errorf("%s: anime features = %+v", name, got)
-		}
+	// 附加包不是外观，不带这些声明。
+	addon := `{"id":"europe","type":"addon","for":"matcha","name":"欧洲","base":"plain","decorations":[{"id":"de","name":"德国"}]}`
+	if _, err := (&Store{Dir: t.TempDir()}).Install(pack(t, file{name: "theme.json", body: addon})); err == nil || !strings.Contains(err.Error(), "base") {
+		t.Errorf("an add-on with base must be refused, got %v", err)
 	}
 }

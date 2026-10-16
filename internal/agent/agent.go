@@ -167,7 +167,7 @@ func NewTransport(endpoint, token string, allowHTTP bool) (*HTTPTransport, error
 		return nil, errors.New("endpoint must be an absolute server origin without credentials or path")
 	}
 	if len(token) != 64 {
-		return nil, errors.New("agent token must have 64 characters")
+		return nil, errors.New("agent token must be 64 bytes long")
 	}
 	ip := net.ParseIP(u.Hostname())
 	loopback := u.Hostname() == "localhost" || (ip != nil && ip.IsLoopback())

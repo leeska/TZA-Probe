@@ -18,7 +18,7 @@
 | 公开页与后台，克制的玻璃效果与多套外观 | 公开页、后台 | web/styles.css、web/glass.css |
 | 数据库在线备份下载 | 面板设置 → 数据 → 数据备份 | storage/backup.go |
 | AI 客户端读写探针数据（覆盖管理面板的操作） | `POST /mcp` 的 MCP 工具 | internal/mcp、internal/httpapi |
-| 主题包 / 角色包：本地上传与 TZA-CC 市场安装（验签、来源与更新提示）；内置现代极简（默认）与液态玻璃，官方的复古印刷 / 二次元源码在 themes/；主题设置菜单（theme.json 的 settings，二次元的角色包开关在其中） | 主题（已安装 + 市场） | pkg/tzapkg、internal/theme、internal/market、themes/、tools/themepack、web/admin-themes.js、web/admin-market.js |
+| 主题包 / 附加包：本地上传与 TZA-CC 市场安装（验签、来源与更新提示）；内置现代极简（默认）与液态玻璃，官方的复古印刷 / 二次元源码在 themes/；主题设置菜单（theme.json 的 settings，二次元的附加包开关在其中） | 主题（已安装 + 市场） | pkg/tzapkg、internal/theme、internal/market、themes/、tools/themepack、web/admin-themes.js、web/admin-market.js |
 | 声明式插件：通知渠道、探测目标集（市场安装或上传，装前确认权限） | 插件（已安装 + 市场）；配置出口；任务目录 | pkg/tzapkg（plugin.go、tpl.go）、internal/plugin、notify/plugin.go、service/plugins.go |
 | 组件解耦 | 依赖接口和版本化 HTTP 协议 | docs/ARCHITECTURE.md |
 

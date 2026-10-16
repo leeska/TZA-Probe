@@ -58,7 +58,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		write(w, 200, themeList(a.Themes, options))
 	})
-	// 主题设置：主题在 theme.json 里声明的菜单（二次元的「角色包」也在这里），对所有访客生效。
+	// 主题设置：主题在 theme.json 里声明的菜单（附加包的开关也在这里），对所有访客生效。
 	route("PUT /api/v1/admin/themes/{id}/settings", func(w http.ResponseWriter, r *http.Request) {
 		var patch map[string]json.RawMessage
 		if !decode(w, r, &patch) {
@@ -68,7 +68,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		var settings []theme.Setting
 		found := false
 		for _, m := range a.Themes.List() {
-			if m.ID == id && m.Type != theme.TypeCharacters {
+			if m.ID == id && m.Type != theme.TypeAddon {
 				settings, found = m.Settings, true
 			}
 		}

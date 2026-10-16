@@ -31,7 +31,9 @@ const (
 	maxFile         = 16 << 20
 	maxFiles        = 300
 	maxStyles       = 8
-	maxCharacters   = 60
+	maxDecorations  = 60
+	maxDecoImages   = 8
+	maxDecoVars     = 32
 	maxSkinSettings = 6
 	maxSkinOptions  = 8
 	maxPackToggles  = 100
@@ -43,27 +45,31 @@ type Colors struct {
 	Dark  string `json:"dark"`
 }
 
-// Package types: a skin is a selectable look (stylesheets); a character pack
-// adds characters to the 二次元 skin (the official "anime" package) and is not
-// a skin of its own.
+// Package types: a skin is a selectable look (stylesheets); an add-on extends
+// one skin (Manifest.For) with more decorations and is not a skin of its own.
+// An add-on only takes effect while its skin is installed and in use.
 const (
-	TypeSkin       = "skin"
-	TypeCharacters = "characters"
+	TypeSkin  = "skin"
+	TypeAddon = "addon"
 )
 
 // Manifest describes one package. Builtin, Rev and Source are set by the Probe
 // server, never read from an uploaded theme.json.
 type Manifest struct {
-	ID         string      `json:"id"`
-	Type       string      `json:"type,omitempty"`
-	Name       string      `json:"name"`
-	Hint       string      `json:"hint,omitempty"`
-	Version    string      `json:"version,omitempty"`
-	Author     string      `json:"author,omitempty"`
-	Chrome     Colors      `json:"chrome,omitempty"`
-	Swatch     []string    `json:"swatch,omitempty"`
-	Styles     []string    `json:"styles,omitempty"`
-	Characters []Character `json:"characters,omitempty"`
+	ID      string   `json:"id"`
+	Type    string   `json:"type,omitempty"`
+	Name    string   `json:"name"`
+	Hint    string   `json:"hint,omitempty"`
+	Version string   `json:"version,omitempty"`
+	Author  string   `json:"author,omitempty"`
+	Chrome  Colors   `json:"chrome,omitempty"`
+	Swatch  []string `json:"swatch,omitempty"`
+	Styles  []string `json:"styles,omitempty"`
+	// For is the skin an add-on extends (add-ons only).
+	For string `json:"for,omitempty"`
+	// Decorations are the per-node decorations a skin or add-on offers; the
+	// panel picks one per card. See Decoration.
+	Decorations []Decoration `json:"decorations,omitempty"`
 	// Settings is the theme's own settings menu, declared by its developer:
 	// what an administrator can switch for this look. See SkinSetting.
 	Settings []SkinSetting `json:"settings,omitempty"`
@@ -71,8 +77,6 @@ type Manifest struct {
 	// BaseGlass (the default, also when empty) or BasePlain (structure only,
 	// no liquid-glass surfaces, blur or backdrop).
 	Base string `json:"base,omitempty"`
-	// Features are panel behaviours the skin opts into; see FeatureCharacters.
-	Features []string `json:"features,omitempty"`
 	// Layout declares card layout variants the panel applies while the skin
 	// is on. Nil keeps the panel's defaults.
 	Layout  *Layout `json:"layout,omitempty"`
@@ -89,12 +93,6 @@ const (
 	BasePlain = "plain"
 )
 
-// FeatureCharacters: the skin draws character figures in the card slots,
-// picked per node from its own cast and the installed character packs; the
-// panel stops height-aligning card rows for it. Only the 二次元 package
-// (AnimeID) may declare it, since character packs belong to it.
-const FeatureCharacters = "characters"
-
 // Layout is a skin's declarative card layout. CardSections lists the card
 // view's body sections in display order; a section left out is hidden. The
 // panel renders it; the package still carries no script.
@@ -102,6 +100,9 @@ type Layout struct {
 	CardSections []string `json:"card_sections,omitempty"`
 	Density      string   `json:"density,omitempty"`
 	DefaultView  string   `json:"default_view,omitempty"`
+	// AlignRows false stops the panel from padding card sections so a row of
+	// cards lines up (for skins whose cards are not a plain stack of sections).
+	AlignRows *bool `json:"align_rows,omitempty"`
 }
 
 // CardSections are the section names Layout.CardSections may use: the
@@ -140,16 +141,12 @@ func checkLayout(l *Layout) error {
 	return nil
 }
 
-// AnimeID is the id of the official 二次元 package, the one skin that draws
-// characters; only it may declare a SettingCharacters setting.
-const AnimeID = "anime"
-
 // SkinSetting is one entry of a theme's settings menu. The administrator's
 // choice applies to every visitor: while the theme is on, the panel writes it
 // to <html data-opt-<id>="<value>"> so the theme's stylesheets can select on
 // it. A toggle's values are "on" / "off"; a choice's are its option values.
-// SettingCharacters lists the installed character packs to switch on and off
-// (its value is the ids switched off; "builtin" is the skin's own figures).
+// SettingAddons switches the skin's decoration sources on and off: its value
+// is the ids switched off, the skin's own id standing for its own decorations.
 type SkinSetting struct {
 	ID      string       `json:"id"`
 	Type    string       `json:"type"`
@@ -167,20 +164,21 @@ type SkinOption struct {
 
 // Skin setting types.
 const (
-	SettingChoice     = "choice"
-	SettingToggle     = "toggle"
-	SettingCharacters = "characters"
+	SettingChoice = "choice"
+	SettingToggle = "toggle"
+	SettingAddons = "addons"
 )
 
 var skinSettingID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,23}$`)
 
 // checkSkinSettings validates a skin's settings menu and fills in defaults: a
 // choice defaults to its first option, a toggle to "off".
-func checkSkinSettings(skinID string, list []SkinSetting) error {
+func checkSkinSettings(list []SkinSetting) error {
 	if len(list) > maxSkinSettings {
 		return fmt.Errorf("settings 最多 %d 项", maxSkinSettings)
 	}
 	seen := map[string]bool{}
+	addons := false
 	for i := range list {
 		st := &list[i]
 		st.Label, st.Hint = strings.TrimSpace(st.Label), strings.TrimSpace(st.Hint)
@@ -229,23 +227,24 @@ func checkSkinSettings(skinID string, list []SkinSetting) error {
 			if !values[st.Default] {
 				return fmt.Errorf("%s：default %q 不在 options 里", label, st.Default)
 			}
-		case SettingCharacters:
-			if skinID != AnimeID {
-				return errors.New(label + `：type "characters" 只有二次元主题（id anime）能用`)
-			}
+		case SettingAddons:
 			if len(st.Options) > 0 || st.Default != "" {
-				return errors.New(label + "：characters 不带 options / default")
+				return errors.New(label + "：addons 不带 options / default")
 			}
+			if addons {
+				return errors.New(label + `：type "addons" 最多一项`)
+			}
+			addons = true
 		default:
-			return errors.New(label + `：type 须为 "choice"、"toggle" 或 "characters"`)
+			return errors.New(label + `：type 须为 "choice"、"toggle" 或 "addons"`)
 		}
 	}
 	return nil
 }
 
 // SkinOptionValues checks one administrator patch against a skin's settings
-// and returns the normalized values: a toggle or choice is a string, a
-// characters setting is the list of pack ids switched off. Unknown keys are
+// and returns the normalized values: a toggle or choice is a string, an
+// addons setting is the list of package ids switched off. Unknown keys are
 // refused so a typo never silently does nothing.
 func SkinOptionValues(settings []SkinSetting, patch map[string]json.RawMessage) (map[string]any, error) {
 	out := map[string]any{}
@@ -259,14 +258,14 @@ func SkinOptionValues(settings []SkinSetting, patch map[string]json.RawMessage) 
 		if st == nil {
 			return nil, fmt.Errorf("这个主题没有设置项 %q", key)
 		}
-		if st.Type == SettingCharacters {
+		if st.Type == SettingAddons {
 			var off []string
 			if err := json.Unmarshal(raw, &off); err != nil || len(off) > maxPackToggles {
-				return nil, fmt.Errorf("%s 须为角色包 id 列表（最多 %d 个）", st.Label, maxPackToggles)
+				return nil, fmt.Errorf("%s 须为包 id 列表（最多 %d 个）", st.Label, maxPackToggles)
 			}
 			clean := []string{}
 			for _, id := range off {
-				if (id == "builtin" || idPattern.MatchString(id)) && !slices.Contains(clean, id) {
+				if idPattern.MatchString(id) && !slices.Contains(clean, id) {
 					clean = append(clean, id)
 				}
 			}
@@ -292,48 +291,28 @@ func SkinOptionValues(settings []SkinSetting, patch map[string]json.RawMessage) 
 // SourceMarket marks a package installed from the TZA-CC market.
 const SourceMarket = "market"
 
-// Character is one figure of a character pack: a full-body picture holding a
-// board, drawn on the 二次元 skin's cards. Plate is where the board's top and
-// bottom outer edges sit, as fractions of the picture height; the card lays
-// its HTML board over that band. The panel picks a character per node: the
-// node's own choice, then Nodes (exact node names), then Regions, then the
-// pack's Default.
-type Character struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Regions []string `json:"regions,omitempty"`
-	Nodes   []string `json:"nodes,omitempty"`
-	Default bool     `json:"default,omitempty"`
-	Art     string   `json:"art"`
-	Hands   string   `json:"hands,omitempty"`
-	Blink   string   `json:"blink,omitempty"`
-	Plate   Plate    `json:"plate"`
-	Palette struct {
-		Light Palette `json:"light"`
-		Dark  Palette `json:"dark"`
-	} `json:"palette"`
-}
-
-// Plate is the board band of a character picture (0–1 of its height).
-type Plate struct {
-	Top    float64 `json:"top"`
-	Bottom float64 `json:"bottom"`
-}
-
-// Palette colours a character's card: board face, cell background, outline,
-// progress track and accent. Cell may be left empty.
-type Palette struct {
-	Board  string `json:"board"`
-	Cell   string `json:"cell,omitempty"`
-	Line   string `json:"line"`
-	Track  string `json:"track"`
-	Accent string `json:"accent"`
+// Decoration is one per-node decoration of a skin or add-on. The panel picks
+// one per card: the node's own choice ("<package>/<id>"), then the first item
+// whose Nodes holds the node name, then Regions holds its region, then the
+// first Default — add-ons before the skin's own items at every step, and the
+// skin's own Default as the last resort. The chosen card gets
+// data-deco="<package>/<id>" and data-deco-pack="<package>", and every image
+// and var becomes a custom property on it: --deco-<name> (images as url()).
+// The panel attaches no meaning to the names; the skin's stylesheet does.
+type Decoration struct {
+	ID      string            `json:"id"`
+	Name    string            `json:"name"`
+	Nodes   []string          `json:"nodes,omitempty"`
+	Regions []string          `json:"regions,omitempty"`
+	Default bool              `json:"default,omitempty"`
+	Images  map[string]string `json:"images,omitempty"`
+	Vars    map[string]string `json:"vars,omitempty"`
 }
 
 // Reserved are the ids of the skins compiled into the panel; no package may
 // take one. 液态玻璃 is compiled into every Probe; 现代极简 is compiled in again
 // from Probe v1.3 (the Probe refuses a package under its id itself, so CC keeps
-// serving the v1.2 package to older Probes). 复古印刷 / 二次元 are the official
+// serving the v1.2 package to older Probes). The other official looks are
 // packages under themes/ in this repository, installed from the market.
 var Reserved = []string{"glass"}
 
@@ -413,10 +392,10 @@ func Open(archive []byte) (Manifest, map[string][]byte, error) {
 			return Manifest{}, nil, fmt.Errorf("styles 里的 %q 不在压缩包里", p)
 		}
 	}
-	for _, c := range m.Characters {
-		for _, p := range []string{c.Art, c.Hands, c.Blink} {
-			if _, ok := files[p]; p != "" && !ok {
-				return Manifest{}, nil, fmt.Errorf("角色 %s 引用的 %q 不在压缩包里", c.ID, p)
+	for _, d := range m.Decorations {
+		for name, p := range d.Images {
+			if _, ok := files[p]; !ok {
+				return Manifest{}, nil, fmt.Errorf("装饰项 %s 的 images.%s 引用的 %q 不在压缩包里", d.ID, name, p)
 			}
 		}
 	}
@@ -435,8 +414,8 @@ func Parse(raw []byte) (Manifest, error) {
 		m.Type = TypeSkin
 	}
 	switch {
-	case m.Type != TypeSkin && m.Type != TypeCharacters:
-		return Manifest{}, errors.New(`type 须为 "skin"（主题）或 "characters"（角色包）`)
+	case m.Type != TypeSkin && m.Type != TypeAddon:
+		return Manifest{}, errors.New(`type 须为 "skin"（主题）或 "addon"（附加包）`)
 	case !idPattern.MatchString(m.ID):
 		return Manifest{}, errors.New("id 须为 2–32 位小写字母、数字或连字符，以字母开头")
 	case slices.Contains(Reserved, m.ID):
@@ -446,34 +425,23 @@ func Parse(raw []byte) (Manifest, error) {
 	case utf8.RuneCountInString(m.Hint) > 60, utf8.RuneCountInString(m.Version) > 20, utf8.RuneCountInString(m.Author) > 40:
 		return Manifest{}, errors.New("hint 最多 60 字，version 最多 20 字，author 最多 40 字")
 	}
-	if m.Type == TypeCharacters {
-		if len(m.Styles) > 0 {
-			return Manifest{}, errors.New("角色包不带样式表（styles 留空）：它只给二次元主题添角色")
-		}
-		if len(m.Settings) > 0 {
-			return Manifest{}, errors.New("角色包没有设置菜单（settings 留空）：它出现在二次元主题的设置里")
-		}
-		if m.Base != "" || len(m.Features) > 0 || m.Layout != nil {
-			return Manifest{}, errors.New("角色包不带 base / features / layout：这些是主题的外观声明")
-		}
-		if len(m.Characters) == 0 || len(m.Characters) > maxCharacters {
-			return Manifest{}, fmt.Errorf("角色包须有 1–%d 个角色（characters）", maxCharacters)
-		}
-		seen := map[string]bool{}
-		for i := range m.Characters {
-			if err := checkCharacter(&m.Characters[i]); err != nil {
-				return Manifest{}, err
-			}
-			if seen[m.Characters[i].ID] {
-				return Manifest{}, fmt.Errorf("角色 id %q 重复", m.Characters[i].ID)
-			}
-			seen[m.Characters[i].ID] = true
+	if err := checkDecorations(m.Decorations); err != nil {
+		return Manifest{}, err
+	}
+	if m.Type == TypeAddon {
+		switch {
+		case !idPattern.MatchString(m.For) || m.For == m.ID:
+			return Manifest{}, errors.New("附加包要用 for 写明它依附的主题 id（不能是自己）")
+		case len(m.Styles) > 0 || len(m.Settings) > 0 || m.Base != "" || m.Layout != nil:
+			return Manifest{}, errors.New("附加包不带 styles / settings / base / layout：外观由它依附的主题决定")
+		case len(m.Decorations) == 0:
+			return Manifest{}, errors.New("附加包至少要有一个装饰项（decorations）")
 		}
 		return m, nil
 	}
 	switch {
-	case len(m.Characters) > 0:
-		return Manifest{}, errors.New(`主题不带角色；角色请单独做成 "type": "characters" 的角色包`)
+	case m.For != "":
+		return Manifest{}, errors.New(`for 只有附加包（"type": "addon"）能写`)
 	case !hexColor.MatchString(m.Chrome.Light) || !hexColor.MatchString(m.Chrome.Dark):
 		return Manifest{}, errors.New("chrome.light / chrome.dark 须为 #rrggbb 颜色")
 	case len(m.Swatch) != 3:
@@ -481,23 +449,11 @@ func Parse(raw []byte) (Manifest, error) {
 	case len(m.Styles) == 0 || len(m.Styles) > maxStyles:
 		return Manifest{}, fmt.Errorf("styles 须列出 1–%d 个样式表", maxStyles)
 	}
-	if err := checkSkinSettings(m.ID, m.Settings); err != nil {
+	if err := checkSkinSettings(m.Settings); err != nil {
 		return Manifest{}, err
 	}
 	if m.Base != "" && m.Base != BaseGlass && m.Base != BasePlain {
 		return Manifest{}, fmt.Errorf(`base 须为 "glass"（液态玻璃，默认）或 "plain"（只有结构、不带玻璃视觉），不是 %q`, m.Base)
-	}
-	seenFeature := map[string]bool{}
-	for _, f := range m.Features {
-		switch {
-		case f != FeatureCharacters:
-			return Manifest{}, fmt.Errorf(`features 里的 %q 不认识：目前只有 "characters"`, f)
-		case m.ID != AnimeID:
-			return Manifest{}, errors.New(`features 里的 "characters" 只有二次元主题（id anime）能声明：角色包属于它`)
-		case seenFeature[f]:
-			return Manifest{}, fmt.Errorf("features 里的 %q 重复", f)
-		}
-		seenFeature[f] = true
 	}
 	if err := checkLayout(m.Layout); err != nil {
 		return Manifest{}, err
@@ -515,53 +471,71 @@ func Parse(raw []byte) (Manifest, error) {
 	return m, nil
 }
 
-var characterID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+var (
+	decoID   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+	decoName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,23}$`)
+	// A var value lands in a custom property through CSSOM: plain lengths,
+	// numbers, colours and times, no quotes, semicolons or braces.
+	decoValue = regexp.MustCompile(`^[#A-Za-z0-9.,%()/+ -]{1,64}$`)
+)
 
-// checkCharacter validates one character and normalizes its text fields.
-func checkCharacter(c *Character) error {
-	c.Name = strings.TrimSpace(c.Name)
-	if !characterID.MatchString(c.ID) {
-		return fmt.Errorf("角色 id %q 须为 1–32 位小写字母、数字或连字符，以字母开头", c.ID)
+// checkDecorations validates a package's decorations and normalizes text.
+func checkDecorations(list []Decoration) error {
+	if len(list) > maxDecorations {
+		return fmt.Errorf("decorations 最多 %d 项", maxDecorations)
 	}
-	label := "角色 " + c.ID
-	if c.Name == "" || utf8.RuneCountInString(c.Name) > 30 {
-		return errors.New(label + "：name 必填，最多 30 个字")
-	}
-	if len(c.Regions) > 30 || len(c.Nodes) > 50 {
-		return errors.New(label + "：regions 最多 30 个、nodes 最多 50 个")
-	}
-	for i, r := range c.Regions {
-		c.Regions[i] = strings.TrimSpace(r)
-		if c.Regions[i] == "" || len(c.Regions[i]) > 60 {
-			return errors.New(label + "：regions 里每一项须为 1–60 字节的地区名")
+	seen := map[string]bool{}
+	for i := range list {
+		d := &list[i]
+		d.Name = strings.TrimSpace(d.Name)
+		if !decoID.MatchString(d.ID) {
+			return fmt.Errorf("装饰项 id %q 须为 1–32 位小写字母、数字或连字符，以字母开头", d.ID)
 		}
-	}
-	for i, n := range c.Nodes {
-		c.Nodes[i] = strings.TrimSpace(n)
-		if c.Nodes[i] == "" || len(c.Nodes[i]) > 100 {
-			return errors.New(label + "：nodes 里每一项须为 1–100 字节的节点名")
+		if seen[d.ID] {
+			return fmt.Errorf("装饰项 id %q 重复", d.ID)
 		}
-	}
-	for field, p := range map[string]string{"art": c.Art, "hands": c.Hands, "blink": c.Blink} {
-		if p == "" && field != "art" {
-			continue
+		seen[d.ID] = true
+		label := "装饰项 " + d.ID
+		if d.Name == "" || utf8.RuneCountInString(d.Name) > 30 {
+			return errors.New(label + "：name 必填，最多 30 个字")
 		}
-		ext := strings.ToLower(path.Ext(p))
-		if !safePath.MatchString(p) || strings.Contains(p, "..") || (ext != ".webp" && ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".avif") {
-			return fmt.Errorf("%s：%s 须为包内的 webp / png / jpg / avif 图片相对路径", label, field)
+		if len(d.Regions) > 30 || len(d.Nodes) > 50 {
+			return errors.New(label + "：regions 最多 30 个、nodes 最多 50 个")
 		}
-	}
-	if c.Plate.Top < 0.1 || c.Plate.Top > 0.7 || c.Plate.Bottom < c.Plate.Top+0.03 || c.Plate.Bottom > 0.9 {
-		return errors.New(label + "：plate.top 须在 0.1–0.7 之间，plate.bottom 须比 top 至少大 0.03 且不超过 0.9（牌子上下外沿占图高的比例）")
-	}
-	for name, p := range map[string]Palette{"light": c.Palette.Light, "dark": c.Palette.Dark} {
-		for _, v := range []string{p.Board, p.Line, p.Track, p.Accent} {
-			if !hexColor.MatchString(v) {
-				return fmt.Errorf("%s：palette.%s 的 board / line / track / accent 须为 #rrggbb 颜色", label, name)
+		for j, r := range d.Regions {
+			d.Regions[j] = strings.TrimSpace(r)
+			if d.Regions[j] == "" || len(d.Regions[j]) > 60 {
+				return errors.New(label + "：regions 里每一项须为 1–60 字节的地区名")
 			}
 		}
-		if p.Cell != "" && !hexColor.MatchString(p.Cell) {
-			return fmt.Errorf("%s：palette.%s.cell 须为 #rrggbb 颜色或留空", label, name)
+		for j, n := range d.Nodes {
+			d.Nodes[j] = strings.TrimSpace(n)
+			if d.Nodes[j] == "" || len(d.Nodes[j]) > 100 {
+				return errors.New(label + "：nodes 里每一项须为 1–100 字节的节点名")
+			}
+		}
+		if len(d.Images) > maxDecoImages || len(d.Vars) > maxDecoVars {
+			return fmt.Errorf("%s：images 最多 %d 张、vars 最多 %d 个", label, maxDecoImages, maxDecoVars)
+		}
+		for name, p := range d.Images {
+			ext := strings.ToLower(path.Ext(p))
+			if !decoName.MatchString(name) {
+				return fmt.Errorf("%s：images 的名字 %q 须为 1–24 位小写字母、数字或连字符，以字母开头", label, name)
+			}
+			if !safePath.MatchString(p) || strings.Contains(p, "..") || (ext != ".webp" && ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".avif") {
+				return fmt.Errorf("%s：images.%s 须为包内的 webp / png / jpg / avif 图片相对路径", label, name)
+			}
+		}
+		for name, v := range d.Vars {
+			if !decoName.MatchString(name) {
+				return fmt.Errorf("%s：vars 的名字 %q 须为 1–24 位小写字母、数字或连字符，以字母开头", label, name)
+			}
+			if _, clash := d.Images[name]; clash {
+				return fmt.Errorf("%s：%q 同时出现在 images 与 vars 里", label, name)
+			}
+			if !decoValue.MatchString(v) {
+				return fmt.Errorf("%s：vars.%s 的值 %q 只能是长度、数字、颜色或时间（字母、数字、# . , %% ( ) / + - 和空格，最多 64 个字符）", label, name, v)
+			}
 		}
 	}
 	return nil

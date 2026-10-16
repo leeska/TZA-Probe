@@ -31,7 +31,7 @@ func (a *API) marketRoutes(route func(string, http.HandlerFunc)) {
 				return
 			}
 		}
-		out, err := a.Market.Catalog(r.Context(), market.Query{Type: q.Get("type"), Q: q.Get("q"), Page: page})
+		out, err := a.Market.Catalog(r.Context(), market.Query{Type: q.Get("type"), For: q.Get("for"), Q: q.Get("q"), Page: page})
 		if err != nil {
 			marketFail(w, err)
 			return

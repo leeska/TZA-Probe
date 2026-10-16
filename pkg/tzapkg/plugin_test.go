@@ -204,24 +204,61 @@ func TestSkinSettings(t *testing.T) {
 	if m.Settings[0].Default != "cozy" || m.Settings[1].Default != "off" {
 		t.Errorf("defaults not filled: %+v", m.Settings)
 	}
-	if _, err := Parse([]byte(fmt.Sprintf(base, AnimeID, `[{"id":"characters","type":"characters","label":"角色包"}]`))); err != nil {
-		t.Errorf("二次元 may list character packs: %v", err)
+	if _, err := Parse([]byte(fmt.Sprintf(base, "matcha", `[{"id":"addons","type":"addons","label":"附加包"}]`))); err != nil {
+		t.Errorf("any skin may list its add-ons: %v", err)
 	}
 	for name, raw := range map[string]string{
-		"characters off anime": `[{"id":"cast","type":"characters","label":"角色"}]`,
-		"unknown type":         `[{"id":"x","type":"slider","label":"x"}]`,
-		"bad id":               `[{"id":"Bad!","type":"toggle","label":"x"}]`,
-		"dup id":               `[{"id":"a","type":"toggle","label":"x"},{"id":"a","type":"toggle","label":"y"}]`,
-		"one option":           `[{"id":"a","type":"choice","label":"x","options":[{"value":"v","label":"v"}]}]`,
-		"bad default":          `[{"id":"a","type":"choice","label":"x","default":"z","options":[{"value":"v","label":"v"},{"value":"w","label":"w"}]}]`,
-		"toggle default":       `[{"id":"a","type":"toggle","label":"x","default":"yes"}]`,
-		"no label":             `[{"id":"a","type":"toggle"}]`,
+		"two addon menus":     `[{"id":"a","type":"addons","label":"x"},{"id":"b","type":"addons","label":"y"}]`,
+		"addons with options": `[{"id":"a","type":"addons","label":"x","options":[{"value":"v","label":"v"},{"value":"w","label":"w"}]}]`,
+		"unknown type":        `[{"id":"x","type":"slider","label":"x"}]`,
+		"bad id":              `[{"id":"Bad!","type":"toggle","label":"x"}]`,
+		"dup id":              `[{"id":"a","type":"toggle","label":"x"},{"id":"a","type":"toggle","label":"y"}]`,
+		"one option":          `[{"id":"a","type":"choice","label":"x","options":[{"value":"v","label":"v"}]}]`,
+		"bad default":         `[{"id":"a","type":"choice","label":"x","default":"z","options":[{"value":"v","label":"v"},{"value":"w","label":"w"}]}]`,
+		"toggle default":      `[{"id":"a","type":"toggle","label":"x","default":"yes"}]`,
+		"no label":            `[{"id":"a","type":"toggle"}]`,
 	} {
 		if _, err := Parse([]byte(fmt.Sprintf(base, "matcha", raw))); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	if _, err := Parse([]byte(`{"id":"eu","type":"characters","name":"欧洲","settings":[{"id":"a","type":"toggle","label":"x"}],"characters":[]}`)); err == nil {
-		t.Error("a character pack must not declare settings")
+	if _, err := Parse([]byte(`{"id":"eu","type":"addon","for":"matcha","name":"欧洲","settings":[{"id":"a","type":"toggle","label":"x"}],"decorations":[{"id":"de","name":"德国"}]}`)); err == nil {
+		t.Error("an add-on must not declare settings")
+	}
+}
+
+func TestAddonsAndDecorations(t *testing.T) {
+	skin := `{"id":"matcha","name":"x","chrome":{"light":"#eef0e2","dark":"#141811"},"swatch":["#eef0e2","#fbfaf3","#5f8f3a"],"styles":["theme.css"],"decorations":%s}`
+	m, err := Parse([]byte(fmt.Sprintf(skin, `[{"id":"jp","name":"日本","regions":[" 日本 "],"images":{"art":"img/jp.webp"},"vars":{"plate-top":"0.3","board":"#ffffff","blink":"5.4s","rgb":"255, 79, 154","cell":"rgb(255 255 255 / 0.62)"}},{"id":"fallback","name":"兜底","default":true}]`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Decorations) != 2 || m.Decorations[0].Regions[0] != "日本" || m.Decorations[0].Vars["board"] != "#ffffff" {
+		t.Fatalf("decorations: %+v", m.Decorations)
+	}
+	addon := `{"id":"europe","type":"addon","for":"matcha","name":"欧洲","decorations":[{"id":"de","name":"德国","regions":["德国"],"images":{"art":"de.webp"}}]}`
+	if a, err := Parse([]byte(addon)); err != nil || a.Type != TypeAddon || a.For != "matcha" {
+		t.Fatalf("addon: %+v %v", a, err)
+	}
+	for name, raw := range map[string]string{
+		"addon without for":   strings.Replace(addon, `"for":"matcha",`, "", 1),
+		"addon for itself":    strings.Replace(addon, `"for":"matcha"`, `"for":"europe"`, 1),
+		"addon with styles":   strings.Replace(addon, `"name":"欧洲"`, `"name":"欧洲","styles":["a.css"]`, 1),
+		"empty addon":         `{"id":"europe","type":"addon","for":"matcha","name":"欧洲"}`,
+		"for on a skin":       fmt.Sprintf(strings.Replace(skin, `"styles"`, `"for":"glass","styles"`, 1), `[]`),
+		"bad deco id":         fmt.Sprintf(skin, `[{"id":"Bad!","name":"x"}]`),
+		"dup deco id":         fmt.Sprintf(skin, `[{"id":"a","name":"x"},{"id":"a","name":"y"}]`),
+		"no deco name":        fmt.Sprintf(skin, `[{"id":"a"}]`),
+		"svg image":           fmt.Sprintf(skin, `[{"id":"a","name":"x","images":{"art":"a.svg"}}]`),
+		"image outside":       fmt.Sprintf(skin, `[{"id":"a","name":"x","images":{"art":"../a.webp"}}]`),
+		"bad image name":      fmt.Sprintf(skin, `[{"id":"a","name":"x","images":{"Art":"a.webp"}}]`),
+		"css injection":       fmt.Sprintf(skin, `[{"id":"a","name":"x","vars":{"board":"red;}body{display:none"}}]`),
+		"quoted value":        fmt.Sprintf(skin, `[{"id":"a","name":"x","vars":{"board":"url(\"x\")"}}]`),
+		"image and var clash": fmt.Sprintf(skin, `[{"id":"a","name":"x","images":{"art":"a.webp"},"vars":{"art":"1"}}]`),
+		"unknown type":        `{"id":"europe","type":"figures","name":"欧洲"}`,
+	} {
+		if _, err := Parse([]byte(raw)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

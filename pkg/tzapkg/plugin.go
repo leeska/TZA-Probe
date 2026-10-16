@@ -228,12 +228,14 @@ func OpenPlugin(archive []byte) (Plugin, error) {
 // Info is what a market lists about any package.
 type Info struct {
 	ID, Type, Kind, Name, Hint, Version, Author string
-	Swatch                                      []string
-	Permissions                                 []string
-	Manifest                                    any // *Manifest or *Plugin
+	// For is the skin an add-on extends; empty for every other type.
+	For         string
+	Swatch      []string
+	Permissions []string
+	Manifest    any // *Manifest or *Plugin
 }
 
-// Inspect validates an archive of any type: a theme or character pack
+// Inspect validates an archive of any type: a theme or add-on
 // (theme.json) or a plugin (plugin.json).
 func Inspect(archive []byte) (Info, error) {
 	if len(archive) > MaxUpload {
@@ -260,7 +262,7 @@ func Inspect(archive []byte) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	return Info{ID: m.ID, Type: m.Type, Name: m.Name, Hint: m.Hint, Version: m.Version, Author: m.Author, Swatch: m.Swatch, Manifest: &m}, nil
+	return Info{ID: m.ID, Type: m.Type, For: m.For, Name: m.Name, Hint: m.Hint, Version: m.Version, Author: m.Author, Swatch: m.Swatch, Manifest: &m}, nil
 }
 
 // Permissions describes in plain words what the plugin can do, for the

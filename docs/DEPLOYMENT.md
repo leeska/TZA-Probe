@@ -111,7 +111,7 @@ sudo systemctl enable --now tza-agent
 
 ## TZA-CC 市场（可选）
 
-后台「主题」「插件」两页各带一块市场，从 TZA-CC 安装主题包、角色包与插件（见 [THEMES.md](THEMES.md#市场tza-cc)），TZA-CC 账号在「面板设置 → 账号与安全」连接。复古印刷、现代极简、二次元三套外观也是从市场装的主题包；不连市场的部署可以用发行包 `themes/` 里的 zip（或仓库 `go run ./tools/themepack themes/*` 打出的 zip）在「主题」页上传。默认连官方 TZA-CC（`https://tza.cc`），但 Server 只在管理员打开市场、安装 / 更新、绑定时才访问它，平时不出站。不想要市场就加 `--cc-url off`，其余功能不受影响。
+后台「主题」「插件」两页各带一块市场，从 TZA-CC 安装主题包、附加包与插件（见 [THEMES.md](THEMES.md#市场tza-cc)），TZA-CC 账号在「面板设置 → 账号与安全」连接。复古印刷、现代极简、二次元三套外观也是从市场装的主题包；不连市场的部署可以用发行包 `themes/` 里的 zip（或仓库 `go run ./tools/themepack themes/*` 打出的 zip）在「主题」页上传。默认连官方 TZA-CC（`https://tza.cc`），但 Server 只在管理员打开市场、安装 / 更新、绑定时才访问它，平时不出站。不想要市场就加 `--cc-url off`，其余功能不受影响。
 
 | 参数 | 环境变量 | 说明 |
 | --- | --- | --- |

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-var characterChoice = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}(/[a-z][a-z0-9-]{0,31})?$`)
+var decorationChoice = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}/[a-z][a-z0-9-]{0,31}$`)
 
 // Node is a host's configuration as the panel and MCP edit it, grouped by
 // concern: what the public card shows (Display), what the line costs and how
@@ -22,16 +22,16 @@ type Node struct {
 	// Vendor is the merchant selling the line (netcup, Hytron …). The public
 	// card shows it as a name plate; empty shows none.
 	Vendor string `json:"vendor,omitempty"`
-	// Character pins the 二次元 skin's figure for this node: a built-in id
-	// (generic, jp-nosla-gen2 …) or "<pack>/<character>" from a character
-	// pack. Empty picks automatically (node name, then region). A choice
-	// whose pack was removed also falls back to automatic.
-	Character string      `json:"character,omitempty"`
-	Order     int         `json:"order"`
-	Public    bool        `json:"public"`
-	Display   NodeDisplay `json:"display"`
-	Billing   Billing     `json:"billing"`
-	Line      Line        `json:"line"`
+	// Decoration pins the card decoration for this node, "<package>/<item>"
+	// from the current skin or one of its add-ons. Empty picks automatically
+	// (node name, then region, then the default); a choice the current skin
+	// does not offer falls back to automatic too.
+	Decoration string      `json:"decoration,omitempty"`
+	Order      int         `json:"order"`
+	Public     bool        `json:"public"`
+	Display    NodeDisplay `json:"display"`
+	Billing    Billing     `json:"billing"`
+	Line       Line        `json:"line"`
 }
 
 // NodeDisplay picks which probe results the public card shows. Both regions
@@ -91,8 +91,8 @@ func (n Node) Validate() error {
 	if len(n.Vendor) > 60 || strings.TrimSpace(n.Vendor) != n.Vendor {
 		return errors.New("商家最多 60 字节，前后不能有空格")
 	}
-	if n.Character != "" && !characterChoice.MatchString(n.Character) {
-		return errors.New("角色须为内置角色 id 或「角色包 id/角色 id」，留空即自动")
+	if n.Decoration != "" && !decorationChoice.MatchString(n.Decoration) {
+		return errors.New("主题装饰须写成「包 id/装饰项 id」，留空即自动")
 	}
 	seenCarriers := map[string]bool{}
 	for _, carrier := range d.LatencyCarriers {

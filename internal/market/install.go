@@ -108,7 +108,7 @@ func (c *Client) Install(ctx context.Context, id, version string) (Result, error
 	return Result{ID: m.ID, Type: m.Type, Name: m.Name, Version: m.Version, Source: m.Source}, nil
 }
 
-// Result is what an install put in place: a theme / character pack, or a
+// Result is what an install put in place: a theme / add-on, or a
 // plugin (with Kind and what it may do).
 type Result struct {
 	ID          string   `json:"id"`

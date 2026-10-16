@@ -1,6 +1,7 @@
 # 角色包生成器
 
-把「地区 → 角色设定」做成一个能在后台直接上传的角色包（`"type": "characters"` 的 zip，格式见 [docs/THEMES.md](../../docs/THEMES.md)）。
+把「地区 → 角色设定」做成一个能在后台直接上传的角色包：依附二次元主题的附加包（`"type": "addon", "for": "anime"` 的 zip），
+每个角色是一个装饰项。附加包的通用格式见 [docs/THEMES.md](../../docs/THEMES.md)，二次元对装饰项里图片与数值的约定见 [themes/anime/README.md](../../themes/anime/README.md)。
 在 Claude Code 里打开本仓库时，也可以直接让它用 `character-pack` 这个 skill 帮你从设计角色一路做到打包。
 
 ## 准备
@@ -35,7 +36,8 @@ export TZA_IMAGE_MODEL=gemini-3-pro-image               # 可省略，默认就�
 
 - `regions` 与节点「所在地区」逐字比对；也可以写 `nodes`（节点名）或 `"default": true`。
 - `design` 用英文写外形：发型发色、眼睛、服装、配饰、气质。**不要写商家名、文字、logo、国旗**——商家名由卡片上的名牌显示。
-- 想指定配色就加 `palette`（格式同 docs/THEMES.md）；不写则按服装和发色自动配。
+- 想指定配色就加 `palette`：`{"light": {"board", "line", "track", "accent", "cell"?}, "dark": {…}}`，都是 `#rrggbb`；不写则按服装和发色自动配。
+  打包时它和牌子比例、眨眼节奏一起换算成装饰项的 `vars`（见 themes/anime/README.md）。
 - 每个角色出两次图（立绘 + 闭眼帧）；不要闭眼帧就写 `"blink": false`。
 
 ## 运行
@@ -63,7 +65,8 @@ python3 make_pack.py generate pack.json --work work --only germany --force
 
 ## 上传
 
-后台「主题 → 上传主题包 / 角色包」（要先装好二次元主题），选打好的 zip。角色会按地区自动用到对应节点上；节点设置里也可以手动指定角色，
+后台「主题 → 上传主题包 / 附加包」（要先装好二次元主题），选打好的 zip，它会列在二次元的设置菜单里。角色会按地区自动用到对应节点上；
+节点设置的「主题装饰」里也可以手动指定（写成「包 id/角色 id」），
 节点的「商家」会写在看板上沿的名牌上。
 
 `reference.webp` 是生成时随提示词一起发给模型的构图参考（全身、双手捧白牌、牌子的位置与大小），不要删。

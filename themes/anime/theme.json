@@ -2,15 +2,72 @@
   "id": "anime",
   "name": "二次元",
   "hint": "线路机角色 · 樱花粉",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "author": "TZA",
-  "chrome": { "light": "#fdeef6", "dark": "#150f29" },
-  "swatch": ["#fdeef6", "#ffffff", "#ff4f9a"],
+  "chrome": {
+    "light": "#fdeef6",
+    "dark": "#150f29"
+  },
+  "swatch": [
+    "#fdeef6",
+    "#ffffff",
+    "#ff4f9a"
+  ],
   "base": "plain",
-  "styles": ["anime.css"],
-  "features": ["characters"],
+  "styles": [
+    "anime.css"
+  ],
+  "layout": {
+    "align_rows": false
+  },
   "settings": [
-    { "id": "characters", "type": "characters", "label": "角色包", "hint": "关掉的角色包不参与挑角色" },
-    { "id": "motion", "type": "toggle", "label": "眨眼与呼吸", "hint": "关掉后立绘静止", "default": "on" }
+    {
+      "id": "addons",
+      "type": "addons",
+      "label": "角色包",
+      "hint": "关掉的角色包不参与挑角色"
+    },
+    {
+      "id": "motion",
+      "type": "toggle",
+      "label": "眨眼与呼吸",
+      "hint": "关掉后立绘静止",
+      "default": "on"
+    }
+  ],
+  "decorations": [
+    {
+      "id": "jp-nosla-gen2",
+      "name": "家人云 · jp-nosla-gen2",
+      "nodes": [
+        "JP-NoSla-Gen2"
+      ]
+    },
+    {
+      "id": "de-nosla-fra",
+      "name": "家人云 · de-nosla-fra",
+      "nodes": [
+        "DE-NoSla-FRA"
+      ]
+    },
+    {
+      "id": "us-vmiss-tri",
+      "name": "云上飞行 · us-vmiss-tri",
+      "nodes": [
+        "US-VMISS-Tri"
+      ]
+    },
+    {
+      "id": "us-bwh-dc9",
+      "name": "搬瓦工 · us-bwh-dc9",
+      "nodes": [
+        "US-BWH-DC9"
+      ]
+    },
+    {
+      "id": "generic",
+      "name": "通用角色",
+      "default": true
+    }
   ]
 }

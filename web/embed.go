@@ -67,7 +67,7 @@ func Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		// 静态资源（app.js / anime.css / 各皮肤 css / 立绘）也要每次回源校验：
+		// 静态资源（app.js / 各皮肤 css / 主题包里的图）也要每次回源校验：
 		// 之前只有 index.html 带 no-cache，浏览器会按启发式缓存把 app.js 留很久，
 		// 于是服务端已经换成新版、用户开着的标签页刷新后还是旧界面（"线上没实现"就是这么来的）。
 		// 回源校验靠 ETag（内容哈希）：没变就回 304 空体，不再每次刷新把一兆多的立绘和脚本整份重下。

@@ -2,11 +2,11 @@ import { api, send, esc, toast, modal, guard } from "./api.js";
 import { bytes, bandwidth, date, days, gib, mbps, osLabel, percent, statusName } from "./format.js";
 import { detail } from "./detail.js";
 import { applyTheme, themeButton } from "./theme.js";
-import { applySkin, skinButton, skinFeature, skinLayout } from "./skins.js";
+import { applySkin, skinButton, skinLayout } from "./skins.js";
 import { searchMatch } from "./search.js";
 import { carrierMark } from "./carrier-logos.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
-import { castId, foldKey, packCharacter } from "./anime-cast.js";
+import { decorationVars, pickDecoration } from "./decorations.js";
 import { brandHTML } from "./brand.js";
 import "./ui-select.js";
 
@@ -329,7 +329,7 @@ function markLive(ok) {
 }
 
 // 换皮肤：新皮肤可能声明了别的板面段落（layout.card_sections）与默认视图，卡片按新清单重绘；
-// 访客自己选过视图就不动。要排在下面 layoutCastCards / alignCardRows 两个监听之前（同一事件按注册顺序跑）。
+// 访客自己选过视图就不动。要排在下面 alignCardRows 的监听之前（同一事件按注册顺序跑）。
 document.addEventListener("tza:skin", () => {
   // 公开页才有卡片；首屏的 /nodes 还没回来（列表还空着）就等 refresh 自己画，别先画一屏「尚无公开节点」。
   if (!document.querySelector("#nodes")?.children.length) return;
@@ -346,32 +346,20 @@ document.addEventListener("tza:skin", () => {
   renderCards();
 });
 
-// 人物图 / 板顶 / 收起态板条只取决于皮肤里每台机的 --cast-top-frac 与几个常量（板高是常量，
-// 不量内容），所以只在卡片重绘、折叠、换皮肤时算：以前每秒的轻刷新也算一遍，每张卡读一次
-// 计算样式再写三个变量，逐卡强制样式重算，数值却从来不变。
-document.addEventListener("tza:skin", layoutCastCards);
-// 视口宽度变化会改板高（内容换行），人物图 / 板顶 / 收起态板条的量值要重算。
-let plateResizeTimer = 0;
-window.addEventListener("resize", () => {
-  clearTimeout(plateResizeTimer);
-  plateResizeTimer = setTimeout(layoutCastCards, 120);
-});
-
 // 同一排卡片的分段拉齐：卡片本身已等高（.node-grid 的 1fr 行），但段落各排各的——配了降速
 // 规则的卡在「周期用量」下多一行说明、到期价格那列多一行线路，下面的速率和延迟就比邻卡低一截
 // （用户标红框点名「没做到统一、没对齐」）。这里按视觉行分组，把指标、速率计费这几段补齐到
 // 同排最高的那张：补的是段落底部的 padding（--row-fill），内容位置不动，下一段自然对齐。
 // 自然高度 = 实测高度 − 当前补的量（直接读元素上的变量：10 秒一轮的卡片补丁会改写属性），
 // 所以不必先清零再量；只在补量变化半像素以上时写，静置时不碰样式。
-// 二次元皮肤的角色卡上半张是人物图、段落位置本就不同，不参与拉齐。
+// 主题在 layout 里写了 align_rows: false（卡片不是一摞段落，比如上半张是整幅装饰图）就不拉齐。
 const ROW_SECTIONS = [".node-sub", ".metrics-grid", ".card-stats"];
 // 同步执行：在写完 DOM 的同一个任务里量完、补完，浏览器下一次绘制看到的就是对齐后的样子。
 // 排到下一个任务（setTimeout / rAF）的话，中间那一帧画的是没补齐的布局，卡片会跳。
 function alignCardRows() {
   const list = document.querySelector("#nodes");
   if (!list) return;
-  // 声明了 characters 能力的皮肤（二次元）：角色卡上半张是人物，不参与拉齐。
-  const cast = skinFeature("characters");
+  const unaligned = skinLayout().align_rows === false;
   const rows = new Map();
   const fills = [];
   for (const card of list.querySelectorAll(".node-card")) {
@@ -384,7 +372,7 @@ function alignCardRows() {
       fills.push(x);
       return x;
     });
-    if (list.classList.contains("node-list") || (cast && card.dataset.cast)) continue;
+    if (list.classList.contains("node-list") || unaligned) continue;
     const top = Math.round(card.offsetTop);
     if (!rows.has(top)) rows.set(top, []);
     rows.get(top).push(sections);
@@ -568,8 +556,9 @@ function renderCards() {
   // 卷轴状态每次渲染后刷一遍：卡壳上的 data-rolled 决定了数据区是摊开还是卷起，
   // 局部补丁不会动它，但整块重绘换了新卡壳，所以在这里统一补上（含 aria-expanded）。
   applyFolded();
+  applyDecorations();
   // 单个延迟 / 回程格子是带 aria-label 的按钮：点它只看那一格（该运营商 + 该地址族）的聚焦视图。
-  // 这与「点卡片空白处 / 立绘空白处不弹详情」不冲突——2026-10-10 撤掉整卡 onclick 时把这些格子的
+  // 这与「点卡片空白处 / 装饰图空白处不弹详情」不冲突——2026-10-10 撤掉整卡 onclick 时把这些格子的
   // 点击一起弄哑了（用户随后点名「怎么点回程和延迟也不弹出来了」），这里单独接回来：格子本身仍不是
   // data-detail 按钮，弹的是只看那一格的聚焦视图，不是含主机历史的综合详情。
   for (const cell of document.querySelectorAll("[data-focus-kind]"))
@@ -585,7 +574,7 @@ function renderCards() {
         });
     });
   // 卡片空白处不再打开综合信息：只有内容里那枚「详细」按钮进详情页（用户 2026-10-10 点名的
-  // 三条：点卡片空白区、点数据行、点立绘空白处都不许弹详情）。所以这里不挂整卡 onclick，
+  // 三条：点卡片空白区、点数据行、点装饰图空白处都不许弹详情）。所以这里不挂整卡 onclick，
   // 数据行（回程 / 延迟那一排）也不再是 data-detail 按钮——但每一格自己的聚焦视图照旧（见上）。
   for (const b of document.querySelectorAll("[data-card-family]"))
     b.onclick = () => { cardFamilies.set(b.dataset.cardNode, b.dataset.cardFamily); renderCards(); };
@@ -601,15 +590,14 @@ function renderCards() {
   }
 }
 
-// 二次元皮肤的折叠：把看板压到「她手里那块牌子」那么高，数据收起来——名字、板沿、双手都不动
-// （名字固定在板面正中，收起 / 展开同一坐标，见 anime.css 的 .fold-name / [data-rolled] 规则）。
-// 收起状态挂在**卡壳**上（`.node-card[data-rolled="true"]`），不是重绘出来的内容：
-// 每秒轻刷新与 10 秒全量刷新都走补丁路径（只改文本/属性、不换元素），卡壳上的属性不会被它们擦掉；
-// 每次渲染后再统一 applyFolded() 刷一遍，落库的是角色 id（节点名小写），刷新页面也还卷着。
-const FOLD_KEY = "tza-anime-rolled";
+// 卡片收起：卡片头那颗「绿点 + 名字」按钮切换卡壳上的 data-rolled，状态按节点 id 存在本地。
+// 收起后画成什么样由主题决定（样式表按 [data-rolled="true"] 选择）；默认样式不改变卡片。
+// 收起状态挂在**卡壳**上，不是重绘出来的内容：每秒轻刷新与 10 秒全量刷新都走补丁路径（只改
+// 文本/属性、不换元素），卡壳上的属性不会被擦掉；每次渲染后再统一 applyFolded() 刷一遍，刷新页面也还收着。
+const FOLD_KEY = "tza-folded-cards";
 const FOLD_ICON =
   '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 10.2 8 6.2l4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const foldedCasts = new Set(
+const foldedCards = new Set(
   (() => {
     try {
       const v = JSON.parse(localStorage.getItem(FOLD_KEY) || "[]");
@@ -621,99 +609,40 @@ const foldedCasts = new Set(
 );
 function saveFolded() {
   try {
-    localStorage.setItem(FOLD_KEY, JSON.stringify([...foldedCasts]));
+    localStorage.setItem(FOLD_KEY, JSON.stringify([...foldedCards]));
   } catch {
     /* 隐私模式写不进去，忽略：这一轮的状态仍在内存里 */
   }
 }
 // 卡壳上的状态 + 名字那颗按钮的 aria-expanded：折叠开关就是卡片头那颗「绿点 + 名字」按钮。
 function applyFolded() {
-  for (const card of document.querySelectorAll(".node-card[data-cast]")) {
-    const rolled = foldedCasts.has(card.dataset.foldKey || card.dataset.cast);
+  for (const card of document.querySelectorAll(".node-card")) {
+    const rolled = foldedCards.has(card.dataset.node);
     if (rolled) card.dataset.rolled = "true";
     else delete card.dataset.rolled;
     for (const btn of card.querySelectorAll("[data-fold]"))
       btn.setAttribute("aria-expanded", String(!rolled));
   }
-  layoutCastCards();
 }
 
-// 人物图 / 看板顶 / 收起态板条的几何全按**实测板高**反推（推导见 anime.css 的 N 段注释）：
-//   图高 = (板高 − 板唇 LIP − 脚下留白 GROUND) / (1 − 牌子上沿占图高的比例)
-//   板顶 = 图顶偏移 FIG_TOP + 图高 × 牌子上沿比例 − 板唇 LIP
-//   板条高 = 图高 × (牌子下沿比例 − 牌子上沿比例) + 2 × 板唇 LIP
-// 牌子上下沿比例每台机一条，写在 anime.css 的 --cast-top-frac / --cast-bot-frac 里（逐台实测，
-// 见 scripts/anime-split-layers.py 的 PLATE）。CSS 里还有一组按板高 461px 算的近似常量兜底
-// （这里量不到时——比如 jsdom——就用它）。
-// 收起态板内数据只 visibility:hidden（仍占位），板盒高度恒等于展开态板高，所以两态量出同一个板高。
-const FIG_TOP = 12; // 人物图顶距卡顶的留白（让开卡片上圆角）
-const LIP = 6; // 板唇：板顶压到牌子上沿之上 6px（吃掉补画区顶边 + 呼吸位移，板上沿不露线）
-const STRIP_H = 108; // 收起态板条高度：不但要放得下「名字 + 一行 地区·分组」，还必须整块盖住
-// 人物图里被补画过的矩形（原图那块牌子的位置 + 上下留白）—— 补画的像素只要露出来一点就会
-// 在裙摆 / 头发上留下一道直边接缝（gpt-6.1-sol 看图点名）。108px 对所有五台都够（最深的 vmiss 需 105）。
-const GROUND = 14; // 收起态脚下留白（不切鞋）
-const BOARD_H = 457; // 展开态板面**基准**高度（px，与 CSS 的 --cast-board-h 同值）。
-// 立绘缩放必须挂在一个常量上：早先按「板面实测高」算，板高又是内容撑的 —— 内容少的线路机
-// （8 台通用人物里就有）板面只有 330 出头，整张立绘跟着缩到 436px，人变小、板也铺不到卡底。
-// 现在板面有 min-height 兜底，立绘按常量缩放，12 张卡的人物大小与板位完全一致。
-// 角色包里的角色没有写死在 anime.css 里的那一份变量（内置角色每人一条规则），这里按清单写到卡壳上：
-// 三张图的地址、牌子上下沿的比例、浅色 / 深色两套牌面配色（anime.css 的 [data-cast-pack] 规则按
-// data-theme 从两套里取）。地址由服务端校验过（只含安全字符），可以直接拼进 url()。
-const hexRGB = (h) => {
-  const v = parseInt(String(h).slice(1), 16);
-  return `${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255}`;
-};
-// 眨眼节奏按角色的键算：同一个角色每次都一样，不同角色错开（几张卡同时眨眼很假，内置角色也是逐人错开的）。
-const blinkSeed = (key) => [...key].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
-function packVars(c) {
-  const seed = blinkSeed(c.key);
-  const vars = {
-    "--cast-blink-dur": (5 + (seed % 17) / 10).toFixed(1) + "s",
-    "--cast-blink-delay": (0.2 + ((seed >> 5) % 13) / 10).toFixed(1) + "s",
-    "--cast-art-url": `url("${c.artURL}")`,
-    "--cast-hands-url": c.handsURL ? `url("${c.handsURL}")` : "none",
-    "--cast-blink-url": c.blinkURL ? `url("${c.blinkURL}")` : "none",
-    "--cast-top-frac": String(c.plate.top),
-    "--cast-bot-frac": String(c.plate.bottom),
-  };
-  for (const [mode, p] of [["l", c.palette.light], ["d", c.palette.dark]]) {
-    vars[`--pack-board-${mode}`] = p.board;
-    vars[`--pack-cell-${mode}`] = p.cell || (mode === "l" ? "rgb(255 255 255 / 0.62)" : p.board);
-    vars[`--pack-line-${mode}`] = p.line;
-    vars[`--pack-track-${mode}`] = p.track;
-    vars[`--pack-accent-${mode}`] = p.accent;
-    vars[`--pack-accent-rgb-${mode}`] = hexRGB(p.accent);
-  }
-  return vars;
-}
-
-function layoutCastCards() {
-  for (const card of document.querySelectorAll(".node-card[data-cast]")) {
-    const body = card.querySelector(".card-body");
-    if (!body) continue;
-    const pack = card.dataset.castPack ? packCharacter(card.dataset.cast) : null;
-    if (pack) {
-      for (const [name, value] of Object.entries(packVars(pack)))
-        if (card.style.getPropertyValue(name) !== value) card.style.setProperty(name, value);
-    } else if (card.style.getPropertyValue("--cast-art-url")) {
-      // 从角色包换回内置角色：清掉上一轮写的内联变量，否则它们会盖过 anime.css 里内置角色的那条规则。
-      for (const name of [...card.style]) if (name.startsWith("--pack-") || ["--cast-art-url", "--cast-hands-url", "--cast-blink-url", "--cast-blink-dur", "--cast-blink-delay", "--cast-top-frac", "--cast-bot-frac"].includes(name)) card.style.removeProperty(name);
+// 卡片装饰的变量：挑中项的图片与数值写成卡壳上的 --deco-<名字>（CSSOM 写入，页面 CSP 不收行内 style），
+// 换了装饰项或主题就删掉上一轮多出来的。data-deco 属性在卡壳模板里（shellAttrs），这里只补变量。
+function applyDecorations() {
+  for (const card of document.querySelectorAll("#nodes .node-card")) {
+    const n = nodes.find((x) => x.id === card.dataset.node);
+    const want = decorationVars(n ? pickDecoration(n) : null);
+    // 倒着按下标取（jsdom 的 CSSStyleDeclaration 不可迭代；边删边走也不跳项）。
+    for (let i = card.style.length - 1; i >= 0; i--) {
+      const name = card.style.item(i);
+      if (name.startsWith("--deco-") && !(name in want)) card.style.removeProperty(name);
     }
-    const cs = getComputedStyle(card);
-    const topFrac = parseFloat(cs.getPropertyValue("--cast-top-frac")) || 0.3;
-    const figureH = (BOARD_H - LIP - GROUND) / (1 - topFrac);
-    const boardTop = FIG_TOP + figureH * topFrac - LIP;
-    const plateH = STRIP_H;
-    card.style.setProperty("--cast-figure-h", figureH.toFixed(2) + "px");
-    card.style.setProperty("--cast-board-top", boardTop.toFixed(2) + "px");
-    card.style.setProperty("--cast-plate-h", plateH.toFixed(2) + "px");
+    for (const [name, value] of Object.entries(want))
+      if (card.style.getPropertyValue(name) !== value) card.style.setProperty(name, value);
   }
 }
 function toggleFolded(key) {
-  // 所有卡都有人物了（名单外的落到通用人物 "generic"），收起 / 展开走同一套：只翻那把钥匙。
-  // 通用人物的多张卡各用各的节点 id（见 anime-cast.js 的 foldKey），折叠互不牵连。
   if (!key) return;
-  foldedCasts.has(key) ? foldedCasts.delete(key) : foldedCasts.add(key);
+  foldedCards.has(key) ? foldedCards.delete(key) : foldedCards.add(key);
   saveFolded();
   applyFolded();
 }
@@ -726,8 +655,8 @@ document.addEventListener("click", (e) => {
   toggleFolded(btn.dataset.fold);
 });
 
-// 裸眼 3D：指针在卡上移动时，把指针相对卡心的位置写成两个**无单位**变量（-1…1）挂到卡壳上，
-// anime.css 用一个量同时算「卡片转几度」和「人物层 / 双手层多走几像素」——层间差速就是立体感的来源。
+// 指针跟随：指针在卡上移动时，把指针相对卡心的位置写成两个**无单位**变量（-1…1）挂到卡壳上，并给卡片
+// 加 is-tilt。主题可以用它们做倾斜、视差（比如让装饰层比看板多走几像素），默认样式不用它们。
 // 只在这张卡上写、离场就删，所以不 tilt 的卡片一点合成开销都没有；系统开了「减少动态效果」就不做。
 // jsdom（scripts/ui-smoke.mjs 里 eval 这份脚本）没有 matchMedia，取不到就当没开「减少动态效果」。
 const TILT_OFF = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
@@ -748,8 +677,8 @@ document.addEventListener(
   "pointermove",
   (e) => {
     if (TILT_OFF?.matches || e.pointerType === "touch") return;
-    const card = e.target?.closest?.(".node-card[data-cast]");
-    for (const other of document.querySelectorAll(".node-card[data-cast].is-tilt"))
+    const card = e.target?.closest?.(".node-card");
+    for (const other of document.querySelectorAll(".node-card.is-tilt"))
       if (other !== card) untiltCard(other);
     if (!card) return;
     tiltCard(card, e);
@@ -760,7 +689,7 @@ document.addEventListener(
 document.addEventListener(
   "pointerout",
   (e) => {
-    const card = e.target?.closest?.(".node-card[data-cast]");
+    const card = e.target?.closest?.(".node-card");
     if (card && !card.contains(e.relatedTarget)) untiltCard(card);
   },
   { passive: true },
@@ -771,9 +700,8 @@ document.addEventListener(
 // 卡壳与内容分开：整块重绘用 card()，逐张替换只能喂 cardInner()——直接把整张卡赋给 innerHTML，
 // 卡片会把自己嵌进自己里面（外层 article 里再套一个同名 article，页面高度和位置都会跟着错）。
 const cardShell = (n, inner) => {
-  // 二次元皮肤：卡壳上也挂一份角色 id。背景层 `card-backdrop`（人物）是卡片**内部**的元素，
-  // 卡片自己读不到它的 data-cast，而皮肤样式表要按角色给整张牌面上色
-  // （`.node-card[data-cast="…"]`），所以这里再挂一份——两处都由 castId() 出，不会漂。
+  // 挑中的装饰项挂在卡壳上（data-deco / data-deco-pack），背景层上也有一份 data-deco：主题既能按装饰项
+  // 给整张卡上色（`.node-card[data-deco="…"]`），也能直接选背景层。两处都由 pickDecoration() 出，不会漂。
   const a = shellAttrs(n);
   const attrs = Object.entries(a)
     .filter(([, v]) => v)
@@ -783,14 +711,13 @@ const cardShell = (n, inner) => {
 };
 
 // 卡壳上随节点设置变的那几个属性。10 秒一轮只按内容补丁（patchInto 不碰卡壳本身），
-// 所以 renderCards 每轮也按这里对一遍——后台给节点换了角色，卡片不用整块重绘就跟上。
+// 所以 renderCards 每轮也按这里对一遍——后台给节点换了装饰，卡片不用整块重绘就跟上。
 function shellAttrs(n) {
-  const cast = castId(n);
+  const deco = pickDecoration(n);
   // data-region / data-group / data-vendor 给主题包按地区、分组、商家选装饰图（稳定接口，见 docs/THEMES.md）。
   return {
-    "data-cast": cast,
-    "data-cast-pack": cast.includes("/") ? cast.split("/")[0] : "",
-    "data-fold-key": foldKey(n),
+    "data-deco": deco?.key || "",
+    "data-deco-pack": deco?.pkg.id || "",
     "data-region": n.region || "",
     "data-group": n.group || "",
     "data-vendor": n.vendor || "",
@@ -1145,7 +1072,7 @@ function privateTag(n) {
 }
 
 // 商家名牌：节点填了商家才有。默认皮肤里是地区 · 分组后面的一枚小牌；主题可以按 .vendor-plate
-// 重新画（二次元主题把它挂到看板上沿当名牌）。卡片与列表共用。
+// 重新画（也可以改用卡片装饰槽里的 card-plate）。卡片与列表共用。
 function vendorPlate(n) {
   return n.vendor ? `<span data-part="vendor-plate" class="vendor-plate" title="商家">${esc(n.vendor)}</span>` : "";
 }
@@ -1160,17 +1087,14 @@ function gridInner(n) {
   //   ② HTML 看板 .card-body
   //   ③ 前景层 card-overlay（压在看板之上）
   //   ④ 名牌 card-plate（只在节点填了商家时有，内容是商家名）
-  // 二次元（声明了 characters 能力）就是走这套槽位：背景层是整张立绘（头/肩/双手在牌子上沿以上，
-  // 裙摆在下沿以下，一张连续的图）、背景里那层是闭眼帧，前景层是双手（压住看板上沿、修补被板沿
-  // 吃掉的指尖），名牌挂在看板上沿正中、两只手之间——它得是卡片上单独的一层，放在看板里会被裁掉。
-  // 选哪张立绘由卡壳与背景层上的 data-cast 决定（anime-cast.js 的 castId），别的主题可以不理它，
-  // 按卡壳上的 data-region / data-group / data-vendor 选图。
+  // 选哪张图由卡壳与背景层上的 data-deco 决定（主题清单里的装饰项，见 decorations.js），也可以按
+  // 卡壳上的 data-region / data-group / data-vendor 选。挑中的项带名字时，背景层当作一张有说明的图。
   // data-bleed = 通铺到卡片边框的装饰层：允许越过卡片内边距（被 overflow: hidden 裁掉是设计意图），
   // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这个标记区分。
-  const cast = castId(n);
-  const fkey = foldKey(n);
-  const figureA11y = skinFeature("characters") ? 'role="img" aria-label="线路机角色立绘"' : 'aria-hidden="true"';
-  const figure = `<div data-part="card-backdrop" class="card-backdrop" data-cast="${cast}" data-bleed ${figureA11y}><span data-part="card-backdrop-layer" class="card-backdrop-layer" data-bleed aria-hidden="true"></span></div>`;
+  const deco = pickDecoration(n);
+  const fkey = n.id;
+  const figureA11y = deco ? `data-deco="${esc(deco.key)}" role="img" aria-label="${esc(deco.d.name)}"` : 'aria-hidden="true"';
+  const figure = `<div data-part="card-backdrop" class="card-backdrop" data-bleed ${figureA11y}><span data-part="card-backdrop-layer" class="card-backdrop-layer" data-bleed aria-hidden="true"></span></div>`;
   const hands = `<div data-part="card-overlay" class="card-overlay" data-bleed aria-hidden="true"></div>`;
   const plate = n.vendor ? `<div data-part="card-plate" class="card-plate" aria-hidden="true">${esc(n.vendor)}</div>` : "";
   // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心

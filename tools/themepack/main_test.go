@@ -40,7 +40,7 @@ func TestOfficialThemesInstall(t *testing.T) {
 		}
 		seen[m.ID] = true
 	}
-	for _, id := range []string{"press", theme.AnimeSkin} {
+	for _, id := range []string{"press", "anime"} {
 		if !seen[id] || !store.Known(id) {
 			t.Errorf("官方主题包 %q 缺失或装完不认", id)
 		}

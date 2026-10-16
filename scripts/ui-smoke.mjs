@@ -1256,7 +1256,7 @@ const animeMenu = $("#theme-settings-anime");
 assert(animeMenu?.hidden && animeMenu.previousElementSibling?.textContent.includes("二次元"), "设置菜单默认收起，紧跟在二次元下面");
 animeGear.click();
 assert(!animeMenu.hidden && animeGear.getAttribute("aria-expanded") === "true", "点「设置」展开菜单");
-assert(animeMenu.textContent.includes("角色包") && animeMenu.textContent.includes("内置角色") && animeMenu.textContent.includes("眨眼与呼吸"), "菜单按 theme.json 的 settings 画出角色包与动效开关");
+assert(animeMenu.textContent.includes("角色包") && animeMenu.textContent.includes("二次元自带") && animeMenu.textContent.includes("眨眼与呼吸"), "菜单按 theme.json 的 settings 画出角色包与动效开关");
 assert(!animeMenu.querySelector("[data-scope]"), "市场关着时设置菜单里没有角色包市场");
 const motionSwitch = () => $('#theme-settings-anime [data-opt-key="motion"]');
 assert.equal(motionSwitch().getAttribute("aria-checked"), "true", "没调过时用 default（on）");
@@ -1533,34 +1533,33 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert.equal(pubDoc.documentElement.dataset.skin, "anime", "选「二次元」要落到 <html data-skin>");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "anime", "偏好要存进 localStorage");
   assert(/二次元/.test(skinBtn.textContent), "按钮文字跟着换");
-  // 名单外的节点也摆立绘：落到「通用人物」generic（所有线路机在二次元皮肤下都有人物、观感统一）。
+  // 名单外的节点也摆立绘：落到二次元清单里标了 default 的通用人物（所有线路机在二次元皮肤下都有人物、观感统一）。
   const genericCasts = [...pubDoc.querySelectorAll('[data-part="card-backdrop"]')];
-  assert(genericCasts.length > 0, "名单外的节点也要摆立绘：落到通用人物 generic（web/anime-cast.js）");
+  assert(genericCasts.length > 0, "名单外的节点也要摆立绘：落到通用人物 anime/generic（二次元 theme.json 的 default 装饰项）");
   assert(
-    genericCasts.every((el) => el.dataset.cast === "generic"),
+    genericCasts.every((el) => el.dataset.deco === "anime/generic"),
     "名单外的节点都用通用人物 generic 那一张立绘",
   );
-  // 折叠开关：点卡片头那颗名字按钮 → 卡壳挂上 data-rolled、状态落 localStorage；再点一下 → 摊开、
-  // 本地那份也清掉。本地库里没有名字正好等于角色名单的节点，所以这里塞一张合成卡——走的仍是页面里
-  // 同一段代码（点击是 document 上的委托，状态机与真实卡片共用）。
+  // 折叠开关：点卡片头那颗名字按钮 → 卡壳挂上 data-rolled、状态按节点 id 落 localStorage；再点一下 →
+  // 摊开、本地那份也清掉。这里塞一张合成卡——走的仍是页面里同一段代码（点击是 document 上的委托，
+  // 状态机与真实卡片共用）。
   const foldHost = pubDoc.createElement("div");
   foldHost.innerHTML =
-    '<article class="node-card" data-node="fold-fixture" data-cast="us-bwh-dc9">' +
-    '<div data-part="card-backdrop" class="card-backdrop" data-cast="us-bwh-dc9" data-bleed><span data-part="card-backdrop-layer" class="card-backdrop-layer"></span></div>' +
-    '<button class="anime-fold-btn" type="button" data-fold="us-bwh-dc9" aria-expanded="true"></button>' +
+    '<article class="node-card" data-node="fold-fixture" data-deco="anime/us-bwh-dc9" data-deco-pack="anime">' +
+    '<div data-part="card-backdrop" class="card-backdrop" data-deco="anime/us-bwh-dc9" data-bleed><span data-part="card-backdrop-layer" class="card-backdrop-layer"></span></div>' +
     '<div class="card-body"><div class="card-top">' +
-    '<button class="fold-name" type="button" data-fold="us-bwh-dc9" aria-expanded="true">' +
+    '<button class="fold-name" type="button" data-fold="fold-fixture" aria-expanded="true">' +
     '<span class="node-dot"></span><span class="fold-name-text">US-BWH-DC9</span></button>' +
     '</div></div><div data-part="card-overlay" class="card-overlay"></div></article>';
   pubDoc.body.appendChild(foldHost);
   const foldCard = foldHost.querySelector(".node-card");
   const foldClick = (el) =>
     el.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
-  foldClick(foldHost.querySelector(".anime-fold-btn"));
+  foldClick(foldHost.querySelector(".fold-name"));
   assert.equal(foldCard.dataset.rolled, "true", "点「卷起」要把卡片标成卷起");
   assert.deepEqual(
-    JSON.parse(publicDOM.window.localStorage.getItem("tza-anime-rolled")),
-    ["us-bwh-dc9"],
+    JSON.parse(publicDOM.window.localStorage.getItem("tza-folded-cards")),
+    ["fold-fixture"],
     "卷起状态要记住（刷新之后还卷着）",
   );
   assert.equal(
@@ -1578,7 +1577,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "摊开后 aria-expanded 回到 true",
   );
   assert.deepEqual(
-    JSON.parse(publicDOM.window.localStorage.getItem("tza-anime-rolled")),
+    JSON.parse(publicDOM.window.localStorage.getItem("tza-folded-cards")),
     [],
     "摊开后本地那份状态也要清掉",
   );
@@ -1709,7 +1708,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     installedLooks.find((t) => t.id === "press")?.base === "plain" && !/backdrop-filter/.test(pressCSS.replace(/\/\*[\s\S]*?\*\//g, "")),
     "复古印刷同样是 base: plain，样式表里不再整片关模糊",
   );
-  // 立绘层：默认（styles.css）不显示，二次元皮肤里放开；图片按 data-cast 挂在样式表上
+  // 立绘层：默认（styles.css）不显示，二次元皮肤里放开；图片按 data-deco 挂在样式表上
   // （页面 CSP 是 style-src 'self'，行内 background-image 会被丢掉）。
   // 底座里现在是「人物层 / 双手层 / 闭眼层 / 卷起按钮」一起默认藏，
   // 逐条列出来，免得以后新增一个元素只加在 anime.css 里、别的皮肤冒裸元素。
@@ -1738,8 +1737,8 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "人物层：绝对定位、固定像素高（--cast-figure-h）、整张图按图高缩放（auto 100%）、顶对齐居中、不吃指针事件",
   );
   assert(
-    /html\[data-skin="anime"\] \[data-part="card-backdrop"\]\[data-cast="jp-nosla-gen2"\],[\s\S]*?\[data-part="card-backdrop"\]\[data-cast="generic"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
-    "五个角色（四台专属 + 通用人物）的立绘层都要挂上自己的图（同一条逗号选择器，五个 data-cast 都得在里面）",
+    /html\[data-skin="anime"\] \[data-part="card-backdrop"\]\[data-deco="anime\/jp-nosla-gen2"\],[\s\S]*?\[data-part="card-backdrop"\]\[data-deco="anime\/generic"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
+    "五个角色（四台专属 + 通用人物）的立绘层都要挂上自己的图（同一条逗号选择器，五个 data-deco 都得在里面）",
   );
   // 夜版：牌子的底色/描边要有暗色那一份，卡片子树的浅色令牌只能作用在浅色下，
   // 立绘在夜版里只裁到牌沿——不然深色的牌面上会露一条白牌面。
@@ -1770,7 +1769,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       /background-position: top center/.test(handsRule) && /pointer-events: none/.test(handsRule),
     "双手层要绝对定位、z-index 3（压在看板上沿）、用 --cast-hands-url，且与人物层同一套几何（同一个 --cast-figure-h / --cast-fig-top / auto 100% / top center，手才不会从手腕上错开）",
   );
-  const boardRule = /html\[data-skin="anime"\] \.node-card\[data-cast\] \.card-body \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
+  const boardRule = /html\[data-skin="anime"\] \.node-card\[data-deco\] \.card-body \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
   assert(
     /z-index: 2/.test(boardRule) && /border: 0/.test(boardRule) && /#fffdfb/.test(boardRule) &&
       /height: auto;/.test(boardRule) && /width: calc\(\(100% \+ 2px\) \* 0\.94\)/.test(boardRule),
@@ -1779,7 +1778,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 有立绘的卡壳左右内边距收成 0：看板本来就该通铺到卡边（94% 卡宽），不收的话它会被
   // card-overflow-check 判成越过内容盒。内容盒 = 卡宽 − 2px 边框，(100% + 2px) 才是卡宽。
   assert(
-    /html\[data-skin="anime"\] \.node-card\[data-cast\] \{[^}]*padding-left: 0;[^}]*padding-right: 0;/s.test(animeCSS),
+    /html\[data-skin="anime"\] \.node-card\[data-deco\] \{[^}]*padding-left: 0;[^}]*padding-right: 0;/s.test(animeCSS),
     "有立绘的卡壳左右内边距要收成 0：看板/立绘按卡宽比例通铺，内容盒才等于卡宽 − 2px 边框",
   );
   // 看板高度必须由数据决定：定高 + 板内滚动这一版被用户否掉了（「内容都没了，为啥做得这么小」）。
@@ -1790,28 +1789,28 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       /min-height: var\(--cast-board-min, 457px\)/.test(boardRule) && /height: auto;/.test(boardRule),
     "看板不许定高、不许板内竖滚（板高跟数据走，全部数据一眼看全）；只留一条 min-height 兜底，保证 12 台板面等高、立绘缩放有统一基准",
   );
-  const castBodyRule = /html\[data-skin="anime"\] \.node-card\[data-cast\] \.card-body > \[id\] \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
+  const castBodyRule = /html\[data-skin="anime"\] \.node-card\[data-deco\] \.card-body > \[id\] \{([^}]*)\}/.exec(animeCSS)?.[1] || "";
   assert(
     /overflow: visible/.test(castBodyRule) && /min-height: 0/.test(castBodyRule),
     "板内数据区要 overflow: visible：全部数据排进板里、一眼看全，不裁也不滚",
   );
   assert(
     /html\[data-skin="anime"\] \[data-part="card-backdrop"\] \{[^}]*z-index: 1/s.test(animeCSS) &&
-      /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body > \[id\] > :not\(\.node-sub\) \{ visibility: hidden;/s.test(animeCSS),
+      /html\[data-skin="anime"\] \.node-card\[data-deco\]\[data-rolled="true"\] \.card-body > \[id\] > :not\(\.node-sub\) \{ visibility: hidden;/s.test(animeCSS),
     "人物层 z-index 1（看板 z-index 2 盖在上面）；收起态只藏板内数据（visibility: hidden 仍占位 → 板盒高度 = 展开态板高 → 两态卡高恒定；.card-top 留着，板沿与名字坐标都不动）",
   );
   // 展开态看板从牌子上沿一直铺到卡片底部：原图那块牌子与她的下半身整段被板盖住（用户 2026-10-10
   // 「展开的时候就不用显示下半身了」）。两态卡片下内边距都收成 0，看板下沿才贴着卡片底边；
   // 收起态也不能靠下内边距把卡撑高（那会让两态卡高差 20px）。
   assert(
-    /html\[data-skin="anime"\] \.node-card\[data-cast\] \{[^}]*padding-bottom: 0;/s.test(animeCSS),
+    /html\[data-skin="anime"\] \.node-card\[data-deco\] \{[^}]*padding-bottom: 0;/s.test(animeCSS),
     "两态卡片下内边距都收成 0：看板下沿贴着卡片底边，收起态卡高才与展开态恒等",
   );
   // 收起态板条：板盒高度不变（数据仍占位），板面本体改由 ::before 按 --cast-plate-h 画一条矮板，
   // 板顶与展开态完全相同；板条以上露头 / 上身，以下露出**同一张图里**的裙摆 / 腿 / 鞋。
   assert(
-    /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body::before \{[\s\S]*?height: var\(--cast-plate-h,/s.test(animeCSS) &&
-      /html\[data-skin="anime"\] \.node-card\[data-cast\]\[data-rolled="true"\] \.card-body \{[^}]*overflow: visible/s.test(animeCSS),
+    /html\[data-skin="anime"\] \.node-card\[data-deco\]\[data-rolled="true"\] \.card-body::before \{[\s\S]*?height: var\(--cast-plate-h,/s.test(animeCSS) &&
+      /html\[data-skin="anime"\] \.node-card\[data-deco\]\[data-rolled="true"\] \.card-body \{[^}]*overflow: visible/s.test(animeCSS),
     "收起态：板盒高度不变，板条由 ::before 按 --cast-plate-h 画（正好盖住原图那块牌子），板条以下露出同一张图里的裙摆 / 腿 / 鞋",
   );
   // 名字固定在板面正中：两态同一个盒子（居中靠 flex），状态点与折叠箭头绝对定位在两端不挤它。
@@ -1826,18 +1825,20 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
       /html\[data-skin="anime"\] \.card-top \.fold-name \.fold-caret \{[^}]*position: absolute[^}]*right: 0/s.test(animeCSS),
     "状态点与折叠箭头要绝对定位在两端：它们不参与居中，名字的横向中心才是板面的中心",
   );
-  // 每台机都要有双手层图址 + 逐台实测的牌子上/下沿占图高比例（--cast-top-frac / --cast-bot-frac）
-  // 与兜底几何（--cast-figure-h / --cast-board-top / --cast-plate-h）。
+  // 每台机都要有双手层图址 + 逐台实测的牌子上/下沿占图高比例（--cast-top-frac / --cast-bot-frac）；
+  // 立绘高 / 板顶 / 收起态板条高由一条几何规则按上沿比例算出（不再由面板脚本实测）。
   for (const id of ["jp-nosla-gen2", "de-nosla-fra", "us-vmiss-tri", "us-bwh-dc9", "generic"]) {
-    const block = new RegExp(`\\.node-card\\[data-cast="${id}"\\] \\{([^}]*)\\}`).exec(animeCSS)?.[1] || "";
+    const block = new RegExp(`\\.node-card\\[data-deco="anime/${id}"\\] \\{([^}]*)\\}`).exec(animeCSS)?.[1] || "";
     assert(
       /--cast-hands-url: url\("anime\//.test(block) &&
-        /--cast-top-frac: 0\.\d+/.test(block) && /--cast-bot-frac: 0\.\d+/.test(block) &&
-        /--cast-figure-h: \d+\.\d+px/.test(block) &&
-        /--cast-board-top: \d+\.\d+px/.test(block) && /--cast-plate-h: \d+\.\d+px/.test(block),
-      `${id}：要有双手层图址 + 实测的牌子上/下沿比例（--cast-top-frac / --cast-bot-frac）+ 兜底几何（--cast-figure-h / --cast-board-top / --cast-plate-h）`,
+        /--cast-top-frac: 0\.\d+/.test(block) && /--cast-bot-frac: 0\.\d+/.test(block),
+      `${id}：要有双手层图址 + 实测的牌子上/下沿比例（--cast-top-frac / --cast-bot-frac）`,
     );
   }
+  assert(
+    /html\[data-skin="anime"\] \.node-card\[data-deco\] \{[^}]*--cast-figure-h: round\([^}]*--cast-board-top: round\([^}]*--cast-plate-h: 108px/s.test(animeCSS),
+    "立绘高、板顶、收起态板条高由牌子上沿比例在 CSS 里算出",
+  );
   assert(
     !/\.anime-roll\b/.test(animeCSS) && !/\.anime-roll\b/.test(appSource),
     "卷轴（.anime-roll、卷轴透明度滑块、牌面上的字）整条去掉：名字现在印在 HTML 看板正中的固定坐标上",
@@ -1871,12 +1872,12 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   );
   // 裸眼 3D：指针在卡上时卡片转一点、人物 / 双手 / 下半身三层各自多走一点（层间差速）。
   assert(
-    /\.node-card\[data-cast\]\.is-tilt \{[^}]*rotateX\(calc\(var\(--tilt-ny, 0\) \* -3deg\)\)[^}]*rotateY\(calc\(var\(--tilt-nx, 0\) \* 3\.4deg\)\)/s.test(animeCSS),
+    /\.node-card\[data-deco\]\.is-tilt \{[^}]*rotateX\(calc\(var\(--tilt-ny, 0\) \* -3deg\)\)[^}]*rotateY\(calc\(var\(--tilt-nx, 0\) \* 3\.4deg\)\)/s.test(animeCSS),
     "卡片要按指针转一点——层间差速就是裸眼 3D 的来源",
   );
   // 两个立绘层的位移写在同一条多选择器规则里（card-backdrop, card-overlay），
   // 选择器后面是逗号不是 `{`，所以抓这条规则整块（到第一个 `}`）再逐条查。
-  const tiltShift = /\.node-card\[data-cast\]\.is-tilt \[data-part="card-backdrop"\],[\s\S]*?\n\}/.exec(animeCSS)?.[0] || "";
+  const tiltShift = /\.node-card\[data-deco\]\.is-tilt \[data-part="card-backdrop"\],[\s\S]*?\n\}/.exec(animeCSS)?.[0] || "";
   assert(
     /translate3d\(calc\(var\(--tilt-nx, 0\) \* -9px\), calc\(var\(--tilt-ny, 0\) \* -6px\), 0\)/.test(tiltShift) &&
       /\.is-tilt \[data-part="card-overlay"\] \{/.test(tiltShift),
@@ -1893,7 +1894,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "卷轴不再挂书签飘带（复核说它像凭空浮着的贴纸）；元素、样式、动效三处都要干净",
   );
   assert(
-    /html\[data-skin="anime"\] \.node-card\[data-cast="jp-nosla-gen2"\] \{[^}]*--cast-art-url: url\("anime\/jp-nosla-gen2\.webp"\)/s.test(animeCSS),
+    /html\[data-skin="anime"\] \.node-card\[data-deco="anime\/jp-nosla-gen2"\] \{[^}]*--cast-art-url: url\("anime\/jp-nosla-gen2\.webp"\)/s.test(animeCSS),
     "每台机的牌面配色里要带自己的人物层图址（人物层就是那半身像）",
   );
   // 点卡片空白处 / 数据行不许弹详情页：详情只由「详细」按钮进（app.js 里不再挂整卡 onclick，

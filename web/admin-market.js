@@ -1,22 +1,26 @@
 import { api, send, toast, guard, modal, esc } from "./api.js";
 import { bytes } from "./format.js";
-import { ANIME } from "./skins.js";
 import { state, content, confirmAction } from "./admin-state.js";
-// TZA-CC 市场的共用部分：「主题」页（主题包）和「插件」页各带一块市场；角色包是二次元主题的附加内容，
-// 它的市场挂在二次元的设置菜单里（characterMarket），不是主题市场的一个分类，TZA-CC 账号在
+// TZA-CC 市场的共用部分：「主题」页（主题包）和「插件」页各带一块市场；附加包依附某一套主题，
+// 它的市场挂在那套主题的设置菜单里（addonMarket），不是主题市场的一个分类，TZA-CC 账号在
 // 「面板设置 → 账号与安全」。浏览器只请求本服务器的 /admin/market/*，目录、预览图与安装包都由服务器
 // 代为获取（预览图走 /admin/market/media 代理），CSP 不用放开，TZA-CC 也看不到访客。
 // 安装前服务器核对大小、SHA-256、平台签名与包内 id / 版本；插件装之前先把它能做的事列出来请管理员确认。
 const SCOPES = {
   themes: [["skin", "主题"]],
-  characters: [["characters", "角色包"]],
   plugins: [["plugin", "插件"]],
 };
+// 附加包的市场一套主题一块：scope 是 "addons:<主题 id>"。
+const ADDONS = "addons:";
+const scopeTypes = (scope) => SCOPES[scope] || [["addon", "附加包"]];
 const KINDS = { notify: "通知渠道", targets: "探测目标集" };
 const views = {
   themes: { type: "skin", q: "", page: 1, items: [], more: false, error: "" },
-  characters: { type: "characters", q: "", page: 1, items: [], more: false, error: "" },
   plugins: { type: "plugin", q: "", page: 1, items: [], more: false, error: "" },
+};
+const viewOf = (scope) => {
+  if (!views[scope] && scope.startsWith(ADDONS)) views[scope] = { type: "addon", for: scope.slice(ADDONS.length), q: "", page: 1, items: [], more: false, error: "" };
+  return views[scope];
 };
 let status = { configured: false };
 // 有兼容新版的市场包（/admin/market/updates）：卡片与已安装列表的「有更新」都以它为准。
@@ -26,7 +30,7 @@ let pollTimer = 0;
 let rerender = async () => {};
 
 export const media = (url) => "/api/v1/admin/market/media?url=" + encodeURIComponent(url);
-export const typeName = (t) => ({ characters: "角色包", plugin: "插件" })[t] || "主题";
+export const typeName = (t) => ({ addon: "附加包", plugin: "插件" })[t] || "主题";
 export const kindName = (k) => KINDS[k] || "插件";
 // 插件没有色样和封面：卡片与列表里画一枚写着类型的小牌子。
 export const glyph = (kind) => `<span class="plugin-glyph" aria-hidden="true">${kind === "targets" ? "目标集" : "通知"}</span>`;
@@ -40,8 +44,9 @@ const yuan = (cents) => "¥" + (cents / 100).toFixed(2);
 const locked = (it) => it.price > 0 && !it.owned;
 export const swatch = (colors) =>
   `<span class="skin-swatch" data-colors="${esc((colors || []).join(","))}" aria-hidden="true"><i></i><i></i><i></i></span>`;
-// 角色包只给二次元主题添角色：二次元主题包没装时装了也不生效，市场里先拦住。
-const animeInstalled = () => (window.__tzaThemes || []).some((t) => t.id === ANIME && t.type !== "characters");
+// 附加包只在它依附的主题装着时生效：主题没装就先拦住。
+const skinInstalled = (id) => (window.__tzaThemes || []).some((t) => t.id === id && t.type !== "addon");
+const skinName = (id) => (window.__tzaThemes || []).find((t) => t.id === id)?.name || id;
 
 export const marketStatus = () => status;
 export const hasUpdate = (id) => updateIds.has(id);
@@ -64,10 +69,12 @@ export async function loadMarket(rerenderPage, installed = [], scope = "") {
   return updates;
 }
 
-// 二次元设置菜单里的角色包市场：没开市场就不出现，样子与主题市场同一套（搜索、卡片、详情里安装）。
-export function characterMarket() {
+// 主题设置菜单里这套主题的附加包市场：没开市场就不出现，样子与主题市场同一套（搜索、卡片、详情里安装）。
+export const addonScope = (skin) => ADDONS + skin;
+export function addonMarket(skin) {
   if (!status.configured) return "";
-  return `<div class="market-panel is-nested" data-scope="characters"><div class="opt-row"><span class="theme-copy"><b>从市场添加角色包</b><small>TZA-CC 上的二次元角色包，装好后出现在上面的列表里</small></span></div><div class="market-body">${catalogHTML("characters")}</div></div>`;
+  const scope = addonScope(skin);
+  return `<div class="market-panel is-nested" data-scope="${esc(scope)}"><div class="opt-row"><span class="theme-copy"><b>从市场添加附加包</b><small>TZA-CC 上依附「${esc(skinName(skin))}」的附加包，装好后出现在上面的列表里</small></span></div><div class="market-body">${catalogHTML(scope)}</div></div>`;
 }
 
 // 页头右侧的账号状态。
@@ -76,18 +83,19 @@ export function marketPill() {
   return status.bound ? '<span class="pill good">已连接 TZA-CC</span>' : '<span class="pill">未连接 TZA-CC 账号</span>';
 }
 
-// 一页的市场：类型切换（主题页是主题 / 角色包，插件页只有插件）、搜索、卡片与「加载更多」。
+// 一页的市场：类型切换（主题页是主题，插件页是插件）、搜索、卡片与「加载更多」。
 export function catalogPanel(scope) {
   if (!status.configured) {
     return `<section data-part="panel" class="panel webhook-panel market-off"><div><h3>市场已关闭</h3><p>Server 启动时用 <code>--cc-url off</code>（或环境变量 <code>TZA_CC_URL=off</code>）关掉了市场。去掉它即连官方 TZA-CC；测试或私有部署的 CC 用 <code>--cc-url https://…</code> 指定，签名公钥用 <code>--cc-key</code> / <code>TZA_CC_KEYS</code> 添加。</p><small>不连 TZA-CC 也可以在上面上传 zip 手动安装。</small></div></section>`;
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text market-keys">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
-  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题（二次元的角色包在它的「设置」里）"}；免费包不连接账号也能装，付费包要先在「面板设置 → 账号与安全」连接 TZA-CC。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
+  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题（附加包在它所依附主题的「设置」里）"}；免费包不连接账号也能装，付费包要先在「面板设置 → 账号与安全」连接 TZA-CC。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
 }
 
 async function fetchCatalog(scope, append) {
-  const view = views[scope];
+  const view = viewOf(scope);
   const params = new URLSearchParams({ type: view.type, page: String(view.page) });
+  if (view.for) params.set("for", view.for);
   if (view.q) params.set("q", view.q);
   try {
     const page = await api("/admin/market/catalog?" + params);
@@ -102,19 +110,19 @@ async function fetchCatalog(scope, append) {
 }
 
 function catalogHTML(scope) {
-  const view = views[scope];
-  const types = SCOPES[scope];
+  const view = viewOf(scope);
+  const types = scopeTypes(scope);
   const tabs = types.length > 1 ? `<div class="segmented" role="group" aria-label="包类型">${types.map(([id, label]) => `<button type="button" data-market-type="${id}" class="${view.type === id ? "active" : ""}" aria-pressed="${view.type === id}">${label}</button>`).join("")}</div>` : "";
   const cards = view.items.map(card).join("");
   const empty = view.error
     ? `<p class="market-empty warn-text">${esc(view.error)}</p>`
     : `<p class="market-empty">${view.q ? `没有找到「${esc(view.q)}」相关的${typeName(view.type)}。` : `市场里还没有${typeName(view.type)}。`}</p>`;
-  const note = view.type === "characters" && !animeInstalled() ? '<p class="hint market-note">角色包只给二次元主题添角色：先在「主题」里装好二次元，再装角色包。</p>' : "";
+  const note = view.for && !skinInstalled(view.for) ? `<p class="hint market-note">这些附加包依附「${esc(skinName(view.for))}」：先装好那套主题，再装附加包。</p>` : "";
   return `<div class="market-toolbar">${tabs}<form class="market-search" role="search"><input class="market-q" type="search" maxlength="64" placeholder="搜索名称、作者" value="${esc(view.q)}" aria-label="搜索市场"><button type="submit" class="primary">搜索</button></form></div>${note}${cards ? `<div class="market-grid">${cards}</div>` : empty}<div class="catalog-toolbar event-more"><button class="quiet market-more" ${view.more ? "" : "hidden"}>加载更多</button></div>`;
 }
 
 function card(it) {
-  // 没有封面或封面取不到（.broken）时露出三格色样，角色包没有色样就写类型。
+  // 没有封面或封面取不到（.broken）时露出三格色样，附加包没有色样就写类型。
   const fallback = it.type === "plugin" ? glyph(it.kind) : it.swatch?.length ? swatch(it.swatch) : `<span class="muted">${typeName(it.type)}</span>`;
   const cover = `<span class="market-cover${it.cover ? "" : " broken"}">${it.cover ? `<img data-media src="${esc(media(it.cover))}" alt="" loading="lazy">` : ""}${fallback}</span>`;
   const badge = it.installed?.source === "market" && updateIds.has(it.id)
@@ -199,7 +207,7 @@ export function wireMarket(root = content()) {
 function wireCatalog(box) {
   if (!box) return;
   const scope = box.dataset.scope;
-  const view = views[scope];
+  const view = viewOf(scope);
   const body = box.querySelector(".market-body");
   paint(body);
   const reload = async (append = false) => {
@@ -237,14 +245,14 @@ async function detail(id) {
   const p = await api("/admin/market/packages/" + encodeURIComponent(id));
   const best = p.versions.find((v) => v.compatible);
   const have = p.installed;
-  // 角色包要先有二次元主题；已经装着的角色包照常能更新（二次元被删后它们只是暂不生效）。
-  const needsAnime = p.type === "characters" && !animeInstalled() && !have;
+  // 附加包要先有它依附的主题；已经装着的附加包照常能更新（主题被删后它们只是暂不生效）。
+  const needsHost = p.type === "addon" && p.for && !skinInstalled(p.for) && !have;
   const shots = [p.cover, ...(p.screenshots || [])].filter(Boolean);
   const versions = p.versions.map((v) => {
     const current = have?.source === "market" && have.version === v.version;
     const action = current
       ? '<span class="pill good">已安装</span>'
-      : v.compatible && !locked(p) && !needsAnime
+      : v.compatible && !locked(p) && !needsHost
         ? `<button type="button" class="quiet" data-install-version="${esc(v.version)}">安装此版本</button>`
         : v.compatible
           ? ""
@@ -260,18 +268,18 @@ async function detail(id) {
     else label = `更新到 v${best.version}`;
   }
   if (best && locked(p)) label = `付费包 ${yuan(p.price)}，账号还没有拥有`;
-  if (best && needsAnime) label = "先安装二次元主题";
-  const disabled = !best || locked(p) || needsAnime || (have?.source === "market" && have.version === best.version);
+  if (best && needsHost) label = `先安装主题「${skinName(p.for)}」`;
+  const disabled = !best || locked(p) || needsHost || (have?.source === "market" && have.version === best.version);
   // 付费包：没绑定账号的先连接；绑定了但没拥有的去 TZA-CC 用兑换码兑换，回来刷新即可安装。
   const paid = p.price > 0
     ? `<p class="${locked(p) ? "warn-text" : "hint"}">${locked(p) ? (status.bound ? `这是付费包（${yuan(p.price)}），你连接的 TZA-CC 账号还没有拥有它。在 TZA-CC 用兑换码兑换到这个账号后，回来重新打开即可安装。` : `这是付费包（${yuan(p.price)}）。先在「面板设置 → 账号与安全」连接 TZA-CC 账号，并在 TZA-CC 用兑换码兑换到这个账号。`) : `付费包 · 你的账号已拥有（${yuan(p.price)}）。`}</p>`
     : "";
-  const anime = needsAnime ? '<p class="warn-text">角色包只给二次元主题添角色：先在「主题」页的市场里装好二次元。</p>' : "";
+  const host = needsHost ? `<p class="warn-text">这是依附「${esc(skinName(p.for))}」的附加包：先在「主题」页的市场里装好那套主题。</p>` : "";
   const meta = [p.id, typeName(p.type), p.author?.name, p.downloads ? `${p.downloads} 次下载` : "", day(p.updated_at) && "更新于 " + day(p.updated_at)].filter(Boolean).join(" · ");
   const plugin = p.type === "plugin";
   const d = modal(
     p.name,
-    `<div class="market-detail">${plugin ? `<p>${glyph(p.kind)}</p>` : ""}${shots.length ? `<div class="market-shots">${shots.map((s) => `<span class="market-shot"><img data-media src="${esc(media(s))}" alt="" loading="lazy"></span>`).join("")}</div>` : p.swatch?.length ? `<p>${swatch(p.swatch)}</p>` : ""}<p class="market-meta">${esc(meta)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">在 TZA-CC 查看</a>` : ""}</p>${paid}${anime}${p.description ? `<p class="market-desc">${esc(p.description)}</p>` : p.summary ? `<p class="market-desc">${esc(p.summary)}</p>` : ""}${have ? `<p class="hint">本机已有 ${have.version ? "v" + esc(have.version) : ""}（${have.source === "market" ? "市场" : "本地上传"}）。</p>` : ""}${plugin ? `<h3>这个插件能做的事</h3>${permList(p.permissions) || '<p class="muted">市场没有列出。</p>'}` : ""}<h3>版本</h3><div class="market-versions">${versions || '<p class="muted">市场没有列出版本。</p>'}</div><div class="form-footer"><button class="primary" id="market-install" ${disabled ? "disabled" : ""}>${esc(label)}</button></div></div>`,
+    `<div class="market-detail">${plugin ? `<p>${glyph(p.kind)}</p>` : ""}${shots.length ? `<div class="market-shots">${shots.map((s) => `<span class="market-shot"><img data-media src="${esc(media(s))}" alt="" loading="lazy"></span>`).join("")}</div>` : p.swatch?.length ? `<p>${swatch(p.swatch)}</p>` : ""}<p class="market-meta">${esc(meta)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">在 TZA-CC 查看</a>` : ""}</p>${paid}${host}${p.description ? `<p class="market-desc">${esc(p.description)}</p>` : p.summary ? `<p class="market-desc">${esc(p.summary)}</p>` : ""}${have ? `<p class="hint">本机已有 ${have.version ? "v" + esc(have.version) : ""}（${have.source === "market" ? "市场" : "本地上传"}）。</p>` : ""}${plugin ? `<h3>这个插件能做的事</h3>${permList(p.permissions) || '<p class="muted">市场没有列出。</p>'}` : ""}<h3>版本</h3><div class="market-versions">${versions || '<p class="muted">市场没有列出版本。</p>'}</div><div class="form-footer"><button class="primary" id="market-install" ${disabled ? "disabled" : ""}>${esc(label)}</button></div></div>`,
   );
   paint(d);
   const run = async (version, button) => {
@@ -307,7 +315,7 @@ async function install(id, version) {
   document.querySelector("#dialog")?.close();
   await rerender();
   if (m.type === "plugin") return toast(pluginToast(m));
-  toast(m.type === "characters" ? `角色包已安装：${m.name} v${m.version}（二次元主题里按节点名 / 地区自动用上）` : `主题已安装：${m.name} v${m.version}（右上角外观菜单里可以选它）`);
+  toast(m.type === "addon" ? `附加包已安装：${m.name} v${m.version}（它依附的主题里按节点名 / 地区自动用上）` : `主题已安装：${m.name} v${m.version}（右上角外观菜单里可以选它）`);
 }
 
 // ---- TZA-CC 账号（面板设置 → 账号与安全）----

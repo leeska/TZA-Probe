@@ -1,4 +1,4 @@
-// 外观风格（皮肤）：内置的现代极简（默认）、液态玻璃，加上已安装的主题包（复古印刷、二次元是官方
+// 外观风格（皮肤）：内置的现代极简（默认）、液态玻璃，加上已安装的主题包（官方的其它外观也是
 // 主题包，从后台「主题」页的市场安装；也可以上传别的主题包）。
 // 明暗（data-theme）仍由 theme.js 决定，风格（data-skin）由这里决定，两者正交：
 // 同一套皮肤在浅色与深色下各有一份令牌。偏好存 localStorage 的 tza-skin，
@@ -14,11 +14,9 @@ const BUILTIN = [
   { id: "glass", name: "液态玻璃", hint: "毛玻璃 · 圆角 · 柔和阴影", builtin: true, chrome: { light: "#edf2fb", dark: "#0f141c" }, swatch: ["#eef3fc", "#ffffff", "#0071e3"] },
 ];
 
-// 角色包（type: "characters"）不是可选的外观，它只给二次元主题添角色（anime-cast.js 读它们）。
-// 二次元主题包的 id，角色只在它装着、并且正在用时出现。
-export const ANIME = "anime";
+// 附加包（type: "addon"）不是可选的外观，它只给 for 写的那套主题添装饰项（decorations.js 读它们）。
 const registry = (list) => {
-  const skins = Array.isArray(list) ? list.filter((t) => t.type !== "characters") : [];
+  const skins = Array.isArray(list) ? list.filter((t) => t.type !== "addon") : [];
   return skins.length ? skins : BUILTIN;
 };
 
@@ -27,7 +25,7 @@ export let SKINS = registry(window.__tzaThemes);
 
 export function registerThemes(list) {
   SKINS = registry(list);
-  // 角色匹配（anime-cast.js）现读 window.__tzaThemes，一起换成新清单。
+  // 装饰项的挑选（decorations.js）现读 window.__tzaThemes，一起换成新清单。
   if (Array.isArray(list)) window.__tzaThemes = list;
   // 后台改了主题设置会重新登记清单：当前主题的 data-opt-* 跟着换。
   applyOptions();
@@ -53,7 +51,6 @@ export function skinPreference() {
 // 当前皮肤在 theme.json 里声明的能力（features）与布局（layout），见 docs/THEMES.md。
 // 读 <html data-skin>（首屏由 theme-boot.js 写好，运行中由 applySkin 换），认不出来就按偏好。
 const currentSkin = () => byId(document.documentElement.dataset.skin) || byId(skinPreference());
-export const skinFeature = (name) => (currentSkin()?.features || []).includes(name);
 export const skinLayout = () => currentSkin()?.layout || {};
 
 // 密度写在 <html data-density> 上（styles.css 按它收紧卡片）；没声明就不写。规则与 theme-boot.js 相同。
@@ -115,25 +112,28 @@ export function applySkin(skin = skinPreference()) {
   }
   paintChrome();
   closeMenu();
-  // 依赖皮肤 CSS 变量的布局（app.js 的 layoutCastCards）在这里重算，而不是每秒轮询。
+  // 依赖皮肤的渲染（板面段落、卡片装饰）在这里重做，而不是每秒轮询。
   document.dispatchEvent(new CustomEvent("tza:skin", { detail: skin }));
 }
 
 // ---- 主题设置（见 docs/THEMES.md「主题设置」）：主题在 theme.json 里声明菜单，管理员在后台
 // 「主题」页调，值随清单发来（options）。正在用的那套的 toggle / choice 写成 <html data-opt-<id>>；
-// 二次元的 characters 是关掉的角色包 id 列表，由 anime-cast.js 经 disabledPacks() 读。
+// addons 是关掉的装饰来源（附加包 id；主题自己的 id 代表它自带的装饰项），由 decorations.js 经 disabledSources() 读。
 export function skinOption(skin, key) {
   const t = (window.__tzaThemes || SKINS).find((x) => x.id === skin);
   const st = (t?.settings || []).find((x) => x.id === key);
   if (!st) return undefined;
   const v = t.options?.[key];
-  if (st.type === "characters") return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  if (st.type === "addons") return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
   if (st.type === "toggle") return v === "on" || v === "off" ? v : st.default || "off";
   return (st.options || []).some((o) => o.value === v) ? v : st.default || st.options?.[0]?.value;
 }
 
-export function disabledPacks() {
-  return new Set(skinOption(ANIME, "characters") || []);
+// 这套主题在设置里关掉的装饰来源；没有 addons 设置项就是全开。
+export function disabledSources(skin) {
+  const t = (window.__tzaThemes || SKINS).find((x) => x.id === skin);
+  const st = (t?.settings || []).find((x) => x.type === "addons");
+  return new Set(st ? skinOption(skin, st.id) : []);
 }
 
 export function applyOptions(skin = skinPreference()) {

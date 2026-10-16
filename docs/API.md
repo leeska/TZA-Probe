@@ -31,7 +31,7 @@
 | GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：站点名称 `site_name`（标签页标题与品牌区的名字，最多 32 字，空串恢复默认的 TZA Probe）、只读的 logo 地址 `site_logo`（未上传为空）、默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
 | PUT、DELETE /admin/panel/logo | 站点 logo：PUT 的请求体就是图片本身（不走 JSON），类型按内容判断，只收 PNG / JPEG / GIF / WebP / ICO / SVG，最大 512 KB，回 `{"site_logo":"/site-logo?v=…"}`；SVG 含脚本、事件属性、外链引用或 DOCTYPE 时 400，超大 413。DELETE 移除，回到内置字标。文件存在数据目录的 `branding/`，不在数据库备份里 |
 | GET、POST /admin/themes、DELETE /admin/themes/{id} | 主题包清单（内置 + 已安装，市场装的带 `"source":"market"`）、上传 zip、删除，见 [THEMES.md](THEMES.md#接口) |
-| PUT /admin/themes/{id}/settings | 改主题设置（主题在 theme.json 里声明的菜单，二次元的角色包开关也在其中），请求体只写要改的项，回 `{options}`，见 [THEMES.md](THEMES.md#主题设置) |
+| PUT /admin/themes/{id}/settings | 改主题设置（主题在 theme.json 里声明的菜单，附加包开关也在其中），请求体只写要改的项，回 `{options}`，见 [THEMES.md](THEMES.md#主题设置) |
 | GET /admin/plugins | 已安装的插件：`[{id, kind, name, hint, version, author, source, permissions, settings, targets}]`，`source` 为 `market` 表示从市场装的；通知插件带设置表单 `settings`（key、label、type、required、secret、help、placeholder、default、options），目标集带目标个数 `targets` |
 | POST /admin/plugins/inspect | 请求体是插件 zip（`Content-Type: application/zip`）：只校验、不安装，回同样的结构（面板据此列出权限请管理员确认）；不合规 400 |
 | POST /admin/plugins | 安装上传的插件 zip，回装好的插件；同 id 替换（之前是市场装的就改为本地）。格式见 [PLUGINS.md](PLUGINS.md) |
@@ -70,10 +70,10 @@ Server 默认连官方 TZA-CC（`https://tza.cc`），`--cc-url` / `TZA_CC_URL` 
 | 方法与路径（/api/v1/admin/market…） | 请求 | 响应 |
 | --- | --- | --- |
 | GET /status | — | `{"configured","url","probe","trusted_keys","bound","instance_id","account","bound_at","other_url","pending":{"user_code","verify_url","expires_at","interval"}}`；`other_url` 表示本机存的是另一个 CC 的绑定（不会发给当前 CC）。从不回 token |
-| GET /catalog?type=skin\|characters\|plugin&q=&page= | `q` ≤ 64 字，`page` 1–1000 | `{"items":[{"id","type","name","summary","author":{"name","handle"},"latest","price","downloads","updated_at","swatch","cover","url","kind","permissions","installed":{"version","source":"market\|local"}}],"page","more"}`；`kind`（notify / targets）与 `permissions`（最新兼容版本能做的事）只有插件有；`price` 以分计，0 为免费；`owned` 为 true 表示免费或绑定的 TZA-CC 账号拥有这个付费包，付费包未拥有时安装会被 CC 拒绝（平台关闭商业功能时目录里不会出现付费包）；`installed` 是本机同 id 的包，没装就没有；本机还不支持的类型或插件 kind、id 不合规的条目被滤掉，不在 CC 同源上的 `cover` / `url` 被清空 |
+| GET /catalog?type=skin\|addon\|plugin&for=&q=&page= | `q` ≤ 64 字，`page` 1–1000 | `{"items":[{"id","type","name","summary","author":{"name","handle"},"latest","price","downloads","updated_at","swatch","cover","url","kind","permissions","installed":{"version","source":"market\|local"}}],"page","more"}`；`kind`（notify / targets）与 `permissions`（最新兼容版本能做的事）只有插件有；`price` 以分计，0 为免费；`owned` 为 true 表示免费或绑定的 TZA-CC 账号拥有这个付费包，付费包未拥有时安装会被 CC 拒绝（平台关闭商业功能时目录里不会出现付费包）；`installed` 是本机同 id 的包，没装就没有；本机还不支持的类型或插件 kind、id 不合规的条目被滤掉，不在 CC 同源上的 `cover` / `url` 被清空 |
 | GET /packages/{id} | — | 上面的字段加 `description`、`screenshots`（CC 同源 URL）、`versions:[{"version","changelog","probe","size","published_at","compatible"}]`（新的在前；`compatible` 要 CC 的判断与本机按 `probe` 范围的判断都成立） |
 | POST /install | `{"id":"matcha","version":"1.2.0"}`，`version` 省略即当前 Probe 能用的最新版 | `{"id","type","kind","name","version","source":"market","permissions"}`：按包里是 theme.json 还是 plugin.json 装进主题或插件目录（插件另回 `kind` 与 `permissions`）。同 id 的已装包（市场或本地）被替换 |
-| GET /updates | — | `{"updates":[{"id","version","latest"}]}`：市场装的包（主题、角色包与插件）里 CC 认为有兼容新版的；没有市场装的包时不请求 CC |
+| GET /updates | — | `{"updates":[{"id","version","latest"}]}`：市场装的包（主题、附加包与插件）里 CC 认为有兼容新版的；没有市场装的包时不请求 CC |
 | POST /connect | 可选 `{"name":"实例名"}`（≤ 40 字，默认 TZA Probe） | `{"user_code","verify_url","expires_at","interval"}`：开始设备码绑定，设备码本身留在 Server |
 | POST /connect/poll | — | `{"status":"pending\|bound\|expired\|none","account","interval"}`；比 `interval` 更快的轮询直接回 pending、不请求 CC |
 | DELETE /connect | — | 取消进行中的绑定并解绑：通知 CC 撤销 token、删除本机 `cc-instance`。204；CC 没确认时仍删本机凭据，回 200 `{"warning":"…"}` |
@@ -108,7 +108,7 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 
 - `display`：公开卡片显示哪些探测结果。`route_region` 是回程显示的地区，`latency_region` 留空沿用它；两者须与所绑任务的目标地区逐字一致。保存时去掉首尾空白，新填或改动的地区必须出现在内置目录或某个任务的目标地区里，否则 400 并指出是哪个地区（节点原有的值不受影响，照常可编辑）。`latency_carriers` / `route_carriers` 只在这台机器真有的探测项里再筛一道，留空显示全部；回程只有电信、联通、移动三网。
 - `region`（节点所在地区）只做展示，不参与匹配，不做这项检查。
-- `character`：二次元主题里这台节点用哪个角色，可省略（按节点名、地区自动选）。填二次元主题自带的角色 id（`generic`、`jp-nosla-gen2` 等）或「角色包 id/角色 id」；所在角色包被删后自动退回自动匹配。
+- `decoration`：这台节点卡片上的主题装饰，可省略（按节点名、地区、默认项自动选）。写成「包 id/装饰项 id」，取当前外观或依附它的附加包在 `theme.json` 里声明的 `decorations`（见 [THEMES.md](THEMES.md#按节点挑装饰)）；当前外观不提供这一项时按自动处理。
 - `vendor`：商家（如 netcup / Hytron），可省略。公开卡片上显示为名牌，公开接口照常返回，前台搜索也按它匹配；最多 60 字节，首尾不能有空格。
 - `billing`：`reset_at` 是周期锚点；`free` 见下文。
 - `line`：线路带宽 `mbps` 与商家降速规则。

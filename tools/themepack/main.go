@@ -61,12 +61,13 @@ func pack(dir, out string) error {
 }
 
 // zipDir packs a folder's regular files with theme.json at the root, skipping
-// dot files the way the Server and TZA-CC do.
+// dot files the way the Server and TZA-CC do, and the folder's README.md (the
+// package's documentation lives in the repository, not in the zip).
 func zipDir(dir string) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !d.Type().IsRegular() || strings.HasPrefix(d.Name(), ".") {
+		if err != nil || d.IsDir() || !d.Type().IsRegular() || strings.HasPrefix(d.Name(), ".") || d.Name() == "README.md" {
 			return err
 		}
 		rel, err := filepath.Rel(dir, p)

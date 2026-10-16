@@ -12,7 +12,7 @@
    ③ 双手层（带 alpha 的双手，压在看板上沿，修补被板沿吃掉的那几像素指尖）。
    展开态看板从牌子上沿一直铺到卡片底部（下半身被板盖住、数据一眼看全）；收起态看板缩成一条矮板
    （正好盖住原图那块牌子），板条上方露头/上身、下方露出**同一张图里**的裙摆/腿/鞋，整张图连续无拼接。
-   立绘画在卡片的通用装饰槽里：背景层 card-backdrop 是人物、前景层 card-overlay 是双手（角色由 web/anime-cast.js 挑），
+   立绘画在卡片的通用装饰槽里：背景层 card-backdrop 是人物、前景层 card-overlay 是双手（角色由面板按本包 theme.json 的 decorations 挑），
    图片本体在本主题包的 anime/*.webp，拆图脚本 scripts/anime-split-layers.py。
 
    明暗仍走 data-theme，所以这是同一套语言的浅色与深色两份令牌。
@@ -604,12 +604,12 @@ html[data-skin="anime"][data-theme="dark"] ::-webkit-scrollbar-thumb {
 
 /* 面：白底 + 2px 粉描边 + 实色贴纸投影（不是模糊的灰阴影）。角色卡另有自己的牌面配色，不在此列。 */
 html[data-skin="anime"] :is(.panel, .overview-tile, .hero-meta, .public-header, .admin-top, .toolbar, .sidebar, .webhook-panel, .admin-stats > div, .detail-stats > div, .login-panel form),
-html[data-skin="anime"] .node-card:not([data-cast]) {
+html[data-skin="anime"] .node-card:not([data-deco]) {
   border: 2px solid var(--anime-border);
   box-shadow: var(--anime-shadow-sm);
 }
 
-html[data-skin="anime"] :is(.overview-tile, .node-card:not([data-cast])):hover {
+html[data-skin="anime"] :is(.overview-tile, .node-card:not([data-deco])):hover {
   border-color: var(--anime-ring);
   box-shadow: var(--anime-shadow-md);
 }
@@ -802,15 +802,15 @@ html[data-skin="anime"] ::-webkit-scrollbar-thumb {
 
 /* 商家名牌：角色卡上挂在看板上沿正中、两只手之间，像一枚别在牌子上的名牌——角色本身只按地区区分，
    商家靠这块 HTML 名牌换字（用户：「只做地区，选中该主题时可以替换名牌上的字」）。
-   它是卡片上单独的一层（app.js 的 [data-part="card-plate"]）：看板盒子会裁掉超出板沿的部分、双手层又整块压在
+   它是卡片上单独的一层（装饰槽 [data-part="card-plate"]）：看板盒子会裁掉超出板沿的部分、双手层又整块压在
    看板上，放进板里会被切掉一半。高度按板顶算（--cast-board-top，与看板同一个变量），收起态板顶不动，
    名牌也就照样挂在板条上。颜色跟角色牌面走（--cast-accent）。板里那枚默认小牌只在卡片视图藏掉——
    列表视图没有看板，照旧用那枚小牌。 */
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .vendor-plate {
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .vendor-plate {
   display: none;
 }
 
-html[data-skin="anime"] .node-card[data-cast] [data-part="card-plate"] {
+html[data-skin="anime"] .node-card[data-deco] [data-part="card-plate"] {
   display: block;
   position: absolute;
   top: calc(var(--cast-board-top, 201.66px) - 22px);
@@ -857,9 +857,8 @@ html[data-skin="anime"] .node-card[data-cast] [data-part="card-plate"] {
      板顶 = 图顶偏移 12px + 图高 × 牌子上沿比例 − 板唇
      --cast-board-top = 板顶（距卡顶）；卡片内容高 = 板顶 + 板高
      板条高 = 图高 × (牌子下沿比例 − 牌子上沿比例) + 2 × 板唇
-   跑在真浏览器里时由 app.js 的 layoutCastCards() 实测板高后写这三个变量；CSS 里每台机给一份
-   按板高 461px 算出的近似常量兜底（jsdom / 关 JS 时用）。
-   立绘画在卡片的通用装饰槽里：背景层 card-backdrop 是人物、前景层 card-overlay 是双手（角色由 web/anime-cast.js 挑），
+   这三个变量由下面「人物图 / 看板顶 / 收起态板条的几何」那条规则按 --cast-top-frac 直接算出。
+   立绘画在卡片的通用装饰槽里：背景层 card-backdrop 是人物、前景层 card-overlay 是双手（角色由面板按本包 theme.json 的 decorations 挑），
    图片本体在本主题包的 anime/*.webp，拆图脚本 scripts/anime-split-layers.py。
    -------------------------------------------------------------------------- */
 
@@ -882,12 +881,12 @@ html[data-skin="anime"] [data-part="card-backdrop"] {
   pointer-events: none;
 }
 
-/* 一张人物图一条规则：data-cast 的值 = web/anime-cast.js 里的 id，图片是本包的 anime/<id>.webp。 */
-html[data-skin="anime"] [data-part="card-backdrop"][data-cast="jp-nosla-gen2"],
-html[data-skin="anime"] [data-part="card-backdrop"][data-cast="de-nosla-fra"],
-html[data-skin="anime"] [data-part="card-backdrop"][data-cast="us-vmiss-tri"],
-html[data-skin="anime"] [data-part="card-backdrop"][data-cast="us-bwh-dc9"],
-html[data-skin="anime"] [data-part="card-backdrop"][data-cast="generic"] {
+/* 一张人物图一条规则：data-deco 的值 = anime/<装饰项 id>（本包 theme.json 的 decorations），图片是本包的 anime/<id>.webp。 */
+html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/jp-nosla-gen2"],
+html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/de-nosla-fra"],
+html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/us-vmiss-tri"],
+html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/us-bwh-dc9"],
+html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/generic"] {
   background-image: var(--cast-art-url);
 }
 
@@ -899,7 +898,7 @@ html[data-skin="anime"][data-theme="dark"] [data-part="card-overlay"] {
 }
 
 /* 夜版在她脚下垫一层很淡的冷光：深色鞋 / 裤与夜色之间留出轮廓，不再糊成一片。 */
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco] {
   background-image:
     radial-gradient(58% 42% at 50% 26%, color-mix(in srgb, var(--cast-accent) 18%, transparent), transparent 72%),
     radial-gradient(74% 34% at 50% 100%, color-mix(in srgb, var(--cast-accent) 16%, transparent), transparent 72%),
@@ -907,7 +906,7 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] {
 }
 
 /* 夜版板面上的辅助文字（副标 / 说明）提一档亮度：深板面上灰字对比度偏低。 */
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco] {
   --muted: #c2c9dd;
   --subtle: #9aa3bd;
 }
@@ -942,7 +941,7 @@ html[data-skin="anime"] .node-card:hover {
 
 /* 她身后的那圈光：按角色强调色，落在卡片自己的底上（立绘是透明底，光就从她身后透出来）。
    只能挂在卡片上：人物层的 ::before/::after 都画在立绘之上。 */
-html[data-skin="anime"] .node-card[data-cast] {
+html[data-skin="anime"] .node-card[data-deco] {
   background-image:
     radial-gradient(58% 42% at 50% 26%, color-mix(in srgb, var(--cast-accent) 16%, transparent), transparent 72%),
     radial-gradient(70% 30% at 50% 100%, color-mix(in srgb, var(--cast-accent) 10%, transparent), transparent 70%);
@@ -951,14 +950,14 @@ html[data-skin="anime"] .node-card[data-cast] {
 
 /* --------------------------------------------------------------------------
    N+2. 牌面配色：立绘之外，卡片本体也跟着角色的风格走
-   - app.js 在卡壳上挂 data-cast（人物层在卡片**内部**，父级读不到它的 data-cast，
-     所以卡壳上再挂一份；两处都出自 castId()，不会漂）。
+   - 面板在卡壳上挂 data-deco（人物层在卡片**内部**，父级读不到它的 data-deco，
+     所以卡壳上再挂一份；两处是面板同一次挑选的结果，不会漂）。
    - 只改「材质」——牌面底色、格子底色、描边、进度轨、强调色；正文令牌（--ink/--muted）、
      字号、行高、排版一律不碰，所以数据可读性不变，夜版也只是换成对应的暗色。
-   - 加一台机器时的四处对齐：人物层 / 双手层 / 名单 / 样式规则（配色与几何），
-     由 web/anime_cast_test.go 一起守住（少了哪一样直接红）。
+   - 添加内置角色时，同步 theme.json 的 decorations 与本文件的图片、双手、配色和几何规则；
+     具体约定见本主题的 README.md。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] .node-card[data-cast] {
+html[data-skin="anime"] .node-card[data-deco] {
   --glass-bg: var(--cast-board);
   --glass-bg-subtle: var(--cast-cell);
   --glass-border: var(--cast-line);
@@ -972,9 +971,9 @@ html[data-skin="anime"] .node-card[data-cast] {
   border-color: var(--cast-line);
 }
 
-/* 角色包里的角色（data-cast-pack）：没有逐人的规则，图片、牌子比例、眨眼节奏与两套配色由 app.js 的
-   packVars() 写在卡壳上（--pack-*-l / --pack-*-d），这里按明暗从两套里取，再配一层与强调色同色的点纹。 */
-html[data-skin="anime"] .node-card[data-cast-pack] {
+/* 角色包里的角色（data-deco-pack 不是 anime）：没有逐人的规则，图片、牌子比例、眨眼节奏与两套配色来自
+   清单（见下面那条 --deco-* 的映射，--pack-*-l / --pack-*-d），这里按明暗从两套里取，再配一层与强调色同色的点纹。 */
+html[data-skin="anime"] .node-card[data-deco-pack]:not([data-deco-pack="anime"]) {
   --cast-board: var(--pack-board-l);
   --cast-cell: var(--pack-cell-l);
   --cast-line: var(--pack-line-l);
@@ -985,7 +984,7 @@ html[data-skin="anime"] .node-card[data-cast-pack] {
   --cast-motif-size: 15px 15px;
 }
 
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast-pack] {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco-pack]:not([data-deco-pack="anime"]) {
   --cast-board: var(--pack-board-d);
   --cast-cell: var(--pack-cell-d);
   --cast-line: var(--pack-line-d);
@@ -995,19 +994,50 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast-pack] {
   --cast-motif: radial-gradient(circle at 50% 50%, rgba(var(--pack-accent-rgb-d), 0.12) 1.1px, transparent 1.4px);
 }
 
+/* 人物图 / 看板顶 / 收起态板条的几何，全由牌子上沿比例 --cast-top-frac 推出（推导见上面 N 段注释）：
+     图高 = (板面基准高 457 − 板唇 6 − 脚下留白 14) / (1 − 上沿比例)
+     板顶 = 图顶留白 12 + 图高 × 上沿比例 − 板唇 6
+     板条高 = 108（收起态：放得下名字 + 一行地区·分组，并整块盖住原图那块牌子）
+   板面基准高是常量（不量内容），所以这里用 CSS 直接算，四舍五入到 0.01px。 */
+html[data-skin="anime"] .node-card[data-deco] {
+  --cast-figure-h: round(calc(437px / (1 - var(--cast-top-frac, 0.3))), 0.01px);
+  --cast-board-top: round(calc(6px + 437px / (1 - var(--cast-top-frac, 0.3)) * var(--cast-top-frac, 0.3)), 0.01px);
+  --cast-plate-h: 108px;
+}
+
+/* 角色包（"type": "addon", "for": "anime"）里的角色：面板把清单里的图片与数值写成卡壳上的
+   --deco-<名字>，这里接到本包自己的变量上（名字的约定见 themes/anime/README.md）。 */
+html[data-skin="anime"] .node-card[data-deco-pack]:not([data-deco-pack="anime"]) {
+  --cast-art-url: var(--deco-art);
+  --cast-hands-url: var(--deco-hands, none);
+  --cast-blink-url: var(--deco-blink, none);
+  --cast-top-frac: var(--deco-plate-top);
+  --cast-bot-frac: var(--deco-plate-bottom);
+  --cast-blink-dur: var(--deco-blink-dur, 5s);
+  --cast-blink-delay: var(--deco-blink-delay, 0.2s);
+  --pack-board-l: var(--deco-board-light);
+  --pack-cell-l: var(--deco-cell-light);
+  --pack-line-l: var(--deco-line-light);
+  --pack-track-l: var(--deco-track-light);
+  --pack-accent-l: var(--deco-accent-light);
+  --pack-accent-rgb-l: var(--deco-accent-rgb-light);
+  --pack-board-d: var(--deco-board-dark);
+  --pack-cell-d: var(--deco-cell-dark);
+  --pack-line-d: var(--deco-line-dark);
+  --pack-track-d: var(--deco-track-dark);
+  --pack-accent-d: var(--deco-accent-dark);
+  --pack-accent-rgb-d: var(--deco-accent-rgb-dark);
+}
+
 /* JP-NoSla-Gen2 · 家人云 × 日本：樱花粉牌面 + 极淡花瓣点。
    --cast-top-frac / --cast-bot-frac 是**牌子上下外沿占立绘高的比例**（逐台实测，见
-   scripts/anime-split-layers.py 的 PLATE）；--cast-figure-h / --cast-board-top / --cast-plate-h
-   是按板高 461px 推出的一组兜底常量（真浏览器里由 app.js 的 layoutCastCards() 覆盖）。 */
-html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
+   scripts/anime-split-layers.py 的 PLATE）。 */
+html[data-skin="anime"] .node-card[data-deco="anime/jp-nosla-gen2"] {
   --cast-art-url: url("anime/jp-nosla-gen2.webp");           /* 人物层：整张立绘，一张连续图 */
   --cast-hands-url: url("anime/jp-nosla-gen2-hands.webp");   /* 双手层：压在看板上沿的那双手 */
   --cast-top-frac: 0.302614;   /* 牌子上外沿 = 463/1530（立绘高 1530） */
   --cast-bot-frac: 0.438562;   /* 牌子下外沿 = 671/1530 */
-  --cast-figure-h: 626.63px;   /* 图高 = (461 − 3 − 14) / (1 − 0.302614) */
-  --cast-board-top: 195.65px;  /* 板顶 = 12 + 图高 × 0.302614 − 3（板唇） */
-  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
-  --cast-plate-h: 108.00px;     /* 板条高 = 图高 × (0.438562 − 0.302614) + 2 × 3 */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与几何规则里的 457 同值） */
   --cast-board: #ffe7f1;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #f6b1cc;
@@ -1022,15 +1052,12 @@ html[data-skin="anime"] .node-card[data-cast="jp-nosla-gen2"] {
 }
 
 /* DE-NoSla-FRA · 家人云 × 德国：暖白牌面 + 黑红金细竖纹 */
-html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
+html[data-skin="anime"] .node-card[data-deco="anime/de-nosla-fra"] {
   --cast-art-url: url("anime/de-nosla-fra.webp");
   --cast-hands-url: url("anime/de-nosla-fra-hands.webp");
   --cast-top-frac: 0.305062;   /* 牌子上外沿 = 464/1521 */
   --cast-bot-frac: 0.426035;   /* 牌子下外沿 = 648/1521 */
-  --cast-figure-h: 628.83px;   /* 图高 = (461 − 3 − 14) / (1 − 0.305062) */
-  --cast-board-top: 197.82px;  /* 板顶 = 12 + 图高 × 0.305062 − 3 */
-  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
-  --cast-plate-h: 108.00px;     /* 板条高 = 图高 × (0.426035 − 0.305062) + 2 × 3 */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与几何规则里的 457 同值） */
   --cast-board: #fff5e0;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e7cd90;
@@ -1045,15 +1072,12 @@ html[data-skin="anime"] .node-card[data-cast="de-nosla-fra"] {
 }
 
 /* US-VMISS-TRI · VMISS × 美国：极淡天蓝牌面 + 蓝色小点（官网的蓝点涂鸦） */
-html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
+html[data-skin="anime"] .node-card[data-deco="anime/us-vmiss-tri"] {
   --cast-art-url: url("anime/us-vmiss-tri.webp");
   --cast-hands-url: url("anime/us-vmiss-tri-hands.webp");
   --cast-top-frac: 0.295635;   /* 牌子上外沿 = 447/1512 */
   --cast-bot-frac: 0.444444;   /* 牌子下外沿 = 672/1512 */
-  --cast-figure-h: 620.42px;   /* 图高 = (461 − 3 − 14) / (1 − 0.295635) */
-  --cast-board-top: 189.43px;  /* 板顶 = 12 + 图高 × 0.295635 − 3 */
-  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
-  --cast-plate-h: 108.00px;     /* 板条高 = 图高 × (0.444444 − 0.295635) + 2 × 3 */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与几何规则里的 457 同值） */
   --cast-board: #e9f2ff;
   --cast-cell: rgb(255 255 255 / 0.58);
   --cast-line: #aec9ff;
@@ -1068,15 +1092,12 @@ html[data-skin="anime"] .node-card[data-cast="us-vmiss-tri"] {
 }
 
 /* US-BWH-DC9 · 搬瓦工 × 美国：暖琥珀牌面 + 斜向金线 */
-html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
+html[data-skin="anime"] .node-card[data-deco="anime/us-bwh-dc9"] {
   --cast-art-url: url("anime/us-bwh-dc9.webp");
   --cast-hands-url: url("anime/us-bwh-dc9-hands.webp");
   --cast-top-frac: 0.298177;   /* 牌子上外沿 = 458/1536 */
   --cast-bot-frac: 0.427083;   /* 牌子下外沿 = 656/1536 */
-  --cast-figure-h: 622.65px;   /* 图高 = (461 − 3 − 14) / (1 − 0.298177) */
-  --cast-board-top: 191.66px;  /* 板顶 = 12 + 图高 × 0.298177 − 3 */
-  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
-  --cast-plate-h: 108.00px;     /* 板条高 = 图高 × (0.427083 − 0.298177) + 2 × 3 */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与几何规则里的 457 同值） */
   --cast-board: #fff3dc;
   --cast-cell: rgb(255 255 255 / 0.56);
   --cast-line: #e9c684;
@@ -1092,15 +1113,12 @@ html[data-skin="anime"] .node-card[data-cast="us-bwh-dc9"] {
 
 /* GENERIC · 通用人物：名单以外的线路机共用这一张中性立绘（无任何国家 / 商家元素）。
    冷灰蓝牌面 + 极淡圆点；几何与那四台同一套约定，只是上下沿比例按这张画布实测。 */
-html[data-skin="anime"] .node-card[data-cast="generic"] {
+html[data-skin="anime"] .node-card[data-deco="anime/generic"] {
   --cast-art-url: url("anime/generic.webp");
   --cast-hands-url: url("anime/generic-hands.webp");
   --cast-top-frac: 0.284314;   /* 牌子上外沿 = 435/1530（画布 585×1530） */
   --cast-bot-frac: 0.421569;   /* 牌子下外沿 = 645/1530 */
-  --cast-figure-h: 610.60px;   /* 图高 = (461 − 6 − 14) / (1 − 0.284314) */
-  --cast-board-top: 179.60px;  /* 板顶 = 12 + 图高 × 0.284314 − 6（板唇） */
-  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与 app.js BOARD_H 同值） */
-  --cast-plate-h: 108.00px;     /* 收起态板条高（兜底常量；真浏览器里由 layoutCastCards() 写同一值） */
+  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与几何规则里的 457 同值） */
   /* 通用角色（名单外的机器都用她）跟主题走：粉色牌面 + 粉紫星点（以前是灰蓝，整页因此偏淡）。 */
   --cast-board: #fff0f7;
   --cast-cell: rgb(255 255 255 / 0.66);
@@ -1116,7 +1134,7 @@ html[data-skin="anime"] .node-card[data-cast="generic"] {
 }
 
 /* 夜版：牌面各自的暗色，纹样用同色系提亮一点；强调色提亮保证在深底上够亮 */
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="jp-nosla-gen2"] {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco="anime/jp-nosla-gen2"] {
   --cast-board: #201b22;
   --cast-cell: #282029;
   --cast-line: #3a2c38;
@@ -1126,7 +1144,7 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="jp-nosla-gen2"]
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(255 154 184 / 0.10) 1.1px, transparent 1.4px);
 }
 
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="de-nosla-fra"] {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco="anime/de-nosla-fra"] {
   --cast-board: #1f1e1a;
   --cast-cell: #26241e;
   --cast-line: #3a352a;
@@ -1136,7 +1154,7 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="de-nosla-fra"] 
   --cast-motif: repeating-linear-gradient(90deg, rgb(255 255 255 / 0.022) 0 7px, rgb(196 30 58 / 0.05) 7px 14px, rgb(240 190 60 / 0.05) 14px 21px);
 }
 
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-vmiss-tri"] {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco="anime/us-vmiss-tri"] {
   --cast-board: #171d2b;
   --cast-cell: #1d2536;
   --cast-line: #2b3a5c;
@@ -1146,7 +1164,7 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-vmiss-tri"] 
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(111 155 255 / 0.11) 1.1px, transparent 1.4px);
 }
 
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco="anime/us-bwh-dc9"] {
   --cast-board: #221c13;
   --cast-cell: #2a2216;
   --cast-line: #3c2f1c;
@@ -1156,7 +1174,7 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="us-bwh-dc9"] {
   --cast-motif: repeating-linear-gradient(135deg, rgb(224 166 60 / 0.10) 0 5px, transparent 5px 15px);
 }
 
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="generic"] {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco="anime/generic"] {
   --cast-board: #24193f;
   --cast-cell: #2c2150;
   --cast-line: #4a3478;
@@ -1182,7 +1200,7 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast="generic"] {
    不收的话内容盒只剩卡宽 − 44px，板会被判成越过内容盒（scripts/card-overflow-check.mjs）。
    收成 0 之后内容盒 = 卡边内 1px：看板按「(100% + 2px) = 卡宽」算，画面一像素不变。
    下内边距也收成 0：板上沿 / 板下沿两态都直接贴着卡片底边。 */
-html[data-skin="anime"] .node-card[data-cast] {
+html[data-skin="anime"] .node-card[data-deco] {
   padding-left: 0;
   padding-right: 0;
   padding-bottom: 0;
@@ -1191,15 +1209,15 @@ html[data-skin="anime"] .node-card[data-cast] {
 /* 卡片视图里看板要一路铺到卡片底边：内容少的卡原先比同行最高的卡矮，网格拉伸出来的那十几像素
    留在卡底（gpt-6.1-sol 看图点名「板没到卡底、GENERIC 底部留白更大」）。把卡壳做成竖向 flex、
    看板 flex: 1 0 auto，多出来的高度就都给板面。两态结构相同 → 卡外尺寸仍然 Δ0。 */
-html[data-skin="anime"] .node-grid:not(.node-list) .node-card[data-cast] {
+html[data-skin="anime"] .node-grid:not(.node-list) .node-card[data-deco] {
   display: flex;
   flex-direction: column;
 }
-html[data-skin="anime"] .node-grid:not(.node-list) .node-card[data-cast] .card-body {
+html[data-skin="anime"] .node-grid:not(.node-list) .node-card[data-deco] .card-body {
   flex: 1 0 auto;
 }
 
-html[data-skin="anime"] .node-card[data-cast] .card-body {
+html[data-skin="anime"] .node-card[data-deco] .card-body {
   position: relative;
   z-index: 2;
   box-sizing: border-box;
@@ -1216,7 +1234,7 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
   margin: calc(var(--cast-board-top, 201.66px) - 22px) calc((100% + 2px) * 0.03 - 1px) 0;
   height: auto;
   /* 板面**至少**和基准板高一样高：内容少的线路机板面不会被数据行撑矮，人物缩放才有统一基准
-     （--cast-board-min 与 app.js 的 BOARD_H 必须同值）。内容真的更多时板面照旧往下长。 */
+     （--cast-board-min 与几何规则里的 457 必须同值）。内容真的更多时板面照旧往下长。 */
   min-height: var(--cast-board-min, 457px);
   padding: 10px;
   /* 板上不再画任何实线边框：手指压在板上沿时，2px 实线会横穿指节（用户 2026-10-10 原话
@@ -1231,7 +1249,7 @@ html[data-skin="anime"] .node-card[data-cast] .card-body {
   box-shadow: 0 18px 22px -16px rgb(64 34 54 / 0.32);
   overflow: hidden;
 }
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco] .card-body {
   background-color: #2c2933;
   background-image: linear-gradient(90deg,
     rgb(255 255 255 / 0.035) 0, rgb(255 255 255 / 0) 16px,
@@ -1241,7 +1259,7 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast] .card-body {
 }
 
 /* 板内数据区：正常流、不滚动、不裁切。 */
-html[data-skin="anime"] .node-card[data-cast] .card-body > [id] {
+html[data-skin="anime"] .node-card[data-deco] .card-body > [id] {
   flex: 0 0 auto;
   min-height: 0;
   overflow: visible;
@@ -1249,7 +1267,7 @@ html[data-skin="anime"] .node-card[data-cast] .card-body > [id] {
 
 /* 头部（状态点 + 名字 + 折叠箭头 + 标签）固定在板顶：名字两态落在同一个坐标。
    卡片头在板内的上偏移 = 2px 边框 + 10px 内边距，展开 / 收起都一样。 */
-html[data-skin="anime"] .node-card[data-cast] .card-top { margin-bottom: 0; flex: 0 0 auto; }
+html[data-skin="anime"] .node-card[data-deco] .card-top { margin-bottom: 0; flex: 0 0 auto; }
 
 /* 名字固定在板面正中：水平居中、两态同一坐标。状态点与折叠箭头都绝对定位在两端，
    不参与居中，所以名字的横向中心就是板面的中心。 */
@@ -1321,29 +1339,29 @@ html[data-skin="anime"] .detail-open:hover { border-color: var(--cast-accent, #e
    **不设 overflow 裁切、不设滚动容器**。
 
    整段用 :where(.node-grid:not(.node-list)) 限死卡片视图。原来这些规则挂在
-   `.node-card[data-cast]` 上，列表里 4 台有立绘的行也在命中——它们的指标格字号/间距（metric
+   `.node-card[data-deco]` 上，列表里 4 台有立绘的行也在命中——它们的指标格字号/间距（metric
    10px 副标、progress 5px、metrics-grid gap 7px 12px）因此比 8 台无立绘的行（11px 副标、
    gap 10px 16px）小一档，指标格高 43 vs 51px，两套观感。:where() 的权重是 0，
    所以选择器优先级与改动前完全一样，只是匹配范围收进卡片视图。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .node-sub { margin-bottom: 6px; gap: 8px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .node-sub p { font-size: 11px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metrics-grid { gap: 7px 12px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric { gap: 3px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric > div { font-size: 12px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric > div span { font-size: 11px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric progress { height: 5px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .metric small { font-size: 10px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .card-stats { padding-top: 6px; margin-bottom: 6px; gap: 6px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .route-heading { margin-bottom: 3px; font-size: 10px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .route-heading b { font-size: 10px; padding: 1px 5px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .latency-bands { gap: 4px; margin-bottom: 6px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .net-band { padding: 3px 6px; gap: 3px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .net-band .band-metric strong { font-size: 11.5px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .net-band .band-bars .quality-bars,
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .net-band .band-bars .quality-bar { height: 6px !important; min-height: 6px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .route-grid { gap: 6px; }
-html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast] .route-label { padding: 5px 2px; gap: 2px 4px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .node-sub { margin-bottom: 6px; gap: 8px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .node-sub p { font-size: 11px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .metrics-grid { gap: 7px 12px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .metric { gap: 3px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .metric > div { font-size: 12px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .metric > div span { font-size: 11px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .metric progress { height: 5px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .metric small { font-size: 10px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .card-stats { padding-top: 6px; margin-bottom: 6px; gap: 6px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .route-heading { margin-bottom: 3px; font-size: 10px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .route-heading b { font-size: 10px; padding: 1px 5px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .latency-bands { gap: 4px; margin-bottom: 6px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .net-band { padding: 3px 6px; gap: 3px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .net-band .band-metric strong { font-size: 11.5px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .net-band .band-bars .quality-bars,
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .net-band .band-bars .quality-bar { height: 6px !important; min-height: 6px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .route-grid { gap: 6px; }
+html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-deco] .route-label { padding: 5px 2px; gap: 2px 4px; }
 
 /* --------------------------------------------------------------------------
    N+5. 收起态：板压到只剩顶部一条（名字 + 状态点 + 折叠箭头 + 一行「地区 · 分组」）
@@ -1355,7 +1373,7 @@ html[data-skin="anime"] :where(.node-grid:not(.node-list)) .node-card[data-cast]
    牌子下沿以下紧接就是裙子，整张图连续、无拼接。
    名字 / 状态点 / 折叠箭头在板内的上偏移两态完全相同，所以名字两态落在同一坐标。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body {
+html[data-skin="anime"] .node-card[data-deco][data-rolled="true"] .card-body {
   overflow: visible;
   background: none;
   border-color: transparent;
@@ -1365,17 +1383,17 @@ html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body {
    地址族开关与其余数据块同样藏起来。那一行再用 position: relative 往上提，落到名字正下方——
    relative 的位移不动布局，板盒高度不受影响。上提量 = 藏起来的「详细」行（22px + 4px 下边距）
    + 卡片头里藏起来的系统胶囊那半行（28px）= 54px，所以那一行落在板顶 44px 处（名字行是 12..40px）。 */
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body > [id] > :not(.node-sub) { visibility: hidden; }
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body > [id] > .node-sub > :not(p) { visibility: hidden; }
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body > [id] > .node-sub {
+html[data-skin="anime"] .node-card[data-deco][data-rolled="true"] .card-body > [id] > :not(.node-sub) { visibility: hidden; }
+html[data-skin="anime"] .node-card[data-deco][data-rolled="true"] .card-body > [id] > .node-sub > :not(p) { visibility: hidden; }
+html[data-skin="anime"] .node-card[data-deco][data-rolled="true"] .card-body > [id] > .node-sub {
   position: relative;
   top: -54px;
 }
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-top .card-actions { visibility: hidden; }
+html[data-skin="anime"] .node-card[data-deco][data-rolled="true"] .card-top .card-actions { visibility: hidden; }
 
 /* 收起态的板条：与 .card-body 同一圈边框 / 圆角，高 --cast-plate-h，板顶与展开态完全相同
    （left/right/top 各 −2px 把 2px 边框也算进来，于是板条的边框盒与展开态板盒的边框盒对齐）。 */
-html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body::before {
+html[data-skin="anime"] .node-card[data-deco][data-rolled="true"] .card-body::before {
   content: "";
   position: absolute;
   left: 0;
@@ -1392,7 +1410,7 @@ html[data-skin="anime"] .node-card[data-cast][data-rolled="true"] .card-body::be
   box-shadow: 0 18px 22px -16px rgb(64 34 54 / 0.32);
   z-index: 0;
 }
-html[data-skin="anime"][data-theme="dark"] .node-card[data-cast][data-rolled="true"] .card-body::before {
+html[data-skin="anime"][data-theme="dark"] .node-card[data-deco][data-rolled="true"] .card-body::before {
   background-color: #2c2933;
   background-image: linear-gradient(90deg,
     rgb(255 255 255 / 0.035) 0, rgb(255 255 255 / 0) 16px,
@@ -1402,13 +1420,13 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-cast][data-rolled="tr
 
 /* 裸眼 3D：指针在卡上时转一点，人物 / 双手各自多走一点（层间差速）——两层必须走同样的位移，
    手才不会从手腕上滑下来。 */
-html[data-skin="anime"] .node-card[data-cast].is-tilt {
+html[data-skin="anime"] .node-card[data-deco].is-tilt {
   transform: perspective(1100px) rotateX(calc(var(--tilt-ny, 0) * -3deg))
     rotateY(calc(var(--tilt-nx, 0) * 3.4deg));
   transition: transform 0.3s ease-out;
 }
-html[data-skin="anime"] .node-card[data-cast].is-tilt [data-part="card-backdrop"],
-html[data-skin="anime"] .node-card[data-cast].is-tilt [data-part="card-overlay"] {
+html[data-skin="anime"] .node-card[data-deco].is-tilt [data-part="card-backdrop"],
+html[data-skin="anime"] .node-card[data-deco].is-tilt [data-part="card-overlay"] {
   transform: translate3d(calc(var(--tilt-nx, 0) * -9px), calc(var(--tilt-ny, 0) * -6px), 0);
   transition: transform 0.3s ease-out;
 }
@@ -1481,10 +1499,10 @@ html[data-skin="anime"] [data-part="card-overlay"] {
 }
 
 /* --------------------------------------------------------------------------
-   N+6. 不在立绘名单里的节点（没有 data-cast）：数据面板维持原来的浅底小圆角，不受看板几何影响
+   N+6. 没挑到角色的节点（没有 data-deco）：数据面板维持原来的浅底小圆角，不受看板几何影响
    （看板那套宽度 / 外边距会把它顶到卡片外——线上 12 台里有 8 台是这种卡）。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] .node-card:not([data-cast]) .card-body {
+html[data-skin="anime"] .node-card:not([data-deco]) .card-body {
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -1495,7 +1513,7 @@ html[data-skin="anime"] .node-card:not([data-cast]) .card-body {
   border-radius: 14px;
   background: color-mix(in srgb, var(--cast-board, #fff) 62%, #ffffff);
 }
-html[data-skin="anime"][data-theme="dark"] .node-card:not([data-cast]) .card-body {
+html[data-skin="anime"][data-theme="dark"] .node-card:not([data-deco]) .card-body {
   background: color-mix(in srgb, var(--cast-board, #1b1f2e) 70%, #000000);
 }
 
@@ -1512,17 +1530,17 @@ html[data-skin="anime"] .node-grid.node-list [data-part="card-overlay"] {
    只属于卡片。列表是一行一台的紧凑行：12 台里 4 台有立绘、8 台没有，两种行**必须长得一模一样**，
    否则同一列在两种行里 x 坐标对不齐（实测指标列 224 vs 221）、行高不等，底色一粉一米白像两套皮肤。
    做法：
-     · 把 [data-cast] 的取色令牌在本视图内指回皮肤默认——牌面 → --anime-sign 白面、
+     · 把 [data-deco] 的取色令牌在本视图内指回皮肤默认——牌面 → --anime-sign 白面、
        牌面描边 → --anime-sign-line 发丝线、格子底 → --anime-muted、进度轨 / 强调色 → 皮肤主色，
-       立绘纹理 --cast-motif 置空。卡片视图那条 `.node-card[data-cast]{…}` 本身不改，
+       立绘纹理 --cast-motif 置空。卡片视图那条 `.node-card[data-deco]{…}` 本身不改，
        它引用的都是这几个令牌，所以这里只换令牌、不动规则。
-     · 卡片视图为了「立绘通铺到卡边」对 [data-cast] 写的 padding-left/right:0（和 [data-rolled]
+     · 卡片视图为了「立绘通铺到卡边」对 [data-deco] 写的 padding-left/right:0（和 [data-rolled]
        的 padding-bottom:0）在列表里收回 16px 20px，六格起点才与无立绘行对齐。
      · 关掉卡片视图的裸眼 3D 倾斜：列表里整行跟着指针转会变成「有立绘的行会动、别的行不动」。
-   立绘两层（[data-part="card-backdrop"] / [data-part="card-overlay"]）在列表里根本不被 app.js 渲染，
+   立绘两层（[data-part="card-backdrop"] / [data-part="card-overlay"]）在列表里根本不被面板渲染，
    元素级的 display:none 兜底见上面 N+6 下方那两条。
    -------------------------------------------------------------------------- */
-html[data-skin="anime"] .node-grid.node-list .node-card[data-cast] {
+html[data-skin="anime"] .node-grid.node-list .node-card[data-deco] {
   --cast-board: var(--anime-sign);
   --cast-cell: var(--anime-muted);
   --cast-line: var(--anime-sign-line);
@@ -1539,13 +1557,13 @@ html[data-skin="anime"] .node-grid.node-list .node-card[data-cast] {
   --glass-border-subtle: unset;
   padding: 16px 20px;
 }
-html[data-skin="anime"][data-theme="dark"] .node-grid.node-list .node-card[data-cast] {
+html[data-skin="anime"][data-theme="dark"] .node-grid.node-list .node-card[data-deco] {
   --cast-accent-rgb: 255, 154, 184;
   --cast-track: #262b3c;
 }
 
 /* 裸眼 3D 只属于卡片视图（层间差速是给立绘的）。 */
-html[data-skin="anime"] .node-grid.node-list .node-card[data-cast].is-tilt {
+html[data-skin="anime"] .node-grid.node-list .node-card[data-deco].is-tilt {
   transform: none;
 }
 
@@ -1579,7 +1597,7 @@ html[data-skin="anime"] .node-grid.node-list .node-card {
   }
 
   html[data-skin="anime"] .node-grid.node-list .node-card,
-  html[data-skin="anime"] .node-grid.node-list .node-card[data-cast] {
+  html[data-skin="anime"] .node-grid.node-list .node-card[data-deco] {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
     min-width: 0;

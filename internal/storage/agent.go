@@ -304,7 +304,7 @@ func (s *Store) Lease(ctx context.Context, node string, now time.Time) ([]model.
 }
 
 // jobID is a new job's primary key: eight hex digits of the issue time, then 64
-// random bits — 24 characters like before, so nothing that stores or validates
+// random bits — 24 hex digits like before, so nothing that stores or validates
 // one changes. The time prefix is for the B-tree: with a fully random id every
 // insert and every retention delete landed on a random page of the primary-key
 // index, about a millisecond a row once the table no longer fits the cache.

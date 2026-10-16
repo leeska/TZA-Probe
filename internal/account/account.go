@@ -172,7 +172,7 @@ func Ensure(dir string) (username, password string, created bool, err error) {
 	return DefaultUsername, password, true, nil
 }
 
-// RandomPassword returns 16 characters from an alphabet without look-alikes
+// RandomPassword returns 16 symbols from an alphabet without look-alikes
 // (0/O, 1/l/I), so a password read off a terminal is typed right first time.
 func RandomPassword() string {
 	const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -180,7 +180,7 @@ func RandomPassword() string {
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
-	// 256 % 56 != 0 leaves a slight bias; at 16 characters that is still well
+	// 256 % 56 != 0 leaves a slight bias; at 16 symbols that is still well
 	// over 90 bits, far beyond what the login rate limit lets anyone try.
 	for i := range b {
 		b[i] = alphabet[int(b[i])%len(alphabet)]

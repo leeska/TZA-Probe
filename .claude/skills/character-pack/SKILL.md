@@ -5,7 +5,8 @@ description: 为 TZA Probe 的二次元主题生成按地区匹配的角色包�
 
 # 生成二次元角色包
 
-角色包是 `"type": "characters"` 的主题包（格式见 `docs/THEMES.md` 的「角色包」一节）。工具在
+角色包是依附二次元主题的附加包（`"type": "addon", "for": "anime"`，每个角色是一个装饰项；通用格式见 `docs/THEMES.md` 的「附加包」，
+二次元对图片与数值名字的约定见 `themes/anime/README.md`）。工具在
 `tools/character-pack/make_pack.py`，说明在同目录的 `README.md`。你负责设计角色、把关每一步的图，脚本负责出图与处理。
 
 ## 1. 确定要做哪些地区
@@ -62,7 +63,7 @@ python3 tools/character-pack/make_pack.py build pack.json --work <工作目录> 
 
 ## 6. 交付
 
-- 把 zip 交给用户：后台「主题 → 上传主题包 / 角色包」（面板要先装好二次元主题）。用户给了面板地址和管理员 token 并要求你代传时，
+- 把 zip 交给用户：后台「主题 → 上传主题包 / 附加包」（面板要先装好二次元主题）。用户给了面板地址和管理员 token 并要求你代传时，
   `POST <面板地址>/api/v1/admin/themes`，请求体就是 zip，`Content-Type: application/zip`，`Authorization: Bearer <token>`。
-- 提醒用户：角色按节点的「所在地区」自动匹配（与 `regions` 逐字一致），节点设置里也能手动指定；
+- 提醒用户：角色按节点的「所在地区」自动匹配（与 `regions` 逐字一致），节点设置的「主题装饰」里也能手动指定（「包 id/角色 id」）；
   节点的「商家」字段会显示在看板上沿的名牌上；同一 `id` 的角色包再传一次即覆盖升级。

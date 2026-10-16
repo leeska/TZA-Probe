@@ -4,10 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +16,7 @@ import (
 	"github.com/leeska/TZA-Probe/web"
 )
 
-// 主题设置：二次元在 theme.json 里声明的菜单（角色包、眨眼与呼吸）由后台保存，随首屏清单发给访客；
+// 主题设置：主题在 theme.json 里声明的菜单（附加包开关、一个 toggle）由后台保存，随首屏清单发给访客；
 // 没声明过的键、不合规的值、没有设置菜单的主题都拒收。
 func TestThemeSettings(t *testing.T) {
 	dir := t.TempDir()
@@ -44,42 +42,39 @@ func TestThemeSettings(t *testing.T) {
 		return resp.StatusCode, string(b)
 	}
 
-	// 装仓库里的官方二次元主题包。
+	// 一套声明了设置菜单的主题包。
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	root := filepath.Join("..", "..", "themes", "anime")
-	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, _ := filepath.Rel(root, p)
-		data, _ := os.ReadFile(p)
-		w, _ := zw.Create(filepath.ToSlash(rel))
-		w.Write(data)
-		return nil
-	})
+	for name, data := range map[string]string{
+		"theme.json": `{"id":"postcard","name":"明信片","chrome":{"light":"#f4efe4","dark":"#16171c"},"swatch":["#f4efe4","#fffdf8","#c8372d"],"styles":["theme.css"],
+		  "settings":[{"id":"addons","type":"addons","label":"附加包"},{"id":"motion","type":"toggle","label":"动效","default":"on"}]}`,
+		"theme.css": `:root[data-skin="postcard"]{--accent:#c8372d}`,
+	} {
+		w, _ := zw.Create(name)
+		w.Write([]byte(data))
+	}
 	zw.Close()
 	if code, body := request("POST", "/api/v1/admin/themes", "application/zip", buf.Bytes()); code != 200 {
-		t.Fatalf("install anime: %d %s", code, body)
+		t.Fatalf("install postcard: %d %s", code, body)
 	}
 
 	put := func(id, body string) (int, string) {
 		return request("PUT", "/api/v1/admin/themes/"+id+"/settings", "application/json", []byte(body))
 	}
-	if code, body := put("anime", `{"motion":"off"}`); code != 200 || !strings.Contains(body, `"motion":"off"`) {
+	if code, body := put("postcard", `{"motion":"off"}`); code != 200 || !strings.Contains(body, `"motion":"off"`) {
 		t.Fatalf("set motion: %d %s", code, body)
 	}
-	if code, body := put("anime", `{"characters":["builtin","europe","europe"]}`); code != 200 || !strings.Contains(body, `"characters":["builtin","europe"]`) || !strings.Contains(body, `"motion":"off"`) {
-		t.Fatalf("set characters (merged with motion, deduplicated): %d %s", code, body)
+	if code, body := put("postcard", `{"addons":["postcard","europe","europe"]}`); code != 200 || !strings.Contains(body, `"addons":["postcard","europe"]`) || !strings.Contains(body, `"motion":"off"`) {
+		t.Fatalf("set addons (merged with motion, deduplicated): %d %s", code, body)
 	}
 	for name, c := range map[string]struct {
 		id, body string
 		want     int
 	}{
-		"unknown key":   {"anime", `{"nope":"on"}`, 400},
-		"bad toggle":    {"anime", `{"motion":"maybe"}`, 400},
-		"bad pack list": {"anime", `{"characters":"europe"}`, 400},
-		"empty patch":   {"anime", `{}`, 400},
+		"unknown key":   {"postcard", `{"nope":"on"}`, 400},
+		"bad toggle":    {"postcard", `{"motion":"maybe"}`, 400},
+		"bad pack list": {"postcard", `{"addons":"europe"}`, 400},
+		"empty patch":   {"postcard", `{}`, 400},
 		"no settings":   {"glass", `{"motion":"off"}`, 400},
 		"no such theme": {"matcha", `{"motion":"off"}`, 404},
 	} {
@@ -89,11 +84,11 @@ func TestThemeSettings(t *testing.T) {
 	}
 
 	_, list := request("GET", "/api/v1/admin/themes", "", nil)
-	if !strings.Contains(list, `"type":"characters","label":"角色包"`) || !strings.Contains(list, `"options":{"characters":["builtin","europe"],"motion":"off"}`) {
+	if !strings.Contains(list, `"type":"addons","label":"附加包"`) || !strings.Contains(list, `"options":{"addons":["postcard","europe"],"motion":"off"}`) {
 		t.Fatalf("admin list lacks the settings menu or its values: %s", list)
 	}
 	_, boot := request("GET", "/theme-default.js", "", nil)
-	if !strings.Contains(boot, `"options":{"characters":["builtin","europe"],"motion":"off"}`) {
+	if !strings.Contains(boot, `"options":{"addons":["postcard","europe"],"motion":"off"}`) {
 		t.Fatalf("the boot script must carry the values to visitors: %s", boot)
 	}
 }

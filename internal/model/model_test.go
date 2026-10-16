@@ -496,20 +496,21 @@ func TestNodeVendor(t *testing.T) {
 		}
 	}
 	n.Vendor = ""
-	for _, ok := range []string{"", "generic", "jp-nosla-gen2", "europe/germany"} {
-		n.Character = ok
+	for _, ok := range []string{"", "postcard/stamp", "europe/germany"} {
+		n.Decoration = ok
 		if err := n.Validate(); err != nil {
-			t.Errorf("character %q: %v", ok, err)
+			t.Errorf("decoration %q: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"../x", "Europe/Germany", "a/b/c", "europe/", "/germany"} {
-		n.Character = bad
+	for _, bad := range []string{"../x", "stamp", "Europe/Germany", "a/b/c", "europe/", "/germany"} {
+		n.Decoration = bad
 		if err := n.Validate(); err == nil {
-			t.Errorf("character %q accepted", bad)
+			t.Errorf("decoration %q accepted", bad)
 		}
 	}
+	n.Decoration = ""
 	raw, _ := json.Marshal(Node{Name: "x"})
-	if strings.Contains(string(raw), "vendor") || strings.Contains(string(raw), "character") {
+	if strings.Contains(string(raw), "vendor") || strings.Contains(string(raw), "decoration") {
 		t.Fatalf("empty vendor must be omitted so stored configs stay unchanged: %s", raw)
 	}
 }

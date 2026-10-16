@@ -5,7 +5,7 @@ import { detail } from "./detail.js";
 import { regionOptions } from "./regions.js";
 import { regionCombobox, wireComboboxes } from "./region-picker.js";
 import { alertSummary } from "./admin-alerts.js";
-import { characterChoices } from "./anime-cast.js";
+import { decorationChoices } from "./decorations.js";
 import { state, content, field, check, select, withCurrent, nodeName, confirmAction, render, go } from "./admin-state.js";
 import { agentLine, batchBar, isStale, loadUpgrades, pickCell, pickHead, upgradeButton, wireFleet } from "./admin-fleet.js";
 const defaults = {
@@ -13,7 +13,7 @@ const defaults = {
   group: "",
   region: "",
   vendor: "",
-  character: "",
+  decoration: "",
   order: 0,
   public: true,
   display: { route_region: "", latency_region: "", latency_carriers: [], route_carriers: [] },
@@ -48,14 +48,14 @@ function firingPill(n, firing) {
   const kinds = (firing || []).filter((e) => e.node_id === n.id).map((e) => kindName[e.kind] || e.kind);
   return kinds.length ? ` <span class="pill warn" title="${esc(kinds.join("、"))}">告警 ${kinds.length}</span>` : "";
 }
-// 二次元主题里这台节点画哪个角色：留空自动（节点名 → 地区 → 角色包默认 → 通用角色），也可以
-// 指定内置角色或角色包里的任意一个。角色名来自上传的角色包，拼进下拉框前转义。
-// 现值不在候选里（它所在的角色包已删）也留着一项，保存表单不会悄悄把它换掉——卡片上它已经退回自动。
-function characterSelect(current) {
-  const choices = characterChoices();
+// 这台节点卡片上的主题装饰：留空自动（节点名 → 地区 → 默认项，见 decorations.js），也可以指定任一已装
+// 主题或附加包里的装饰项。名字来自上传的清单，拼进下拉框前转义。只有当前外观提供的项会生效。
+// 现值不在候选里（它所在的包已删）也留着一项，保存表单不会悄悄把它换掉——卡片上它已经退回自动。
+function decorationSelect(current) {
+  const choices = decorationChoices();
   const options = [["", "自动（按节点名、地区匹配）"], ...choices.map((c) => [esc(c.key), esc(`${c.name}（${c.source}）`)])];
-  if (current && !choices.some((c) => c.key === current)) options.push([esc(current), esc(`${current}（角色包已删除，按自动显示）`)]);
-  return select("角色（二次元主题）", "character", options, esc(current));
+  if (current && !choices.some((c) => c.key === current)) options.push([esc(current), esc(`${current}（所在的包已删除，按自动显示）`)]);
+  return select("主题装饰", "decoration", options, esc(current));
 }
 
 // 节点绑了探测任务，但没有一项落在卡片的回程 / 延迟地区里：公开卡片只会写「该地区暂无探测任务」，
@@ -372,7 +372,7 @@ function nodeForm(existing) {
   const d = modal(
     existing ? "编辑节点" : "添加节点",
     `<form id="node-form">
-<div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${field("商家（显示为卡片名牌，留空不显示）", "vendor", n.vendor || "", "text", 'maxlength="60" list="vendor-list" placeholder="如 netcup / Hytron" autocomplete="off"')}<datalist id="vendor-list">${[...new Set(state.nodes.map((x) => x.vendor).filter(Boolean))].sort().map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>${regionCombobox("节点所在地区", "region", n.region, options)}${characterSelect(n.character || "")}${check("在公开页面展示", "public", n.public)}</div></div>
+<div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${field("商家（显示为卡片名牌，留空不显示）", "vendor", n.vendor || "", "text", 'maxlength="60" list="vendor-list" placeholder="如 netcup / Hytron" autocomplete="off"')}<datalist id="vendor-list">${[...new Set(state.nodes.map((x) => x.vendor).filter(Boolean))].sort().map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>${regionCombobox("节点所在地区", "region", n.region, options)}${decorationSelect(n.decoration || "")}${check("在公开页面展示", "public", n.public)}</div></div>
 <div class="form-section"><h3>公开卡片</h3><p class="hint">卡片按这里的地区挑选三网的探测结果，地区要和任务目标的地区一致才对得上；三网之外的目标（常用海外、自定义）一个一行，不受地区限制。回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / 9929 等），IPv4 与 IPv6 分开检测。</p><div class="form-grid">${regionCombobox("回程地区", "representative", n.display.route_region, cardOptions, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("延迟地区（留空沿用回程地区）", "latency_region", n.display.latency_region, cardOptions, { placeholder: "沿用回程地区" })}</div><div class="option-groups card-carriers"><div class="option-group"><span class="option-label">显示延迟的运营商</span>${carriers("latency_carrier:", ["电信", "联通", "移动", "其他"], n.display.latency_carriers)}</div><div class="option-group"><span class="option-label">显示回程的运营商</span>${carriers("route_carrier:", ["电信", "联通", "移动"], n.display.route_carriers)}</div></div><p class="hint">只在这台机器实际有探测的运营商里筛选，每组至少勾一项；不勾「其他（国际）」就不显示海外目标那几行。回程只有三网。</p></div>
 <div class="form-section"><h3>流量与计费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.billing.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
       "流量计费方式",
@@ -458,7 +458,7 @@ function nodeForm(existing) {
       group: get("group"),
       region: get("region"),
       vendor: get("vendor").trim(),
-      character: get("character"),
+      decoration: get("decoration"),
       // 顺序只由列表拖动决定（POST /admin/nodes/order），表单原样带回。
       order: n.order,
       public: f.has("public"),

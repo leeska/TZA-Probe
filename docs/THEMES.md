@@ -1,10 +1,11 @@
-# 主题包与角色包
+# 主题包与附加包
 
 面板的外观风格（右上角那颗调色盘按钮）由两部分组成：
 
 - **内置皮肤**：现代极简（默认）与液态玻璃，打包在程序里。
 - **主题包**：后台「主题」页从 TZA-CC 市场安装（见[市场](#市场tza-cc)），或上传 zip；存在数据目录的 `themes/` 下，不用重新编译。
-  官方的复古印刷、二次元也是主题包，源码在仓库的 [`themes/`](../themes)，`go run ./tools/themepack themes/*` 打成 zip（发行包里也带一份 `themes/*.zip`，不连市场时上传它们）。
+- **附加包**：依附某一套主题的扩展包（`"type": "addon"`），给它添更多按节点挑选的装饰项，见[附加包](#附加包)。
+  官方的复古印刷、二次元也是主题包，源码在仓库的 [`themes/`](../themes)（各自的用法见包目录里的 README），`go run ./tools/themepack themes/*` 打成 zip（发行包里也带一份 `themes/*.zip`，不连市场时上传它们）。
 
 装好的主题包和内置皮肤一样出现在外观菜单里，也能在「面板设置 → 外观与品牌 → 默认外观」里设成访客的首屏皮肤。没配过默认外观的部署，访客首屏是现代极简。
 
@@ -52,7 +53,7 @@ matcha.zip
 | `settings` | 可省略：这套主题的设置菜单，见下面的[主题设置](#主题设置)。 |
 | `base` | 可省略：叠在哪一层上，`"glass"`（默认，液态玻璃）或 `"plain"`（只有组件层），见[基础层](#基础层)。 |
 | `layout` | 可省略：卡片的布局变体（板面段落、密度、默认视图），见[布局变体](#布局变体)。 |
-| `features` | 可省略：面板为这套主题打开的能力。目前只有 `"characters"`（在卡片装饰槽里画角色、角色包对它生效），只有二次元（id `anime`）能声明，见[卡片装饰槽](#卡片装饰槽)。 |
+| `decorations` | 可省略：按节点挑选的装饰项，最多 60 项，见[按节点挑装饰](#按节点挑装饰)。 |
 
 ## 主题设置
 
@@ -70,12 +71,12 @@ matcha.zip
 | 字段 | 说明 |
 | --- | --- |
 | `id` | 1–24 位小写字母、数字或连字符，以字母开头，同一主题里不重复。也是样式表里 `data-opt-<id>` 的名字。 |
-| `type` | `toggle`（开关，值 `on` / `off`）、`choice`（单选，2–8 个 `options`）或 `characters`（角色包开关，只有二次元能用，见下）。 |
+| `type` | `toggle`（开关，值 `on` / `off`）、`choice`（单选，2–8 个 `options`）或 `addons`（装饰来源开关，最多一项，见下）。 |
 | `label` / `hint` | 菜单里的名字（≤ 20 字）与一行说明（≤ 60 字，可省略）。 |
 | `options` | 只给 `choice`：每项 `value`（规则同 `id`，互不重复）与 `label`（≤ 20 字）。 |
 | `default` | 没调过时的值。`toggle` 省略即 `off`，`choice` 省略即第一个选项。 |
 
-最多 6 项；角色包（`"type": "characters"` 的包）不带 `settings`。不合规的 `settings` 会让整个包被拒收，错误信息指出是哪一项。
+最多 6 项；附加包不带 `settings`。不合规的 `settings` 会让整个包被拒收，错误信息指出是哪一项。
 
 **样式表怎么用**：这套主题正在用时，面板把每项 `toggle` / `choice` 的当前值写在 `<html>` 上（首屏前就写好，不闪）：
 
@@ -86,12 +87,12 @@ html[data-skin="matcha"][data-opt-density="compact"] .node-grid { gap: 12px; }
 
 换到别的主题时这些属性会被清掉，所以选择器带上自己的 `data-skin` 即可，不会串到别的主题。
 
-**二次元的「角色包」**：二次元（官方包 `anime`）的设置菜单里有一项 `"type": "characters"`，列出「内置角色」和每个已装的角色包，
-各带一个开关；关掉的整包不参与挑角色（连节点里手动指定的也跳过），最后总有通用角色兜底。角色包的更新、删除和「从市场添加」也都在这个菜单里——角色包是二次元的附加内容，不是市场的一个分类（TZA-CC 网页上也列在二次元的详情页里）。
-v1.0.0 的二次元包没有 `settings`，面板也会给它补上这一项。官方二次元包另有一项「眨眼与呼吸」（`motion`），关掉后立绘静止。
+**附加包开关**（`"type": "addons"`）：菜单里列出这套主题自带的装饰项（主题声明了 `decorations` 时）和每个依附它的附加包，
+各带一个开关；关掉的来源不参与挑装饰（连节点里手动指定的也跳过），但主题自带的 `default` 项总是最后的兜底。依附它的附加包的
+更新、删除和「从市场添加」也都在这个菜单里——附加包不是市场的一个分类，而是挂在它依附的主题下面。没有这一项的主题，依附它的附加包照样生效，只是不能单独关。
 
 接口：设置值随 `GET /api/v1/admin/themes` 与首屏的 `/theme-default.js` 发出（每个主题的 `options`）；
-`PUT /api/v1/admin/themes/{id}/settings`，请求体只写要改的项，如 `{"motion": "off"}`、`{"characters": ["builtin", "europe"]}`（关掉的角色包 id 列表，`builtin` 指内置角色）。
+`PUT /api/v1/admin/themes/{id}/settings`，请求体只写要改的项，如 `{"motion": "off"}`、`{"addons": ["europe"]}`（关掉的来源 id 列表，主题自己的 id 代表它自带的装饰项）。
 没声明过的项、不合规的值、没有设置菜单的主题都回 400。
 
 ## 怎么写样式表
@@ -194,7 +195,7 @@ html[data-skin="matcha"] [data-part="node-card"].is-offline { --card-bg: #f3f1ea
 | `data-part` | 是什么 |
 | --- | --- |
 | `public-header` / `hero-meta` / `overview` / `overview-tile` / `toolbar` / `node-grid` | 公开页：顶栏、最近同步、总览区与其中的格子、搜索筛选条、节点列表容器（列表视图时还带 `.node-list`） |
-| `node-card` | 一台节点的卡片（`.is-online` / `.is-offline` 表示状态）。卡壳上还带 `data-region` / `data-group` / `data-vendor`（节点的所在地区、分组、商家，没填就没有这个属性），可以按它们选装饰图；二次元下另有 `data-cast` |
+| `node-card` | 一台节点的卡片（`.is-online` / `.is-offline` 表示状态）。卡壳上还带 `data-region` / `data-group` / `data-vendor`（节点的所在地区、分组、商家，没填就没有这个属性），可以按它们选装饰图；挑中了装饰项时还有 `data-deco` / `data-deco-pack`（见[按节点挑装饰](#按节点挑装饰)） |
 | `card-body` / `card-top` / `node-sub` | 卡片内容、头部（状态点 + 名字 + 标签）、地区 · 分组那一行 |
 | `metrics-grid` / `metric` | CPU / 内存 / 磁盘 / 周期用量四格，及其中每一格 |
 | `card-stats` | 速率、累计流量、到期与价格那条信息带 |
@@ -256,6 +257,7 @@ html[data-skin="matcha"] body::before {
 | `card_sections` | 卡片头部（名字、标签、「详细」）下面的板面段落，按写的顺序排，没写的段落不显示。可用：`node-sub`（地区 · 分组与地址族开关）、`metrics-grid`（CPU / 内存 / 磁盘 / 周期用量）、`card-stats`（速率、累计、到期与价格）、`network`（延迟色带与三网回程）。每项最多一次；写成 `[]` 就只剩头部。不写即默认的四段全显示。只影响卡片视图，列表视图不变。 |
 | `density` | `"cozy"`（默认）或 `"compact"`：紧凑时卡片内边距、卡片间距、四格指标的间距各收一档。面板写成 `<html data-density="compact">`，样式表也可以按它再调。 |
 | `default_view` | `"card"` 或 `"list"`：访客没在右上角选过展示方式时的默认视图。访客选过就以访客的为准。 |
+| `align_rows` | 默认 `true`：同一排卡片的段落补齐到同一高度。卡片不是一摞段落的主题（比如上半张是整幅装饰图）写 `false`。 |
 
 不合规的 `layout`（不认识的段落名、重复、取值不对）会让整个包被拒收，错误信息指出是哪一项。
 
@@ -266,8 +268,8 @@ html[data-skin="matcha"] body::before {
 | `data-part` | 位置 | 内容 |
 | --- | --- | --- |
 | `card-backdrop` | 卡片第一个子元素，在看板（`card-body`）下面 | 空，画背景用 |
-| `card-backdrop-layer` | `card-backdrop` 里面的一层 | 空，给第二张图（比如二次元的闭眼帧）用 |
-| `card-overlay` | 卡片里看板之后，叠在看板上面 | 空，画前景（角标、折角、二次元的双手） |
+| `card-backdrop-layer` | `card-backdrop` 里面的一层 | 空，给第二张图（比如眨眼时换的那一帧）用 |
+| `card-overlay` | 卡片里看板之后，叠在看板上面 | 空，画前景（角标、折角、压在看板上的手） |
 | `card-plate` | 最后，只在节点填了商家时有 | 商家名文本 |
 
 它们都在卡片的 `overflow: hidden` 之内；带 `data-bleed` 的层允许铺到卡片边框（越过内边距）。叠放顺序靠 `position` / `z-index` 自己定，
@@ -278,8 +280,47 @@ html[data-skin="postcard"] [data-part="card-backdrop"] { display: block; positio
 html[data-skin="postcard"] [data-part="node-card"][data-region="日本"] [data-part="card-backdrop"] { background-image: url("img/japan.webp"); }
 ```
 
-二次元的角色立绘就是这套槽位：背景层是人物、背景层里那层是闭眼帧、前景层是双手、名牌挂在看板上沿。它在 `theme.json` 里声明了
-`"features": ["characters"]`，面板因此会按节点挑角色（卡壳与背景层上的 `data-cast`，见[角色包](#角色包)），并且不再把同一排卡片的段落拉齐（人物卡的上半张是立绘）。
+要按节点换整套图（每台机一张不同的画），用下面的[按节点挑装饰](#按节点挑装饰)：面板挑好之后把图片写成变量，样式表接到槽位上。
+
+另外两样卡片状态也交给主题来画：点卡片头的名字收起 / 展开，面板在卡壳上写 `data-rolled="true"`（状态按节点记在访客本地，默认样式不改变卡片）；
+指针在卡上移动时，面板在卡壳上写 `--tilt-nx` / `--tilt-ny`（指针相对卡心的位置，-1…1）并加上 `.is-tilt`，可以拿来做倾斜或层间视差。
+
+### 按节点挑装饰
+
+主题包（以及依附它的附加包）可以在清单里声明 `decorations`：一组装饰项，每项写匹配规则、几张图片和若干数值。面板给每张卡挑一项：
+
+1. 节点设置里手动指定的「主题装饰」（写成 `包 id/项 id`）；
+2. `nodes` 里有这台节点名的项（不分大小写）；
+3. `regions` 里有这台节点「所在地区」的项（逐字比对）；
+4. 标了 `"default": true` 的项；
+5. 主题自带的 `default` 项（即使在设置里关掉了主题自带的项）。
+
+每一步都是附加包排在主题自带的项前面（装附加包就是为了替换），在[附加包开关](#主题设置)里关掉的来源整个跳过。
+挑中后面板在卡壳上写 `data-deco="<包 id>/<项 id>"` 与 `data-deco-pack="<包 id>"`（背景层上也有一份 `data-deco`），
+并把这一项的每张图片、每个数值写成卡壳上的 CSS 变量 `--deco-<名字>`（图片是 `url(...)`）。**面板不认识这些名字的含义**，怎么用全由主题的样式表决定。
+
+```json
+"decorations": [
+  { "id": "tokyo", "name": "东京", "regions": ["日本"], "images": { "art": "img/tokyo.webp" }, "vars": { "tint": "#c8372d", "shift": "12px" } },
+  { "id": "plain", "name": "通用", "default": true, "images": { "art": "img/plain.webp" } }
+]
+```
+
+```css
+html[data-skin="postcard"] [data-part="node-card"][data-deco] [data-part="card-backdrop"] {
+  display: block;
+  background: var(--deco-art) top center / cover, var(--deco-tint, transparent);
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` / `name` | 1–32 位小写字母、数字或连字符（包内不重复）与显示名（≤ 30 字，节点设置的下拉里就是它）。 |
+| `nodes` / `regions` / `default` | 匹配规则，见上面的顺序。`nodes` 最多 50 个、`regions` 最多 30 个。 |
+| `images` | 名字 → 包内图片路径（webp / png / jpg / avif），最多 8 张。名字规则同 settings 的 `id`。 |
+| `vars` | 名字 → 值，最多 32 个。值只能是长度、数字、颜色或时间这类简单值（字母、数字、`# . , % ( ) / + -` 和空格，≤ 64 字符），不能带引号、分号或花括号。名字不能和 `images` 里的重复。 |
+
+主题自己的装饰项也可以不带图片，只写匹配规则，图放在样式表里按 `[data-deco="<包 id>/<项 id>"]` 一项一条规则挂（二次元的内置角色就是这样）。
 
 ### 再往深改
 
@@ -291,75 +332,47 @@ html[data-skin="postcard"] [data-part="node-card"][data-region="日本"] [data-p
 用相对路径引用包里的文件即可，例如 `url("img/paper.webp")`、`@font-face { src: url("fonts/x.woff2") }`。
 页面的安全策略只允许加载本站资源，**引用外部地址（CDN 字体、图床图片）不会生效**，请把文件放进包里。
 
-## 角色包
+## 附加包
 
-角色包是 `"type": "characters"` 的主题包：它不是一套外观，只给**二次元**主题（官方主题包 `anime`）添角色，后台「主题」页里在二次元的「设置」菜单中开关（见[主题设置](#主题设置)）。
-二次元没装时角色包不生效（角色包的市场就在二次元的设置菜单里，所以要先装二次元；已装的角色包在二次元被删后保留，装回即恢复）。装好后不出现在外观菜单里，
-二次元主题的卡片会按下面的顺序给每台节点挑角色：
-
-0. 在二次元的设置里被关掉的角色包（或内置角色）整包跳过；
-1. 节点设置里手动指定的「角色」（角色包被删了或被关掉就跳过）；
-2. 角色包里 `nodes` 写了这台节点名的角色；
-3. 二次元主题自带的四个专属角色（按节点名）；
-4. 角色包里 `regions` 包含这台节点「所在地区」的角色；
-5. 角色包里标了 `"default": true` 的角色；
-6. 二次元主题自带的通用角色。
+附加包是 `"type": "addon"` 的包：它不是一套外观，只给 `for` 写的那套主题添装饰项。装好后不出现在外观菜单里，
+列在它依附的主题下面（主题有附加包开关时就在那个设置菜单里开关）；那套主题没装或没在用时不生效，主题被删后附加包保留，装回即恢复。
 
 ```json
 {
   "id": "europe",
-  "type": "characters",
-  "name": "欧洲角色",
+  "type": "addon",
+  "for": "postcard",
+  "name": "欧洲邮票",
   "version": "1.0.0",
-  "characters": [
-    {
-      "id": "germany",
-      "name": "德国",
-      "regions": ["德国", "Germany"],
-      "art": "germany.webp",
-      "hands": "germany-hands.webp",
-      "blink": "germany-blink.webp",
-      "plate": { "top": 0.307, "bottom": 0.446 },
-      "palette": {
-        "light": { "board": "#eef8f7", "line": "#a8d8d3", "track": "#d3eeeb", "accent": "#2a8f86" },
-        "dark":  { "board": "#14262a", "line": "#2b4d52", "track": "#1d363a", "accent": "#6fd3c9" }
-      }
-    }
+  "decorations": [
+    { "id": "germany", "name": "德国", "regions": ["德国", "Germany"], "images": { "art": "germany.webp" }, "vars": { "tint": "#2a8f86" } }
   ]
 }
 ```
 
 | 字段 | 说明 |
 | --- | --- |
-| `id` / `name` | 角色 id（小写字母、数字、连字符）与显示名。节点里指定时写「角色包 id/角色 id」，如 `europe/germany`。 |
-| `regions` / `nodes` / `default` | 匹配规则，见上面的顺序。地区按节点「所在地区」逐字比对。 |
-| `art` | 立绘：**透明底**的全身像，双手捧着一块牌子。建议画布 585×1530（与内置角色一致），人物水平居中。 |
-| `hands` | 可选，双手层：只含手（透明底），与立绘同一画布，压在看板上沿，让手指盖住板沿。没有就省略，手会被看板盖住。 |
-| `blink` | 可选，闭眼帧：与立绘同一画布，只有眼睛不同，卡片会隔几秒眨一次眼。 |
-| `plate` | 牌子上外沿、下外沿各占立绘高度的比例（0.1–0.7、比上沿至少大 0.03）。卡片的看板按它盖在牌子上，算准了看板才严丝合缝。 |
-| `palette` | 卡片配色，浅色、深色各一套：`board` 牌面、`line` 描边、`track` 进度条底槽、`accent` 强调色（名牌、进度条、按钮），`cell` 格子底色可省略。 |
+| `for` | 必填：依附的主题 id（不能是自己）。 |
+| `decorations` | 必填，1–60 项，格式见[按节点挑装饰](#按节点挑装饰)。图片名字与数值名字要按依附的那套主题约定的来写（看那套主题的说明）。 |
+| `name` / `hint` / `version` / `author` | 同主题包。 |
 
-**自己生成角色包**：仓库与发行包里的 [`tools/character-pack`](../tools/character-pack/README.md) 能从「地区 → 角色设定」一路做到 zip：
-调图像接口出立绘与闭眼帧，自动去白底、找牌子、裁成标准画布、测 `plate`、拆双手层、按服装配色并打包。
-在 Claude Code 里打开本仓库，直接说「给香港和德国做二次元角色」即可触发 `character-pack` skill，由它设计角色、把关每张图。
-
-一个角色包最多 60 个角色；图片只收 webp / png / jpg / avif。角色包不带样式表。商家名不要画进立绘里——
-卡片会把节点的「商家」写在看板上沿的名牌上，同一个地区角色可以给不同商家的机器共用。
+附加包不带 `styles`、`settings`、`base`、`layout`、`chrome`、`swatch`：外观完全由它依附的主题决定。
+官方二次元的角色包就是依附 `anime` 的附加包，图片与数值的约定见 [themes/anime/README.md](../themes/anime/README.md)。
 
 ## 上传、升级与删除
 
 1. 把目录打成 zip：`cd examples/themes && zip -r matcha.zip matcha`
-2. 后台「主题 → 上传主题包 / 角色包」，选这个 zip。
+2. 后台「主题 → 上传主题包 / 附加包」，选这个 zip。
 3. 右上角外观菜单里就能选它；想让访客默认就看到它，在「面板设置 → 外观与品牌 → 默认外观」里选它保存。
 
 - **升级**：同一个 id 再传一次，整包替换（旧版本多出来的文件不会残留）。
-- **删除**：在「主题」页的已安装列表里点删除。正在用它的访客会回到默认皮肤；它若是前台默认，默认也回到现代极简。删掉二次元时角色包保留，但要装回二次元才生效。
+- **删除**：在「主题」页的已安装列表里点删除。正在用它的访客会回到默认皮肤；它若是前台默认，默认也回到现代极简。删掉一套主题时依附它的附加包保留，但要装回那套主题才生效。
 - **备份**：主题包在数据目录的 `themes/` 下（市场来源记录在 `themes/.market/`），**不在**「下载备份」的数据库快照里，迁移服务器时连同这个目录一起拷。
 
 ## 市场（TZA-CC）
 
 TZA-CC 是 TZA Probe 的云端市场。Server 默认使用官方 TZA-CC（`https://tza.cc`，内置其签名公钥）。后台「主题」页下方的市场
-按主题 / 角色包浏览、搜索、看详情（说明、截图、版本与更新说明），一键安装或更新；插件在「插件」页的市场里。TZA-CC 账号在「面板设置 → 账号与安全」连接。插件（通知渠道、探测目标集）的格式与安装确认见 [PLUGINS.md](PLUGINS.md)，验签与来源、更新规则与主题包相同。
+按主题浏览、搜索、看详情（附加包在它依附的主题的设置菜单里浏览）（说明、截图、版本与更新说明），一键安装或更新；插件在「插件」页的市场里。TZA-CC 账号在「面板设置 → 账号与安全」连接。插件（通知渠道、探测目标集）的格式与安装确认见 [PLUGINS.md](PLUGINS.md)，验签与来源、更新规则与主题包相同。
 `--cc-url`（或 `TZA_CC_URL`）可改连测试或私有部署的 CC，设为 `off` 关闭市场，见 [部署说明](DEPLOYMENT.md#tza-cc-市场可选)。
 
 - **不连 CC 也一样能用**：市场只是多一个来源，「主题」页上传 zip 的路径不变；CC 停服或断网，已经装好的包照常使用。

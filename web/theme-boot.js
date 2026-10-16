@@ -8,8 +8,8 @@
   // 认得的皮肤：/theme-default.js 发来的清单（内置 + 已安装的主题包）；没有清单时只认内置的两套。
   var list = window.__tzaThemes || [{ id: "shadcn" }, { id: "glass" }];
   var known = function (id) {
-    // 角色包（type: "characters"）不是外观，不能当皮肤用。
-    for (var i = 0; i < list.length; i++) if (list[i].id === id && list[i].type !== "characters") return true;
+    // 附加包（type: "addon"）不是外观，不能当皮肤用。
+    for (var i = 0; i < list.length; i++) if (list[i].id === id && list[i].type !== "addon") return true;
     return false;
   };
   // 后台默认：没配过就是内置默认（跟随系统 + 现代极简），与 model.DefaultPanel* 一致。

@@ -1,5 +1,5 @@
 // Package market is the Probe server's client of TZA-CC, the cloud catalog of
-// theme packages and character packs. The Server only calls CC when an
+// theme packages, add-ons and plugins. The Server only calls CC when an
 // administrator browses the market, installs or updates a package, or binds
 // the instance; CC never receives monitoring data. What goes out is the
 // Probe version, the instance token once bound, and the id@version of
@@ -283,7 +283,7 @@ func remoteError(status int, body []byte) error {
 	return &RemoteError{Status: status, Message: msg}
 }
 
-// clean trims text from CC to n runes and drops control characters: it ends
+// clean trims text from CC to n runes and drops control codes: it ends
 // up in error messages and the panel.
 func clean(s string, n int) string {
 	s = strings.TrimSpace(strings.Map(func(r rune) rune {
@@ -328,6 +328,8 @@ type Item struct {
 	Downloads int64    `json:"downloads"`
 	UpdatedAt string   `json:"updated_at,omitempty"`
 	Swatch    []string `json:"swatch,omitempty"`
+	// For is the skin an add-on extends.
+	For string `json:"for,omitempty"`
 	// Kind and Permissions are set for plugins only: notify | targets, and what
 	// the newest compatible release may do (tzapkg Plugin.Permissions).
 	Kind        string   `json:"kind,omitempty"`
@@ -347,7 +349,9 @@ type Catalog struct {
 
 // Query selects a catalog page.
 type Query struct {
-	Type string // "", skin or characters
+	Type string // "", skin, addon or plugin
+	// For keeps only the add-ons of this skin (with Type addon).
+	For  string
 	Q    string
 	Page int
 }
@@ -382,7 +386,7 @@ var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // installable are the package types this Server can install.
 func installable(t string) bool {
-	return t == tzapkg.TypeSkin || t == tzapkg.TypeCharacters || t == tzapkg.TypePlugin
+	return t == tzapkg.TypeSkin || t == tzapkg.TypeAddon || t == tzapkg.TypePlugin
 }
 
 // Catalog lists one page of the market, filtered by CC for this Probe version.
@@ -393,7 +397,9 @@ func (c *Client) Catalog(ctx context.Context, q Query) (Catalog, error) {
 	q.Q = strings.TrimSpace(q.Q)
 	switch {
 	case q.Type != "" && !installable(q.Type):
-		return Catalog{}, model.Invalid(`type 须为 "skin"（主题）、"characters"（角色包）或 "plugin"（插件）`)
+		return Catalog{}, model.Invalid(`type 须为 "skin"（主题）、"addon"（附加包）或 "plugin"（插件）`)
+	case q.For != "" && !tzapkg.ValidID(q.For):
+		return Catalog{}, model.Invalid("for 须为主题 id")
 	case utf8.RuneCountInString(q.Q) > maxQuery:
 		return Catalog{}, model.Invalid(fmt.Sprintf("搜索词最多 %d 个字", maxQuery))
 	case q.Page < 0 || q.Page > 1000:
@@ -408,6 +414,9 @@ func (c *Client) Catalog(ctx context.Context, q Query) (Catalog, error) {
 	}
 	if q.Q != "" {
 		params.Set("q", q.Q)
+	}
+	if q.For != "" {
+		params.Set("for", q.For)
 	}
 	var out Catalog
 	if err := c.call(ctx, http.MethodGet, []string{"catalog"}, params, nil, &out, true); err != nil {
