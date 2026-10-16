@@ -31,7 +31,24 @@ const bundle = await build({
 const errors = [];
 // 数字框的步进箭头靠样式表关掉。伪元素在 jsdom 里算不出来，所以箭头样式按内容断言，
 // 「已生效」则单独起一个小文档确认计算值。
-const styles = await readFile(path.join(root, "web/styles.css"), "utf8");
+const rawStyles = await readFile(path.join(root, "web/styles.css"), "utf8");
+// 样式表里的字号、圆角、间距、字体都写成设计令牌（var(--text-sm) 之类，见 styles.css 开头的 :root）。
+// 下面按样式表文本断言的那些规则关心的是默认值，所以先把令牌换回 :root 里的默认值再断言：
+// var(--space-3) → 12px，calc(14px * var(--radius-scale)) → 14px，没定义的组件令牌取 fallback。
+const tokenDefaults = Object.fromEntries(
+  [...rawStyles.slice(0, rawStyles.indexOf("font-family: var(--font-sans);")).matchAll(/^\s*(--[a-z0-9-]+):\s*([^;]+);/gm)].map(([, k, v]) => [k, v.replace(/\s+/g, " ").trim()]),
+);
+function resolveTokens(css) {
+  const varCall = /var\((--[a-z0-9-]+)(?:,\s*((?:[^()]|\((?:[^()]|\([^()]*\))*\))*))?\)/g;
+  for (let i = 0, prev = ""; i < 5 && prev !== css; i++) {
+    prev = css;
+    css = css
+      .replace(varCall, (m, name, fallback) => (name in tokenDefaults ? tokenDefaults[name] : /^--(card|panel|tile)-/.test(name) && fallback ? fallback : m))
+      .replace(/calc\((\d+(?:\.\d+)?px) \* 1\)/g, "$1");
+  }
+  return css;
+}
+const styles = resolveTokens(rawStyles);
 const selectSource = await readFile(path.join(root, "web/ui-select.js"), "utf8");
 assert.match(styles, /::-webkit-inner-spin-button/, "WebKit 的步进箭头同样要关掉");
 const cssProbe = new JSDOM(`<style>${styles}</style><input type="number" id="probe">`);
@@ -699,7 +716,7 @@ assert(
 );
 // 桌面 Chrome 会把 body 的 overflow 传播给视口，WebKit 不一定：html/body 上不留 overflow-y: auto，
 // 免得 body 自己变成滚动元素（那时 scrollY 恒 0、所有 scrollTop 写入落空）。
-const cssSource = await (await fetch(base + "/styles.css")).text();
+const cssSource = resolveTokens(await (await fetch(base + "/styles.css")).text());
 assert(
   !/html\s*\{[^}]*overflow-y/.test(cssSource) && !/body\s*\{[^}]*overflow-y/.test(cssSource),
   "html and body must not carry overflow-y - it can make the body itself the scroller",
@@ -1600,12 +1617,12 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert(/--press-paper:/.test(pressCSS) && /border-radius: 0 !important/.test(pressCSS), "纸底与圆角归零是皮肤底座");
   assert(/:root\[data-skin="press"\]\[data-theme="dark"\]/.test(pressCSS), "深色下要有自己的一份令牌");
   assert(homeHTML.includes('href="/shadcn.css"'), "内置的现代极简样式表写在 index.html 里");
-  const shadcnCSS = await (await fetch(base + "/shadcn.css")).text();
+  const shadcnCSS = resolveTokens(await (await fetch(base + "/shadcn.css")).text());
   const animeCSS = await themeCSS("anime");
   // anime.css 是所有皮肤共用的（index.html 里无条件挂），但每条规则都带 html[data-skin="anime"] 前缀；
   // 于是别的皮肤下那三件套是**没有样式的裸元素**——必须靠底座样式表默认藏起来（漏一个就会冒出一颗裸按钮）。
   // 这就是「加动画不要影响到其他皮肤」的第一道闸。
-  const baseCSS = await (await fetch(base + "/styles.css")).text();
+  const baseCSS = resolveTokens(await (await fetch(base + "/styles.css")).text());
   for (const cls of [".anime-cast", ".anime-hands", ".anime-blink", ".anime-fold-btn"]) {
     assert(
       new RegExp("\\" + cls + "[^{]*\\{[^}]*display: none", "s").test(baseCSS),

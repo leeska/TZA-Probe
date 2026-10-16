@@ -4,8 +4,9 @@ import { bytes } from "./format.js";
 // 折线图的三件事：鼠标停在哪一列就显示那一列的时间和数值、横坐标把日期与时间分行
 // 细分、多折线按 class 上色。页面 CSP 是 style-src 'self'，标记里的行内 style 会被
 // 忽略（颜色因此必须来自 CSS），但 CSSOM 写入（el.style.left）可用，提示框位置走它。
-export const palette = ["#ff625f", "#36c8bf", "#9b7cff", "#5a9cff", "#ffad3d", "#eb63b5", "#36c98b", "#ff873d"];
-export const colorClass = (index) => `lc${index % palette.length}`;
+// 系列色本身是 styles.css 的 --series-0..7 令牌（.lcN 读它们），主题包改令牌即可换色。
+export const SERIES = 8;
+export const colorClass = (index) => `lc${index % SERIES}`;
 
 const pad = (value) => String(value).padStart(2, "0");
 export function stamp(at) {
@@ -247,7 +248,6 @@ export function chart(samples, key, label, color = "teal", hours = 24, options =
   }
 
   const gradId = `chart-grad-${options.id || key}-${color}`;
-  const gradColor = color === "orange" ? "#ff9500" : "#007aff";
 
   const renderedSegments = segments
     .filter((pts) => pts.length > 0)
@@ -263,7 +263,7 @@ export function chart(samples, key, label, color = "teal", hours = 24, options =
     .join("");
 
   return `
-    <figure class="chart" ${payload([{ label: options.seriesLabel || label, unit, color, points }], first, last, ceiling)}>
+    <figure data-part="chart" class="chart" ${payload([{ label: options.seriesLabel || label, unit, color, points }], first, last, ceiling)}>
       <figcaption>
         <strong>${esc(label)}</strong>
         <span>0–${esc(scaleLabel)} · ${samples.length} 个历史采样 · 自动聚合</span>
@@ -271,10 +271,10 @@ export function chart(samples, key, label, color = "teal", hours = 24, options =
       <div class="chart-plot">${yAxis}<div class="chart-body">
       <svg viewBox="0 0 680 120" preserveAspectRatio="none" role="img" aria-label="${esc(label)}历史曲线，纵轴 0 到 ${esc(scaleLabel)}">
         <defs>
-          <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${gradColor}" stop-opacity="0.32" />
-            <stop offset="60%" stop-color="${gradColor}" stop-opacity="0.08" />
-            <stop offset="100%" stop-color="${gradColor}" stop-opacity="0.0" />
+          <linearGradient class="chart-grad ${color}" id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-opacity="0.32" />
+            <stop offset="60%" stop-opacity="0.08" />
+            <stop offset="100%" stop-opacity="0.0" />
           </linearGradient>
         </defs>
         <path class="gridline" d="M0 8H680 M0 59H680 M0 110H680" />

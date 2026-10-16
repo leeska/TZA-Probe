@@ -2,7 +2,7 @@
   "id": "matcha",
   "name": "抹茶",
   "hint": "示例主题包 · 平涂 · 抹茶绿",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "TZA Probe",
   "chrome": { "light": "#eef0e2", "dark": "#141811" },
   "swatch": ["#eef0e2", "#fbfaf3", "#5f8f3a"],

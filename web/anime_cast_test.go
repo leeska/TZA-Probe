@@ -63,7 +63,7 @@ func TestAnimeCastMatchesStylesheetAndAssets(t *testing.T) {
 	}
 	// 图层顺序就是 DOM 顺序：人物层 → HTML 看板 → 双手层（双手层是卡片最后一个孩子，靠 z-index 压在看板上沿）。
 	// 顺序写反了（比如手层落在看板前面）看起来就是「手被板压住」，和 CSS 里的 z-index 对不上，所以在这里钉死。
-	bodyAt := strings.Index(string(app), `${figure}<div class="card-body">`)
+	bodyAt := strings.Index(string(app), `${figure}<div data-part="card-body" class="card-body">`)
 	handsAt := strings.LastIndex(string(app), `${hands}`)
 	if bodyAt < 0 || handsAt < 0 || handsAt < bodyAt {
 		t.Error("app.js 里三层的顺序要是「人物层 → .card-body（看板）→ 双手层」")

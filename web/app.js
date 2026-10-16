@@ -91,7 +91,7 @@ function viewSwitch() {
 }
 
 function renderShell() {
-  app.innerHTML = `<header class="public-header">${brandHTML()}<nav><span class="live-label"><i></i><span class="live-text">LIVE STATUS</span></span>${skinButton()}${themeButton()}<a href="/admin" class="button quiet admin-link" aria-label="管理控制台"><span class="admin-link-full">管理控制台</span><span class="admin-link-short">后台</span> ↗</a></nav></header><main class="public-main"><section class="hero"><div class="hero-meta"><span>最近同步</span><strong id="updated">连接中</strong><small>每秒刷新</small></div></section><section id="overview" class="overview"></section><section class="toolbar"><div class="filter-controls"><div class="search"><span>⌕</span><input id="search" aria-label="搜索节点" placeholder="搜索名称 / 地区 / 分组 / 商家 / 拼音"></div><select id="group-filter" aria-label="节点分组"><option value="">全部分组</option></select></div><div class="view-bar">${viewSwitch()}</div></section><div id="nodes" class="node-grid"></div><footer><span>独立 · 轻量 · 可控</span><span>TZA PROBE · V2</span></footer></main>`;
+  app.innerHTML = `<header data-part="public-header" class="public-header">${brandHTML()}<nav><span class="live-label"><i></i><span class="live-text">LIVE STATUS</span></span>${skinButton()}${themeButton()}<a href="/admin" class="button quiet admin-link" aria-label="管理控制台"><span class="admin-link-full">管理控制台</span><span class="admin-link-short">后台</span> ↗</a></nav></header><main class="public-main"><section class="hero"><div data-part="hero-meta" class="hero-meta"><span>最近同步</span><strong id="updated">连接中</strong><small>每秒刷新</small></div></section><section id="overview" data-part="overview" class="overview"></section><section data-part="toolbar" class="toolbar"><div class="filter-controls"><div class="search"><span>⌕</span><input id="search" aria-label="搜索节点" placeholder="搜索名称 / 地区 / 分组 / 商家 / 拼音"></div><select id="group-filter" aria-label="节点分组"><option value="">全部分组</option></select></div><div class="view-bar">${viewSwitch()}</div></section><div id="nodes" data-part="node-grid" class="node-grid"></div><footer><span>独立 · 轻量 · 可控</span><span>TZA PROBE · V2</span></footer></main>`;
 
   document.querySelector("#search").oninput = (e) => {
     query = e.target.value;
@@ -188,7 +188,7 @@ async function refresh() {
 }
 
 function meter(label, value, sub = "") {
-  return `<div class="metric"><div><span>${label}</span><strong>${value == null ? "—" : value.toFixed(1) + "%"}</strong></div><progress max="100" value="${value ?? 0}" aria-label="${label}"></progress><small>${esc(sub)}</small></div>`;
+  return `<div data-part="metric" class="metric"><div><span>${label}</span><strong>${value == null ? "—" : value.toFixed(1) + "%"}</strong></div><progress max="100" value="${value ?? 0}" aria-label="${label}"></progress><small>${esc(sub)}</small></div>`;
 }
 
 // 顶部四个数字与卡片上的「指标 / 实时速率」两块抽成函数：每秒的轻刷新只换这两处的 HTML，
@@ -199,7 +199,7 @@ function overviewInner() {
     traffic = nodes.reduce((v, n) => v + n.traffic_used, 0),
     rateIn = online.reduce((v, n) => v + (n.metrics?.rate_in || 0), 0),
     rateOut = online.reduce((v, n) => v + (n.metrics?.rate_out || 0), 0);
-  return `<div class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${bytes(rateOut)}<small>/s</small></strong></div><div class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${bytes(rateIn)}<small>/s</small></strong></div><div class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>`;
+  return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${bytes(rateOut)}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${bytes(rateIn)}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>`;
 }
 
 function metricsInner(n) {
@@ -232,7 +232,7 @@ function metricsInner(n) {
               } · 阈值 ${n.line.throttle_mbps} Mbit/s`
         }</small>`
       : "";
-  return `${meter("CPU", live ? m.cpu : null, cpuSub)}${meter("内存", live ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.billing.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
+  return `${meter("CPU", live ? m.cpu : null, cpuSub)}${meter("内存", live ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div data-part="metric" class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.billing.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
 }
 
 // 实时速率：两个视图都是「一行一个方向」（小图标 + 数值靠右，标签收进 title）。
@@ -753,7 +753,7 @@ const cardShell = (n, inner) => {
   // 卡片自己读不到它的 data-cast，而皮肤样式表要按角色给整张牌面上色
   // （`.node-card[data-cast="…"]`），所以这里再挂一份——两处都由 castId() 出，不会漂。
   const a = shellAttrs(n);
-  return `<article class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}" data-cast="${esc(a["data-cast"])}"${a["data-cast-pack"] ? ` data-cast-pack="${esc(a["data-cast-pack"])}"` : ""} data-fold-key="${esc(a["data-fold-key"])}">${inner}</article>`;
+  return `<article data-part="node-card" class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}" data-cast="${esc(a["data-cast"])}"${a["data-cast-pack"] ? ` data-cast-pack="${esc(a["data-cast-pack"])}"` : ""} data-fold-key="${esc(a["data-fold-key"])}">${inner}</article>`;
 };
 
 // 卡壳上随节点设置变的那几个属性。10 秒一轮只按内容补丁（patchInto 不碰卡壳本身），
@@ -1001,7 +1001,7 @@ function statsBand(n, f) {
   const totals = m
     ? `<div class="stat-totals" title="本次开机网卡累计（↑ 上传 / ↓ 下载）；换网卡或重装会重置"><span class="stat-item">累计 <b>${withUnit(bytes(m.net_out))}</b></span><span class="stat-item">累计 <b>${withUnit(bytes(m.net_in))}</b></span></div>`
     : "";
-  return `<div class="card-stats"><div class="speeds">${speedsInner(n)}</div>${totals}<div class="stat-facts">${billingInner(n, f.expiry)}</div></div>`;
+  return `<div data-part="card-stats" class="card-stats"><div class="speeds">${speedsInner(n)}</div>${totals}<div class="stat-facts">${billingInner(n, f.expiry)}</div></div>`;
 }
 
 // 没有探测任务（按设计不挂三网任务，例如国际线路的机器）：两段都不画，只留一行说明。
@@ -1113,7 +1113,7 @@ function privateTag(n) {
 // 商家名牌：节点填了商家才有。默认皮肤里是地区 · 分组后面的一枚小牌；主题可以按 .vendor-plate
 // 重新画（二次元主题把它挂到看板上沿当名牌）。卡片与列表共用。
 function vendorPlate(n) {
-  return n.vendor ? `<span class="vendor-plate" title="商家">${esc(n.vendor)}</span>` : "";
+  return n.vendor ? `<span data-part="vendor-plate" class="vendor-plate" title="商家">${esc(n.vendor)}</span>` : "";
 }
 
 function gridInner(n) {
@@ -1134,17 +1134,17 @@ function gridInner(n) {
   const cast = castId(n);
   const fkey = foldKey(n);
   const figure = cast
-    ? `<div class="anime-cast" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
+    ? `<div data-part="cast" class="anime-cast" data-cast="${cast}" data-bleed role="img" aria-label="线路机角色立绘"><span class="anime-blink" data-bleed aria-hidden="true"></span></div>`
     : "";
   const hands = cast ? `<div class="anime-hands" data-bleed aria-hidden="true"></div>` : "";
   // 二次元皮肤里，商家名牌挂在看板上沿正中、两只手之间（anime.css）。它得是卡片上单独的一层：
   // 看板盒子会裁掉超出板沿的部分，双手层又整块压在看板之上，放在板里就会被切掉一半。
   // 别的皮肤用 node-sub 里那枚小牌（vendorPlate），这一层默认 display:none（styles.css）。
-  const plate = cast && n.vendor ? `<div class="anime-plate" aria-hidden="true">${esc(n.vendor)}</div>` : "";
+  const plate = cast && n.vendor ? `<div data-part="cast-plate" class="anime-plate" aria-hidden="true">${esc(n.vendor)}</div>` : "";
   // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心
   // 不被它们挤动——收起 / 展开时名字落在同一坐标（折叠只影响板面上其余的内容/数据）。
   const cardTop =
-    `<div class="card-top"><button class="fold-name" type="button" data-fold="${fkey}" aria-expanded="true" aria-controls="body-${n.id}">` +
+    `<div data-part="card-top" class="card-top"><button class="fold-name" type="button" data-fold="${fkey}" aria-expanded="true" aria-controls="body-${n.id}">` +
     `<span class="node-dot ${n.online ? "" : "offline"}"></span>` +
     `<span class="fold-name-text">${esc(n.name)}</span>` +
     `<span class="fold-caret" aria-hidden="true">${FOLD_ICON}</span>` +
@@ -1153,7 +1153,7 @@ function gridInner(n) {
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
   // 「详细」是内容里唯一能进详情页的控件（卡片空白、数据行都不再导航）。
-  return `${figure}<div class="card-body">${cardTop}<div id="body-${n.id}"><div class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p>${f.hasIPv4 || f.hasIPv6 ? familySwitch(n, f) : ""}</div><div class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}${plate}`;
+  return `${figure}<div data-part="card-body" class="card-body">${cardTop}<div id="body-${n.id}"><div data-part="node-sub" class="node-sub"><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p>${f.hasIPv4 || f.hasIPv6 ? familySwitch(n, f) : ""}</div><div data-part="metrics-grid" class="metrics-grid">${metricsInner(n)}</div>${statsBand(n, f)}${networkSections(n, f)}</div></div>${hands}${plate}`;
 }
 
 // 列表视图：一行一台，六格横向对齐（主机 / 指标 / 网速 / 延迟 / 回程 / 计费）。
@@ -1184,7 +1184,7 @@ function listInner(n) {
   // 里补一枚「详细」——不然列表里就没有任何进详情的入口了，卡片视图那边也是同一枚按钮。
   // 按钮放在名字下面那排徽标的右端，不跟名字抢同一行：主机格只有 190px，同一行时名字只剩 ~108px，
   // 「HK-BGP-01 · 香港直连」这种常见长度也要折行。
-  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p></div></div><div class="card-actions">${privateTag(n)}${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
+  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p></div></div><div class="card-actions">${privateTag(n)}${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div data-part="metrics-grid" class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 展示方式只在这里分叉：两个视图取数完全相同，liveTick 那一层找的也是同一批类名。

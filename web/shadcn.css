@@ -184,11 +184,11 @@ html[data-skin="shadcn"] .skin-swatch i {
 
 /* 延迟色带的小格子与进度条：前者保持小数点级的方角，后者是 shadcn 的整圆进度条。 */
 html[data-skin="shadcn"] .quality-bar {
-  border-radius: 2px !important;
+  border-radius: calc(2px * var(--radius-scale)) !important;
 }
 
 html[data-skin="shadcn"] :is(.metric progress, .progress) {
-  border-radius: 9999px !important;
+  border-radius: var(--radius-pill) !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -292,7 +292,7 @@ html[data-skin="shadcn"] .segmented {
   background: var(--shadcn-muted);
   box-shadow: none;
   padding: 3px;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 html[data-skin="shadcn"] .segmented button {
@@ -392,12 +392,12 @@ html[data-skin="shadcn"] :is(.metric progress, .progress) {
    Chrome 把 ::-moz-progress-bar 当成未知伪元素，若与 webkit 那条写在同一个选择器列表里，
    整条规则会被判无效丢弃。 */
 html[data-skin="shadcn"] .metric progress::-webkit-progress-value {
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   box-shadow: none;
 }
 
 html[data-skin="shadcn"] .metric progress::-moz-progress-bar {
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   box-shadow: none;
 }
 
@@ -555,7 +555,7 @@ html[data-skin="shadcn"] :is(.modal-head .close:hover, .chip-remove:hover) {
 
 html[data-skin="shadcn"] ::-webkit-scrollbar-thumb {
   background: rgba(10, 10, 10, 0.25);
-  border-radius: 9999px !important;
+  border-radius: var(--radius-pill) !important;
 }
 
 html[data-skin="shadcn"][data-theme="dark"] ::-webkit-scrollbar-thumb {

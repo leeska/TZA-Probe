@@ -93,7 +93,7 @@ function rulesPanel(rules) {
       return `<tr><td data-label="类型">${esc(specOf(r.kind).label)}</td><td data-label="条件">${esc(ruleParams(r))}</td><td data-label="范围">${esc(scopeText(r))}${note}${warn}</td><td data-label="操作"><div class="row-actions"><button data-edit-rule="${esc(r.id)}">编辑</button><button class="danger" data-delete-rule="${esc(r.id)}">删除</button></div></td></tr>`;
     })
     .join("");
-  return `<section class="panel"><div class="panel-head"><div><h3>提醒规则</h3><span class="muted">同一台节点同一种提醒只生效一条：指定节点 &gt; 分组 &gt; 全部节点</span></div><button id="new-rule" class="primary">新建规则</button></div><div class="table-scroll"><table class="stack"><thead><tr><th>类型</th><th>条件</th><th>范围</th><th>操作</th></tr></thead><tbody>${rows || `<tr><td colspan="4" class="empty-cell">还没有提醒规则。新建一条并选好作用范围；选「全部节点」时，以后新加的节点也会自动套用。</td></tr>`}</tbody></table></div></section>`;
+  return `<section data-part="panel" class="panel"><div class="panel-head"><div><h3>提醒规则</h3><span class="muted">同一台节点同一种提醒只生效一条：指定节点 &gt; 分组 &gt; 全部节点</span></div><button id="new-rule" class="primary">新建规则</button></div><div class="table-scroll"><table class="stack"><thead><tr><th>类型</th><th>条件</th><th>范围</th><th>操作</th></tr></thead><tbody>${rows || `<tr><td colspan="4" class="empty-cell">还没有提醒规则。新建一条并选好作用范围；选「全部节点」时，以后新加的节点也会自动套用。</td></tr>`}</tbody></table></div></section>`;
 }
 // 各节点生效情况：每台节点一行，每种提醒一格，写参数与它来自哪一级范围。
 function overviewPanel() {
@@ -108,7 +108,7 @@ function overviewPanel() {
     })
     .join("");
   const heads = RULE_SPECS.map((spec) => `<th>${spec.column}</th>`).join("");
-  return `<section class="panel"><div class="panel-head"><h3>各节点生效情况</h3><span class="muted">格子下方写规则来自哪一级：全部 / 分组 / 单独</span></div><div class="table-scroll"><table class="stack"><thead><tr><th>节点</th>${heads}</tr></thead><tbody>${rows || `<tr><td colspan="${RULE_SPECS.length + 1}" class="empty-cell">还没有节点。</td></tr>`}</tbody></table></div></section>`;
+  return `<section data-part="panel" class="panel"><div class="panel-head"><h3>各节点生效情况</h3><span class="muted">格子下方写规则来自哪一级：全部 / 分组 / 单独</span></div><div class="table-scroll"><table class="stack"><thead><tr><th>节点</th>${heads}</tr></thead><tbody>${rows || `<tr><td colspan="${RULE_SPECS.length + 1}" class="empty-cell">还没有节点。</td></tr>`}</tbody></table></div></section>`;
 }
 const tick = (label, attr, value, checked) => `<label class="checkbox"><input type="checkbox" ${attr}="${esc(value)}" ${checked ? "checked" : ""}>${esc(label)}</label>`;
 // 新建或编辑一条规则。范围切换时只显示那一种范围要填的列表；底部实时写出会生效在几台节点上。
@@ -239,19 +239,19 @@ export async function renderAlerts(nodesReady) {
         : "尚未配置";
   notifyPlugins = (plugins || []).filter((p) => p.kind === "notify");
   const views = ALERT_VIEWS.map(([id, label]) => `<button type="button" data-alert-view="${id}" class="${state.alertView === id ? "active" : ""}" aria-pressed="${state.alertView === id}">${label}${id === "active" && firing.length ? ` <b class="count-badge">${firing.length}</b>` : ""}</button>`).join("");
-  const heading = `<section class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>正在告警的项目、事件记录、通知渠道与每台节点的提醒规则。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><div class="segmented alert-views" role="group" aria-label="告警页内容">${views}</div>`;
+  const heading = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">ALERTS & DELIVERY</div><h1>告警与通知</h1><p>正在告警的项目、事件记录、通知渠道与每台节点的提醒规则。</p></div><button id="refresh-events" class="quiet">↻ 刷新</button></section><div class="segmented alert-views" role="group" aria-label="告警页内容">${views}</div>`;
   let body = "";
   if (state.alertView === "active") {
     // 没配通知渠道时在这里也提一句：正在告警却没人收到，比没有告警更该知道。
     const warn = configured ? "" : `<div class="notice"><strong>通知渠道尚未配置</strong><span>下面的告警不会发到任何地方。到「提醒规则」页配置 Telegram、Webhook 或已安装的通知插件。</span></div>`;
-    body = `${warn}<section class="panel"><div class="panel-head"><h3>正在告警</h3><span class="muted">每项显示最近一次触发或重复提醒</span></div>${eventTable(eventRows(firing, configured), "当前没有正在告警的项目。")}</section>`;
+    body = `${warn}<section data-part="panel" class="panel"><div class="panel-head"><h3>正在告警</h3><span class="muted">每项显示最近一次触发或重复提醒</span></div>${eventTable(eventRows(firing, configured), "当前没有正在告警的项目。")}</section>`;
   } else if (eventsView) {
     const filtered = eventFilter.node_id || eventFilter.kind;
     const nodeOptions = withCurrent(state.nodes.map((n) => [n.id, n.name]), eventFilter.node_id, "全部节点");
     const kindOptions = [["", "全部类型"], ...Object.entries(kindName).filter(([k]) => k !== "test")];
-    body = `<section class="panel"><div class="panel-head"><h3>事件记录</h3><span class="muted">保存 90 天 · 每次加载 ${EVENT_PAGE} 条</span></div><div class="catalog-filters event-filters"><label>节点<select id="event-node"><option value="">全部节点</option>${nodeOptions.filter(([v]) => v).map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.node_id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label><label>类型<select id="event-kind">${kindOptions.map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.kind ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div>${eventTable(eventRows(events, configured), filtered ? "没有符合筛选条件的事件。" : "暂无事件。提醒规则在「提醒规则」页开启。")}<div class="catalog-toolbar event-more"><button id="more-events" class="quiet" ${events.length < EVENT_PAGE ? "hidden" : ""}>加载更多</button></div></section>`;
+    body = `<section data-part="panel" class="panel"><div class="panel-head"><h3>事件记录</h3><span class="muted">保存 90 天 · 每次加载 ${EVENT_PAGE} 条</span></div><div class="catalog-filters event-filters"><label>节点<select id="event-node"><option value="">全部节点</option>${nodeOptions.filter(([v]) => v).map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.node_id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label><label>类型<select id="event-kind">${kindOptions.map(([v, l]) => `<option value="${esc(v)}"${v === eventFilter.kind ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div>${eventTable(eventRows(events, configured), filtered ? "没有符合筛选条件的事件。" : "暂无事件。提醒规则在「提醒规则」页开启。")}<div class="catalog-toolbar event-more"><button id="more-events" class="quiet" ${events.length < EVENT_PAGE ? "hidden" : ""}>加载更多</button></div></section>`;
   } else {
-    body = `<section class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人、Webhook 或已安装的通知插件（飞书、钉钉、ntfy 等，在「插件」页安装），发送告警触发与恢复通知。</p>${settings.plugin_error ? `<p class="warn-text">${esc(settings.plugin_error)}，通知暂时发不出去；请重新配置渠道。</p>` : ""}<small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置渠道</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel(rules)}${overviewPanel()}`;
+    body = `<section data-part="panel" class="panel webhook-panel"><div><h3>通知渠道 · ${channelName}</h3><p>支持 Telegram 机器人、Webhook 或已安装的通知插件（飞书、钉钉、ntfy 等，在「插件」页安装），发送告警触发与恢复通知。</p>${settings.plugin_error ? `<p class="warn-text">${esc(settings.plugin_error)}，通知暂时发不出去；请重新配置渠道。</p>` : ""}<small>投递失败采用退避重试，最多 10 次；超过 24 小时的事件不再补发。接收端按 event.id 去重。</small></div><div class="webhook-actions"><button id="configure-webhook" class="primary">配置渠道</button><button id="test-webhook" ${configured ? "" : "disabled"}>发送测试</button></div></section>${rulesPanel(rules)}${overviewPanel()}`;
   }
   content().innerHTML = heading + body;
   content().querySelectorAll("[data-alert-view]").forEach(

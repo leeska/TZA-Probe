@@ -1,5 +1,6 @@
 /* 抹茶：示例主题包（docs/THEMES.md）。
-   只改颜色变量和底纸，版式、组件全部沿用默认样式——大多数主题写到这个程度就够了。
+   只用稳定接口：设计令牌（颜色、圆角、字体、卡片与图表）+ 一条 data-part 规则，再换一张底纸；
+   版式、组件全部沿用默认样式，不碰任何类名——大多数主题写到这个程度就够了，面板升级也不容易坏。
    选择器都带 [data-skin="matcha"]：本包只在被选中时加载，带上前缀是为了让优先级稳稳压过默认的
    :root 与 [data-theme="dark"]，与默认样式的先后顺序无关。 */
 
@@ -22,6 +23,26 @@
   --glass-shadow-lg: 0 10px 28px rgb(60 80 40 / 0.12);
   --blur: none;
   --progress-track: #e6e9d6;
+
+  /* 形：圆角整体收到默认的六成，标题与节点名用衬线 */
+  --radius-scale: 0.6;
+  --font-display: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
+
+  /* 卡片：比面板再暖一点的纸色，悬停时描边转成抹茶绿 */
+  --card-bg: #fdfcf6;
+  --card-shadow-hover: 0 0 0 1px var(--accent), 0 10px 28px rgb(60 80 40 / 0.12);
+
+  /* 图表：系列色换成一组偏草木的色，主机历史的渐变跟着强调色 */
+  --series-0: #5f8f3a;
+  --series-1: #c27c3a;
+  --series-2: #3f7f8f;
+  --series-3: #9a6fb0;
+  --series-4: #b8a03a;
+  --series-5: #c25b6b;
+  --series-6: #4f9a6f;
+  --series-7: #8a6a4a;
+  --chart-blue: #5f8f3a;
+  --chart-orange: #c27c3a;
 }
 
 :root[data-skin="matcha"][data-theme="dark"] {
@@ -40,6 +61,10 @@
   --glass-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
   --glass-shadow-lg: 0 10px 28px rgb(0 0 0 / 0.5);
   --progress-track: #2f3729;
+
+  --card-bg: #1f251b;
+  --card-shadow-hover: 0 0 0 1px var(--accent), 0 10px 28px rgb(0 0 0 / 0.5);
+  --chart-blue: #9cc76f;
 }
 
 /* 底纸：默认皮肤在 body::before 上画四团流动的彩色光斑，这里换成两团静止的淡绿 */
@@ -71,4 +96,13 @@ html[data-skin="matcha"] :is(.hero h1 span, .login-story h1 span) {
   background: none;
   -webkit-text-fill-color: currentColor;
   color: var(--accent);
+}
+
+/* 离线的节点：卡片底色淡一层（data-part 是稳定钩子，.is-offline 是卡片状态） */
+html[data-skin="matcha"] [data-part="node-card"].is-offline {
+  --card-bg: #f3f1e8;
+}
+
+html[data-skin="matcha"][data-theme="dark"] [data-part="node-card"].is-offline {
+  --card-bg: #191d16;
 }

@@ -96,6 +96,10 @@ v1.0.0 的二次元包没有 `settings`，面板也会给它补上这一项。�
 主题包的样式表**叠在基础样式（液态玻璃的那一套组件与令牌）之上**，只在访客选中这套主题时加载，并排在内置样式表之后。
 所以最简单的主题只改颜色变量就够了——版式、组件全部沿用默认。
 
+**稳定接口 = 设计令牌（CSS 变量）+ `data-part` 钩子。** 下面表格里列出的变量和 `[data-part="…"]` 属性跨版本保持不变，
+确需改动时会写进发行说明；**类名（`.node-card`、`.metrics-grid` 等）不是稳定接口**，面板升级时可能调整。
+写主题时优先改令牌，令牌不够再用 `data-part` 选择器，最后才动类名。
+
 选择器请带上 `[data-skin="<你的 id>"]`：优先级稳稳压过默认样式里的 `:root` 和 `[data-theme="dark"]`，
 不依赖加载顺序。深色用 `[data-theme="dark"]` 再写一份。
 
@@ -130,6 +134,77 @@ v1.0.0 的二次元包没有 `settings`，面板也会给它补上这一项。�
 | `--blur` | 毛玻璃，`none` 即关掉 |
 | `--progress-track` | 进度条的底槽 |
 
+### 字体、字号、圆角、间距
+
+都定义在默认样式的 `:root` 上，组件规则一律读这些令牌，所以改一处整站跟着变。
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `--font-sans` | 系统无衬线（SF / PingFang / Segoe UI …） | 正文字体 |
+| `--font-mono` | `ui-monospace, SFMono-Regular, Menlo …` | 等宽：IP 地址、命令、代码 |
+| `--font-display` | 不定义（= 沿用正文） | 标题（h1–h3）、节点名、总览格里的大数字 |
+| `--text-3xs` … `--text-3xl` | 9 / 10 / 11 / 12 / 13 / 14 / 16 / 18 / 22 / 28 px（`3xs` `2xs` `xs` `sm` `base` `md` `lg` `xl` `2xl` `3xl`） | 字号阶梯 |
+| `--radius-scale` | `1` | 所有圆角的倍数：`0` 全直角，`0.5` 收一半，`1.5` 更圆；胶囊与圆点不受影响 |
+| `--radius-xs` … `--radius-3xl` | 6 / 8 / 12 / 16 / 20 / 24 / 28 px（`xs` `sm` `md` `lg` `xl` `2xl` `3xl`），都已乘 `--radius-scale` | 圆角阶梯 |
+| `--radius-pill` | `9999px` | 胶囊（标签、进度条、开关） |
+| `--space-0-5` … `--space-10` | 2 / 4 / 6 / 8 / 10 / 12 / 14 / 16 / 18 / 20 / 22 / 24 / 28 / 32 / 40 px（4px 一档、带半档：`0-5` `1` `1-5` `2` … `8` `10`） | 间距阶梯：padding、margin、gap |
+
+`--radius-scale` 与圆角阶梯要写在 `:root[data-skin="<id>"]` 上（阶梯在根上算好再继承下去，写在子元素上不生效）。
+字号与间距阶梯通常不必整体改，它们主要让组件规则互相对齐；想做「紧凑」版式时改对应组件的语义令牌更稳。
+
+```css
+:root[data-skin="matcha"] {
+  --font-display: "Matcha Serif", var(--font-sans);
+  --radius-scale: 0.5;
+}
+```
+
+### 组件语义令牌
+
+卡片、面板、总览格各有一组令牌，**默认不定义**：组件规则写成 `var(--card-bg, <默认值>)`，主题定义了就用主题的，
+没定义就是上面颜色变量画出的玻璃面。它们可以写在 `:root[data-skin]` 上，也可以写在更具体的选择器上（比如只给离线卡片换底色）。
+
+| 变量 | 默认值 | 用在哪 |
+| --- | --- | --- |
+| `--card-bg` / `--card-border` | `--glass-bg` / `--glass-border` | 节点卡片的底与描边色 |
+| `--card-shadow` / `--card-shadow-hover` | `--glass-shadow` / `--glass-shadow-lg`（各加 `--glass-inner-rim`） | 卡片投影，悬停时 |
+| `--card-radius` | `--radius-2xl` | 卡片圆角 |
+| `--card-pad` | `22px 22px 20px` | 卡片内边距（卡片视图） |
+| `--panel-bg` / `--panel-border` / `--panel-shadow` / `--panel-radius` | `--glass-bg` / `--glass-border` / `--glass-shadow` / `--radius-xl` | 后台的面板 |
+| `--tile-bg` / `--tile-border` / `--tile-shadow` / `--tile-shadow-hover` / `--tile-radius` / `--tile-pad` | `--glass-bg` / `--glass-border` / `--glass-shadow` / `--glass-shadow-lg` / `--radius-xl` / `18px 22px` | 公开页顶部的四个总览格 |
+
+```css
+html[data-skin="matcha"] [data-part="node-card"].is-offline { --card-bg: #f3f1ea; }
+```
+
+### 图表颜色
+
+| 变量 | 默认 | 用在哪 |
+| --- | --- | --- |
+| `--series-0` … `--series-7` | `#ff625f` `#36c8bf` `#9b7cff` `#5a9cff` `#ffad3d` `#eb63b5` `#36c98b` `#ff873d` | 详情页多折线（各探测目标）与图例的八个系列色，超过八条循环使用 |
+| `--chart-blue` / `--chart-orange` | `#007aff` / `#ff9500` | 主机历史折线下方的渐变（蓝 = 入站与默认，橙 = 出站）；折线本身用 `--accent` / `--orange` |
+
+### data-part 钩子
+
+页面里的关键组件都带一个 `data-part` 属性，名字跨版本稳定。要改令牌管不到的地方（版式、隐藏某一段、加装饰）就用它当选择器：
+
+| `data-part` | 是什么 |
+| --- | --- |
+| `public-header` / `hero-meta` / `overview` / `overview-tile` / `toolbar` / `node-grid` | 公开页：顶栏、最近同步、总览区与其中的格子、搜索筛选条、节点列表容器（列表视图时还带 `.node-list`） |
+| `node-card` | 一台节点的卡片（`.is-online` / `.is-offline` 表示状态；二次元下另有 `data-cast`） |
+| `card-body` / `card-top` / `node-sub` | 卡片内容、头部（状态点 + 名字 + 标签）、地区 · 分组那一行 |
+| `metrics-grid` / `metric` | CPU / 内存 / 磁盘 / 周期用量四格，及其中每一格 |
+| `card-stats` | 速率、累计流量、到期与价格那条信息带 |
+| `vendor-plate` | 商家名牌 |
+| `cast` / `cast-plate` | 二次元角色立绘层与看板上沿的商家名牌（只有二次元有样式） |
+| `detail-stats` / `chart` | 详情弹窗的统计格、每张历史图表 |
+| `sidebar` / `admin-top` / `page-heading` / `panel` | 后台：侧栏、顶栏、页标题、面板 |
+
+```css
+/* 卡片里不显示 CPU / 内存那四格 */
+html[data-skin="matcha"] [data-part="node-card"] [data-part="metrics-grid"] { display: none; }
+```
+
 ### 底纸
 
 默认皮肤在 `body::before` 上画了四团缓慢流动的彩色光斑。换底纸就覆盖它：
@@ -144,13 +219,13 @@ html[data-skin="matcha"] body::before {
 
 ### 商家名牌
 
-节点填了「商家」时，卡片和列表里会多一枚 `.vendor-plate`（默认是地区 · 分组后面的一枚强调色小牌），
-主题可以按这个类名重画它。二次元主题的角色卡另有一层 `.anime-plate`，把商家挂在看板上沿当名牌。
+节点填了「商家」时，卡片和列表里会多一枚 `[data-part="vendor-plate"]`（默认是地区 · 分组后面的一枚强调色小牌），
+主题可以按它重画。二次元主题的角色卡另有一层 `[data-part="cast-plate"]`，把商家挂在看板上沿当名牌。
 
 ### 再往深改
 
-可以针对页面里的类名写规则（`.node-card`、`.panel`、`.overview-tile` 等），想看一套完整改法可以参考仓库里的
-`themes/press/press.css`、`themes/shadcn/shadcn.css`、`themes/anime/anime.css`。类名不是稳定接口，面板升级时可能调整；只改变量的主题最不容易坏。
+令牌与 `data-part` 都不够时，也可以针对页面里的类名写规则，想看一套完整改法可以参考仓库里的
+`themes/press/press.css`、`themes/anime/anime.css` 与内置的 `web/shadcn.css`。类名不是稳定接口，面板升级时可能调整；只改令牌的主题最不容易坏。
 
 ### 图片与字体
 
@@ -249,4 +324,4 @@ TZA-CC 是 TZA Probe 的云端市场。Server 默认使用官方 TZA-CC（`https
 
 ## 示例
 
-仓库里的 [`examples/themes/matcha`](../examples/themes/matcha) 是一个只改变量与底纸的完整示例，可以直接打包上传，也可以复制一份改成自己的。
+仓库里的 [`examples/themes/matcha`](../examples/themes/matcha) 是一个只用稳定接口（颜色、圆角、字体、卡片令牌、图表色与一条 `data-part` 规则）加底纸的完整示例，可以直接打包上传，也可以复制一份改成自己的。

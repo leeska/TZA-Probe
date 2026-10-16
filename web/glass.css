@@ -125,6 +125,25 @@ dialog,
   backdrop-filter: var(--blur);
 }
 
+/* 卡片 / 面板 / 总览格的语义令牌：主题包定义了 --card-bg 等就用它的，没定义就是上面的玻璃面。 */
+.node-card {
+  background: var(--card-bg, var(--glass-bg));
+  border-color: var(--card-border, var(--glass-border));
+  box-shadow: var(--card-shadow, var(--glass-shadow), var(--glass-inner-rim));
+}
+
+.panel {
+  background: var(--panel-bg, var(--glass-bg));
+  border-color: var(--panel-border, var(--glass-border));
+  box-shadow: var(--panel-shadow, var(--glass-shadow), var(--glass-inner-rim));
+}
+
+.overview-tile {
+  background: var(--tile-bg, var(--glass-bg));
+  border-color: var(--tile-border, var(--glass-border));
+  box-shadow: var(--tile-shadow, var(--glass-shadow), var(--glass-inner-rim));
+}
+
 .public-layout,
 .admin-layout,
 .admin-main,
@@ -142,11 +161,11 @@ dialog,
   max-width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--space-4-5);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-lg), var(--glass-inner-rim);
-  border-radius: 28px;
+  border-radius: var(--radius-3xl);
   padding: 44px 38px;
   -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
@@ -159,9 +178,9 @@ dialog,
   width: calc(100% - 64px);
   max-width: 1336px;
   box-sizing: border-box;
-  margin: 18px auto 0;
-  padding: 0 22px;
-  border-radius: 22px;
+  margin: var(--space-4-5) auto 0;
+  padding: 0 var(--space-5-5);
+  border-radius: calc(22px * var(--radius-scale));
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -172,7 +191,7 @@ dialog,
 }
 
 .toolbar {
-  padding: 10px 22px;
+  padding: var(--space-2-5) var(--space-5-5);
 }
 
 /* Brand Mark */
@@ -233,9 +252,9 @@ h1 {
 }
 
 .page-heading h1 span {
-  font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 9999px;
+  font-size: var(--text-sm);
+  padding: 3px var(--space-2-5);
+  border-radius: var(--radius-pill);
   background: rgba(var(--accent-rgb), 0.12);
   color: var(--accent);
   font-weight: 600;
@@ -247,7 +266,7 @@ h1 {
 
 /* Hero Meta Chip */
 .hero-meta {
-  border-radius: 18px;
+  border-radius: calc(18px * var(--radius-scale));
 }
 
 .hero-meta strong {
@@ -258,13 +277,13 @@ h1 {
    Overview Bar (4 Modular Glass Control Deck Tiles)
    ========================================================================== */
 .overview-tile {
-  border-radius: 20px;
+  border-radius: var(--tile-radius, var(--radius-xl));
   transition: box-shadow 0.2s ease;
 }
 
 /* 同 .node-card：玻璃面不做位移（见上面的注释），只用阴影表达抬起。 */
 .overview-tile:hover {
-  box-shadow: var(--glass-shadow-lg), var(--glass-inner-rim);
+  box-shadow: var(--tile-shadow-hover, var(--glass-shadow-lg), var(--glass-inner-rim));
 }
 
 .teal-badge {
@@ -286,7 +305,7 @@ h1 {
    Toolbar & Segmented Control
    ========================================================================== */
 .toolbar {
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   position: relative;
   z-index: 5;
 }
@@ -339,15 +358,15 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2-5);
   width: 100%;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--text-base);
   color: var(--ink);
-  padding: 9px 12px;
+  padding: 9px var(--space-3);
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
   cursor: pointer;
   white-space: nowrap;
@@ -380,11 +399,11 @@ h1 {
   max-width: 300px;
   max-height: 280px;
   overflow-y: auto;
-  padding: 6px;
+  padding: var(--space-1-5);
   display: none;
   background: var(--glass-bg-elevated);
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale));
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16), inset 0 1px 1px rgba(255, 255, 255, 0.55);
 }
 
@@ -396,12 +415,12 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2-5);
   width: 100%;
   text-align: left;
-  padding: 9px 12px;
-  border-radius: 9px;
-  font-size: 13px;
+  padding: 9px var(--space-3);
+  border-radius: calc(9px * var(--radius-scale));
+  font-size: var(--text-base);
   color: var(--ink);
   cursor: pointer;
   transition: background 0.15s ease;
@@ -510,7 +529,7 @@ h1 {
    滚动时合成器跟不上，就会用旧快照画出一张空卡片（模糊的卡片形状里什么都没有）。
    想去掉这条注释前先想清楚：要么不要位移，要么把卡片的 backdrop-filter 一起去掉。 */
 .node-card:hover {
-  box-shadow: var(--glass-shadow-lg), var(--glass-inner-rim);
+  box-shadow: var(--card-shadow-hover, var(--glass-shadow-lg), var(--glass-inner-rim));
   border-color: rgba(255, 255, 255, 0.95);
 }
 
@@ -652,7 +671,7 @@ details > button {
   background: var(--glass-bg-elevated);
   border: 1px solid var(--glass-border);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.85);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-weight: 550;
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -795,8 +814,8 @@ select:focus {
    Admin Console (Overlay Panels)
    ========================================================================== */
 .sidebar {
-  margin: 18px 0 18px 18px;
-  border-radius: 24px;
+  margin: var(--space-4-5) 0 var(--space-4-5) var(--space-4-5);
+  border-radius: var(--radius-2xl);
   height: calc(100vh - 36px);
 }
 
@@ -804,7 +823,7 @@ select:focus {
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;
-  border-radius: 14px !important;
+  border-radius: calc(14px * var(--radius-scale)) !important;
   transform: none !important;
   transition: all 0.18s ease;
 }
@@ -844,8 +863,8 @@ select:focus {
 }
 
 .admin-top {
-  margin: 18px 28px 0;
-  border-radius: 20px;
+  margin: var(--space-4-5) var(--space-7) 0;
+  border-radius: var(--radius-xl);
 }
 
 .admin-top .pill {
@@ -901,28 +920,28 @@ tbody tr:hover {
 .notice {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 16px 20px;
-  border-radius: 16px;
-  margin-bottom: 24px;
+  gap: var(--space-1-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-6);
   background: rgba(var(--accent-rgb), 0.08);
   border: 1px solid rgba(var(--accent-rgb), 0.22);
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--text-base);
   line-height: 1.5;
   box-shadow: var(--glass-inner-rim);
 }
 
 .notice strong {
   color: var(--accent);
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 650;
   display: block;
 }
 
 .notice span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -930,38 +949,38 @@ tbody tr:hover {
    Webhook & Notification Panel
    ========================================================================== */
 .webhook-panel {
-  padding: 24px 28px;
+  padding: var(--space-6) var(--space-7);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 24px;
-  border-radius: 20px;
-  margin-bottom: 24px;
+  gap: var(--space-6);
+  border-radius: var(--radius-xl);
+  margin-bottom: var(--space-6);
 }
 
 .webhook-panel h3 {
   font-size: 15px;
   font-weight: 650;
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   color: var(--ink);
 }
 
 .webhook-panel p {
-  font-size: 13px;
+  font-size: var(--text-base);
   color: var(--muted);
-  margin: 0 0 6px;
+  margin: 0 0 var(--space-1-5);
   line-height: 1.5;
 }
 
 .webhook-panel small {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted);
   opacity: 0.85;
 }
 
 .webhook-actions {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   flex-shrink: 0;
   align-items: center;
 }
@@ -972,44 +991,44 @@ tbody tr:hover {
 .catalog-filters {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3-5);
 }
 
 .catalog-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  font-size: 12px;
+  gap: var(--space-2-5);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 
 .catalog-toolbar button {
-  font-size: 12px;
-  padding: 5px 12px;
-  border-radius: 10px;
+  font-size: var(--text-sm);
+  padding: 5px var(--space-3);
+  border-radius: calc(10px * var(--radius-scale));
 }
 
 .catalog-results {
   max-height: 220px;
   overflow-y: auto;
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 14px;
-  padding: 10px;
+  border-radius: calc(14px * var(--radius-scale));
+  padding: var(--space-2-5);
   background: var(--glass-bg-subtle);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3-5);
 }
 
 .catalog-option {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 10px;
+  gap: var(--space-2-5);
+  padding: var(--space-2) var(--space-3);
+  border-radius: calc(10px * var(--radius-scale));
   background: var(--glass-bg);
   border: 1px solid var(--glass-border-subtle);
   cursor: pointer;
@@ -1024,12 +1043,12 @@ tbody tr:hover {
 .catalog-option span {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   overflow: hidden;
 }
 
 .catalog-option strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--ink);
   white-space: nowrap;
@@ -1038,7 +1057,7 @@ tbody tr:hover {
 }
 
 .catalog-option small {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--muted);
 }
 
@@ -1065,37 +1084,37 @@ tbody tr:hover {
 /* 任务编辑器最后一节后面紧跟汇总与页脚，不再需要分隔线 */
 #task-form > .form-section:last-of-type {
   border-bottom: 0;
-  padding-bottom: 6px;
-  margin-bottom: 6px;
+  padding-bottom: var(--space-1-5);
+  margin-bottom: var(--space-1-5);
 }
 
 .node-checkboxes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
   max-height: 160px;
   overflow-y: auto;
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 14px;
-  padding: 10px;
+  border-radius: calc(14px * var(--radius-scale));
+  padding: var(--space-2-5);
   background: var(--glass-bg-subtle);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 
 .selected-targets {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 0 16px;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-4);
 }
 
 .target-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 4px 4px 12px;
-  border-radius: 9999px;
-  font-size: 12px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.08);
   border: 1px solid rgba(var(--accent-rgb), 0.22);
@@ -1107,15 +1126,15 @@ tbody tr:hover {
 
 .chip-families {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 /* 每组目标的 IP 协议开关：亮起表示这一组会检测该协议 */
 .chip-family {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 9999px;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--glass-border-subtle);
   background: var(--glass-bg-subtle);
   color: var(--muted);
@@ -1140,7 +1159,7 @@ tbody tr:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1;
   color: var(--muted);
   cursor: pointer;
@@ -1154,14 +1173,14 @@ tbody tr:hover {
 
 details {
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 14px;
-  padding: 12px 16px;
-  margin: 14px 0;
+  border-radius: calc(14px * var(--radius-scale));
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-3-5) 0;
   background: var(--glass-bg-subtle);
 }
 
 details summary {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--accent);
   cursor: pointer;
@@ -1170,30 +1189,30 @@ details summary {
 }
 
 details[open] summary {
-  margin-bottom: 14px;
+  margin-bottom: var(--space-3-5);
 }
 
 pre,
 #agent-config {
   background: var(--glass-bg-subtle);
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 14px;
-  padding: 16px 20px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  border-radius: calc(14px * var(--radius-scale));
+  padding: var(--space-4) var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
   line-height: 1.6;
   color: var(--ink);
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  margin: 16px 0;
+  margin: var(--space-4) 0;
 }
 
 /* ==========================================================================
    Modal Dialog (Floating Sheet)
    ========================================================================== */
 dialog {
-  border-radius: 28px;
+  border-radius: var(--radius-3xl);
   box-shadow:
     0 36px 88px -12px rgba(15, 30, 60, 0.32),
     0 12px 28px -4px rgba(15, 30, 60, 0.14),
@@ -1279,7 +1298,7 @@ dialog::backdrop {
 
 ::-webkit-scrollbar-thumb {
   background: rgba(120, 120, 130, 0.25);
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   border: 2px solid transparent;
   background-clip: content-box;
 }
@@ -1363,7 +1382,7 @@ input[type="checkbox"] {
   margin: 0;
   flex: 0 0 auto;
   border: 1.5px solid rgba(var(--accent-rgb), 0.4);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background-color: rgba(255, 255, 255, 0.65);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
   cursor: pointer;
@@ -1414,11 +1433,11 @@ input[type="checkbox"]:disabled {
 
 /* Page heading sits on the same inner grid as panel content */
 .page-heading {
-  padding: 0 24px;
+  padding: 0 var(--space-6);
 }
 
 .alert-views {
-  margin-left: 24px;
+  margin-left: var(--space-6);
 }
 
 .public-header nav .button {
@@ -1464,7 +1483,7 @@ input[type="checkbox"]:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .catalog-option {
-    padding: 8px 6px;
+    padding: var(--space-2) var(--space-1-5);
   }
   .option-groups {
     grid-template-columns: 1fr;
@@ -1488,7 +1507,7 @@ input[type="checkbox"]:disabled {
 
 /* 作用范围下的分组 / 节点列表与范围单选之间留一点距离。 */
 #rule-form [data-part] {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 /* ==========================================================================
@@ -1496,10 +1515,10 @@ input[type="checkbox"]:disabled {
    ========================================================================== */
 @media (max-width: 760px) {
   .public-header {
-    margin: 8px auto 0;
+    margin: var(--space-2) auto 0;
     width: calc(100% - 32px);
-    padding: 0 22px;
-    border-radius: 18px;
+    padding: 0 var(--space-5-5);
+    border-radius: calc(18px * var(--radius-scale));
   }
   .brand small,
   .live-label {
@@ -1509,53 +1528,53 @@ input[type="checkbox"]:disabled {
     letter-spacing: 1px;
   }
   .public-header nav {
-    gap: 12px;
+    gap: var(--space-3);
   }
   /* 手机上四张统计卡排成两行两列、数字在上标签在下：竖排四张整宽卡片要占掉半屏。 */
   .admin-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: var(--space-2);
   }
   .admin-stats > div {
     flex-direction: column-reverse;
     align-items: flex-start;
     justify-content: flex-end;
-    gap: 4px;
-    padding: 12px 14px;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-3-5);
   }
   .admin-stats strong {
-    font-size: 22px;
+    font-size: var(--text-2xl);
   }
   .admin-stats span {
-    font-size: 11px;
+    font-size: var(--text-xs);
     line-height: 1.35;
   }
   .sidebar {
-    margin: 8px 12px;
+    margin: var(--space-2) var(--space-3);
     height: auto;
     width: auto;
-    border-radius: 18px;
+    border-radius: calc(18px * var(--radius-scale));
   }
   .page-heading {
     flex-wrap: wrap;
-    gap: 12px 20px;
+    gap: var(--space-3) var(--space-5);
   }
   .page-heading button {
     white-space: nowrap;
   }
   .admin-top {
-    margin: 8px 12px 0;
-    padding: 0 24px;
-    border-radius: 18px;
+    margin: var(--space-2) var(--space-3) 0;
+    padding: 0 var(--space-6);
+    border-radius: calc(18px * var(--radius-scale));
   }
   #admin-content {
-    padding: 16px 12px 48px;
+    padding: var(--space-4) var(--space-3) 48px;
   }
   .toolbar {
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
   }
   dialog {
-    border-radius: 22px;
+    border-radius: calc(22px * var(--radius-scale));
   }
 }
 
@@ -1591,10 +1610,10 @@ input[type="checkbox"]:disabled {
 
 @media (max-width: 480px) {
   .public-header {
-    gap: 10px;
+    gap: var(--space-2-5);
   }
   .public-header nav {
-    gap: 8px;
+    gap: var(--space-2);
   }
 }
 
@@ -1618,7 +1637,7 @@ html {
 
 ::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
@@ -1665,10 +1684,10 @@ html[data-theme="dark"] {
   height: 38px;
   margin: 0;
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--glass-bg-subtle);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
-  padding: 0 12px 0 35px;
+  padding: 0 var(--space-3) 0 35px;
   color: var(--ink);
 }
 
@@ -1682,21 +1701,21 @@ html[data-theme="dark"] {
 /* 任务编辑器里的常用海外目标：按类别一行一组，端口用小字跟在名称后面 */
 .preset-groups {
   display: grid;
-  gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 14px;
+  gap: var(--space-2-5);
+  padding: var(--space-2-5) var(--space-3);
+  margin-bottom: var(--space-3-5);
   border: 1px solid var(--glass-border-subtle);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale));
   background: var(--glass-bg-subtle);
 }
 
 .preset-group + .preset-group {
-  padding-top: 10px;
+  padding-top: var(--space-2-5);
   border-top: 1px solid var(--glass-border-subtle);
 }
 
 .preset-group .option-tiles label.checkbox small {
-  margin-left: 4px;
-  font-size: 11px;
+  margin-left: var(--space-1);
+  font-size: var(--text-xs);
   color: var(--muted);
 }

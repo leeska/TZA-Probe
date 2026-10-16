@@ -79,10 +79,10 @@ export function marketPill() {
 // 一页的市场：类型切换（主题页是主题 / 角色包，插件页只有插件）、搜索、卡片与「加载更多」。
 export function catalogPanel(scope) {
   if (!status.configured) {
-    return `<section class="panel webhook-panel market-off"><div><h3>市场已关闭</h3><p>Server 启动时用 <code>--cc-url off</code>（或环境变量 <code>TZA_CC_URL=off</code>）关掉了市场。去掉它即连官方 TZA-CC；测试或私有部署的 CC 用 <code>--cc-url https://…</code> 指定，签名公钥用 <code>--cc-key</code> / <code>TZA_CC_KEYS</code> 添加。</p><small>不连 TZA-CC 也可以在上面上传 zip 手动安装。</small></div></section>`;
+    return `<section data-part="panel" class="panel webhook-panel market-off"><div><h3>市场已关闭</h3><p>Server 启动时用 <code>--cc-url off</code>（或环境变量 <code>TZA_CC_URL=off</code>）关掉了市场。去掉它即连官方 TZA-CC；测试或私有部署的 CC 用 <code>--cc-url https://…</code> 指定，签名公钥用 <code>--cc-key</code> / <code>TZA_CC_KEYS</code> 添加。</p><small>不连 TZA-CC 也可以在上面上传 zip 手动安装。</small></div></section>`;
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text market-keys">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
-  return `<section class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题（二次元的角色包在它的「设置」里）"}；免费包不连接账号也能装，付费包要先在「面板设置 → 账号与安全」连接 TZA-CC。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
+  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题（二次元的角色包在它的「设置」里）"}；免费包不连接账号也能装，付费包要先在「面板设置 → 账号与安全」连接 TZA-CC。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
 }
 
 async function fetchCatalog(scope, append) {
@@ -315,19 +315,19 @@ async function install(id, version) {
 // 确认后凭据存在数据目录的 cc-instance。免费包不连接也能装，连接后下载会计入账号、能看到每台实例装了什么。
 export function accountPanel() {
   if (!status.configured) {
-    return `<section class="panel webhook-panel market-connect"><div><h3>TZA-CC 账号</h3><p>市场已关闭（Server 用 <code>--cc-url off</code> 启动），不需要连接账号。</p></div></section>`;
+    return `<section data-part="panel" class="panel webhook-panel market-connect"><div><h3>TZA-CC 账号</h3><p>市场已关闭（Server 用 <code>--cc-url off</code> 启动），不需要连接账号。</p></div></section>`;
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
   const host = `<small>市场地址：${esc(status.url)} · Probe ${esc(status.probe || "")}</small>`;
   if (status.pending) {
     const p = status.pending;
-    return `<section class="panel webhook-panel market-connect"><div><h3>连接 TZA-CC</h3><p>在浏览器打开 <a href="${esc(p.verify_url)}" target="_blank" rel="noopener noreferrer">${esc(p.verify_url)}</a>，登录后输入验证码：</p><p><code class="market-code" id="market-code">${esc(p.user_code)}</code></p><p class="hint" id="market-poll">等待确认… 验证码 ${esc(new Date(p.expires_at).toLocaleTimeString("zh-CN", { hour12: false }))} 前有效。</p>${keys}${host}</div><div class="webhook-actions"><button id="market-copy-code">复制验证码</button><button id="market-cancel">取消</button></div></section>`;
+    return `<section data-part="panel" class="panel webhook-panel market-connect"><div><h3>连接 TZA-CC</h3><p>在浏览器打开 <a href="${esc(p.verify_url)}" target="_blank" rel="noopener noreferrer">${esc(p.verify_url)}</a>，登录后输入验证码：</p><p><code class="market-code" id="market-code">${esc(p.user_code)}</code></p><p class="hint" id="market-poll">等待确认… 验证码 ${esc(new Date(p.expires_at).toLocaleTimeString("zh-CN", { hour12: false }))} 前有效。</p>${keys}${host}</div><div class="webhook-actions"><button id="market-copy-code">复制验证码</button><button id="market-cancel">取消</button></div></section>`;
   }
   if (status.bound) {
-    return `<section class="panel webhook-panel market-connect"><div><h3>TZA-CC 账号</h3><p>已连接：<b>${esc(status.account || "（未命名账号）")}</b> · 实例 ${esc(status.instance_id)}${status.bound_at ? ` · ${esc(day(status.bound_at))} 绑定` : ""}</p>${keys}${host}</div><div class="webhook-actions"><button id="market-disconnect" class="danger">断开连接</button></div></section>`;
+    return `<section data-part="panel" class="panel webhook-panel market-connect"><div><h3>TZA-CC 账号</h3><p>已连接：<b>${esc(status.account || "（未命名账号）")}</b> · 实例 ${esc(status.instance_id)}${status.bound_at ? ` · ${esc(day(status.bound_at))} 绑定` : ""}</p>${keys}${host}</div><div class="webhook-actions"><button id="market-disconnect" class="danger">断开连接</button></div></section>`;
   }
   const other = status.other_url ? `<p class="warn-text">本机保存的是另一个 TZA-CC（${esc(status.other_url)}）的绑定，对当前地址不生效。</p>` : "";
-  return `<section class="panel webhook-panel market-connect"><div><h3>TZA-CC 账号</h3><p>「主题」「插件」页的市场里，免费包不连接也能装。连接后下载计入你的账号，付费包也要连接后才能装，可在 TZA-CC 用户中心看到每台实例装了什么。</p>${other}${keys}${host}</div><div class="webhook-actions">${status.other_url ? '<button id="market-disconnect">删除旧绑定</button>' : ""}<button id="market-connect" class="primary">连接 TZA-CC</button></div></section>`;
+  return `<section data-part="panel" class="panel webhook-panel market-connect"><div><h3>TZA-CC 账号</h3><p>「主题」「插件」页的市场里，免费包不连接也能装。连接后下载计入你的账号，付费包也要连接后才能装，可在 TZA-CC 用户中心看到每台实例装了什么。</p>${other}${keys}${host}</div><div class="webhook-actions">${status.other_url ? '<button id="market-disconnect">删除旧绑定</button>' : ""}<button id="market-connect" class="primary">连接 TZA-CC</button></div></section>`;
 }
 
 export function wireAccount(root = content()) {

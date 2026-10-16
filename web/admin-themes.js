@@ -16,7 +16,7 @@ export async function renderThemes(nodesReady) {
   registerThemes(themes);
   const anime = themes.some((t) => t.id === ANIME && t.type !== "characters");
   const updates = await loadMarket(() => renderThemes(), themes, anime ? ["themes", "characters"] : "themes");
-  content().innerHTML = `<section class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>访客在公开面板右上角能选的外观。内置现代极简（默认）与液态玻璃，其余从市场安装或上传 zip。</p></div><div class="heading-actions">${marketPill()}</div></section>${installedPanel(themes, updates, panel.default_skin)}${catalogPanel("themes")}`;
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>访客在公开面板右上角能选的外观。内置现代极简（默认）与液态玻璃，其余从市场安装或上传 zip。</p></div><div class="heading-actions">${marketPill()}</div></section>${installedPanel(themes, updates, panel.default_skin)}${catalogPanel("themes")}`;
   wireMarket();
   wireInstalled(themes);
 }
@@ -33,7 +33,7 @@ function installedPanel(list, updates, defaultSkin) {
   const orphans = !anime && packs.length
     ? `<div class="theme-group"><p class="hint">下面的角色包只给二次元主题添角色，二次元没装时不生效；装回二次元即恢复。</p>${packs.map((t) => packRow(t, updates)).join("")}</div>`
     : "";
-  return `<section class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">「市场」是从 TZA-CC 装的，有新版时在这里提示；「本地」是手动上传的 zip。</span></div><div class="panel-actions"><label class="button primary theme-upload">上传主题包 / 角色包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${rows}${orphans}</div><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级（之后按本地包对待，不再提示更新）。主题包存在数据目录的 themes/ 下，不在数据库备份里；前台默认外观在「面板设置」里选。</p></section>`;
+  return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">「市场」是从 TZA-CC 装的，有新版时在这里提示；「本地」是手动上传的 zip。</span></div><div class="panel-actions"><label class="button primary theme-upload">上传主题包 / 角色包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${rows}${orphans}</div><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级（之后按本地包对待，不再提示更新）。主题包存在数据目录的 themes/ 下，不在数据库备份里；前台默认外观在「面板设置」里选。</p></section>`;
 }
 
 function skinRow(t, updates, defaultSkin) {
