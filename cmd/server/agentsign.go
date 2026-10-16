@@ -34,6 +34,9 @@ func agentKeygenCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := os.MkdirAll(filepath.Dir(*out), 0o700); err != nil {
+		return err
+	}
 	pubPath := filepath.Join(filepath.Dir(*out), agentdist.KeyFile)
 	if _, err := os.Stat(pubPath); err == nil {
 		return fmt.Errorf("%s 已存在，换一个目录，免得覆盖正在用的公钥", pubPath)
