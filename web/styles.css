@@ -5106,7 +5106,7 @@ dialog.wide-dialog {
 }
 
 .bucket-search {
-  width: min(260px, 60%);
+  width: min(240px, 100%);
   font-weight: 400;
 }
 
@@ -5129,8 +5129,7 @@ dialog.wide-dialog {
   border-radius: 8px;
 }
 
-.bucket-node[hidden],
-.bucket-src[hidden] {
+.bucket-node[hidden] {
   display: none;
 }
 
@@ -5160,25 +5159,21 @@ dialog.wide-dialog {
   color: var(--accent);
 }
 
-.bucket-src {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.bucket-src + .bucket-src {
-  margin-top: 6px;
-}
-
-.bucket-src-head {
+.bucket-tools {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  flex: 1 1 auto;
+  justify-content: flex-end;
 }
 
-.bucket-src-head .bucket-act {
-  margin-left: 0;
+.bucket-node.in {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.07);
+}
+
+.bucket-node.in small {
+  color: var(--accent);
 }
 
 .bucket-empty {

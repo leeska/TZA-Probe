@@ -244,9 +244,9 @@ const REGION = {
 };
 
 // 分组 / 地区管理：一个两栏弹窗，不再层层套弹窗。左栏是全部分组（含「未分组」）和新建，右栏是选中那一组：
-// 顶部就地改名 / 解散，下面是成员（点「移出」）和其余节点（按所在分组归堆，点「加入」或整堆「全部加入」）。
-// 每次点击当场生效（一次批量请求），没有最后的「保存」；节点只能在一个分组里，所以「加入」就是从原分组移过来，
-// 行上写明它原来在哪。
+// 顶部就地改名 / 解散，下面平铺全部节点（按面板顺序，位置不随加入移出跳动）：已在这一组的高亮、点「移出」，
+// 其余的标着现在所在的分组、点「加入」；搜索框筛选，筛选时可以一次加入筛选出来的。每次点击当场生效（一次
+// 批量请求），没有最后的「保存」；节点只能在一个分组里，所以「加入」就是从原分组移过来。
 function manager(kind, selected) {
   const d = modal(kind.title, `<p class="hint">${kind.hint}</p><div class="bucket-board"></div>`);
   d.classList.add("wide-dialog");
@@ -255,8 +255,7 @@ function manager(kind, selected) {
   const view = { current: selected ?? buckets(kind.key)[0]?.[0] ?? "", fresh: null, mode: "", q: "" };
   const of = (n) => n[kind.key] || "";
   const label = (v) => (v ? esc(v) : `<span class="muted">${kind.empty}</span>`);
-  const nodeRow = (n, action) =>
-    `<li class="bucket-node" data-search="${esc(`${n.name} ${n.group || ""} ${n.region || ""}`.toLowerCase())}"><span class="bucket-node-name">${esc(n.name)}</span><small>${esc(kind === GROUP ? n.region || "" : n.group || "")}</small>${action}</li>`;
+  const searchText = (n) => `${n.name} ${n.group || ""} ${n.region || ""}`.toLowerCase();
 
   const paint = () => {
     const list = buckets(kind.key);
@@ -279,31 +278,36 @@ function manager(kind, selected) {
     } else {
       head = `<div class="bucket-head"><h3>${label(cur)}<small>${inside.length} 台</small></h3>${cur ? `<div class="bucket-head-actions"><button type="button" class="quiet" data-mode="rename">改名</button><button type="button" class="danger" data-mode="dissolve" ${inside.length ? "" : "disabled"}>${kind.dissolve}</button></div>` : ""}</div>`;
     }
-    const members = inside.length
-      ? `<ul class="bucket-nodes">${inside.map((n) => nodeRow(n, cur ? `<button type="button" class="bucket-act" data-out="${n.id}" title="移到${kind.empty}">移出</button>` : "")).join("")}</ul>`
-      : `<p class="bucket-empty">${view.fresh === cur ? `新${kind.noun}，从下面加入节点后才会保存。` : "这里还没有节点。"}</p>`;
-    const sources = list
-      .filter(([v]) => v !== cur)
-      .map(([v]) => {
-        const nodes = state.nodes.filter((n) => of(n) === v);
-        return `<div class="bucket-src"><div class="bucket-src-head"><span>${label(v)}</span><button type="button" class="bucket-act" data-all-from="${esc(v)}">全部加入</button></div><ul class="bucket-nodes">${nodes.map((n) => nodeRow(n, `<button type="button" class="bucket-act add" data-in="${n.id}">加入</button>`)).join("")}</ul></div>`;
+    const rowsAll = state.nodes
+      .map((n) => {
+        const here = of(n) === cur;
+        const action = here
+          ? cur
+            ? `<button type="button" class="bucket-act" data-out="${n.id}" title="移到${kind.empty}">移出</button>`
+            : ""
+          : `<button type="button" class="bucket-act add" data-in="${n.id}">加入</button>`;
+        return `<li class="bucket-node${here ? " in" : ""}" data-search="${esc(searchText(n))}"><span class="bucket-node-name">${esc(n.name)}</span><small>${here ? "✓ 在这里" : label(of(n))}</small>${action}</li>`;
       })
       .join("");
-    board.innerHTML = `<aside class="bucket-side"><div class="bucket-list" role="group" aria-label="${kind.noun}">${rows || `<p class="bucket-empty">还没有${kind.noun}</p>`}</div>${create}</aside><section class="bucket-main">${head}<div class="bucket-section"><div class="bucket-label">成员</div>${members}</div><div class="bucket-section"><div class="bucket-label">添加节点<input type="search" class="bucket-search" placeholder="搜索名称 / 分组 / 地区" value="${esc(view.q)}" autocomplete="off" aria-label="搜索要加入的节点"></div>${sources || '<p class="bucket-empty">其余节点都已在这里。</p>'}</div></section>`;
+    const fresh = view.fresh === cur && !inside.length ? `<p class="bucket-empty">新${kind.noun}，加入第一台节点后才会保存。</p>` : "";
+    board.innerHTML = `<aside class="bucket-side"><div class="bucket-list" role="group" aria-label="${kind.noun}">${rows || `<p class="bucket-empty">还没有${kind.noun}</p>`}</div>${create}</aside><section class="bucket-main">${head}<div class="bucket-section"><div class="bucket-label"><span>全部节点 · ${state.nodes.length} 台</span><span class="bucket-tools"><input type="search" class="bucket-search" placeholder="搜索名称 / 分组 / 地区" value="${esc(view.q)}" autocomplete="off" aria-label="筛选节点"><button type="button" class="bucket-act add" data-all-in hidden></button></span></div>${fresh}<ul class="bucket-nodes">${rowsAll || '<li class="bucket-empty">还没有节点</li>'}</ul></div></section>`;
     wireComboboxes(board);
     applySearch();
     board.querySelector(".bucket-rename input")?.focus();
   };
 
+  const matches = (n) => !view.q.trim() || searchText(n).includes(view.q.trim().toLowerCase());
+  // 「加入筛选出的 N 台」：筛选出来、还不在这一组的节点。
+  const toAdd = () => state.nodes.filter((n) => matches(n) && of(n) !== view.current);
   const applySearch = () => {
     const q = view.q.trim().toLowerCase();
-    for (const src of board.querySelectorAll(".bucket-src")) {
-      let shown = 0;
-      for (const row of src.querySelectorAll(".bucket-node")) {
-        row.hidden = !!q && !row.dataset.search.includes(q);
-        if (!row.hidden) shown++;
-      }
-      src.hidden = !shown;
+    for (const row of board.querySelectorAll(".bucket-node")) row.hidden = !!q && !row.dataset.search.includes(q);
+    const all = board.querySelector("[data-all-in]");
+    if (all) {
+      // 只在筛选时出现：不筛选就点会把全部节点一下子搬进来，没有确认。
+      const n = toAdd().length;
+      all.textContent = `加入筛选出的 ${n} 台`;
+      all.hidden = !q || !n;
     }
   };
 
@@ -335,10 +339,9 @@ function manager(kind, selected) {
     if (t.hasAttribute("data-cancel")) return (view.mode = ""), paint();
     if (t.dataset.in) return apply([t.dataset.in], target(), `${name(t.dataset.in)} 已移到${where(target())}`);
     if (t.dataset.out) return apply([t.dataset.out], "", `${name(t.dataset.out)} 已移到${kind.empty}`);
-    if (t.dataset.allFrom !== undefined) {
-      const q = view.q.trim().toLowerCase();
-      const ids = state.nodes.filter((n) => of(n) === t.dataset.allFrom && (!q || `${n.name} ${n.group || ""} ${n.region || ""}`.toLowerCase().includes(q))).map((n) => n.id);
-      return apply(ids, target(), `${ids.length} 台已从${where(t.dataset.allFrom)}移到${where(target())}`);
+    if (t.hasAttribute("data-all-in")) {
+      const ids = toAdd().map((n) => n.id);
+      return apply(ids, target(), `${ids.length} 台已移到${where(target())}`);
     }
     if (t.hasAttribute("data-confirm-dissolve")) {
       const from = view.current;
