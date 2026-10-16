@@ -25,12 +25,17 @@ import (
 type themeView struct {
 	theme.Manifest
 	CSS []string `json:"css,omitempty"`
+	// Options are the administrator's values for the theme's settings menu.
+	Options map[string]any `json:"options,omitempty"`
 }
 
-func themeList(store *theme.Store) []themeView {
+func themeList(store *theme.Store, options map[string]map[string]any) []themeView {
 	out := []themeView{}
 	for _, m := range store.List() {
 		v := themeView{Manifest: m}
+		if len(m.Settings) > 0 {
+			v.Options = options[m.ID]
+		}
 		for _, style := range m.Styles {
 			v.CSS = append(v.CSS, "/themes/"+m.ID+"/"+style+"?v="+m.Rev)
 		}
@@ -46,7 +51,37 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 
 	// ---- themes：内置皮肤 + 后台上传的主题包（zip，见 docs/THEMES.md）
 	route("GET /api/v1/admin/themes", func(w http.ResponseWriter, r *http.Request) {
-		write(w, 200, themeList(a.Themes))
+		options, err := a.svc.SkinOptions(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, themeList(a.Themes, options))
+	})
+	// 主题设置：主题在 theme.json 里声明的菜单（二次元的「角色包」也在这里），对所有访客生效。
+	route("PUT /api/v1/admin/themes/{id}/settings", func(w http.ResponseWriter, r *http.Request) {
+		var patch map[string]json.RawMessage
+		if !decode(w, r, &patch) {
+			return
+		}
+		id := r.PathValue("id")
+		var settings []theme.Setting
+		found := false
+		for _, m := range a.Themes.List() {
+			if m.ID == id && m.Type != theme.TypeCharacters {
+				settings, found = m.Settings, true
+			}
+		}
+		if !found {
+			write(w, 404, map[string]string{"error": "没有这个主题"})
+			return
+		}
+		values, err := a.svc.SetSkinOptions(r.Context(), id, settings, patch)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, map[string]any{"options": values})
 	})
 	route("POST /api/v1/admin/themes", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, theme.MaxUpload))

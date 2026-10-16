@@ -26,12 +26,15 @@ import (
 // Limits for one package. The archive itself is capped at MaxUpload; the rest
 // bound what it may expand to.
 const (
-	MaxUpload     = 20 << 20
-	maxUnpacked   = 48 << 20
-	maxFile       = 16 << 20
-	maxFiles      = 300
-	maxStyles     = 8
-	maxCharacters = 60
+	MaxUpload       = 20 << 20
+	maxUnpacked     = 48 << 20
+	maxFile         = 16 << 20
+	maxFiles        = 300
+	maxStyles       = 8
+	maxCharacters   = 60
+	maxSkinSettings = 6
+	maxSkinOptions  = 8
+	maxPackToggles  = 100
 )
 
 // Colors are the two browser-chrome colours (meta theme-color) of a skin.
@@ -61,11 +64,163 @@ type Manifest struct {
 	Swatch     []string    `json:"swatch,omitempty"`
 	Styles     []string    `json:"styles,omitempty"`
 	Characters []Character `json:"characters,omitempty"`
-	Builtin    bool        `json:"builtin,omitempty"`
-	Rev        string      `json:"rev,omitempty"`
+	// Settings is the theme's own settings menu, declared by its developer:
+	// what an administrator can switch for this look. See SkinSetting.
+	Settings []SkinSetting `json:"settings,omitempty"`
+	Builtin  bool          `json:"builtin,omitempty"`
+	Rev      string        `json:"rev,omitempty"`
 	// Source is SourceMarket for a package installed from TZA-CC, empty for a
 	// local upload.
 	Source string `json:"source,omitempty"`
+}
+
+// AnimeID is the id of the official 二次元 package, the one skin that draws
+// characters; only it may declare a SettingCharacters setting.
+const AnimeID = "anime"
+
+// SkinSetting is one entry of a theme's settings menu. The administrator's
+// choice applies to every visitor: while the theme is on, the panel writes it
+// to <html data-opt-<id>="<value>"> so the theme's stylesheets can select on
+// it. A toggle's values are "on" / "off"; a choice's are its option values.
+// SettingCharacters lists the installed character packs to switch on and off
+// (its value is the ids switched off; "builtin" is the skin's own figures).
+type SkinSetting struct {
+	ID      string       `json:"id"`
+	Type    string       `json:"type"`
+	Label   string       `json:"label"`
+	Hint    string       `json:"hint,omitempty"`
+	Options []SkinOption `json:"options,omitempty"`
+	Default string       `json:"default,omitempty"`
+}
+
+// SkinOption is one value of a choice setting.
+type SkinOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// Skin setting types.
+const (
+	SettingChoice     = "choice"
+	SettingToggle     = "toggle"
+	SettingCharacters = "characters"
+)
+
+var skinSettingID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,23}$`)
+
+// checkSkinSettings validates a skin's settings menu and fills in defaults: a
+// choice defaults to its first option, a toggle to "off".
+func checkSkinSettings(skinID string, list []SkinSetting) error {
+	if len(list) > maxSkinSettings {
+		return fmt.Errorf("settings 最多 %d 项", maxSkinSettings)
+	}
+	seen := map[string]bool{}
+	for i := range list {
+		st := &list[i]
+		st.Label, st.Hint = strings.TrimSpace(st.Label), strings.TrimSpace(st.Hint)
+		label := "settings 里的 " + st.ID
+		switch {
+		case !skinSettingID.MatchString(st.ID):
+			return fmt.Errorf("settings 的 id %q 须为 1–24 位小写字母、数字或连字符，以字母开头", st.ID)
+		case seen[st.ID]:
+			return fmt.Errorf("settings 的 id %q 重复", st.ID)
+		case st.Label == "" || utf8.RuneCountInString(st.Label) > 20:
+			return errors.New(label + "：label 必填，最多 20 个字")
+		case utf8.RuneCountInString(st.Hint) > 60:
+			return errors.New(label + "：hint 最多 60 个字")
+		}
+		seen[st.ID] = true
+		switch st.Type {
+		case SettingToggle:
+			if len(st.Options) > 0 {
+				return errors.New(label + "：toggle 不带 options")
+			}
+			if st.Default == "" {
+				st.Default = "off"
+			}
+			if st.Default != "on" && st.Default != "off" {
+				return errors.New(label + `：toggle 的 default 须为 "on" 或 "off"`)
+			}
+		case SettingChoice:
+			if len(st.Options) < 2 || len(st.Options) > maxSkinOptions {
+				return fmt.Errorf("%s：choice 须有 2–%d 个 options", label, maxSkinOptions)
+			}
+			values := map[string]bool{}
+			for j := range st.Options {
+				o := &st.Options[j]
+				o.Label = strings.TrimSpace(o.Label)
+				if !skinSettingID.MatchString(o.Value) || values[o.Value] {
+					return fmt.Errorf("%s：option 的 value %q 须为互不重复的 1–24 位小写字母、数字或连字符", label, o.Value)
+				}
+				if o.Label == "" || utf8.RuneCountInString(o.Label) > 20 {
+					return errors.New(label + "：每个 option 的 label 必填，最多 20 个字")
+				}
+				values[o.Value] = true
+			}
+			if st.Default == "" {
+				st.Default = st.Options[0].Value
+			}
+			if !values[st.Default] {
+				return fmt.Errorf("%s：default %q 不在 options 里", label, st.Default)
+			}
+		case SettingCharacters:
+			if skinID != AnimeID {
+				return errors.New(label + `：type "characters" 只有二次元主题（id anime）能用`)
+			}
+			if len(st.Options) > 0 || st.Default != "" {
+				return errors.New(label + "：characters 不带 options / default")
+			}
+		default:
+			return errors.New(label + `：type 须为 "choice"、"toggle" 或 "characters"`)
+		}
+	}
+	return nil
+}
+
+// SkinOptionValues checks one administrator patch against a skin's settings
+// and returns the normalized values: a toggle or choice is a string, a
+// characters setting is the list of pack ids switched off. Unknown keys are
+// refused so a typo never silently does nothing.
+func SkinOptionValues(settings []SkinSetting, patch map[string]json.RawMessage) (map[string]any, error) {
+	out := map[string]any{}
+	for key, raw := range patch {
+		var st *SkinSetting
+		for i := range settings {
+			if settings[i].ID == key {
+				st = &settings[i]
+			}
+		}
+		if st == nil {
+			return nil, fmt.Errorf("这个主题没有设置项 %q", key)
+		}
+		if st.Type == SettingCharacters {
+			var off []string
+			if err := json.Unmarshal(raw, &off); err != nil || len(off) > maxPackToggles {
+				return nil, fmt.Errorf("%s 须为角色包 id 列表（最多 %d 个）", st.Label, maxPackToggles)
+			}
+			clean := []string{}
+			for _, id := range off {
+				if (id == "builtin" || idPattern.MatchString(id)) && !slices.Contains(clean, id) {
+					clean = append(clean, id)
+				}
+			}
+			out[key] = clean
+			continue
+		}
+		var v string
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return nil, fmt.Errorf("%s 的值须为字符串", st.Label)
+		}
+		ok := st.Type == SettingToggle && (v == "on" || v == "off")
+		for _, o := range st.Options {
+			ok = ok || o.Value == v
+		}
+		if !ok {
+			return nil, fmt.Errorf("%s 不能设为 %q", st.Label, v)
+		}
+		out[key] = v
+	}
+	return out, nil
 }
 
 // SourceMarket marks a package installed from the TZA-CC market.
@@ -110,8 +265,10 @@ type Palette struct {
 }
 
 // Reserved are the ids of the skins compiled into the panel; no package may
-// take one. Only 液态玻璃 is compiled in; 复古印刷 / 现代极简 / 二次元 are the
-// official packages under themes/ in this repository, installed from the market.
+// take one. 液态玻璃 is compiled into every Probe; 现代极简 is compiled in again
+// from Probe v1.3 (the Probe refuses a package under its id itself, so CC keeps
+// serving the v1.2 package to older Probes). 复古印刷 / 二次元 are the official
+// packages under themes/ in this repository, installed from the market.
 var Reserved = []string{"glass"}
 
 var (
@@ -227,6 +384,9 @@ func Parse(raw []byte) (Manifest, error) {
 		if len(m.Styles) > 0 {
 			return Manifest{}, errors.New("角色包不带样式表（styles 留空）：它只给二次元主题添角色")
 		}
+		if len(m.Settings) > 0 {
+			return Manifest{}, errors.New("角色包没有设置菜单（settings 留空）：它出现在二次元主题的设置里")
+		}
 		if len(m.Characters) == 0 || len(m.Characters) > maxCharacters {
 			return Manifest{}, fmt.Errorf("角色包须有 1–%d 个角色（characters）", maxCharacters)
 		}
@@ -251,6 +411,9 @@ func Parse(raw []byte) (Manifest, error) {
 		return Manifest{}, errors.New("swatch 须为 3 个 #rrggbb 颜色")
 	case len(m.Styles) == 0 || len(m.Styles) > maxStyles:
 		return Manifest{}, fmt.Errorf("styles 须列出 1–%d 个样式表", maxStyles)
+	}
+	if err := checkSkinSettings(m.ID, m.Settings); err != nil {
+		return Manifest{}, err
 	}
 	for _, c := range m.Swatch {
 		if !hexColor.MatchString(c) {

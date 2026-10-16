@@ -1,7 +1,7 @@
 /* ==========================================================================
    TZA Probe · 现代极简（shadcn/ui）皮肤
 
-   第四张样式表，只在 <html data-skin="shadcn"> 时生效（选择器一律带 data-skin 前缀，
+   内置的默认皮肤，样式表只在 <html data-skin="shadcn"> 时生效（选择器一律带 data-skin 前缀，
    默认的液态玻璃皮肤一个字节都不受影响）。视觉语言取自 shadcn/ui 的 Neutral 主题
    （ui.shadcn.com/themes，令牌源 https://ui.shadcn.com/r/themes/neutral.json）：
    纯白 / 纯黑的中性面、1px 发丝描边、8px 圆角尺度、几乎没有阴影、无模糊无渐变，

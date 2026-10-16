@@ -164,7 +164,8 @@ func (a *API) Handler() http.Handler {
 			fmt.Fprintf(w, "window.__tzaDefault={theme:%q,skin:%q};\n", theme, skin)
 			// 皮肤清单（内置 + 已安装的主题包）也在这里一起发：theme-boot.js 要在首屏前认出
 			// 访客存下的皮肤，theme-css.js 要在首屏前挂上已安装主题的样式表。
-			list, _ := json.Marshal(themeList(a.Themes))
+			options, _ := a.svc.SkinOptions(r.Context())
+			list, _ := json.Marshal(themeList(a.Themes, options))
 			fmt.Fprintf(w, "window.__tzaThemes=%s;\n", list)
 			// 站点名称与 logo 也要在首屏前就位：theme-boot.js 据此换掉标签页标题与 favicon，
 			// app.js 拼品牌区时直接用，不先闪一下内置的 TZA Probe。空值即内置品牌。

@@ -39,9 +39,22 @@ export function agentLine(n) {
   const badge = it && UPGRADE_BADGES[it.state];
   if (badge) out += ` <span class="pill upgrade-pill ${badge[1]}" title="${esc(it.error || badge[2])}">${badge[0]}</span>`;
   else if (isStale(n))
-    out += ` <span class="agent-stale" title="面板版本 ${esc(state.serverVersion)}。${selfUpdating(n) ? "勾选后点「升级 Agent」即可一键升级。" : "这台的 Agent 早于一键升级：在机器上不带 --token 重新执行一次安装命令，之后就能一键升级。"}">需更新</span>`;
+    out += ` <button type="button" class="agent-stale" data-upgrade-one="${esc(n.id)}" title="面板版本 ${esc(state.serverVersion)}。${selfUpdating(n) ? "点这里单独升级这一台；勾选多台后点「升级 Agent」批量升级。" : "这台的 Agent 早于一键升级：点这里看升级命令，在机器上执行一次之后就能一键升级。"}">需更新 ⇡</button>`;
   return out;
 }
+
+// 操作列里的「升级」：版本落后、且没有排着或正在进行的升级时才出现。
+export function upgradeButton(n) {
+  const busy = ["queued", "sent"].includes(upgrades[n.id]?.state);
+  return isStale(n) && !busy ? `<button type="button" data-upgrade-one="${esc(n.id)}" title="把这台的 Agent 升级到 ${esc(state.serverVersion)}">升级</button>` : "";
+}
+
+// 单台升级：状态格的「需更新」和操作列的「升级」都走这里。委托到 document，
+// 轮询原地刷新 Agent 那一行后新按钮不用重新绑定。
+document.addEventListener("click", (e) => {
+  const b = e.target.closest?.("[data-upgrade-one]");
+  if (b) guard(() => confirmUpgrade([b.dataset.upgradeOne]))();
+});
 
 // ---------------------------------------------------------------- 勾选与工具栏
 
@@ -386,7 +399,14 @@ function manualUpgrade(ids, parts) {
 function refreshAgentLines() {
   for (const el of content()?.querySelectorAll("[data-agent]") || []) {
     const n = state.nodes.find((x) => x.id === el.dataset.agent);
-    if (n) el.innerHTML = agentLine(n);
+    if (!n) continue;
+    el.innerHTML = agentLine(n);
+    // 操作列的「升级」跟着进度显隐：排上了就收起，升级失败 / 仍落后再出现。
+    const actions = el.closest("tr")?.querySelector(".row-actions");
+    if (!actions) continue;
+    actions.querySelector("[data-upgrade-one]")?.remove();
+    const btn = upgradeButton(n);
+    if (btn) actions.querySelector("[data-delete]")?.insertAdjacentHTML("beforebegin", btn);
   }
   const all = content()?.querySelector("#upgrade-all");
   if (all) {

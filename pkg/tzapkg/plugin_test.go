@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -191,5 +192,36 @@ func TestInspect(t *testing.T) {
 		{"id":"tyo-dns","family":"ipv6","region":"东京","carrier":"其他","host":"example.jp","port":443}]}`
 	if info, err := Inspect(zipOf(map[string]string{"plugin.json": targets})); err != nil || info.Kind != KindTargets || !strings.Contains(info.Permissions[0], "2 个") {
 		t.Fatalf("targets inspect: %+v %v", info, err)
+	}
+}
+
+func TestSkinSettings(t *testing.T) {
+	base := `{"id":"%s","name":"x","chrome":{"light":"#eef0e2","dark":"#141811"},"swatch":["#eef0e2","#fbfaf3","#5f8f3a"],"styles":["theme.css"],"settings":%s}`
+	m, err := Parse([]byte(fmt.Sprintf(base, "matcha", `[{"id":"density","type":"choice","label":"密度","options":[{"value":"cozy","label":"舒适"},{"value":"compact","label":"紧凑"}]},{"id":"paper","type":"toggle","label":"纸纹"}]`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Settings[0].Default != "cozy" || m.Settings[1].Default != "off" {
+		t.Errorf("defaults not filled: %+v", m.Settings)
+	}
+	if _, err := Parse([]byte(fmt.Sprintf(base, AnimeID, `[{"id":"characters","type":"characters","label":"角色包"}]`))); err != nil {
+		t.Errorf("二次元 may list character packs: %v", err)
+	}
+	for name, raw := range map[string]string{
+		"characters off anime": `[{"id":"cast","type":"characters","label":"角色"}]`,
+		"unknown type":         `[{"id":"x","type":"slider","label":"x"}]`,
+		"bad id":               `[{"id":"Bad!","type":"toggle","label":"x"}]`,
+		"dup id":               `[{"id":"a","type":"toggle","label":"x"},{"id":"a","type":"toggle","label":"y"}]`,
+		"one option":           `[{"id":"a","type":"choice","label":"x","options":[{"value":"v","label":"v"}]}]`,
+		"bad default":          `[{"id":"a","type":"choice","label":"x","default":"z","options":[{"value":"v","label":"v"},{"value":"w","label":"w"}]}]`,
+		"toggle default":       `[{"id":"a","type":"toggle","label":"x","default":"yes"}]`,
+		"no label":             `[{"id":"a","type":"toggle"}]`,
+	} {
+		if _, err := Parse([]byte(fmt.Sprintf(base, "matcha", raw))); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if _, err := Parse([]byte(`{"id":"eu","type":"characters","name":"欧洲","settings":[{"id":"a","type":"toggle","label":"x"}],"characters":[]}`)); err == nil {
+		t.Error("a character pack must not declare settings")
 	}
 }

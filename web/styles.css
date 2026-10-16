@@ -1514,6 +1514,18 @@ button.node-name {
   cursor: help;
 }
 
+/* 「需更新 ⇡」可以点：单独升级这一台。 */
+button.agent-stale {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
 /* 「正在告警」那格可以点：点进告警页的「当前告警」。有告警时数字标橙。 */
 .admin-stats > .stat-link {
   cursor: pointer;
@@ -4251,6 +4263,82 @@ td .due.expired + small {
 
 .theme-upload {
   cursor: pointer;
+}
+
+/* 主题旁的「设置」：展开主题自己声明的设置菜单（admin-themes.js 的 settingsMenu）。 */
+.theme-gear {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.theme-gear svg {
+  width: 15px;
+  height: 15px;
+  transition: rotate 0.2s ease;
+}
+
+.theme-gear.on svg {
+  rotate: 60deg;
+}
+
+.theme-settings .opt-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+}
+
+.theme-settings .opt-group {
+  display: grid;
+  gap: 8px;
+}
+
+.theme-settings .opt-group > .opt-row {
+  padding-bottom: 0;
+}
+
+.theme-settings .opt-group > .hint {
+  margin: 0 12px;
+}
+
+.theme-settings .segmented button.active {
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+}
+
+/* 开关：主题设置里的 toggle 与角色包启用。 */
+.opt-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--progress-track, rgba(120, 120, 128, 0.3));
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.opt-switch i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: translate 0.16s ease;
+}
+
+.opt-switch.on {
+  background: var(--accent);
+}
+
+.opt-switch.on i {
+  translate: 16px 0;
 }
 
 /* 商家名牌（app.js 的 vendorPlate）：默认是地区 · 分组后面的一枚强调色小牌。

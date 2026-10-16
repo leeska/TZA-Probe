@@ -68,7 +68,7 @@ func TestRunOrder(t *testing.T) {
 		"www.netflix.com", "api.fast.com", "www.disneyplus.com", "www.youtube.com",
 		"redirector.googlevideo.com", "www.primevideo.com", "uapisfm.tvbanywhere.com.sg",
 		"www.iq.com", "startup.core.indazn.com", "chat.openai.com", "gemini.google.com",
-		"claude.ai", "api.binance.com", "www.binance.com", "api.bybit.com", "www.bybit.com",
+		"claude.ai", "api.anthropic.com", "api.binance.com", "www.binance.com", "api.bybit.com", "www.bybit.com",
 		"www.okx.com", "www.bing.com",
 		"gspe1-ssl.ls.apple.com", "play.google.com", "www.google.com", "zh.wikipedia.org",
 		"www.reddit.com", "store.steampowered.com", "geolocation.onetrust.com",
@@ -344,30 +344,51 @@ func TestOpenAIStates(t *testing.T) {
 }
 
 func TestClaudeStates(t *testing.T) {
+	const allowed = `{"type":"error","error":{"type":"authentication_error","message":"x-api-key header is required"}}`
+	const refused = `{"type":"error","error":{"type":"forbidden","message":"Request not allowed"}}`
 	for _, tc := range []struct {
-		name   string
-		code   int
-		loc    string
-		want   string
-		detail string
+		name    string
+		code    int    // claude.ai/
+		loc     string // claude.ai/ redirects here
+		apiCode int
+		apiBody string
+		want    string
+		detail  string
 	}{
-		{"root", 200, "", model.UnlockYes, ""},
-		{"sign-in page", 200, "/login?returnTo=%2Fnew", model.UnlockYes, ""},
-		{"region block", 200, "/app-unavailable-in-region", model.UnlockNo, ""},
-		{"cloudflare 403", 403, "", model.UnlockFailed, "HTTP 403"},
+		{"root", 200, "", 401, allowed, model.UnlockYes, ""},
+		{"sign-in page", 200, "/login?returnTo=%2Fnew", 401, allowed, model.UnlockYes, ""},
+		{"region block", 200, "/app-unavailable-in-region", 401, allowed, model.UnlockNo, ""},
+		// Cloudflare challenges every non-browser client on claude.ai: the API gate decides.
+		{"challenge, API allowed", 403, "", 401, allowed, model.UnlockYes, ""},
+		{"challenge, API refused", 403, "", 403, refused, model.UnlockNo, ""},
+		{"challenge, API challenged too", 403, "", 403, "<html>Just a moment...</html>", model.UnlockFailed, "claude.ai HTTP 403 / API HTTP 403"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			url, done := server(t, func(w http.ResponseWriter, r *http.Request) {
-				if tc.loc != "" && r.URL.Path == "/" {
+			app, doneApp := server(t, func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/cdn-cgi/trace":
+					_, _ = w.Write([]byte("ip=203.0.113.9\nloc=JP\n"))
+				case tc.loc != "" && r.URL.Path == "/":
 					http.Redirect(w, r, tc.loc, http.StatusFound)
-					return
+				default:
+					w.WriteHeader(tc.code)
 				}
-				w.WriteHeader(tc.code)
 			})
-			got := runCheck(t, "claude", map[string]string{"claude.ai": url})
-			done()
+			api, doneAPI := server(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
+					t.Errorf("API probe: %s %s", r.Method, r.URL.Path)
+				}
+				w.WriteHeader(tc.apiCode)
+				_, _ = w.Write([]byte(tc.apiBody))
+			})
+			got := runCheck(t, "claude", map[string]string{"claude.ai": app, "api.anthropic.com": api})
+			doneApp()
+			doneAPI()
 			if got.Status != tc.want || got.Detail != tc.detail {
 				t.Errorf("claude %s: got %q/%q, want %q/%q", tc.name, got.Status, got.Detail, tc.want, tc.detail)
+			}
+			if got.Region != "JP" {
+				t.Errorf("claude %s: region %q, want JP from cdn-cgi/trace", tc.name, got.Region)
 			}
 		})
 	}

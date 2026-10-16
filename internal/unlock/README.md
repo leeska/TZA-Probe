@@ -40,7 +40,7 @@ func Run(ctx context.Context, opts Options) []model.UnlockResult
 | dazn | `POST startup.core.indazn.com/misl/v5/Startup`（跟随，固定 JSON 体） | JSON `Region.IsAllowed` 真→`yes`+`GeolocatedCountry`；假→`banned`+`DisallowedReason`；403/451 且非 JSON→`banned` |
 | openai | `GET chat.openai.com/cdn-cgi/trace` + `GET chat.openai.com`（均不跟随） | 正文含 `VPN` 或根 403→`banned`；429→`originals_only`；否则按 `loc` 是否在 ChatGPT 支持国→`yes`/`no` |
 | gemini | `GET gemini.google.com`（跟随） | 正文 `,2,1,200,"XXX"`→`yes`+XXX；旧标记 `45631641,null,true`→`yes`；否则 `no` |
-| claude | `GET claude.ai/`（跟随） | 终址仍 `claude.ai/`→`yes`；`anthropic.com/app-unavailable-in-region`→`no`；其它→`no`+终址 |
+| claude | `GET claude.ai/cdn-cgi/trace` 取地区；`GET claude.ai/`（跟随）；被 Cloudflare 403 挑战时再 `POST api.anthropic.com/v1/messages`（不带 key） | 终址到 `app-unavailable-in-region`→`no`；终址仍 `claude.ai/` 或登录页→`yes`；否则看 API：401 `authentication_error`→`yes`，403 `forbidden`（Request not allowed）→`no`，其它→`failed`。2026-10 起 claude.ai 对所有非浏览器客户端回 403 挑战（不论 UA），只靠首页会全部失败 |
 | binance | `GET api.binance.com/api/v3/ping`，非 2xx/451 时回退 `GET www.binance.com/` | 451→`no`「HTTP 451」；2xx→`yes`；网页站 2xx（含 202 挑战页）→`yes`；否则→`failed` |
 | bybit | `GET api.bybit.com/v5/market/time`，非 2xx/403 时回退 `GET www.bybit.com/` | 403→`no`「CDN 按国家阻断」；2xx→`yes`；否则→`failed` |
 | okx | `GET www.okx.com/`（跟随） | 403/451→`no`；2xx→`yes`+地区（终址 `/en-us` 尾段，缺则 `cdn-cgi/trace` 的 `loc`）|

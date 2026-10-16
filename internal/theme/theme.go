@@ -37,6 +37,7 @@ type (
 	Character = tzapkg.Character
 	Plate     = tzapkg.Plate
 	Palette   = tzapkg.Palette
+	Setting   = tzapkg.SkinSetting
 )
 
 const (
@@ -59,16 +60,23 @@ type Origin struct {
 const originDir = ".market"
 
 // Builtins are the skins compiled into web/: their stylesheets are always on
-// the page, scoped by html[data-skin]. Only 液态玻璃 is compiled in; the other
-// official looks (复古印刷 / 现代极简 / 二次元) are packages in themes/ that
-// the market distributes.
+// the page, scoped by html[data-skin]. The first is the default skin
+// (model.DefaultPanelSkin). 现代极简 and 液态玻璃 are compiled in; the other
+// official looks (复古印刷 / 二次元) are packages in themes/ that the market
+// distributes.
 var Builtins = []Manifest{
+	{ID: "shadcn", Name: "现代极简", Hint: "中性灰 · 发丝描边 · 小圆角", Chrome: Colors{Light: "#ffffff", Dark: "#0a0a0a"}, Swatch: []string{"#f5f5f5", "#ffffff", "#171717"}, Builtin: true},
 	{ID: "glass", Name: "液态玻璃", Hint: "毛玻璃 · 圆角 · 柔和阴影", Chrome: Colors{Light: "#edf2fb", Dark: "#0f141c"}, Swatch: []string{"#eef3fc", "#ffffff", "#0071e3"}, Builtin: true},
 }
 
 // AnimeSkin is the id of the official 二次元 package; character packs only
 // take effect while it is installed (the panel's character code keys on it).
-const AnimeSkin = "anime"
+const AnimeSkin = tzapkg.AnimeID
+
+// IsBuiltin reports whether id is a compiled-in skin. A package under such an
+// id (现代极简 was a market package in v1.2) is ignored and cannot be
+// installed again; the market hides it.
+func IsBuiltin(id string) bool { return builtin(id) }
 
 func builtin(id string) bool {
 	for _, b := range Builtins {
@@ -105,7 +113,7 @@ func (s *Store) Installed() []Manifest {
 	}
 	out := []Manifest{}
 	for _, e := range entries {
-		if !e.IsDir() || !tzapkg.ValidID(e.Name()) {
+		if !e.IsDir() || !tzapkg.ValidID(e.Name()) || builtin(e.Name()) {
 			continue
 		}
 		if m, err := s.read(e.Name()); err == nil {
@@ -149,7 +157,22 @@ func (s *Store) read(id string) (Manifest, error) {
 	if _, ok := s.origin(id); ok {
 		m.Source = SourceMarket
 	}
+	if id == AnimeSkin {
+		m.Settings = withCharacters(m.Settings)
+	}
 	return m, nil
+}
+
+// withCharacters makes sure 二次元's settings menu has the 角色包 entry: the
+// character packs live there, so a 二次元 package that predates theme
+// settings (v1.0.0) still gets one.
+func withCharacters(list []Setting) []Setting {
+	for _, st := range list {
+		if st.Type == tzapkg.SettingCharacters {
+			return list
+		}
+	}
+	return append([]Setting{{ID: "characters", Type: tzapkg.SettingCharacters, Label: "角色包", Hint: "关掉的角色包不参与挑角色"}}, list...)
 }
 
 func (s *Store) originPath(id string) string { return filepath.Join(s.Dir, originDir, id+".json") }
@@ -202,6 +225,9 @@ func (s *Store) install(archive []byte, o *Origin) (Manifest, error) {
 	m, files, err := tzapkg.Open(archive)
 	if err != nil {
 		return Manifest{}, err
+	}
+	if builtin(m.ID) {
+		return Manifest{}, fmt.Errorf("id %q 是内置主题，换一个名字", m.ID)
 	}
 
 	s.mu.Lock()

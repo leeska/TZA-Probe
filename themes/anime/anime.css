@@ -1459,6 +1459,10 @@ html[data-skin="anime"] .anime-cast .anime-blink {
   animation: anime-blink var(--cast-blink-dur, 5s) steps(1, end) infinite;
   animation-delay: var(--cast-blink-delay, 0s);
 }
+/* 主题设置「眨眼与呼吸」关掉（theme.json 的 settings → <html data-opt-motion="off">）：立绘静止、睁着眼。
+   写在呼吸规则之后、选择器多一个属性，压得过它们。 */
+html[data-skin="anime"][data-opt-motion="off"] .anime-cast .anime-blink { animation: none; opacity: 0; }
+
 @media (prefers-reduced-motion: no-preference) {
   /* 人物与双手同一相位呼吸：手在她身上，得跟着一起动 */
   html[data-skin="anime"] .anime-cast,
@@ -1594,3 +1598,7 @@ html[data-skin="anime"] .node-grid.node-list .node-card {
     padding: 14px 16px;
   }
 }
+
+/* 主题设置「眨眼与呼吸」关掉时也停掉呼吸（规则排在上面的呼吸动画之后，优先级更高）。 */
+html[data-skin="anime"][data-opt-motion="off"] .anime-cast,
+html[data-skin="anime"][data-opt-motion="off"] .anime-hands { animation: none; }

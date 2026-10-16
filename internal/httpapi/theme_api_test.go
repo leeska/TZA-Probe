@@ -113,7 +113,7 @@ func TestThemePackageLifecycle(t *testing.T) {
 	if code, body := request("DELETE", "/api/v1/admin/themes/matcha", admin, "", nil); code != 204 {
 		t.Fatalf("删除主题包: %d %s", code, body)
 	}
-	if _, boot := request("GET", "/theme-default.js", "", "", nil); !strings.Contains(boot, `skin:"glass"`) || strings.Contains(boot, "matcha") {
+	if _, boot := request("GET", "/theme-default.js", "", "", nil); !strings.Contains(boot, `skin:"shadcn"`) || strings.Contains(boot, "matcha") {
 		t.Fatalf("删掉后默认该退回内置、清单里不该再有它: %s", boot)
 	}
 	if code, _ := request("GET", "/themes/matcha/theme.css", "", "", nil); code != 404 {

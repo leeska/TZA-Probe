@@ -267,3 +267,38 @@ func TestMarketOrigin(t *testing.T) {
 		t.Fatal("remove left the market record")
 	}
 }
+
+// 现代极简在 v1.2 是市场包，从 v1.3 起编进二进制：数据目录里留下的旧包不再列出，同 id 也装不上。
+func TestBuiltinShadowsOldPackage(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	old := strings.Replace(manifest, `"matcha"`, `"shadcn"`, 1)
+	if _, err := s.Install(pack(t, file{name: "theme.json", body: old}, file{name: "theme.css", body: "a{}"})); err == nil {
+		t.Fatal("a package must not take a built-in id")
+	}
+	if err := os.MkdirAll(filepath.Join(s.Dir, "shadcn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(s.Dir, "shadcn", "theme.json"), []byte(old), 0o644)
+	for _, m := range s.Installed() {
+		if m.ID == "shadcn" {
+			t.Fatal("a leftover package under a built-in id must be ignored")
+		}
+	}
+	if list := s.List(); list[0].ID != "shadcn" || !list[0].Builtin {
+		t.Fatalf("现代极简 is the first built-in (the default): %+v", list[0])
+	}
+}
+
+// 早于主题设置的二次元包（v1.0.0 没有 settings）也得有「角色包」菜单：角色包就在那里开关。
+func TestAnimeAlwaysHasCharacterMenu(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	old := strings.Replace(manifest, `"matcha"`, `"anime"`, 1)
+	if _, err := s.Install(pack(t, file{name: "theme.json", body: old}, file{name: "theme.css", body: "a{}"})); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range s.Installed() {
+		if m.ID == "anime" && (len(m.Settings) != 1 || m.Settings[0].Type != "characters") {
+			t.Fatalf("anime settings: %+v", m.Settings)
+		}
+	}
+}

@@ -31,6 +31,7 @@
 | GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：站点名称 `site_name`（标签页标题与品牌区的名字，最多 32 字，空串恢复默认的 TZA Probe）、只读的 logo 地址 `site_logo`（未上传为空）、默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限） |
 | PUT、DELETE /admin/panel/logo | 站点 logo：PUT 的请求体就是图片本身（不走 JSON），类型按内容判断，只收 PNG / JPEG / GIF / WebP / ICO / SVG，最大 512 KB，回 `{"site_logo":"/site-logo?v=…"}`；SVG 含脚本、事件属性、外链引用或 DOCTYPE 时 400，超大 413。DELETE 移除，回到内置字标。文件存在数据目录的 `branding/`，不在数据库备份里 |
 | GET、POST /admin/themes、DELETE /admin/themes/{id} | 主题包清单（内置 + 已安装，市场装的带 `"source":"market"`）、上传 zip、删除，见 [THEMES.md](THEMES.md#接口) |
+| PUT /admin/themes/{id}/settings | 改主题设置（主题在 theme.json 里声明的菜单，二次元的角色包开关也在其中），请求体只写要改的项，回 `{options}`，见 [THEMES.md](THEMES.md#主题设置) |
 | GET /admin/plugins | 已安装的插件：`[{id, kind, name, hint, version, author, source, permissions, settings, targets}]`，`source` 为 `market` 表示从市场装的；通知插件带设置表单 `settings`（key、label、type、required、secret、help、placeholder、default、options），目标集带目标个数 `targets` |
 | POST /admin/plugins/inspect | 请求体是插件 zip（`Content-Type: application/zip`）：只校验、不安装，回同样的结构（面板据此列出权限请管理员确认）；不合规 400 |
 | POST /admin/plugins | 安装上传的插件 zip，回装好的插件；同 id 替换（之前是市场装的就改为本地）。格式见 [PLUGINS.md](PLUGINS.md) |

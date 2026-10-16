@@ -5,16 +5,16 @@
 // 切换逻辑见 theme.js / skins.js。
 (function () {
   var d = window.__tzaDefault || {};
-  // 认得的皮肤：/theme-default.js 发来的清单（内置 + 已安装的主题包）；没有清单时只认内置的液态玻璃。
-  var list = window.__tzaThemes || [{ id: "glass" }];
+  // 认得的皮肤：/theme-default.js 发来的清单（内置 + 已安装的主题包）；没有清单时只认内置的两套。
+  var list = window.__tzaThemes || [{ id: "shadcn" }, { id: "glass" }];
   var known = function (id) {
     // 角色包（type: "characters"）不是外观，不能当皮肤用。
     for (var i = 0; i < list.length; i++) if (list[i].id === id && list[i].type !== "characters") return true;
     return false;
   };
-  // 后台默认：没配过就是内置默认（跟随系统 + 液态玻璃），与 model.DefaultPanel* 一致。
+  // 后台默认：没配过就是内置默认（跟随系统 + 现代极简），与 model.DefaultPanel* 一致。
   var themeDefault = d.theme === "light" || d.theme === "dark" ? d.theme : "auto";
-  var skinDefault = known(d.skin) ? d.skin : "glass";
+  var skinDefault = known(d.skin) ? d.skin : "shadcn";
   var pref = null;
   try {
     pref = localStorage.getItem("tza-theme");
@@ -30,6 +30,20 @@
   root.dataset.theme = dark ? "dark" : "light";
   // 认不出来的值（含 null、已删除的主题包）退回默认皮肤。
   root.dataset.skin = known(skin) ? skin : skinDefault;
+  // 主题设置（管理员在「主题」页调的、主题在 theme.json 里声明的菜单）：首屏前写成 data-opt-*，
+  // 样式表据此选择。规则与 skins.js 的 applyOptions 相同。
+  for (var k = 0; k < list.length; k++) {
+    if (list[k].id !== root.dataset.skin || !list[k].settings) continue;
+    var opts = list[k].options || {};
+    for (var s = 0; s < list[k].settings.length; s++) {
+      var st = list[k].settings[s];
+      if (st.type !== "toggle" && st.type !== "choice") continue;
+      var v = opts[st.id];
+      var ok = st.type === "toggle" && (v === "on" || v === "off");
+      for (var o = 0; st.options && o < st.options.length; o++) if (st.options[o].value === v) ok = true;
+      root.setAttribute("data-opt-" + st.id, ok ? v : st["default"]);
+    }
+  }
   // 站点品牌：后台设了名称 / logo 就在首屏前换掉标签页标题与 favicon（index.html 把 <title> 与
   // <link rel="icon"> 放在本脚本之前）。后台保存后的即时替换见 brand.js 的 applyBrand。
   var brand = window.__tzaBrand || {};

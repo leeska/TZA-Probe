@@ -40,7 +40,7 @@ func TestAssetsRevalidateAndCompress(t *testing.T) {
 		t.Fatal("gzip body differs from plain body")
 	}
 	// 二次元的立绘与样式在主题包里（themes/anime），不再编进二进制。
-	for _, gone := range []string{"/anime/generic.webp", "/anime.css", "/press.css", "/shadcn.css"} {
+	for _, gone := range []string{"/anime/generic.webp", "/anime.css", "/press.css"} {
 		if w := get(gone, nil); w.Code != http.StatusNotFound {
 			t.Fatalf("%s 应该已移到主题包里，得到 %d", gone, w.Code)
 		}

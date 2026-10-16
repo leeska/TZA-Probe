@@ -1,3 +1,5 @@
+import { disabledPacks } from "./skins.js";
+
 // 二次元皮肤的角色名单：面板节点名 → 立绘。
 //
 // 约定的设定：**形象 = 线路身份 × 商家气质**。只对线路机做形象设计，名单外的节点在
@@ -83,17 +85,21 @@ export function characterChoices() {
 const builtinIds = new Set(Object.values(CAST).map((c) => c.id));
 const lower = (v) => String(v || "").trim().toLowerCase();
 
+// 管理员在二次元的主题设置里关掉的角色包（"builtin" = 内置的专属立绘）整包跳过，节点指定的也跳过；
+// 通用人物永远兜底。
 // 画哪个角色。依次：节点自己指定的（character，角色包已删就跳过）→ 角色包里按节点名点名的 →
 // 内置的四台专属立绘（按节点名）→ 角色包里按地区匹配的 → 角色包里标了 default 的 → 通用人物。
 // 节点名精确匹配比地区更具体，所以排前面；同一档里角色包比内置优先（上传就是为了替换）。
 export function castId(node) {
+  const off = disabledPacks();
   const pick = node?.character;
-  if (pick && (builtinIds.has(pick) || packCharacter(pick))) return pick;
-  const chars = packCharacters();
+  if (pick && builtinIds.has(pick) && (pick === "generic" || !off.has("builtin"))) return pick;
+  if (pick && packCharacter(pick) && !off.has(packCharacter(pick).pack)) return pick;
+  const chars = packCharacters().filter((c) => !off.has(c.pack));
   const name = lower(node?.name);
   const byName = chars.find((c) => (c.nodes || []).some((n) => lower(n) === name));
   if (byName) return byName.key;
-  const own = castOf(node);
+  const own = off.has("builtin") ? null : castOf(node);
   if (own) return own.id;
   const region = String(node?.region || "").trim();
   const byRegion = region && chars.find((c) => (c.regions || []).includes(region));

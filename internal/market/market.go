@@ -492,8 +492,8 @@ func (c *Client) Package(ctx context.Context, id string) (Package, error) {
 // cleanItem normalizes one entry from CC and marks what is installed; false
 // drops it (a malformed id, or a type this Server cannot install yet).
 func (c *Client) cleanItem(it *Item, installed map[string]Installed) bool {
-	if !tzapkg.ValidID(it.ID) || !installable(it.Type) {
-		return false
+	if !tzapkg.ValidID(it.ID) || !installable(it.Type) || theme.IsBuiltin(it.ID) {
+		return false // theme.IsBuiltin: an old package of a look this Server now compiles in
 	}
 	if it.Type == tzapkg.TypePlugin {
 		if it.Kind != tzapkg.KindNotify && it.Kind != tzapkg.KindTargets {

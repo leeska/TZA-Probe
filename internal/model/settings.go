@@ -42,21 +42,24 @@ func ValidateLatencyWindowMinutes(minutes int) error {
 }
 
 // 前台默认外观：访客自己没选过（localStorage 里没有偏好）时用哪一套明暗与皮肤。
-// 默认值就是各处的内置默认（跟随系统 + 液态玻璃），所以没配过的部署行为不变；
+// 默认值就是各处的内置默认（跟随系统 + 现代极简）；
 // 访客一旦自己点了切换，存下的偏好优先于这里。
 const (
 	SettingDefaultTheme = "default_theme"
 	SettingDefaultSkin  = "default_skin"
+	// SettingSkinOptions 是各主题的设置（主题自己在 theme.json 里声明的菜单，见 docs/THEMES.md），
+	// JSON：{ 主题 id: { 设置 id: 值 } }，由 Service.SkinOptions 读写。
+	SettingSkinOptions = "skin_options"
 
 	DefaultPanelTheme = "auto"
-	DefaultPanelSkin  = "glass"
+	DefaultPanelSkin  = "shadcn"
 )
 
 // PanelThemes / PanelSkins 是内置的两组取值，与 web/theme.js 的 ORDER、internal/theme 的
-// Builtins 一一对应（httpapi 的测试会拿它们对一遍）。内置皮肤只有液态玻璃；复古印刷、现代极简、
+// Builtins 一一对应（httpapi 的测试会拿它们对一遍）。内置皮肤是现代极简（默认）与液态玻璃；复古印刷、
 // 二次元是官方主题包（仓库的 themes/，从市场安装），装好后由 Service.Themes 认。
 var PanelThemes = []string{"auto", "light", "dark"}
-var PanelSkins = []string{"glass"}
+var PanelSkins = []string{"shadcn", "glass"}
 
 // PanelTheme / PanelSkin 把存下来的值变成可用值：空值或读不出来的值退回默认，
 // 认不出来的皮肤退回默认皮肤——设置里一个手滑的值不该让面板挂在一张不存在的皮肤上。

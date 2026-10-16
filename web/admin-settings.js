@@ -26,7 +26,7 @@ export async function renderSettings(nodesReady) {
     view === "account" ? api("/admin/mcp-key") : null,
     view === "account" ? loadMarket(() => renderSettings()) : null,
   ]);
-  // 主题清单以服务端为准：默认皮肤下拉只列已安装的（内置液态玻璃 + 主题包）。
+  // 主题清单以服务端为准：默认皮肤下拉只列已安装的（内置的现代极简、液态玻璃 + 主题包）。
   if (themes) registerThemes(themes);
   const tabs = `<div class="segmented settings-tabs" role="tablist" aria-label="设置分类">${VIEWS.map(([id, label]) => `<button type="button" role="tab" data-settings-view="${id}" class="${view === id ? "active" : ""}" aria-selected="${view === id}">${label}</button>`).join("")}</div>`;
   const body = { look: () => lookView(settings), account: () => accountView(acct, mcp), data: dataView }[view]();
@@ -58,7 +58,7 @@ function lookView(settings) {
     .join("");
   // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
   const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
-  const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : "glass";
+  const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : SKINS[0].id;
   return `${brandPanel(settings)}<section class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。风格只列已安装的主题，更多主题在「主题」里安装。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${esc(s.id)}"${s.id === skinNow ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section><section class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片的延迟色带每格一次探测，固定画最近 10 次；早于这个范围的探测不再显示，那几格留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section>`;
 }
 

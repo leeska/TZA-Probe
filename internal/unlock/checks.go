@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -550,28 +551,58 @@ func gemini(ctx context.Context, c *Client) model.UnlockResult {
 	return res(model.UnlockNo, "", "")
 }
 
+// claude asks two of Anthropic's own gates. claude.ai sends a blocked region to
+// anthropic.com/app-unavailable-in-region, but since 2026-10 Cloudflare answers
+// every non-browser client there with a 403 challenge (all 14 production
+// nodes, browser User-Agent or not), which says nothing about the IP. The API
+// gate answers plainly: without a key, api.anthropic.com returns 401
+// authentication_error where Claude is offered and 403 forbidden ("Request not
+// allowed") where it is not. The region is Cloudflare's view of the egress
+// (claude.ai/cdn-cgi/trace), the same geolocation Anthropic's edge uses.
 func claude(ctx context.Context, c *Client) model.UnlockResult {
-	r, err := c.do(ctx, true, "GET", "https://claude.ai/", nil, nil)
-	if err != nil {
-		return netErr(err)
+	loc := ""
+	if t, err := c.do(ctx, false, "GET", "https://claude.ai/cdn-cgi/trace", nil, nil); err == nil {
+		if trace, err := read(t); err == nil && t.StatusCode == http.StatusOK {
+			loc = strings.ToUpper(traceValue(trace, "loc"))
+		}
 	}
-	drain(r)
-	final, path := "https://claude.ai/", "/"
-	if r.Request != nil && r.Request.URL != nil {
-		final, path = r.Request.URL.String(), r.Request.URL.Path
+	r, err := c.do(ctx, true, "GET", "https://claude.ai/", nil, nil)
+	if err == nil {
+		drain(r)
+		final, path := "https://claude.ai/", "/"
+		if r.Request != nil && r.Request.URL != nil {
+			final, path = r.Request.URL.String(), r.Request.URL.Path
+		}
+		switch {
+		case strings.Contains(final, "app-unavailable-in-region"):
+			return res(model.UnlockNo, loc, "")
+		case r.StatusCode == http.StatusOK && (path == "/" || strings.HasPrefix(path, "/login")):
+			// The root or the sign-in page means the app answered.
+			return res(model.UnlockYes, loc, "")
+		}
+	}
+	// The app did not answer (Cloudflare's challenge, or a network error): the API gate decides.
+	hdr := map[string]string{"Content-Type": "application/json", "Accept": "application/json"}
+	a, aerr := c.do(ctx, false, "POST", "https://api.anthropic.com/v1/messages", hdr, strings.NewReader("{}"))
+	if aerr != nil {
+		if err != nil {
+			return netErr(err)
+		}
+		return netErr(aerr)
+	}
+	body, rerr := read(a)
+	if rerr != nil {
+		return netErr(rerr)
 	}
 	switch {
-	case r.StatusCode == http.StatusForbidden:
-		// Cloudflare refusing this client is not a verdict about the IP.
-		return res(model.UnlockFailed, "", "HTTP 403")
-	case strings.Contains(final, "app-unavailable-in-region"):
-		return res(model.UnlockNo, "", "")
-	case r.StatusCode == http.StatusOK && (path == "/" || strings.HasPrefix(path, "/login")):
-		// The root or the sign-in page means the app answered: a blocked region
-		// is redirected to anthropic.com/app-unavailable-in-region instead.
-		return res(model.UnlockYes, "", "")
+	case a.StatusCode == http.StatusUnauthorized || strings.Contains(body, "authentication_error"):
+		return res(model.UnlockYes, loc, "")
+	case a.StatusCode == http.StatusForbidden && (strings.Contains(body, "forbidden") || strings.Contains(body, "not allowed")):
+		return res(model.UnlockNo, loc, "")
+	case err != nil:
+		return netErr(err)
 	default:
-		return res(model.UnlockFailed, "", final)
+		return res(model.UnlockFailed, loc, fmt.Sprintf("claude.ai HTTP %d / API HTTP %d", r.StatusCode, a.StatusCode))
 	}
 }
 

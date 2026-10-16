@@ -201,14 +201,14 @@ assert(nodeToken.length === 64);
 assert($("#install-command").textContent === `curl -fsSL ${base}/install.sh | sh -s -- --endpoint ${base} --token ${nodeToken}`, "one-line install command must carry endpoint and key");
 $(".close").click();
 const adminHeaders = { Authorization: "Bearer " + token };
-// 复古印刷 / 现代极简 / 二次元不再内置，是仓库 themes/ 下的官方主题包（发到 TZA-CC 市场）。
+// 复古印刷 / 二次元不内置，是仓库 themes/ 下的官方主题包（发到 TZA-CC 市场）。
 // 流水线把它们打成 zip（tools/themepack）放进 TZA_TEST_THEMES，这里像管理员上传一样装上，
-// 后面的皮肤断言才有东西可测。没装之前，内置的只有液态玻璃。
+// 后面的皮肤断言才有东西可测。没装之前，内置的是现代极简（默认）与液态玻璃。
 {
   const before = await (await fetch(base + "/api/v1/admin/themes", { headers: adminHeaders })).json();
-  assert.deepEqual(before.map((t) => t.id), ["glass"], "没装主题包时只有内置的液态玻璃");
+  assert.deepEqual(before.map((t) => t.id), ["shadcn", "glass"], "没装主题包时只有内置的现代极简与液态玻璃");
   assert(process.env.TZA_TEST_THEMES, "需要 TZA_TEST_THEMES（tools/themepack 打出的官方主题包目录）");
-  for (const id of ["press", "shadcn", "anime"]) {
+  for (const id of ["press", "anime"]) {
     const zip = await readFile(path.join(process.env.TZA_TEST_THEMES, id + ".zip"));
     const r = await fetch(base + "/api/v1/admin/themes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/zip" }, body: zip });
     assert.equal(r.status, 200, `装官方主题包 ${id}: ${await r.clone().text()}`);
@@ -1085,7 +1085,7 @@ await saveWindow(60);
 const themeField = $("#default-theme");
 const skinField = $("#default-skin");
 assert.equal(themeField.value, "auto", "未设置时默认明暗是跟随系统");
-assert.equal(skinField.value, "glass", "未设置时默认皮肤是液态玻璃");
+assert.equal(skinField.value, "shadcn", "未设置时默认皮肤是现代极简");
 assert.equal(
   [...themeField.options].map((o) => o.value).join(","),
   "auto,light,dark",
@@ -1094,8 +1094,8 @@ assert.equal(
 // 皮肤清单与 web/skins.js 的 SKINS 同源，两边对不上会被 web/look_choices_test.go 抓到。
 assert.equal(
   [...skinField.options].map((o) => o.value).join(","),
-  "glass,anime,press,shadcn",
-  "默认皮肤只列内置的液态玻璃与已安装的主题包",
+  "shadcn,glass,anime,press",
+  "默认皮肤只列内置的现代极简、液态玻璃与已安装的主题包",
 );
 // 这三个下拉在页面上是自定义外壳（ui-select.js 把原生 select 换成 .select-trigger + .select-pop），
 // jsdom 里不加载 ui-select.js，所以下列断言只能按源码与样式表文本盯住。教训：选项一旦写回
@@ -1142,7 +1142,7 @@ const saveLook = async (theme, skin) => {
   );
 };
 await saveLook("dark", "press");
-await saveLook("auto", "glass");
+await saveLook("auto", "shadcn");
 // 站点品牌：改名称后本页的标签页标题与侧栏品牌当场换掉，首屏脚本也跟上；logo 上传后侧栏、
 // favicon 与设置页预览都用它；两项清掉回到内置的 TZA Probe（t·z·a 字标 + PROBE）。
 const brandBoot = async () => {
@@ -1227,14 +1227,28 @@ $('[data-tab="themes"]').click();
 await until(() => $("#theme-file") && $(".market-off"), "themes page without TZA-CC");
 assert($(".market-off").textContent.includes("--cc-url"), "未配置时要说明怎么配");
 assert.deepEqual(
-  [...w.document.querySelectorAll(".theme-panel .theme-row b")].map((b) => b.textContent),
-  ["液态玻璃", "二次元", "复古印刷", "现代极简"],
-  "主题页列出内置的液态玻璃和刚装的三个官方主题包",
+  [...w.document.querySelectorAll(".theme-panel .theme-list > .theme-row > .theme-copy > b")].map((b) => b.textContent),
+  ["现代极简", "液态玻璃", "二次元", "复古印刷"],
+  "主题页列出内置的现代极简、液态玻璃和刚装的两个官方主题包",
 );
-// 角色包挂在二次元下面：二次元下面有一组（没有角色包时是一句提示）。
-const nested = $(".theme-group.is-nested");
-assert(nested && nested.previousElementSibling?.textContent.includes("二次元"), "角色包那一组紧跟在二次元下面");
-assert(!$('[data-remove-theme="glass"]') && $('[data-remove-theme="press"]'), "内置的不能删，主题包能删");
+// 主题设置：声明了 settings 的主题旁边有「设置」，点开是它自己的菜单；二次元的角色包就在里面开关。
+assert(!$('[data-theme-settings="press"]') && !$('[data-theme-settings="glass"]'), "没声明设置的主题没有设置入口");
+const animeGear = $('[data-theme-settings="anime"]');
+assert(animeGear, "二次元旁边有「设置」");
+const animeMenu = $("#theme-settings-anime");
+assert(animeMenu?.hidden && animeMenu.previousElementSibling?.textContent.includes("二次元"), "设置菜单默认收起，紧跟在二次元下面");
+animeGear.click();
+assert(!animeMenu.hidden && animeGear.getAttribute("aria-expanded") === "true", "点「设置」展开菜单");
+assert(animeMenu.textContent.includes("角色包") && animeMenu.textContent.includes("内置角色") && animeMenu.textContent.includes("眨眼与呼吸"), "菜单按 theme.json 的 settings 画出角色包与动效开关");
+const motionSwitch = () => $('#theme-settings-anime [data-opt-key="motion"]');
+assert.equal(motionSwitch().getAttribute("aria-checked"), "true", "没调过时用 default（on）");
+motionSwitch().click();
+await until(() => motionSwitch()?.getAttribute("aria-checked") === "false", "save the motion setting");
+assert(!$("#theme-settings-anime").hidden, "保存后菜单保持展开");
+assert((await (await fetch(base + "/theme-default.js")).text()).includes('"options":{"motion":"off"}'), "设置值随首屏清单发给访客");
+motionSwitch().click();
+await until(() => motionSwitch()?.getAttribute("aria-checked") === "true", "restore the motion setting");
+assert(!$('[data-remove-theme="glass"]') && !$('[data-remove-theme="shadcn"]') && $('[data-remove-theme="press"]'), "内置的不能删，主题包能删");
 $('[data-tab="plugins"]').click();
 // 面包屑在切页时立刻换，内容要等接口回来：等插件页自己的上传入口出现，别拿主题页残留的 .market-off 当成功。
 await until(() => $("#plugin-file"), "plugins page without TZA-CC");
@@ -1447,14 +1461,14 @@ assert(
   "the stylesheet must not disable the browser's scroll anchoring",
 );
 assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
-// 外观风格（皮肤）：默认「液态玻璃」，另有「复古印刷」。偏好走 localStorage 的 tza-skin，
+// 外观风格（皮肤）：默认「现代极简」，另有「液态玻璃」与主题包。偏好走 localStorage 的 tza-skin，
 // 由 theme-boot.js 在样式表之前写到 <html data-skin>（否则先闪一下默认皮肤）。
 {
   const pubDoc = publicDOM.window.document;
-  assert.equal(pubDoc.documentElement.dataset.skin, "glass", "默认外观风格是液态玻璃");
+  assert.equal(pubDoc.documentElement.dataset.skin, "shadcn", "默认外观风格是现代极简");
   const skinBtn = pubDoc.querySelector("[data-skin-toggle]");
   assert(skinBtn, "公开页头部要有外观风格入口");
-  assert(/液态玻璃/.test(skinBtn.textContent), "按钮上写当前皮肤名");
+  assert(/现代极简/.test(skinBtn.textContent), "按钮上写当前皮肤名");
   skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
   const menu = pubDoc.getElementById("skin-menu");
   assert(menu && !menu.hidden, "点一下要展开皮肤菜单");
@@ -1462,10 +1476,10 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   const opts = [...menu.querySelectorAll(".skin-option")];
   assert.deepEqual(
     opts.map((o) => o.dataset.skinOption),
-    ["glass", "anime", "press", "shadcn"],
-    "内置的液态玻璃与已安装的主题包都要列出来",
+    ["shadcn", "glass", "anime", "press"],
+    "内置的现代极简、液态玻璃与已安装的主题包都要列出来",
   );
-  assert.equal(opts.find((o) => o.classList.contains("on"))?.dataset.skinOption, "glass", "当前皮肤要有选中态");
+  assert.equal(opts.find((o) => o.classList.contains("on"))?.dataset.skinOption, "shadcn", "当前皮肤要有选中态");
   for (const o of opts) {
     assert(o.querySelector(".skin-copy b")?.textContent, "每个皮肤要有名字");
     assert(o.querySelector(".skin-copy small")?.textContent, "每个皮肤要有一句说明");
@@ -1474,9 +1488,9 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 内置皮肤的颜色在样式表里；主题包的颜色只有清单知道，由 paintSwatches 经 CSSOM 逐格写（CSP 不拦）。
   const skinsSource = await readFile(path.join(root, "web/skins.js"), "utf8");
   assert(!/skin-swatch[^`]*style=/.test(skinsSource), "色板标记里不能带 style 属性（CSP 会忽略）");
-  for (const sw of menu.querySelectorAll('[data-swatch="glass"], [data-swatch="glass"] i'))
+  for (const sw of menu.querySelectorAll('[data-swatch="glass"], [data-swatch="glass"] i, [data-swatch="shadcn"], [data-swatch="shadcn"] i'))
     assert(!sw.hasAttribute("style"), "内置皮肤的色板颜色来自样式表");
-  for (const id of ["press", "shadcn", "anime"])
+  for (const id of ["press", "anime"])
     assert(
       [...menu.querySelectorAll(`[data-swatch="${id}"] i`)].every((cell) => cell.style.background),
       `主题包 ${id} 的色板要按清单逐格上色`,
@@ -1487,13 +1501,13 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "press", "偏好要存进 localStorage");
   assert(menu.hidden, "选完菜单要收起");
   assert(/复古印刷/.test(skinBtn.textContent), "按钮文字跟着换");
-  // 第三张皮肤：现代极简（shadcn）。
+  // 第三张皮肤：内置的液态玻璃。
   skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
-  pubDoc.querySelector('[data-skin-option="shadcn"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  pubDoc.querySelector('[data-skin-option="glass"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
   await themeCSSLoaded();
-  assert.equal(pubDoc.documentElement.dataset.skin, "shadcn", "选「现代极简」要落到 <html data-skin>");
-  assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "shadcn", "偏好要存进 localStorage");
-  assert(/现代极简/.test(skinBtn.textContent), "按钮文字跟着换");
+  assert.equal(pubDoc.documentElement.dataset.skin, "glass", "选「液态玻璃」要落到 <html data-skin>");
+  assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), "glass", "偏好要存进 localStorage");
+  assert(/液态玻璃/.test(skinBtn.textContent), "按钮文字跟着换");
   // 第四张皮肤：二次元（线路机角色立绘）。
   skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
   pubDoc.querySelector('[data-skin-option="anime"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
@@ -1564,14 +1578,14 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   foldHost.remove();
   // 选回默认皮肤要把偏好键清掉，不在浏览器里留一份与默认值重复的设置。
   skinBtn.dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
-  pubDoc.querySelector('[data-skin-option="glass"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
-  assert.equal(pubDoc.documentElement.dataset.skin, "glass", "能切回默认皮肤");
+  pubDoc.querySelector('[data-skin-option="shadcn"]').dispatchEvent(new publicDOM.window.MouseEvent("click", { bubbles: true }));
+  assert.equal(pubDoc.documentElement.dataset.skin, "shadcn", "能切回默认皮肤");
   assert.equal(publicDOM.window.localStorage.getItem("tza-skin"), null, "默认皮肤不留偏好键");
 
   // 皮肤表本身：只在 data-skin="<id>" 下生效。每张皮肤各有一条必须有的底座：
   // 印刷＝纸底 + 圆角归零，极简＝中性令牌 + 圆角统一到 --shadcn-radius。
-  // 三张官方皮肤都是主题包：样式表由 /theme-default.js 的清单给出地址（/themes/<id>/…），
-  // 只在选中时挂上；index.html 里不再有它们。
+  // 复古印刷与二次元是主题包：样式表由 /theme-default.js 的清单给出地址（/themes/<id>/…），
+  // 只在选中时挂上；index.html 里没有它们。现代极简是内置默认，样式表就在 index.html 里。
   const homeHTML = await (await fetch(base + "/")).text();
   const themeList = publicDOM.window.__tzaThemes;
   const themeCSS = async (id) => {
@@ -1584,7 +1598,8 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   assert(/\[data-skin="press"\]/.test(pressCSS), "皮肤规则要限定在 data-skin=press 下");
   assert(/--press-paper:/.test(pressCSS) && /border-radius: 0 !important/.test(pressCSS), "纸底与圆角归零是皮肤底座");
   assert(/:root\[data-skin="press"\]\[data-theme="dark"\]/.test(pressCSS), "深色下要有自己的一份令牌");
-  const shadcnCSS = await themeCSS("shadcn");
+  assert(homeHTML.includes('href="/shadcn.css"'), "内置的现代极简样式表写在 index.html 里");
+  const shadcnCSS = await (await fetch(base + "/shadcn.css")).text();
   const animeCSS = await themeCSS("anime");
   // anime.css 是所有皮肤共用的（index.html 里无条件挂），但每条规则都带 html[data-skin="anime"] 前缀；
   // 于是别的皮肤下那三件套是**没有样式的裸元素**——必须靠底座样式表默认藏起来（漏一个就会冒出一颗裸按钮）。
@@ -1929,16 +1944,16 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
   assert.equal(bootDOM.window.document.documentElement.dataset.skin, "press", "首屏就要定好皮肤，不能等 app.js");
   assert.equal(bootDOM.window.document.documentElement.dataset.theme, "light", "明暗同样照旧");
-  bootDOM.window.localStorage.setItem("tza-skin", "shadcn");
+  bootDOM.window.localStorage.setItem("tza-skin", "glass");
   bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
-  assert.equal(bootDOM.window.document.documentElement.dataset.skin, "shadcn", "第三张皮肤同样要在首屏定好");
+  assert.equal(bootDOM.window.document.documentElement.dataset.skin, "glass", "第三张皮肤同样要在首屏定好");
   // 认不出来的值退回默认皮肤，别把 <html data-skin> 写成任意字符串。
   bootDOM.window.localStorage.setItem("tza-skin", "anime");
   bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
   assert.equal(bootDOM.window.document.documentElement.dataset.skin, "anime", "第四张皮肤同样要在首屏定好");
   bootDOM.window.localStorage.setItem("tza-skin", "no-such-skin");
   bootDOM.window.eval(await (await fetch(base + "/theme-boot.js")).text());
-  assert.equal(bootDOM.window.document.documentElement.dataset.skin, "glass", "无法识别的皮肤要退回默认");
+  assert.equal(bootDOM.window.document.documentElement.dataset.skin, "shadcn", "无法识别的皮肤要退回默认（现代极简）");
 }
 
 
