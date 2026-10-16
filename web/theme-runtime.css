@@ -1,0 +1,6 @@
+/* A theme owns the entire visible viewport, without the core shell or tokens. */
+html[data-frontend], html[data-frontend] body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+html[data-frontend] body::before, html[data-frontend] body::after { display: none; }
+html[data-frontend] #app { position: fixed; inset: 0; margin: 0; padding: 0; max-width: none; }
+#theme-frontend { display: block; border: 0; width: 100%; height: 100%; background: transparent; }
+html[data-frontend] > body > :not(#app) { display: none; }

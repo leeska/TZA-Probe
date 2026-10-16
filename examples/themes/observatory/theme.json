@@ -1,0 +1,11 @@
+{
+  "id": "observatory",
+  "name": "观测台",
+  "hint": "独立前台 · 自定义导航、表格与图表",
+  "version": "1.0.0",
+  "author": "TZA Probe",
+  "chrome": {"light": "#f1f5f9", "dark": "#101b29"},
+  "swatch": ["#101b29", "#1d3146", "#5ee1b1"],
+  "frontend": {"entry": "index.html", "api_version": 1},
+  "settings": [{"id": "headline", "type": "choice", "label": "首页标题", "options": [{"value": "fleet", "label": "机队总览"}, {"value": "network", "label": "网络观测"}], "default": "fleet"}]
+}

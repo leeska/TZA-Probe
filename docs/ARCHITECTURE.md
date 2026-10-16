@@ -56,3 +56,10 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 
 计费周期与校正规则分别归属 model、storage/billing.go；主机与网络历史由存储层聚合，web/charts.js 只负责绘图。通知失败原因存入事件记录，不将凭据或原始响应暴露给前端。
 部署保持 Server / Agent 两个进程及 SQLite；数据保留时间固定在 storage.Clean；备份可在后台在线下载（`VACUUM INTO` 一致快照），也可按部署文档停服复制。所有写入共用一把写锁：保留期清理、编辑 / 删除任务与删除节点的大批历史行都分批删除（`storage/purge.go`，每批持锁约 0.1 秒，删除队列记在 `purges` 表里、重启后继续），不在一个事务里把 Agent 的上报挡在锁外。`/api/` 的 JSON 响应按 `Accept-Encoding` 用 gzip 压缩。不加入维护模式、可执行代码的插件容器或额外基础服务。
+
+### 独立前台主题
+
+`web/frontend.js` 在公开页按清单选择核心渲染器或 `theme-runtime.js`，后台始终加载核心。
+`frontend.entry` 指向主题自己的 HTML；主题运行于无 `allow-same-origin` 的 iframe，HTML / SVG 的 HTTP 响应也携带 CSP sandbox，直接打开也不能继承站点权限。
+`theme-sdk.js` 通过版本化 postMessage 协议读取公开 API、路由与外观偏好。宿主按具体 frame/source 校验来源，公开数据请求省略 Cookie / Authorization，拒绝后台、Agent 和 MCP API。
+主题能独立使用任意 DOM、CSS、打包后的框架和代码拆分；核心只负责选择、安装、版本检查、运行边界及数据契约。

@@ -4,7 +4,7 @@ import { content, confirmAction } from "./admin-state.js";
 import { addonMarket, addonScope, catalogPanel, loadMarket, marketPill, sourceBits, swatch, wireMarket } from "./admin-market.js";
 const THEME_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/THEMES.md";
 // 主题：内置的现代极简、液态玻璃 + 已安装的主题包，下面是主题市场。官方的其它外观也是主题包，
-// 和别人做的主题一样从市场装。主题包与附加包都只含样式表 / 清单、图片和字体，不能带脚本。
+// 和别人做的主题一样从市场装。CSS 主题沿用核心组件；独立前台主题在隔离文档里运行自己的 HTML / JavaScript。
 //
 // 每个主题旁边的「设置」展开它自己的设置菜单：菜单项由主题开发者在 theme.json 的 settings 里按
 // docs/THEMES.md「主题设置」的规范声明（开关、单选、附加包开关），这里只负责照着画、存到服务端，
@@ -48,7 +48,7 @@ function skinRow(t, updates, defaultSkin) {
   const gear = t.settings?.length
     ? `<button type="button" class="theme-gear${open ? " on" : ""}" data-theme-settings="${esc(t.id)}" aria-expanded="${open}" aria-controls="theme-settings-${esc(t.id)}" title="${esc(t.name)}的主题设置">${GEAR}<span>设置</span></button>`
     : "";
-  return `<div class="theme-row">${swatch(t.swatch)}<span class="theme-copy"><b>${esc(t.name)}</b><small>${esc(meta).replace("\n", "<br>")}</small></span>${isDefault}${bits.pills}${bits.actions}${gear}${remove}</div>`;
+  return `<div class="theme-row">${swatch(t.swatch)}<span class="theme-copy"><b>${esc(t.name)}</b>${t.frontend ? '<small>独立前台 · HTML / JavaScript</small>' : ""}<small>${esc(meta).replace("\n", "<br>")}</small></span>${isDefault}${bits.pills}${bits.actions}${gear}${remove}</div>`;
 }
 
 const GEAR = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.8v1.8M10 15.4v1.8M2.8 10h1.8M15.4 10h1.8M4.9 4.9l1.3 1.3M13.8 13.8l1.3 1.3M4.9 15.1l1.3-1.3M13.8 6.2l1.3-1.3"/></svg>`;

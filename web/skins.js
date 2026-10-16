@@ -150,10 +150,21 @@ function paintChrome() {
 
 export function setSkin(id) {
   if (!byId(id)) return;
+  const url = new URL(location.href);
+  if (url.searchParams.has("tza-theme")) {
+    url.searchParams.delete("tza-theme");
+    history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }
   try {
     if (id === defaultSkin()) localStorage.removeItem(KEY);
     else localStorage.setItem(KEY, id);
   } catch {}
+  // Switching between the core renderer and an independent document crosses
+  // a lifecycle boundary. Re-enter through the bootstrap so old listeners stop.
+  if (!/^\/admin(?:\/|$)/.test(location.pathname) && (byId(id)?.frontend || currentSkin()?.frontend)) {
+    location.reload();
+    return;
+  }
   const pending = syncThemeCSS(id);
   if (pending) pending.then(() => applySkin(id));
   else applySkin(id);

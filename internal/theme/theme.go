@@ -1,13 +1,10 @@
 // Package theme is the panel's skin registry: the built-in skins plus theme
 // packages an administrator uploads.
 //
-// A theme package is a zip holding theme.json, one or more stylesheets and the
-// images / fonts they reference. It carries no script: the page CSP only runs
-// the panel's own JavaScript, and a package's stylesheets load from this
-// origin, so they cannot reach other hosts either. Installed packages live in
-// <data>/themes/<id>/ and are served under /themes/<id>/. A package installed
-// from the TZA-CC market also has <data>/themes/.market/<id>.json recording the
-// signed release; that directory is never served. See docs/THEMES.md.
+// CSS skins extend the core presentation. A frontend theme owns an HTML/JS
+// document, served with an opaque-origin sandbox and a public-only bridge.
+// Installed packages live in <data>/themes/<id>/; market signatures are stored
+// separately in .market and are never served. See docs/THEMES.md.
 package theme
 
 import (
@@ -317,6 +314,12 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.RLock()
+	m, manifestErr := s.read(id)
+	if manifestErr != nil || !tzapkg.ThemeFileAllowed(m, file) {
+		s.mu.RUnlock()
+		http.NotFound(w, r)
+		return
+	}
 	f, err := os.Open(filepath.Join(s.Dir, id, filepath.FromSlash(file)))
 	s.mu.RUnlock()
 	if err != nil {
@@ -328,6 +331,14 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil || info.IsDir() {
 		http.NotFound(w, r)
 		return
+	}
+	if m.Frontend != nil {
+		// The CSP sandbox also applies when someone opens a package document directly.
+		// No allow-same-origin: package JS cannot see sessions, storage or the parent DOM.
+		w.Header().Del("X-Frame-Options")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		assets := "http://" + r.Host + "/themes/" + id + "/ https://" + r.Host + "/themes/" + id + "/"
+		w.Header().Set("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src "+assets+"; worker-src 'none'; frame-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'")
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("X-Content-Type-Options", "nosniff")

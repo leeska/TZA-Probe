@@ -41,6 +41,7 @@ jsdom 不做布局，排版类问题只有真浏览器量得出来。用法见�
 
 | 脚本 | 检查内容 |
 |---|---|
+| `scripts/frontend-browser-test.mjs` | 独立前台渲染、公开数据隔离、模块分块、深链接、移动端、后台分离与故障恢复，见 [FRONTENDS.md](FRONTENDS.md) |
 | `scripts/visual-check.mjs` | 公开页、详情弹窗、后台的桌面与手机截图 |
 | `scripts/card-overflow-check.mjs` | 卡片与列表里的文字不越过卡片右边框 |
 | `scripts/route-nowrap-check.mjs` | 回程格居中且一行读完（三套皮肤） |

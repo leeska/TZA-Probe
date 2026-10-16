@@ -262,7 +262,11 @@ func Inspect(archive []byte) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	return Info{ID: m.ID, Type: m.Type, For: m.For, Name: m.Name, Hint: m.Hint, Version: m.Version, Author: m.Author, Swatch: m.Swatch, Manifest: &m}, nil
+	perms := []string(nil)
+	if m.Frontend != nil {
+		perms = []string{"独立 HTML / JavaScript 前台（隔离运行）", "只读公开监控数据；不授予后台权限"}
+	}
+	return Info{ID: m.ID, Type: m.Type, For: m.For, Name: m.Name, Hint: m.Hint, Version: m.Version, Author: m.Author, Swatch: m.Swatch, Permissions: perms, Manifest: &m}, nil
 }
 
 // Permissions describes in plain words what the plugin can do, for the

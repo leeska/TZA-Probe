@@ -37,6 +37,9 @@ func themeList(store *theme.Store, options map[string]map[string]any) []themeVie
 			v.Options = options[m.ID]
 		}
 		for _, style := range m.Styles {
+			if m.Frontend != nil {
+				continue
+			}
 			v.CSS = append(v.CSS, "/themes/"+m.ID+"/"+style+"?v="+m.Rev)
 		}
 		out = append(out, v)

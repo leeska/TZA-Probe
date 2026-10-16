@@ -333,3 +333,39 @@ func TestLookDeclarations(t *testing.T) {
 		t.Errorf("an add-on with base must be refused, got %v", err)
 	}
 }
+
+func TestFrontendDocumentsAreIsolated(t *testing.T) {
+	s := &Store{Dir: t.TempDir()}
+	raw := `{"id":"viewer","name":"Viewer","chrome":{"light":"#ffffff","dark":"#111111"},"swatch":["#ffffff","#eeeeee","#123456"],"frontend":{"entry":"index.html","api_version":1}}`
+	if _, err := s.Install(pack(t, file{name: "theme.json", body: raw}, file{name: "index.html", body: `<script src="main.js"></script>`}, file{name: "main.js", body: "console.log('frontend')"}, file{name: "icon.svg", body: "<svg/>"})); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"index.html", "main.js", "icon.svg"} {
+		r := httptest.NewRequest("GET", "http://probe.test/themes/viewer/"+name, nil)
+		r.SetPathValue("id", "viewer")
+		r.SetPathValue("file", name)
+		w := httptest.NewRecorder()
+		w.Header().Set("X-Frame-Options", "DENY")
+		s.ServeHTTP(w, r)
+		csp := w.Header().Get("Content-Security-Policy")
+		if w.Code != 200 || !strings.Contains(csp, "sandbox allow-scripts;") || strings.Contains(csp, "allow-same-origin") || !strings.Contains(csp, "frame-ancestors 'self'") || w.Header().Get("X-Frame-Options") != "" || w.Header().Get("Access-Control-Allow-Origin") != "*" {
+			t.Fatalf("unsafe document %s: %d %v", name, w.Code, w.Header())
+		}
+		if !strings.Contains(csp, "http://probe.test/themes/viewer/") {
+			t.Fatal("asset fetch must be scoped to this package", csp)
+		}
+	}
+	// Even manually dropped active content is never served as a CSS skin.
+	if _, err := s.Install(pack(t, file{name: "theme.json", body: manifest}, file{name: "theme.css", body: "body{}"})); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(s.Dir, "matcha", "evil.html"), []byte("<script>alert(1)</script>"), 0600)
+	r := httptest.NewRequest("GET", "/themes/matcha/evil.html", nil)
+	r.SetPathValue("id", "matcha")
+	r.SetPathValue("file", "evil.html")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != 404 {
+		t.Fatal("CSS theme served active content", w.Code)
+	}
+}

@@ -3,9 +3,8 @@
 // packages and TZA-CC reviews and distributes them; both validate with this
 // package so a package one side accepts the other side accepts too.
 //
-// A package carries no script: the panel CSP only runs the panel's own
-// JavaScript, and a package's stylesheets load from the panel's origin, so
-// they cannot reach other hosts either. See docs/THEMES.md.
+// CSS skins extend the built-in UI; frontend themes own an isolated HTML/JS
+// document and use the versioned public bridge. See docs/THEMES.md.
 package tzapkg
 
 import (
@@ -45,7 +44,7 @@ type Colors struct {
 	Dark  string `json:"dark"`
 }
 
-// Package types: a skin is a selectable look (stylesheets); an add-on extends
+// Package types: a skin is a selectable CSS look or independent frontend; an add-on extends
 // one skin (Manifest.For) with more decorations and is not a skin of its own.
 // An add-on only takes effect while its skin is installed and in use.
 const (
@@ -53,18 +52,29 @@ const (
 	TypeAddon = "addon"
 )
 
+// FrontendMinProbe is the first Probe version implementing the isolated API.
+const FrontendMinProbe = "1.5.0"
+
+// Frontend replaces the public UI with a package-owned document. API version 1
+// uses the public-data bridge; it never grants access to administrator APIs.
+type Frontend struct {
+	Entry      string `json:"entry"`
+	APIVersion int    `json:"api_version"`
+}
+
 // Manifest describes one package. Builtin, Rev and Source are set by the Probe
 // server, never read from an uploaded theme.json.
 type Manifest struct {
-	ID      string   `json:"id"`
-	Type    string   `json:"type,omitempty"`
-	Name    string   `json:"name"`
-	Hint    string   `json:"hint,omitempty"`
-	Version string   `json:"version,omitempty"`
-	Author  string   `json:"author,omitempty"`
-	Chrome  Colors   `json:"chrome,omitempty"`
-	Swatch  []string `json:"swatch,omitempty"`
-	Styles  []string `json:"styles,omitempty"`
+	ID       string    `json:"id"`
+	Type     string    `json:"type,omitempty"`
+	Name     string    `json:"name"`
+	Hint     string    `json:"hint,omitempty"`
+	Version  string    `json:"version,omitempty"`
+	Author   string    `json:"author,omitempty"`
+	Chrome   Colors    `json:"chrome,omitempty"`
+	Swatch   []string  `json:"swatch,omitempty"`
+	Styles   []string  `json:"styles,omitempty"`
+	Frontend *Frontend `json:"frontend,omitempty"`
 	// For is the skin an add-on extends (add-ons only).
 	For string `json:"for,omitempty"`
 	// Decorations are the per-node decorations a skin or add-on offers; the
@@ -321,16 +331,25 @@ var (
 	hexColor    = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 	safePath    = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
 	contentType = map[string]string{
-		".css":   "text/css; charset=utf-8",
-		".json":  "application/json",
-		".webp":  "image/webp",
-		".png":   "image/png",
-		".jpg":   "image/jpeg",
-		".jpeg":  "image/jpeg",
-		".gif":   "image/gif",
-		".avif":  "image/avif",
-		".woff2": "font/woff2",
-		".woff":  "font/woff",
+		".css":         "text/css; charset=utf-8",
+		".html":        "text/html; charset=utf-8",
+		".js":          "text/javascript; charset=utf-8",
+		".mjs":         "text/javascript; charset=utf-8",
+		".svg":         "image/svg+xml",
+		".wasm":        "application/wasm",
+		".ico":         "image/x-icon",
+		".webmanifest": "application/manifest+json",
+		".ttf":         "font/ttf",
+		".otf":         "font/otf",
+		".json":        "application/json",
+		".webp":        "image/webp",
+		".png":         "image/png",
+		".jpg":         "image/jpeg",
+		".jpeg":        "image/jpeg",
+		".gif":         "image/gif",
+		".avif":        "image/avif",
+		".woff2":       "font/woff2",
+		".woff":        "font/woff",
 	}
 )
 
@@ -345,6 +364,24 @@ func SafePath(p string) bool { return safePath.MatchString(p) && !strings.Contai
 func ContentType(name string) (ctype string, ok bool) {
 	ctype, ok = contentType[strings.ToLower(path.Ext(name))]
 	return
+}
+
+// ThemeFileAllowed keeps executable assets exclusive to isolated frontend themes.
+// A legacy CSS skin or add-on retains its original passive-file boundary.
+func ThemeFileAllowed(m Manifest, name string) bool {
+	if _, ok := ContentType(name); !ok {
+		return false
+	}
+	if m.Frontend != nil {
+		return true
+	}
+	switch strings.ToLower(path.Ext(name)) {
+	case ".html", ".js", ".mjs", ".svg", ".wasm", ".webmanifest":
+		return false
+	case ".json":
+		return name == "theme.json"
+	}
+	return true
 }
 
 // Files unpacks an archive under the package rules (names, types, sizes,
@@ -386,6 +423,16 @@ func Open(archive []byte) (Manifest, map[string][]byte, error) {
 	m, err := Parse(rawManifest)
 	if err != nil {
 		return Manifest{}, nil, err
+	}
+	if m.Frontend != nil {
+		if _, ok := files[m.Frontend.Entry]; !ok {
+			return Manifest{}, nil, errors.New("frontend.entry 不在压缩包里")
+		}
+	}
+	for name := range files {
+		if !ThemeFileAllowed(m, name) {
+			return Manifest{}, nil, fmt.Errorf("%q：CSS 主题和附加包不收脚本、HTML、SVG 或额外 JSON；独立前台需声明 frontend", name)
+		}
 	}
 	for _, p := range m.Styles {
 		if _, ok := files[p]; !ok {
@@ -432,8 +479,8 @@ func Parse(raw []byte) (Manifest, error) {
 		switch {
 		case !idPattern.MatchString(m.For) || m.For == m.ID:
 			return Manifest{}, errors.New("附加包要用 for 写明它依附的主题 id（不能是自己）")
-		case len(m.Styles) > 0 || len(m.Settings) > 0 || m.Base != "" || m.Layout != nil:
-			return Manifest{}, errors.New("附加包不带 styles / settings / base / layout：外观由它依附的主题决定")
+		case len(m.Styles) > 0 || len(m.Settings) > 0 || m.Base != "" || m.Layout != nil || m.Frontend != nil:
+			return Manifest{}, errors.New("附加包不带 styles / settings / base / layout / frontend：外观由它依附的主题决定")
 		case len(m.Decorations) == 0:
 			return Manifest{}, errors.New("附加包至少要有一个装饰项（decorations）")
 		}
@@ -446,8 +493,16 @@ func Parse(raw []byte) (Manifest, error) {
 		return Manifest{}, errors.New("chrome.light / chrome.dark 须为 #rrggbb 颜色")
 	case len(m.Swatch) != 3:
 		return Manifest{}, errors.New("swatch 须为 3 个 #rrggbb 颜色")
-	case len(m.Styles) == 0 || len(m.Styles) > maxStyles:
+	case (m.Frontend == nil && len(m.Styles) == 0) || len(m.Styles) > maxStyles:
 		return Manifest{}, fmt.Errorf("styles 须列出 1–%d 个样式表", maxStyles)
+	}
+	if f := m.Frontend; f != nil {
+		if !SafePath(f.Entry) || path.Ext(f.Entry) != ".html" || f.APIVersion != 1 {
+			return Manifest{}, errors.New("frontend.entry 须为包内 .html 路径，api_version 须为 1")
+		}
+		if m.Base != "" || m.Layout != nil {
+			return Manifest{}, errors.New("独立前台自己定义布局，不带 base / layout")
+		}
 	}
 	if err := checkSkinSettings(m.Settings); err != nil {
 		return Manifest{}, err
@@ -590,11 +645,9 @@ func entries(zr *zip.Reader) (map[string][]byte, error) {
 	for _, it := range items {
 		ext := strings.ToLower(path.Ext(it.name))
 		if _, ok := contentType[ext]; !ok {
-			return nil, fmt.Errorf("不支持的文件类型 %q：只收 CSS、theme.json、webp / png / jpg / gif / avif 图片和 woff / woff2 字体（不收脚本、HTML、SVG）", it.name)
+			return nil, fmt.Errorf("不支持的文件类型 %q：只收主题静态资源（HTML、JS、CSS、JSON、SVG、WASM、图片和字体）", it.name)
 		}
-		if ext == ".json" && it.name != "theme.json" && it.name != "plugin.json" {
-			return nil, fmt.Errorf("除 theme.json / plugin.json 外不收 JSON 文件：%q", it.name)
-		}
+
 		if it.f.UncompressedSize64 > maxFile {
 			return nil, fmt.Errorf("%q 太大（单个文件最多 %d MB）", it.name, maxFile>>20)
 		}

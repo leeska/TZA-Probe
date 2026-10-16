@@ -59,10 +59,13 @@ func Handler() http.Handler {
 			return
 		}
 		name := r.URL.Path
-		if name == "/" || name == "/admin" || strings.HasPrefix(name, "/admin/") {
+		if name == "/" || name == "/admin" || strings.HasPrefix(name, "/admin/") || path.Ext(name) == "" {
 			name = "/index.html"
 		}
 		a, ok := assets[name]
+		if !ok && strings.Contains(r.Header.Get("Accept"), "text/html") {
+			a, ok = assets["/index.html"]
+		}
 		if !ok {
 			http.NotFound(w, r)
 			return

@@ -262,3 +262,51 @@ func TestAddonsAndDecorations(t *testing.T) {
 		}
 	}
 }
+
+func TestFrontendArchiveContract(t *testing.T) {
+	manifest := `{"id":"viewer","name":"Viewer","chrome":{"light":"#ffffff","dark":"#111111"},"swatch":["#ffffff","#eeeeee","#123456"],"frontend":{"entry":"index.html","api_version":1}}`
+	files := map[string]string{"theme.json": manifest, "index.html": `<script type="module" src="app.js"></script>`, "app.js": `import './chunk.mjs'`, "chunk.mjs": "export const x=1", "data.json": "{}", "logo.svg": "<svg/>", "app.wasm": "wasm"}
+	if info, err := Inspect(frontendZip(t, files)); err != nil || len(info.Permissions) != 2 {
+		t.Fatalf("frontend archive/review: %+v %v", info, err)
+	}
+	for _, bad := range []string{
+		strings.Replace(manifest, `"api_version":1`, `"api_version":2`, 1),
+		strings.Replace(manifest, `index.html`, `../index.html`, 1),
+		strings.Replace(manifest, `index.html`, `app.js`, 1),
+		strings.Replace(manifest, `index.html`, `missing.html`, 1),
+		strings.Replace(manifest, `"frontend":`, `"base":"plain","frontend":`, 1),
+	} {
+		files["theme.json"] = bad
+		if _, _, err := Open(frontendZip(t, files)); err == nil {
+			t.Fatalf("accepted invalid frontend: %s", bad)
+		}
+	}
+	files["theme.json"] = strings.Replace(manifest, `"frontend":{"entry":"index.html","api_version":1}`, `"styles":["theme.css"]`, 1)
+	files["theme.css"] = "body{}"
+	if _, _, err := Open(frontendZip(t, files)); err == nil {
+		t.Fatal("CSS skin must not acquire executable files")
+	}
+	files["theme.json"] = `{"id":"addon","type":"addon","for":"viewer","name":"Add-on","decorations":[{"id":"a","name":"A"}],"frontend":{"entry":"index.html","api_version":1}}`
+	if _, _, err := Open(frontendZip(t, files)); err == nil {
+		t.Fatal("add-on must not acquire a frontend entry")
+	}
+}
+
+func frontendZip(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	z := zip.NewWriter(&b)
+	for name, data := range files {
+		w, err := z.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = w.Write([]byte(data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}

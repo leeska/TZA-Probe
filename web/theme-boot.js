@@ -23,6 +23,12 @@
   try {
     skin = localStorage.getItem("tza-skin");
   } catch (e) {}
+  // Recovery/preview URL works even when a theme's own JavaScript is broken.
+  var override = new URLSearchParams(location.search).get("tza-theme");
+  if (known(override)) {
+    skin = override;
+    try { localStorage.setItem("tza-skin", skin); } catch (e) {}
+  }
   // 访客自己选过就听他的（localStorage 有值），没选过才用后台默认。
   if (pref !== "light" && pref !== "dark" && pref !== "auto") pref = themeDefault;
   var dark = pref === "dark" || (pref === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
