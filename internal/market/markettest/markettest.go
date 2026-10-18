@@ -104,15 +104,17 @@ type CC struct {
 	Seen     []Seen
 
 	// Knobs.
-	Tamper     bool   // flip a byte of the archive after signing
-	SigKeyID   string // claim this key id in signatures
-	SignKey    ed25519.PrivateKey
-	ExtraBytes int    // serve this many bytes more than the reported size
-	Size       int64  // report this size instead of the real one
-	Device     string // device-code state: "pending" (default), "approved", "expired", "slow", "limit"
-	Revoked    bool   // answer 401 to any request carrying a token
-	Account    string // account name returned on approval
-	Updates    []map[string]string
+	Tamper             bool   // flip a byte of the archive after signing
+	SigKeyID           string // claim this key id in signatures
+	SignKey            ed25519.PrivateKey
+	ExtraBytes         int    // serve this many bytes more than the reported size
+	Size               int64  // report this size instead of the real one
+	Receipt            string // optional successful-install receipt (empty emulates older CC)
+	ConfirmationStatus int    // fail the receipt endpoint when nonzero
+	Device             string // device-code state: "pending" (default), "approved", "expired", "slow", "limit"
+	Revoked            bool   // answer 401 to any request carrying a token
+	Account            string // account name returned on approval
+	Updates            []map[string]string
 }
 
 // New starts a fake CC with one key.
@@ -224,7 +226,11 @@ func (cc *CC) serve(w http.ResponseWriter, r *http.Request) {
 		out := cc.item(p)
 		versions := []any{}
 		for _, rel := range p.Releases {
-			versions = append(versions, map[string]any{"version": rel.Version, "changelog": "改动 " + rel.Version, "probe": rel.Probe, "size": len(rel.Archive), "published_at": "2026-10-01T00:00:00Z", "compatible": !rel.CCIncompatible})
+			permissions := []string{}
+			if info, err := tzapkg.Inspect(rel.Archive); err == nil {
+				permissions = info.Permissions
+			}
+			versions = append(versions, map[string]any{"version": rel.Version, "changelog": "改动 " + rel.Version, "probe": rel.Probe, "size": len(rel.Archive), "published_at": "2026-10-01T00:00:00Z", "compatible": !rel.CCIncompatible, "permissions": permissions})
 		}
 		out["description"] = "详细说明"
 		out["screenshots"] = []string{cc.Server.URL + "/media/shot.png", "https://elsewhere.example/shot.png"}
@@ -267,7 +273,13 @@ func (cc *CC) serve(w http.ResponseWriter, r *http.Request) {
 		if cc.Size != 0 {
 			size = cc.Size
 		}
-		reply(200, map[string]any{"url": cc.Server.URL + "/dl/" + p.ID + "/" + rel.Version, "size": size, "signature": sig})
+		reply(200, map[string]any{"url": cc.Server.URL + "/dl/" + p.ID + "/" + rel.Version, "size": size, "signature": sig, "receipt": cc.Receipt})
+	case r.Method == "POST" && r.URL.Path == "/api/v1/installations":
+		if cc.ConfirmationStatus != 0 {
+			fail(cc.ConfirmationStatus, "confirmation unavailable")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 
 	case r.Method == "GET" && len(parts) == 3 && parts[0] == "dl":
 		p, ok := cc.Packages[parts[1]]

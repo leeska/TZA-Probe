@@ -12,6 +12,8 @@ go test -race ./...        # 没有 gcc 的机器去掉 -race
 
 `bash scripts/pipeline.sh check` 会一次跑完以上三项，外加 `web/*.js` 语法检查、`scripts/presentation-test.mjs` 和一次性 Server 上的前端集成检查（需要 Node ≥ 20.19 或 Bun；没有 Node 时自动用 Bun，jsdom 与 esbuild 也由它安装）。
 
+前端检查同时运行 `scripts/market-permissions-test.mjs`，覆盖插件快捷更新确认、权限变化提示、取消不安装、历史版本独立权限，以及已绑定实例空清单同步。真实 CC 数据库上的下载表单提交、回执幂等和实例清单替换由 TZA-CC 的 `TestDownloadFormReceiptsAndInventory` 覆盖，需配置独立的 `TZA_CC_TEST_DATABASE_URL`。
+
 ## 前端集成检查（ui-smoke）
 
 只针对独立 loopback 数据目录。脚本会创建并删除自己的测试节点和任务，**不要指向生产数据**。

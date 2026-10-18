@@ -326,6 +326,7 @@ type Item struct {
 	// Owned: free, or the bound TZA-CC account owns this paid package.
 	Owned     bool     `json:"owned"`
 	Downloads int64    `json:"downloads"`
+	Installs  int64    `json:"installs"`
 	UpdatedAt string   `json:"updated_at,omitempty"`
 	Swatch    []string `json:"swatch,omitempty"`
 	// For is the skin an add-on extends.
@@ -364,7 +365,8 @@ type Release struct {
 	Size        int64  `json:"size"`
 	PublishedAt string `json:"published_at,omitempty"`
 	// Compatible: this Server's version satisfies Probe.
-	Compatible bool `json:"compatible"`
+	Compatible  bool     `json:"compatible"`
+	Permissions []string `json:"permissions,omitempty"`
 }
 
 // Package is a package's detail page.
@@ -490,6 +492,15 @@ func (c *Client) Package(ctx context.Context, id string) (Package, error) {
 		v.Changelog = clean(v.Changelog, 2000)
 		v.Probe = clean(v.Probe, 60)
 		v.PublishedAt = clean(v.PublishedAt, 40)
+		if v.Permissions != nil {
+			permissions := []string{}
+			for _, permission := range v.Permissions {
+				if permission = clean(permission, 200); permission != "" && len(permissions) < 10 {
+					permissions = append(permissions, permission)
+				}
+			}
+			v.Permissions = permissions
+		}
 		cc, told := ccSays[v.Version]
 		v.Compatible = Compatible(v.Probe, c.probe) && (!told || cc)
 		versions = append(versions, v)
@@ -567,8 +578,8 @@ func (c *Client) installed() map[string]Installed {
 }
 
 // Updates asks CC which packages installed from the market have a newer
-// release this Probe can run. Local uploads are never sent. With nothing
-// installed from the market CC is not contacted at all.
+// release this Probe can run. Local uploads are never sent. Bound instances
+// also send an empty list so removing their last package clears CC's snapshot.
 func (c *Client) Updates(ctx context.Context) ([]Update, error) {
 	if c == nil {
 		return nil, ErrNotConfigured
@@ -585,7 +596,7 @@ func (c *Client) Updates(ctx context.Context) ([]Update, error) {
 			list = append(list, entry{id, have.Version})
 		}
 	}
-	if len(list) == 0 {
+	if len(list) == 0 && !c.Status().Bound {
 		return []Update{}, nil
 	}
 	var out struct {

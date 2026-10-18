@@ -51,7 +51,7 @@ const skinName = (id) => (window.__tzaThemes || []).find((t) => t.id === id)?.na
 export const marketStatus = () => status;
 export const hasUpdate = (id) => updateIds.has(id);
 
-// 进页时读一次市场状态；installed 里有市场装的包时顺带查更新，scope 给了就把那一页的目录也取回来。
+// 已绑定实例也发送空清单，移除最后一个市场包后 CC 才能清掉旧快照。
 export async function loadMarket(rerenderPage, installed = [], scope = "") {
   const scopes = (Array.isArray(scope) ? scope : [scope]).filter(Boolean);
   rerender = rerenderPage;
@@ -62,7 +62,7 @@ export async function loadMarket(rerenderPage, installed = [], scope = "") {
     return [];
   }
   const [updates] = await Promise.all([
-    installed.some((t) => t.source === "market") ? api("/admin/market/updates").then((v) => v.updates).catch(() => []) : [],
+    status.bound || installed.some((t) => t.source === "market") ? api("/admin/market/updates").then((v) => v.updates).catch(() => []) : [],
     ...scopes.map((s) => fetchCatalog(s)),
   ]);
   updateIds = new Set(updates.map((u) => u.id));
@@ -146,7 +146,7 @@ function card(it) {
       : it.price > 0
         ? `<span class="pill${it.owned ? " good" : ""}">${it.owned ? "已拥有" : yuan(it.price)}</span>`
         : "";
-  const meta = [it.type === "plugin" && kindName(it.kind), it.latest && "v" + it.latest, it.author?.name, it.downloads ? `${it.downloads} 次下载` : ""].filter(Boolean);
+  const meta = [it.type === "plugin" && kindName(it.kind), it.latest && "v" + it.latest, it.author?.name, it.downloads ? `${it.downloads} 次下载请求` : ""].filter(Boolean);
   return `<button type="button" class="market-card${it.type === "plugin" ? " is-plugin" : ""}" data-package="${esc(it.id)}">${cover}<span class="market-card-body"><span class="market-card-title"><b>${esc(it.name)}</b>${badge}</span><small>${esc(it.summary || "")}</small><span class="market-card-meta">${meta.map((m) => `<span>${esc(m)}</span>`).join("")}</span></span></button>`;
 }
 
@@ -165,9 +165,10 @@ export function sourceBits(t, updates) {
 
 // 插件装之前先列出它能做的事，管理员确认后才装（市场安装与本地上传都走这里）。
 export function confirmPlugin(p, action, label) {
+  const changed = p.previousPermissions ? (p.permissions || []).filter((permission) => !p.previousPermissions.includes(permission)) : [];
   const d = modal(
     `安装插件 · ${p.name}`,
-    `<p>${esc(kindName(p.kind))}${p.version ? ` · v${esc(p.version)}` : ""}${p.author ? ` · ${esc(p.author?.name || p.author)}` : ""}。这个插件能做的事：</p>${permList(p.permissions) || '<p class="muted">插件没有声明任何能力。</p>'}<p class="hint">插件只含声明式的配置与模板，由 Probe 解释执行，不含任何代码。${p.kind === "notify" ? "装好后要在「告警与通知 → 配置出口」选用它才会发通知。" : "装好后这些目标出现在新建任务的目标目录里，不会自动建任务。"}</p><div class="form-footer"><button class="primary" id="confirm-plugin">${esc(label)}</button></div>`,
+    `<p>${esc(kindName(p.kind))}${p.version ? ` · v${esc(p.version)}` : ""}${p.author ? ` · ${esc(p.author?.name || p.author)}` : ""}。这个插件能做的事：</p>${permList(p.permissions) || '<p class="muted">插件没有声明任何能力。</p>'}${changed.length ? `<div class="notice"><strong>本版本有变化的权限</strong>${permList(changed)}</div>` : ""}<p class="hint">插件只含声明式的配置与模板，由 Probe 解释执行，不含任何代码。${p.kind === "notify" ? "装好后要在「告警与通知 → 配置出口」选用它才会发通知。" : "装好后这些目标出现在新建任务的目标目录里，不会自动建任务。"}</p><div class="form-footer"><button class="primary" id="confirm-plugin">${esc(label)}</button></div>`,
   );
   d.querySelector("#confirm-plugin").onclick = guard(async (e) => {
     e.currentTarget.disabled = true;
@@ -177,6 +178,17 @@ export function confirmPlugin(p, action, label) {
       e.target.disabled = false;
     }
   });
+}
+
+async function confirmMarketPlugin(p, version, label = "确认安装") {
+  const release = p.versions.find((v) => v.version === version && v.compatible);
+  if (!release) throw new Error("这个版本不存在或不兼容当前 Probe");
+  // Older CCs only disclose the latest release's permissions. Never use
+  // those permissions to ask for consent to a different release.
+  const permissions = release.permissions ?? (version === p.latest ? p.permissions : undefined);
+  if (!Array.isArray(permissions)) throw new Error("市场没有提供该版本的权限，请升级 TZA-CC 后重试");
+  const previous = (await api("/admin/plugins")).find((item) => item.id === p.id);
+  confirmPlugin({ ...p, version, permissions, previousPermissions: previous?.permissions }, () => install(p.id, version), label);
 }
 
 export function pluginToast(m) {
@@ -210,7 +222,9 @@ export function wireMarket(root = content()) {
     (b.onclick = guard(async () => {
       b.disabled = true;
       try {
-        await install(b.dataset.marketUpdate, b.dataset.version);
+        const p = await api("/admin/market/packages/" + encodeURIComponent(b.dataset.marketUpdate));
+        if (p.type === "plugin") await confirmMarketPlugin(p, b.dataset.version, `确认更新到 v${b.dataset.version}`);
+        else await install(p.id, b.dataset.version);
       } finally {
         b.disabled = false;
       }
@@ -293,7 +307,7 @@ async function detail(id) {
     ? `<p class="${locked(p) ? "warn-text" : "hint"}">${locked(p) ? (status.bound ? `这是付费包（${yuan(p.price)}），你连接的 TZA-CC 账号还没有拥有它。在 TZA-CC 用兑换码兑换到这个账号后，回来重新打开即可安装。` : `这是付费包（${yuan(p.price)}）。先在「面板设置 → 账号与安全」连接 TZA-CC 账号，并在 TZA-CC 用兑换码兑换到这个账号。`) : `付费包 · 你的账号已拥有（${yuan(p.price)}）。`}</p>`
     : "";
   const host = needsHost ? `<p class="warn-text">这是依附「${esc(skinName(p.for))}」的附加包：先在「主题」页的市场里装好那套主题。</p>` : "";
-  const meta = [p.id, typeName(p.type), p.author?.name, p.downloads ? `${p.downloads} 次下载` : "", day(p.updated_at) && "更新于 " + day(p.updated_at)].filter(Boolean).join(" · ");
+  const meta = [p.id, typeName(p.type), p.author?.name, p.downloads ? `${p.downloads} 次下载请求` : "", day(p.updated_at) && "更新于 " + day(p.updated_at)].filter(Boolean).join(" · ");
   const plugin = p.type === "plugin";
   const d = modal(
     p.name,
@@ -314,7 +328,7 @@ async function detail(id) {
   d.querySelector("#market-install").onclick = guard(async (e) => {
     const button = e.currentTarget;
     if (plugin) {
-      confirmPlugin({ ...p, version: best.version }, () => install(p.id, best.version), have ? (have.source === "market" ? `更新到 v${best.version}` : "替换本地插件并安装") : "确认安装");
+      await confirmMarketPlugin(p, best.version, have ? (have.source === "market" ? `更新到 v${best.version}` : "替换本地插件并安装") : "确认安装");
       return;
     }
     if (have && have.source !== "market") {
@@ -324,7 +338,7 @@ async function detail(id) {
     await run(best.version, button);
   });
   d.querySelectorAll("[data-install-version]").forEach((b) =>
-    (b.onclick = guard((e) => (plugin ? confirmPlugin({ ...p, version: b.dataset.installVersion }, () => install(p.id, b.dataset.installVersion), "确认安装") : run(b.dataset.installVersion, e.currentTarget)))),
+    (b.onclick = guard((e) => (plugin ? confirmMarketPlugin(p, b.dataset.installVersion) : run(b.dataset.installVersion, e.currentTarget)))),
   );
 }
 

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/plugin"
@@ -49,6 +51,7 @@ func (c *Client) Install(ctx context.Context, id, version string) (Result, error
 		URL       string           `json:"url"`
 		Size      int64            `json:"size"`
 		Signature tzapkg.Signature `json:"signature"`
+		Receipt   string           `json:"receipt"`
 	}
 	body := map[string]string{"probe": c.probe}
 	if version != "" {
@@ -96,6 +99,7 @@ func (c *Client) Install(ctx context.Context, id, version string) (Result, error
 		if err != nil {
 			return Result{}, err
 		}
+		c.confirmInstall(ctx, grant.Receipt)
 		return Result{ID: p.ID, Type: p.Type, Kind: p.Kind, Name: p.Name, Version: p.Version, Source: p.Source, Permissions: p.Permissions()}, nil
 	}
 	if c.themes == nil || c.themes.Dir == "" {
@@ -105,7 +109,27 @@ func (c *Client) Install(ctx context.Context, id, version string) (Result, error
 	if err != nil {
 		return Result{}, err
 	}
+	c.confirmInstall(ctx, grant.Receipt)
 	return Result{ID: m.ID, Type: m.Type, Name: m.Name, Version: m.Version, Source: m.Source}, nil
+}
+
+// A receipt is only acknowledged after validation and installation succeed.
+// Old CCs omit it. Reporting failure must not turn a completed install into
+// an error that invites the administrator to install the same package again.
+func (c *Client) confirmInstall(ctx context.Context, receipt string) {
+	if receipt == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := c.call(ctx, http.MethodPost, []string{"installations"}, nil, map[string]string{"receipt": receipt, "probe": c.probe}, nil, true); err != nil {
+		slog.Warn("market package installed; confirmation unavailable")
+	}
+	if c.Status().Bound {
+		if _, err := c.Updates(ctx); err != nil {
+			slog.Warn("market inventory synchronization unavailable")
+		}
+	}
 }
 
 // Result is what an install put in place: a theme / add-on, or a

@@ -206,6 +206,73 @@ func TestInstallRejects(t *testing.T) {
 	})
 }
 
+func TestInstallReceiptsOnlyAfterSuccess(t *testing.T) {
+	for _, scenario := range []string{"success", "tampered", "disk error", "confirmation unavailable", "older CC"} {
+		t.Run(scenario, func(t *testing.T) {
+			e := newEnv(t)
+			e.cc.Receipt = "test-install-receipt"
+			switch scenario {
+			case "tampered":
+				e.cc.Tamper = true
+			case "disk error":
+				file := filepath.Join(e.dir, "not-a-directory")
+				if err := os.WriteFile(file, []byte("x"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				e.themes.Dir = file
+			case "confirmation unavailable":
+				e.cc.ConfirmationStatus = 503
+			case "older CC":
+				e.cc.Receipt = ""
+			}
+			_, err := e.client.Install(context.Background(), "matcha", "1.0.0")
+			fails := scenario == "tampered" || scenario == "disk error"
+			if (err != nil) != fails {
+				t.Fatalf("install: %v", err)
+			}
+			confirmations := 0
+			for _, request := range e.cc.Requests() {
+				if request.Path == "/api/v1/installations" {
+					confirmations++
+					if !strings.Contains(request.Body, "test-install-receipt") {
+						t.Fatal(request.Body)
+					}
+				}
+			}
+			want := 1
+			if fails || scenario == "older CC" {
+				want = 0
+			}
+			if confirmations != want {
+				t.Fatalf("confirmations: %d, want %d", confirmations, want)
+			}
+		})
+	}
+}
+
+func TestBoundEmptyInventoryIsReported(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.client.Connect(ctx, "empty"); err != nil {
+		t.Fatal(err)
+	}
+	e.cc.Lock()
+	e.cc.Device = "approved"
+	e.cc.Unlock()
+	e.clock = e.clock.Add(6 * time.Second)
+	if result, err := e.client.Poll(ctx); err != nil || result.Status != PollBound {
+		t.Fatalf("bind: %+v %v", result, err)
+	}
+	if _, err := e.client.Updates(ctx); err != nil {
+		t.Fatal(err)
+	}
+	requests := e.cc.Requests()
+	last := requests[len(requests)-1]
+	if last.Path != "/api/v1/updates" || !strings.Contains(last.Body, `"installed":[]`) || last.Auth == "" {
+		t.Fatalf("empty inventory: %+v", last)
+	}
+}
+
 func TestBindingAndAuthHeader(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -504,5 +571,23 @@ func TestInstallPlugin(t *testing.T) {
 	}
 	if _, err := e.plugins.Plugin("gotify"); err == nil {
 		t.Fatal("rejected plugin was installed")
+	}
+}
+
+func TestPluginReleasePermissions(t *testing.T) {
+	e := newEnv(t)
+	old := markettest.PluginJSON(t, "feishu")
+	newer := strings.Replace(string(old), `"version": "1.0.0"`, `"version": "1.1.0"`, 1)
+	newer = strings.Replace(newer, `"open.feishu.cn", "open.larksuite.com"`, `"open.feishu.cn", "open.larksuite.com", "hooks.example.com"`, 1)
+	e.cc.Add(&markettest.Package{ID: "feishu", Type: "plugin", Kind: "notify", Name: "飞书", Releases: []markettest.Release{
+		{Version: "1.1.0", Archive: markettest.Zip(t, map[string]string{"plugin.json": newer})},
+		{Version: "1.0.0", Archive: markettest.Zip(t, map[string]string{"plugin.json": string(old)})},
+	}})
+	detail, err := e.client.Package(context.Background(), "feishu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Versions) != 2 || !strings.Contains(strings.Join(detail.Versions[0].Permissions, " "), "hooks.example.com") || strings.Contains(strings.Join(detail.Versions[1].Permissions, " "), "hooks.example.com") {
+		t.Fatalf("per-version permissions: %+v", detail.Versions)
 	}
 }

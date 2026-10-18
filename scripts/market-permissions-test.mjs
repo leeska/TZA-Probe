@@ -1,0 +1,76 @@
+// Exercise the real market UI handlers with a controlled CC response.
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+const require = createRequire(path.join(process.env.TZA_UI_DEPS || "/tmp/tza-ui-deps", "package.json"));
+const { JSDOM } = require("jsdom");
+const { build } = require("esbuild");
+const root = fileURLToPath(new URL("../", import.meta.url));
+const bundle = await build({ stdin: { contents: 'export * from "./web/admin-market.js"; export { state } from "./web/admin-state.js";', resolveDir: root }, bundle: true, format: "iife", globalName: "Market", write: false });
+const dom = new JSDOM('<main id="admin-content"></main><dialog id="dialog"></dialog><div id="toast"></div>', { url: "http://127.0.0.1/admin", runScripts: "outside-only" });
+const w = dom.window;
+w.matchMedia = () => ({ matches: false, addEventListener() {} });
+w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+w.HTMLDialogElement.prototype.close = function () { this.open = false; };
+const previous = "发往 old.example";
+const added = "发往 new.example";
+const pkg = { id: "review-plugin", type: "plugin", kind: "notify", name: "Review plugin", latest: "2.0.0", price: 0, owned: true, permissions: [previous, added], installed: { source: "market", version: "1.0.0" }, versions: [{ version: "2.0.0", compatible: true, permissions: [previous, added] }, { version: "1.0.0", compatible: true, permissions: [previous] }] };
+const installs = [];
+let updateRequests = 0;
+w.fetch = async (url, options = {}) => {
+  let data;
+  if (url.endsWith("/market/status")) data = { configured: true, bound: true };
+  else if (url.endsWith("/market/updates")) { updateRequests++; data = { updates: [] }; }
+  else if (url.endsWith("/market/packages/review-plugin")) data = pkg;
+  else if (url.endsWith("/admin/plugins")) data = [{ id: pkg.id, permissions: [previous] }];
+  else if (url.endsWith("/market/install")) { installs.push(JSON.parse(options.body)); data = { ...pkg, version: installs.at(-1).version }; }
+  else throw new Error("Unexpected request: " + url);
+  return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
+};
+w.eval(bundle.outputFiles[0].text);
+const market = w.Market;
+market.state.container = w.document;
+const panel = w.document.querySelector("#admin-content");
+const dialog = w.document.querySelector("#dialog");
+const until = async (predicate) => {
+  for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 5)); }
+  throw new Error("UI did not settle: " + w.document.body.textContent);
+};
+await market.loadMarket(async () => {}, []);
+assert.equal(updateRequests, 1, "bound instance must sync even with an empty inventory");
+panel.innerHTML = '<button data-market-update="review-plugin" data-version="2.0.0">更新</button>';
+market.wireMarket(panel);
+panel.querySelector("button").click();
+await until(() => dialog.open && dialog.querySelector("#confirm-plugin"));
+assert.equal(installs.length, 0, "quick update must wait for consent");
+assert.match(dialog.textContent, /本版本有变化的权限/);
+assert(dialog.textContent.includes(added));
+dialog.close();
+assert.equal(installs.length, 0, "dismissing confirmation must not install");
+await until(() => !panel.querySelector("button").disabled);
+panel.querySelector("button").click();
+await until(() => dialog.open);
+dialog.querySelector("#confirm-plugin").click();
+await until(() => installs.length === 1 && !dialog.open);
+assert.equal(installs[0].version, "2.0.0");
+panel.innerHTML = '<section class="theme-panel"><button data-package="review-plugin">详情</button></section>';
+market.wireMarket(panel);
+pkg.installed.version = "2.0.0";
+panel.querySelector("button").click();
+await until(() => dialog.querySelector('[data-install-version="1.0.0"]'));
+dialog.querySelector('[data-install-version="1.0.0"]').click();
+await until(() => dialog.querySelector("#confirm-plugin"));
+assert(dialog.textContent.includes(previous));
+assert(!dialog.textContent.includes(added), "historical consent must use that release's permissions");
+dialog.querySelector("#confirm-plugin").click();
+await until(() => installs.length === 2 && !dialog.open);
+assert.equal(installs[1].version, "1.0.0");
+delete pkg.versions[1].permissions;
+panel.querySelector("button").click();
+await until(() => dialog.querySelector('[data-install-version="1.0.0"]'));
+dialog.querySelector('[data-install-version="1.0.0"]').click();
+await until(() => w.document.querySelector("#toast").textContent.includes("升级 TZA-CC"));
+assert.equal(installs.length, 2, "unknown historical permissions must not install");
+dom.window.close();
+console.log("PASS: quick-update consent, permission changes, cancellation, per-version consent and bound empty inventory.");
