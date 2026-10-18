@@ -1,5 +1,5 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
-import { bytes, bandwidth, date, days, gib, mbps, osLabel, percent, statusName } from "./format.js";
+import { bytes, bandwidth, date, days, gib, mbps, osLabel, percent, statusName, diagnosticHint } from "./format.js";
 import { detail } from "./detail.js";
 import { applyTheme, themeButton } from "./theme.js";
 import { applySkin, skinButton, skinLayout } from "./skins.js";
@@ -201,8 +201,9 @@ function overviewInner() {
   const online = nodes.filter((n) => n.online),
     traffic = nodes.reduce((v, n) => v + n.traffic_used, 0),
     rateIn = online.reduce((v, n) => v + (n.metrics?.rate_in || 0), 0),
-    rateOut = online.reduce((v, n) => v + (n.metrics?.rate_out || 0), 0);
-  return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${bytes(rateOut)}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${bytes(rateIn)}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>`;
+    rateOut = online.reduce((v, n) => v + (n.metrics?.rate_out || 0), 0),
+    hasLiveMetrics = !online.length || online.some((n) => n.metrics);
+  return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${hasLiveMetrics ? bytes(rateOut) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${hasLiveMetrics ? bytes(rateIn) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>`;
 }
 
 function metricsInner(n) {
@@ -212,11 +213,11 @@ function metricsInner(n) {
     // 离线时早就是「—」）。磁盘是存量，离线时仍按最后一次上报显示。
     live = hasMetrics && n.online;
   // CPU 那格的副标给核心数（Agent 报的 runtime.NumCPU），老 Agent 没报就退回原来的说明文字。
-  const cpuSub = !hasMetrics ? "等待采集" : !n.online ? "离线" : m.cpu_cores ? `${m.cpu_cores} 核` : "系统计算负载";
+  const cpuSub = !hasMetrics ? (n.metrics_stale ? "指标不可用" : "等待采集") : !n.online ? "离线" : m.cpu_cores ? `${m.cpu_cores} 核` : "系统计算负载";
   // 内存与磁盘按 1024 换算（gib）：这两个量商家按 GiB 卖、`df -h` / `free -h` 也给 GiB；
   // 速率与流量仍按十进制（bytes），与商家的流量口径一致。
-  const memSub = !hasMetrics ? "未报告" : !n.online ? "离线" : `${gib(m.memory_used)} / ${gib(m.memory_total)}`;
-  const diskSub = hasMetrics ? `${gib(m.disk_used)} / ${gib(m.disk_total)}` : "未报告";
+  const memSub = !hasMetrics ? (n.metrics_stale ? "指标不可用" : "未报告") : !n.online ? "离线" : `${gib(m.memory_used)} / ${gib(m.memory_total)}`;
+  const diskSub = hasMetrics ? `${gib(m.disk_used)} / ${gib(m.disk_total)}` : n.metrics_stale ? "指标不可用" : "未报告";
   const trafficSub = n.billing.traffic_limit ? `${bytes(n.billing.traffic_limit)} 额度 · ${esc({ sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.billing.traffic_mode])}` : "无限制额度";
   // 达量降速：线路自带的两条规则都可能——按窗口平均带宽（德国商家）或按周期额度用满后
   // 限速（DMIT T1 这类不计量但限速）。只有真配了规则的线路才写这一行，没配的机器不显示
@@ -253,12 +254,12 @@ function speedsInner(n) {
 // 就退回 runtime.GOOS（linux）。架构单独一个标签，因为它要在列表里换到发行版下面那一行；
 // 写进 os-tag 里会被每秒刷新的 setText(.os-tag) 整段覆盖掉。
 function osTagsInner(n) {
-  const m = n.metrics;
+  const m = n.metrics || n.agent_status;
   const os = esc(osLabel(n));
   const arch = m?.arch ? esc(m.arch) : "";
   // 两个标签套一层 .os-box：卡片里是一行两个，列表里那层改成竖排，架构就落在发行版下面
   // （直接给 arch-tag 撑满一行的话，那颗胶囊的底色会横贯整格）。
-  return `<span class="os-box"><span class="os-tag">${os}</span>${arch ? `<span class="arch-tag">${arch}</span>` : ""}</span>`;
+  return `<span class="os-box"><span class="os-tag">${os}</span>${arch ? `<span class="arch-tag">${arch}</span>` : ""}<span class="collection-state pill warn" title="${esc(diagnosticHint(n))}"${n.metrics_stale ? "" : " hidden"}>指标异常</span></span>`;
 }
 
 // 文本 / HTML 先比一遍再写：数值没变就不碰 DOM（每秒那层刷新因此只写真正在动的几个数字）。
@@ -297,6 +298,8 @@ async function liveTick() {
       el.classList.toggle("is-offline", !n.online);
       el.querySelector(".node-dot")?.classList.toggle("offline", !n.online);
       setText(el.querySelector(".os-tag"), osLabel(n));
+      const badge = el.querySelector(".collection-state");
+      if (badge) { badge.hidden = !n.metrics_stale; badge.title = diagnosticHint(n); }
       setHTML(el.querySelector(".metrics-grid"), metricsInner(n));
       setHTML(el.querySelector(".speeds"), speedsInner(n));
     }
@@ -979,6 +982,7 @@ const probeNote = (state) =>
 // 没有可用地址族时的那一行：Agent 从没上报过，就还不知道它有哪些地址——写「未检测到公网 IP」
 // 会让人以为网络配置出了问题。报过、但报的是空列表，才是真没有公网地址。
 function noFamilyNote(n) {
+  if (n.metrics_stale && !n.metrics_at) return `<p class="hint network-unavailable">等待有效指标，上报后确认可用的 IP 协议。</p>`;
   return n.last_seen
     ? `<p class="hint network-unavailable">未检测到可用的公网 IP 地址，已跳过网络探测。</p>`
     : `<p class="hint network-unavailable">等待 Agent 接入，接入后开始网络探测。</p>`;

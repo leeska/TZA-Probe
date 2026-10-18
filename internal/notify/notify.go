@@ -107,7 +107,11 @@ func evaluate(n model.NodeView, r model.AlertRule, now time.Time) (bool, func() 
 	case model.AlertCPU, model.AlertMemory:
 		used, ok := usage(n, r.Kind)
 		return ok && used >= r.Threshold, func() string {
-			return resourceDetails(n, r.Kind) + fmt.Sprintf("\n触发条件：%s ≥ %g%%，持续至少 %s\n指标采样：%s", usageLabels[r.Kind], r.Threshold, hold(), eventTime(n.LastSeen))
+			at := n.MetricsAt
+			if at == 0 {
+				at = n.LastSeen
+			}
+			return resourceDetails(n, r.Kind) + fmt.Sprintf("\n触发条件：%s ≥ %g%%，持续至少 %s\n指标采样：%s", usageLabels[r.Kind], r.Threshold, hold(), eventTime(at))
 		}
 	}
 	return false, none

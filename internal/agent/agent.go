@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -42,39 +43,82 @@ type Agent struct {
 	// Upgrader is set when the Agent runs under a service unit that restarts it
 	// (--self-update); nil leaves upgrades to the install command. Restart is
 	// called once a new binary is in place and must make Run return.
-	Upgrader Upgrader
-	Restart  func()
+	Upgrader          Upgrader
+	Restart           func()
+	reportInterval    time.Duration
+	heartbeatInterval time.Duration
+	collectionTimeout time.Duration
 }
 
 func (a Agent) Run(ctx context.Context) {
+	if a.reportInterval <= 0 {
+		a.reportInterval = 5 * time.Second
+	}
+	if a.heartbeatInterval <= 0 {
+		a.heartbeatInterval = 5 * time.Second
+	}
+	if a.collectionTimeout <= 0 {
+		a.collectionTimeout = 10 * time.Second
+	}
 	var wg sync.WaitGroup
+	var upgrading sync.Mutex
+	health := initialHealth(a.Upgrader)
+	handleUpgrade := func(reply model.ReportReply) {
+		if reply.Upgrade != nil && a.Upgrader != nil && upgrading.TryLock() {
+			wg.Add(1)
+			go func(up model.AgentUpgrade) { defer wg.Done(); defer upgrading.Unlock(); a.upgrade(ctx, up) }(*reply.Upgrade)
+		}
+	}
 	wg.Add(2)
+	if transport, ok := a.Transport.(HeartbeatTransport); ok {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ticker := time.NewTicker(a.heartbeatInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					status, skip := health.snapshot(a.collectionTimeout)
+					if skip {
+						continue
+					}
+					reply, err := transport.Heartbeat(ctx, status)
+					if err != nil && ctx.Err() == nil {
+						slog.Warn("agent heartbeat failed", "error", err)
+					}
+					handleUpgrade(reply)
+				}
+			}
+		}()
+	}
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(a.reportInterval)
 		defer ticker.Stop()
-		var upgrading sync.Mutex
 		for {
-			m, err := a.Collector.Collect(ctx)
+			health.begin()
+			collectCtx, cancel := context.WithTimeout(ctx, a.collectionTimeout)
+			m, err := a.Collector.Collect(collectCtx)
+			cancel()
+			if a.Upgrader != nil {
+				m.Capabilities = append(append([]string{}, m.Capabilities...), model.CapabilitySelfUpdate)
+			}
+			health.collected(m, err)
 			var reply model.ReportReply
 			if err == nil {
-				if a.Upgrader != nil {
-					m.Capabilities = append(m.Capabilities, model.CapabilitySelfUpdate)
-				}
 				reply, err = a.Transport.Report(ctx, m)
-			}
-			if err != nil && ctx.Err() == nil {
-				slog.Warn("metrics report failed", "error", err)
+				health.reported(err)
+				if err != nil && ctx.Err() == nil {
+					slog.Warn("metrics report failed", "error", err)
+				}
+			} else if ctx.Err() == nil {
+				slog.Warn("metrics collection failed", "error", err)
 			}
 			// 下载十几 MB 不能卡住每 5 秒一次的上报；同一时间只跑一次升级。
-			if reply.Upgrade != nil && a.Upgrader != nil && upgrading.TryLock() {
-				wg.Add(1)
-				go func(up model.AgentUpgrade) {
-					defer wg.Done()
-					defer upgrading.Unlock()
-					a.upgrade(ctx, up)
-				}(*reply.Upgrade)
-			}
+			handleUpgrade(reply)
 			select {
 			case <-ctx.Done():
 				return
@@ -157,8 +201,9 @@ func (a Agent) runJob(ctx context.Context, job model.Job) {
 }
 
 type HTTPTransport struct {
-	endpoint, token string
-	client          *http.Client
+	endpoint, token      string
+	client               *http.Client
+	heartbeatUnsupported atomic.Bool
 }
 
 func NewTransport(endpoint, token string, allowHTTP bool) (*HTTPTransport, error) {
@@ -199,12 +244,30 @@ func (t *HTTPTransport) request(ctx context.Context, method, path string, body, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("server returned HTTP %d", resp.StatusCode)
+		return &HTTPStatusError{Status: resp.StatusCode}
 	}
 	if out != nil && resp.StatusCode != http.StatusNoContent {
 		return json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(out)
 	}
 	return nil
+}
+
+type HTTPStatusError struct{ Status int }
+
+func (e *HTTPStatusError) Error() string { return fmt.Sprintf("server returned HTTP %d", e.Status) }
+
+func (t *HTTPTransport) Heartbeat(ctx context.Context, status model.AgentStatus) (model.ReportReply, error) {
+	if t.heartbeatUnsupported.Load() {
+		return model.ReportReply{}, nil
+	}
+	var reply model.ReportReply
+	err := t.request(ctx, "POST", "/api/v1/agent/heartbeat", model.Heartbeat{Protocol: model.Protocol, Status: status}, &reply)
+	var httpErr *HTTPStatusError
+	if errors.As(err, &httpErr) && (httpErr.Status == http.StatusNotFound || httpErr.Status == http.StatusMethodNotAllowed) {
+		t.heartbeatUnsupported.Store(true)
+		return model.ReportReply{}, nil
+	}
+	return reply, err
 }
 func (t *HTTPTransport) Report(ctx context.Context, m model.Metrics) (model.ReportReply, error) {
 	var reply model.ReportReply

@@ -2660,6 +2660,26 @@ multi.remove();
 probe.remove();
 single.remove();
 assert.deepEqual(errors, []);
+// A real authenticated heartbeat must change the live card without inventing
+// metric values; a subsequent valid report clears the diagnostic via null.
+publicSearch.value = name;
+publicSearch.dispatchEvent(new publicDOM.window.Event("input"));
+await until(() => findCard(), "diagnostic test card");
+const healthReply = await fetch(base + "/api/v1/agent/heartbeat", {
+  method: "POST", headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
+  body: JSON.stringify({ protocol: 1, status: { state: "collect_failed", reason: "disk", os: "smoke", arch: "amd64", version: "smoke" } }),
+});
+assert.equal(healthReply.status, 204);
+await until(() => findCard()?.querySelector(".collection-state")?.hidden === false, "live collection diagnostic");
+assert.match(findCard().querySelector(".collection-state").title, /磁盘采集失败/);
+assert.match(findCard().querySelector(".metrics-grid").textContent, /指标不可用/);
+assert(!findCard().querySelector(".metrics-grid").textContent.includes("99%"));
+const recoveryReply = await fetch(base + "/api/v1/agent/report", {
+  method: "POST", headers: { Authorization: "Bearer " + nodeToken, "Content-Type": "application/json" },
+  body: JSON.stringify({ protocol: 1, metrics: { cpu: 23, memory_used: 10, memory_total: 100, disk_used: 20, disk_total: 100, net_in: 0, net_out: 0, uptime: 60, os: "smoke", arch: "amd64", ip_families: ["ipv4"] } }),
+});
+assert.equal(recoveryReply.status, 204);
+await until(() => findCard()?.querySelector(".collection-state")?.hidden === true && findCard().querySelector(".metrics-grid").textContent.includes("23"), "live metric recovery");
 await fetch(base + "/api/v1/admin/tasks/" + createdTask.id, {
   method: "DELETE",
   headers: adminHeaders,

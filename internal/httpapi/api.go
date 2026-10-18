@@ -38,6 +38,7 @@ type Repository interface {
 	IsPublic(context.Context, string) (bool, error)
 	Authenticate(context.Context, string) (string, error)
 	Report(context.Context, string, model.Metrics, time.Time) error
+	Heartbeat(context.Context, string, model.AgentStatus, time.Time) error
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
 }
@@ -197,6 +198,31 @@ func (a *API) Handler() http.Handler {
 		}
 		// 平常照旧回 204（旧 Agent 只认这个）；排了升级的节点才回一份带指令的正文。
 		if up := a.upgradeReply(id, v.Metrics, now); up != nil {
+			write(w, 200, model.ReportReply{Upgrade: up})
+			return
+		}
+		w.WriteHeader(204)
+	}))
+	mux.HandleFunc("POST /api/v1/agent/heartbeat", a.agent(func(w http.ResponseWriter, r *http.Request, id string) {
+		var body model.Heartbeat
+		if !decode(w, r, &body) {
+			return
+		}
+		if body.Protocol != model.Protocol {
+			write(w, 400, map[string]string{"error": "unsupported protocol"})
+			return
+		}
+		if err := body.Status.Validate(); err != nil {
+			write(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		now := time.Now()
+		if err := a.Store.Heartbeat(r.Context(), id, body.Status, now); err != nil {
+			fail(w, err)
+			return
+		}
+		meta := model.NodeView{AgentStatus: &body.Status}.AgentMetrics()
+		if up := a.upgradeReply(id, *meta, now); up != nil {
 			write(w, 200, model.ReportReply{Upgrade: up})
 			return
 		}

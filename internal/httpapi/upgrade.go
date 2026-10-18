@@ -176,7 +176,7 @@ func (a *API) upgradeRoutes(route func(string, http.HandlerFunc)) {
 				write(w, 404, map[string]string{"error": "节点不存在：" + id})
 				return
 			}
-			m := n.Metrics
+			m := n.AgentMetrics()
 			state := upgradeQueued
 			switch {
 			case m == nil:

@@ -21,7 +21,7 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.query(ctx, "SELECT config,last_seen,metrics,created_at,traffic_adjustment,adjustment_cycle FROM nodes")
+	rows, err := s.query(ctx, "SELECT n.config,n.last_seen,n.metrics,n.created_at,n.traffic_adjustment,n.adjustment_cycle,coalesce(h.seen_at,0),h.status FROM nodes n LEFT JOIN node_health h ON h.node_id=n.id")
 	if err != nil {
 		return nil, err
 	}
@@ -33,8 +33,10 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 		var v model.NodeView
 		var config string
 		var metrics sql.NullString
+		var health sql.NullString
+		var heartbeatAt int64
 		var c correction
-		if err = rows.Scan(&config, &v.LastSeen, &metrics, &v.CreatedAt, &c.amount, &c.cycle); err != nil {
+		if err = rows.Scan(&config, &v.LastSeen, &metrics, &v.CreatedAt, &c.amount, &c.cycle, &heartbeatAt, &health); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -51,7 +53,25 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 				v.IPFamilies = v.Metrics.IPFamilies
 			}
 		}
+		v.MetricsAt = v.LastSeen
+		if health.Valid && heartbeatAt >= v.MetricsAt {
+			if err = json.Unmarshal([]byte(health.String), &v.AgentStatus); err != nil {
+				rows.Close()
+				return nil, err
+			}
+		}
+		v.LastSeen = max(v.LastSeen, heartbeatAt)
 		v.Online = v.LastSeen > 0 && now.Unix()-v.LastSeen < int64(model.OfflineAfter.Seconds())
+		v.MetricsStale = v.Online && (v.MetricsAt == 0 || now.Unix()-v.MetricsAt >= int64(model.OfflineAfter.Seconds()))
+		if v.Online && v.AgentStatus != nil {
+			switch v.AgentStatus.State {
+			case "collect_failed", "collect_timeout", "report_failed":
+				v.MetricsStale = true
+			}
+		}
+		if v.MetricsStale {
+			v.Metrics = nil
+		}
 		v.ProbeTargets = plan[v.ID]
 		v.Alerts = model.EffectiveAlerts(rules, v.Node)
 		corrections[v.ID] = c
@@ -195,7 +215,7 @@ func (s *Store) DeleteNode(ctx context.Context, id string) error {
 			return ErrNotFound
 		}
 		// What the cascade used to do for the small tables; jobs and samples are queued.
-		for _, table := range []string{"bindings", "alert_state", "latest", "unlocks", "retries", "traffic", "traffic_hour"} {
+		for _, table := range []string{"bindings", "alert_state", "latest", "unlocks", "retries", "traffic", "traffic_hour", "node_health"} {
 			if _, err = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE node_id=?", id); err != nil {
 				return err
 			}

@@ -53,7 +53,7 @@ var usageLabels = map[string]string{model.AlertCPU: "CPU", model.AlertMemory: "�
 // usage is the CPU or memory percentage the rules compare, false when the node
 // is offline or has not reported what the percentage needs.
 func usage(n model.NodeView, kind string) (float64, bool) {
-	if !n.Online || n.Metrics == nil {
+	if !n.Online || n.Metrics == nil || n.MetricsStale {
 		return 0, false
 	}
 	if kind == model.AlertCPU {
@@ -68,6 +68,8 @@ func usage(n model.NodeView, kind string) (float64, bool) {
 func resourceDetails(n model.NodeView, kind string) string {
 	used, ok := usage(n, kind)
 	switch {
+	case !ok && n.MetricsStale:
+		return "当前指标：不可用（Agent 仍在线，指标采集或上报异常），不能确认使用率已恢复正常"
 	case !ok && n.Online && n.Metrics != nil:
 		return "当前内存：未上报总容量"
 	case !ok:

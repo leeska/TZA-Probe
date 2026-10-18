@@ -392,7 +392,7 @@ func TestLiveNodes(t *testing.T) {
 	if got["id"] != public || got["online"] != true || got["metrics"].(map[string]any)["cpu"] != 7.0 {
 		t.Fatalf("live entry: %v", got)
 	}
-	want := map[string]bool{"id": true, "online": true, "last_seen": true, "metrics": true, "traffic_used": true, "avg_bps": true, "covered_hours": true, "window_hours": true, "throttled": true}
+	want := map[string]bool{"id": true, "online": true, "last_seen": true, "metrics_at": true, "metrics_stale": true, "agent_status": true, "metrics": true, "traffic_used": true, "avg_bps": true, "covered_hours": true, "window_hours": true, "throttled": true}
 	for key := range got {
 		if !want[key] {
 			t.Fatalf("live view carries %q: %v", key, got)

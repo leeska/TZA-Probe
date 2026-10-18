@@ -20,7 +20,7 @@ func migrate(db *sql.DB) (err error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 15 {
+	if version > 16 {
 		return errors.New("database version is newer than this binary")
 	}
 	if version == 0 {
@@ -126,6 +126,13 @@ func migrate(db *sql.DB) (err error) {
 	if version < 15 {
 		// 网络历史的 6 分钟预聚合格子（见 tcp_buckets.go）。已有的结果在后台分批回填。
 		if err = migrateTCPBuckets(db, nowFunc()); err != nil {
+			return err
+		}
+	}
+	if version < 16 {
+		if _, err = db.Exec(`BEGIN;
+			CREATE TABLE IF NOT EXISTS node_health(node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE, seen_at INTEGER NOT NULL, status TEXT NOT NULL);
+			PRAGMA user_version=16; COMMIT;`); err != nil {
 			return err
 		}
 	}

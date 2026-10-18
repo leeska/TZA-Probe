@@ -42,6 +42,7 @@
 | POST /admin/groups/rename | `{"from":…,"to":…}`：整组改名，作用于 `from` 的提醒规则一起改；`to` 是已有分组即合并（合并后同类规则冲突则 400、不改），为空即解散回未分组。回 `{"moved":N}` |
 | GET、POST /admin/agents/upgrade | 一键升级 Agent。POST `{"ids":[…]}` 把节点排进升级队列，回每台的结果 `results`：`queued`（下一次上报时下发）、`current`（已是签名版本或更新）、`manual`（Agent 较早或节点上没钉升级公钥，需在机器上不带 `--token` 执行一次安装命令）、`unsigned`（该架构的安装包没有可用签名）、`unavailable`（服务端没有该架构的安装包）、`never`（从未接入）。GET 回 `{version, archs, signed, items:{<id>:{state, error, version, requested_at, sent_at}}}`，`signed` 是签名可用的架构，`state` 另有 `sent`（已下发，等它以新版本上报）与 `failed`（下发 5 分钟后版本仍未变）。队列只在内存里，Server 重启后重新点即可 |
 | POST /agent/report | `{protocol:1,metrics:{...}}`；平常回 204。排了升级、且 Agent 报了 `self_update` 能力时回 200 `{"upgrade":{"version","path","sha256","arch","key_id","sig"}}`：`sig` 是运维者对 `(arch, version, sha256)` 的 Ed25519 签名（`internal/agentsig`），Agent 只在签名来自钉住的公钥、架构相符、版本比自己新时才从同一台 Server 的 `path` 下载、校验摘要、替换自身并以状态 3 退出，由 systemd / OpenRC 重启 |
+| POST /agent/heartbeat | `{protocol:1,status:{state,reason?,version,os,arch,distro?,cpu_cores?,capabilities?}}`；节点令牌鉴权，通常回 204，有签名升级时与 report 相同回 200。每节点最短间隔 3 秒，只更新连接和诊断，不写指标、历史或流量。见下文 |
 | GET /agent/jobs | 获取有限租约任务：按种类分别领取，最多 8 个 TCP + 1 个回程 + 1 个解锁（Agent 须报 `parallel_jobs` 能力，否则整批最多两个） |
 | POST /agent/results | 上传与租约绑定的结果 |
 
@@ -173,3 +174,9 @@ Server 把任务展开为单项探测（checks × targets，目标自带 `checks
 主题包可声明 `frontend: {"entry":"index.html","api_version":1}`，通过隔离文档中的 `window.TZA` 使用现有 `/api/v1/` 公开读接口。
 桥接明确省略宿主后台会话；公开节点、历史、探测结果与解锁目录都遵循匿名可见范围。
 完整协议、类型与示例见 [FRONTENDS.md](FRONTENDS.md) 和 [frontend-api.d.ts](frontend-api.d.ts)。
+
+## Agent 连接与指标诊断
+
+`/nodes`、`/nodes/live` 与后台节点返回 `last_seen`（最近收到有效指标或心跳）、`metrics_at`（最近有效指标，0 表示从未采集成功）、`metrics_stale`、`agent_status`。心跳超过指标时间时显示诊断；有效指标上报会原子清除旧诊断，`agent_status:null` 明确通知前端清除旧状态。仍在线但指标超过 45 秒，或诊断为采集/上报失败时，`metrics_stale:true`、`metrics:null`，不能当作零使用率。离线判定仍为 45 秒无连接。历史与流量只来自有效指标。
+
+`state` 为 `starting`、`collecting`、`reporting`、`ok`、`collect_failed`、`collect_timeout`、`report_failed`；`reason` 是固定分类 `cpu/memory/disk/network/interfaces/uptime/boot_time/invalid/unknown/timeout/transport` 或空。Agent 不通过诊断传输原始错误、挂载路径、网卡名或凭据；具体错误保留在本机日志。元数据继续用于识别版本及签名升级，不作为指标样本。

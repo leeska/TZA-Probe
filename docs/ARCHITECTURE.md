@@ -63,3 +63,9 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 `frontend.entry` 指向主题自己的 HTML；主题运行于无 `allow-same-origin` 的 iframe，HTML / SVG 的 HTTP 响应也携带 CSP sandbox，直接打开也不能继承站点权限。
 `theme-sdk.js` 通过版本化 postMessage 协议读取公开 API、路由与外观偏好。宿主按具体 frame/source 校验来源，公开数据请求省略 Cookie / Authorization，拒绝后台、Agent 和 MCP API。
 主题能独立使用任意 DOM、CSS、打包后的框架和代码拆分；核心只负责选择、安装、版本检查、运行边界及数据契约。
+
+## 心跳与指标
+
+Agent 的心跳在独立协程运行，采集阻塞、采集失败或指标上报失败不会阻塞连接诊断。成功指标在最近 10 秒内已证明在线时不再额外发送健康心跳。采集期限为 10 秒，默认心跳检查间隔 5 秒。旧 Server 对心跳返回 404/405 后，该 Agent 进程关闭心跳请求，继续原有 report/jobs 协议。
+
+SQLite schema 16 增加 `node_health` 存储连接与诊断；`nodes.last_seen` 内部仍只代表指标时间，流量差值摊分、采样与历史基线均不受心跳影响。对外 `last_seen` 合并最近联系，另给 `metrics_at`。采集失败的当前指标不对外伪装成新值；已保存的历史与累计用量保留。CPU/内存提醒在指标不可用时停止评估，解除说明明确不能确认使用率恢复，离线提醒继续依照连接判定。

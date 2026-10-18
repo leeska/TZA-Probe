@@ -5291,3 +5291,6 @@ dialog.wide-dialog {
     right: 50px;
   }
 }
+
+/* The public diagnostic badge must stay hidden after metrics recover. */
+.collection-state[hidden] { display: none !important; }

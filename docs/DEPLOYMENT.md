@@ -159,7 +159,8 @@ systemd 部署可在 `tza-server.service` 的 `[Service]` 里加 `Environment=TZ
 - 状态：`sudo systemctl status tza-server` / `sudo systemctl status tza-agent`。
 - 日志：`sudo journalctl -u tza-server -n 100 --no-pager` / `sudo journalctl -u tza-agent -n 100 --no-pager`。
 - 配置修改后：`sudo systemctl restart tza-agent`；服务不会自动重载配置。
-- 后台节点列表显示 Agent 版本和最后上报时间；网络任务的“执行记录”显示最近执行及失败原因。
+- 后台节点列表显示 Agent 版本、最近连接、有效指标时间和采集异常分类；在线但指标异常时，检查 Agent 的 `mount`、`interfaces` 和本机日志，修改后重启 Agent。网络任务的“执行记录”显示最近执行及失败原因。
+- 本次心跳功能应先升级 Server（SQLite 自动迁移到 schema 16），再升级 Agent。旧 Agent 的指标仍可证明在线；新 Agent 遇到旧 Server 的 404/405 会停用心跳，因此旧 Server 仍无法区分采集失败和断连。回滚至不支持 schema 16 的 Server 前应恢复升级前的数据备份。
 - 忘记后台密码：`sudo tza-server reset-password --data /var/lib/tza-probe` 生成新密码并打印（加 `--username 名字` 同时改用户名），不用停服，下次登录即生效；已登录的会话在服务重启后失效。账号保存在数据目录的 `admin-account`（密码只存 PBKDF2 摘要）。
 - 管理密钥丢失时停服，重新生成 `admin-token` 并维持服务账户所有权和 0600 权限后启动。Server 重启会使浏览器会话失效。
 

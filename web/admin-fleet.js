@@ -19,10 +19,11 @@ export async function loadUpgrades() {
   }
 }
 
-export const isStale = (n) => !!(n.metrics?.version && state.serverVersion && n.metrics.version !== state.serverVersion);
+const agentMetadata = (n) => n.metrics || n.agent_status;
+export const isStale = (n) => !!(agentMetadata(n)?.version && state.serverVersion && agentMetadata(n).version !== state.serverVersion);
 // 钉了升级公钥、带 --self-update 的 Agent 报 self_update，能一键升级；更早的（或节点上没有公钥的）
 // 要在机器上手工执行一次安装命令。
-const selfUpdating = (n) => !!n.metrics?.capabilities?.includes("self_update");
+const selfUpdating = (n) => !!agentMetadata(n)?.capabilities?.includes("self_update");
 const upgradeCommand = () => `curl -fsSL ${location.origin}/install.sh | sh -s -- --endpoint ${location.origin}`;
 
 const UPGRADE_BADGES = {
@@ -35,8 +36,9 @@ const UPGRADE_BADGES = {
 };
 // 状态格里「Agent 版本 · 架构」那一行：版本落后标「需更新」，排了升级的标进度。
 export function agentLine(n) {
-  if (!n.metrics) return "Agent 未接入";
-  let out = "Agent " + [n.metrics.version, n.metrics.arch].filter(Boolean).map(esc).join(" · ");
+  const meta = agentMetadata(n);
+  if (!meta) return "Agent 未接入";
+  let out = "Agent " + [meta.version, meta.arch].filter(Boolean).map(esc).join(" · ");
   const it = upgrades[n.id];
   const badge = it && UPGRADE_BADGES[it.state];
   if (badge) out += ` <span class="pill upgrade-pill ${badge[1]}" title="${esc(it.error || badge[2])}">${badge[0]}</span>`;

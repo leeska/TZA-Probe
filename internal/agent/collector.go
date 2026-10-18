@@ -32,12 +32,15 @@ func (c *SystemCollector) Collect(ctx context.Context) (model.Metrics, error) {
 	m := model.Metrics{OS: runtime.GOOS, Arch: runtime.GOARCH, Distro: Distro(), Cores: runtime.NumCPU(), Version: model.Version, Capabilities: []string{model.CapabilityUnlock, model.CapabilityParallelJobs}}
 	cp, err := cpu.PercentWithContext(ctx, time.Second, false)
 	if err != nil || len(cp) == 0 {
-		return m, errors.New("CPU collection failed")
+		if err == nil {
+			err = errors.New("CPU collection returned no values")
+		}
+		return m, collectionFailure("cpu", err)
 	}
 	m.CPU = cp[0]
 	memory, err := mem.VirtualMemoryWithContext(ctx)
 	if err != nil {
-		return m, err
+		return m, collectionFailure("memory", err)
 	}
 	m.MemoryTotal = memory.Total
 	m.MemoryUsed = memory.Used
@@ -47,17 +50,17 @@ func (c *SystemCollector) Collect(ctx context.Context) (model.Metrics, error) {
 	}
 	d, err := disk.UsageWithContext(ctx, mount)
 	if err != nil {
-		return m, err
+		return m, collectionFailure("disk", err)
 	}
 	m.DiskTotal = d.Total
 	m.DiskUsed = d.Used
 	m.Uptime, err = host.UptimeWithContext(ctx)
 	if err != nil {
-		return m, err
+		return m, collectionFailure("uptime", err)
 	}
 	counters, err := gnet.IOCountersWithContext(ctx, true)
 	if err != nil {
-		return m, err
+		return m, collectionFailure("network", err)
 	}
 	selected := map[string]bool{}
 	for _, name := range c.Interfaces {
@@ -77,11 +80,11 @@ func (c *SystemCollector) Collect(ctx context.Context) (model.Metrics, error) {
 	}
 
 	if len(selected) > 0 && len(names) != len(selected) {
-		return m, errors.New("one or more configured network interfaces are unavailable")
+		return m, collectionFailure("interfaces", errors.New("one or more configured network interfaces are unavailable"))
 	}
 	boot, err := host.BootTimeWithContext(ctx)
 	if err != nil {
-		return m, err
+		return m, collectionFailure("boot_time", err)
 	}
 	sort.Strings(names)
 	m.CounterID = model.Hash(strconv.FormatUint(boot, 10) + "/" + strings.Join(names, ","))
@@ -98,7 +101,10 @@ func (c *SystemCollector) Collect(ctx context.Context) (model.Metrics, error) {
 	c.lastIn, c.lastOut, c.lastAt = m.NetIn, m.NetOut, now
 	c.lastCounterID = m.CounterID
 	m.IPFamilies = localIPFamilies()
-	return m, m.Validate()
+	if err := m.Validate(); err != nil {
+		return m, collectionFailure("invalid", err)
+	}
+	return m, nil
 }
 
 // localIPFamilies reports which public address families this host can use for

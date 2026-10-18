@@ -67,14 +67,22 @@ export function percent(used, total) {
 // 节点状态的统一叫法：从没上报过的是「等待接入」，接入过又断开的才是「离线」。
 // 公开卡片、详情弹窗与后台表格共用这一处，同一台机器不会这里写等待接入、那里写离线。
 export function statusLabel(n) {
-  if (n.online) return "在线";
+  if (n.online) return n.metrics_stale ? "在线 · 指标异常" : "在线";
   return n.last_seen ? "离线" : "等待接入";
 }
 // 系统标签的取数：Agent 读 /etc/os-release 报的发行版（distro，如「Debian 13」），
 // 老 Agent 只有 runtime.GOOS（linux）——发行版本身已经说明它是 Linux，所以有 distro
 // 就不再写 linux。卡片 / 列表 / 详情页共用这一处，三个渲染点不会各退各的。
 export function osLabel(n, fallback = statusLabel(n)) {
-  return n.metrics?.distro || n.metrics?.os || fallback;
+  return n.metrics?.distro || n.agent_status?.distro || n.metrics?.os || n.agent_status?.os || fallback;
+}
+
+export function diagnosticHint(n) {
+  if (!n.online || !n.metrics_stale) return "";
+  const status = n.agent_status || {};
+  const reasons = { cpu: "CPU 采集失败", memory: "内存采集失败", disk: "磁盘采集失败，请检查挂载点", network: "网卡统计失败", interfaces: "配置的网卡不可用，请核对 Agent 的 interfaces", uptime: "运行时长采集失败", boot_time: "启动时间采集失败", invalid: "采集结果未通过校验" };
+  const issue = status.state === "collect_timeout" ? "指标采集超时" : status.state === "report_failed" ? "指标上报失败，请检查 Agent 日志与 Server 版本" : reasons[status.reason] || (status.state === "starting" || status.state === "collecting" ? "等待首次有效指标" : "指标不可用，请检查 Agent 日志");
+  return issue + (n.metrics_at ? `；最近有效指标 ${date(n.metrics_at)}` : "；尚无有效指标");
 }
 // 带宽：接口给的窗口平均速率是 bit/s，按商家规格的口径写成 Mbit/s（十进制），
 // 不足 1 Mbit/s 退到 kbit/s，别写成 0.0 Mbit/s。

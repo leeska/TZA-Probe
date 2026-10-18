@@ -63,6 +63,11 @@ func (s *Store) Report(ctx context.Context, id string, m model.Metrics, now time
 	if _, err = tx.ExecContext(ctx, "UPDATE nodes SET metrics=?,last_seen=? WHERE id=?", payload, now.Unix(), id); err != nil {
 		return err
 	}
+	// A valid report supersedes diagnostics atomically, including heartbeats
+	// received in the same second. A later heartbeat may diagnose a new failure.
+	if _, err = tx.ExecContext(ctx, "DELETE FROM node_health WHERE node_id=?", id); err != nil {
+		return err
+	}
 	// One persisted sample per minute; current state is refreshed on each report.
 	at := now.Unix() / 60 * 60
 	if _, err = tx.ExecContext(ctx, "INSERT INTO samples VALUES(?,?,?) ON CONFLICT(node_id,at) DO UPDATE SET payload=excluded.payload", id, at, payload); err != nil {
