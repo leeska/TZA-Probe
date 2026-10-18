@@ -180,3 +180,9 @@ Server 把任务展开为单项探测（checks × targets，目标自带 `checks
 `/nodes`、`/nodes/live` 与后台节点返回 `last_seen`（最近收到有效指标或心跳）、`metrics_at`（最近有效指标，0 表示从未采集成功）、`metrics_stale`、`agent_status`。心跳超过指标时间时显示诊断；有效指标上报会原子清除旧诊断，`agent_status:null` 明确通知前端清除旧状态。仍在线但指标超过 45 秒，或诊断为采集/上报失败时，`metrics_stale:true`、`metrics:null`，不能当作零使用率。离线判定仍为 45 秒无连接。历史与流量只来自有效指标。
 
 `state` 为 `starting`、`collecting`、`reporting`、`ok`、`collect_failed`、`collect_timeout`、`report_failed`；`reason` 是固定分类 `cpu/memory/disk/network/interfaces/uptime/boot_time/invalid/unknown/timeout/transport` 或空。Agent 不通过诊断传输原始错误、挂载路径、网卡名或凭据；具体错误保留在本机日志。元数据继续用于识别版本及签名升级，不作为指标样本。
+
+## 当前告警的评估暂停
+
+`GET /admin/events?active=1` 在已触发的 CPU / 内存告警因指标不可用而暂停评估时返回 `evaluation_paused:true`。此时 `active:true` 表示该告警尚未获得解除依据，消息和采样时间仍是上次触发/重复事件的快照。恢复有效读数后，该字段消失：正常读数解除，高读数继续原告警。未达到持续要求的计时在数据缺失时重置。关闭或移除规则仍会解除告警。
+
+普通事件历史和通知投递快照不含这个实时字段，内容不随节点当前状态变化。数据库无需新迁移，仍使用 schema 16。

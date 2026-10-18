@@ -18,6 +18,9 @@ type Event struct {
 	At        int64  `json:"at"`
 	Delivered bool   `json:"delivered"`
 	Attempts  int    `json:"attempts"`
+	// Only set in a current-alert query. Event history and delivery snapshots
+	// stay immutable; this describes the live evaluation, not the old event.
+	EvaluationPaused bool `json:"evaluation_paused,omitempty"`
 }
 
 // EventQuery pages the event log: newest first, ids below Before (0 = from the

@@ -20,6 +20,7 @@ import (
 type Repository interface {
 	Nodes(context.Context, time.Time) ([]model.NodeView, error)
 	Transition(context.Context, model.Node, string, func(active, repeat bool) string, bool, int, int, time.Time) error
+	PauseResourceAlert(context.Context, string, string) error
 	PendingEvents(context.Context, time.Time) ([]model.Event, error)
 	Delivery(context.Context, model.Event, bool, time.Time) error
 }
@@ -148,6 +149,16 @@ func (e Engine) Tick(ctx context.Context, now time.Time) error {
 		for _, kind := range model.AlertKinds {
 			rule, on := n.Alerts.Rule(kind)
 			rule.Kind = kind
+			if on && (kind == model.AlertCPU || kind == model.AlertMemory) {
+				if _, valid := usage(n, kind); !valid {
+					// Missing metrics are unknown, not proof of recovery. Keep
+					// active alarms, reset incomplete holds and suppress repeats.
+					if err = e.Repository.PauseResourceAlert(ctx, n.ID, kind); err != nil {
+						return err
+					}
+					continue
+				}
+			}
 			condition, message := false, func() string { return "" }
 			if on {
 				condition, message = evaluate(n, rule, now)

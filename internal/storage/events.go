@@ -18,6 +18,8 @@ import (
 // changes nothing; those end as a read and write nothing, so a quiet fleet adds
 // no commits (and no fsyncs) next to the Agents' reports. A missing row is the
 // quiet state (since 0, inactive), so a kind that never fired needs none.
+// An active resource alert with since 0 has paused evaluation: the last known
+// alarm remains active, but there is no continuous observed interval to count.
 //
 // describe builds the event text only when an event is written (active: the
 // alert fires or repeats, repeat: it is a repeat reminder), so the quiet path
@@ -83,6 +85,28 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind string, descr
 	return tx.Commit()
 }
 
+// PauseResourceAlert records unavailable data without emitting a recovery or
+// repeat. since=0 restarts an incomplete hold on the next valid observation;
+// active is preserved until a valid normal reading or a disabled rule clears
+// it. Clearing since also avoids counting the unknown gap as observed load.
+func (s *Store) PauseResourceAlert(ctx context.Context, id, kind string) error {
+	if kind != model.AlertCPU && kind != model.AlertMemory {
+		return model.Invalid("只有 CPU / 内存使用率告警可以暂停评估")
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	var since int64
+	err := s.db.QueryRowContext(ctx, "SELECT since FROM alert_state WHERE node_id=? AND kind=?", id, kind).Scan(&since)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && since == 0) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "UPDATE alert_state SET since=0 WHERE node_id=? AND kind=?", id, kind)
+	return err
+}
+
 // Events pages the event log newest first for the panel and MCP: q.Before is
 // the id cursor (0 = from the newest), NodeID / Kind narrow it.
 func (s *Store) Events(ctx context.Context, q model.EventQuery) ([]model.Event, error) {
@@ -107,17 +131,21 @@ func (s *Store) Events(ctx context.Context, q model.EventQuery) ([]model.Event, 
 	if len(where) > 0 {
 		clause = "WHERE " + strings.Join(where, " AND ")
 	}
-	return s.events(ctx, clause+" ORDER BY id DESC LIMIT ?", append(args, q.Limit)...)
+	return s.events(ctx, q.Active, clause+" ORDER BY id DESC LIMIT ?", append(args, q.Limit)...)
 }
 
 // PendingEvents is the delivery queue: undelivered events due for another
 // attempt and still inside model.EventDeliveryWindow, oldest first.
 func (s *Store) PendingEvents(ctx context.Context, now time.Time) ([]model.Event, error) {
-	return s.events(ctx, "WHERE delivered=0 AND next_attempt<=? AND attempts<10 AND at>=? ORDER BY id ASC LIMIT 100", now.Unix(), now.Add(-model.EventDeliveryWindow).Unix())
+	return s.events(ctx, false, "WHERE delivered=0 AND next_attempt<=? AND attempts<10 AND at>=? ORDER BY id ASC LIMIT 100", now.Unix(), now.Add(-model.EventDeliveryWindow).Unix())
 }
 
-func (s *Store) events(ctx context.Context, tail string, args ...any) ([]model.Event, error) {
-	rows, err := s.query(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts,last_error FROM events "+tail, args...)
+func (s *Store) events(ctx context.Context, current bool, tail string, args ...any) ([]model.Event, error) {
+	paused := "0"
+	if current {
+		paused = "EXISTS(SELECT 1 FROM alert_state a WHERE a.node_id=events.node_id AND a.kind=events.kind AND a.active=1 AND a.since=0)"
+	}
+	rows, err := s.query(ctx, "SELECT id,node_id,node_name,kind,message,active,at,delivered,attempts,last_error,"+paused+" FROM events "+tail, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +153,7 @@ func (s *Store) events(ctx context.Context, tail string, args ...any) ([]model.E
 	out := []model.Event{}
 	for rows.Next() {
 		var e model.Event
-		if err = rows.Scan(&e.ID, &e.NodeID, &e.NodeName, &e.Kind, &e.Message, &e.Active, &e.At, &e.Delivered, &e.Attempts, &e.LastError); err != nil {
+		if err = rows.Scan(&e.ID, &e.NodeID, &e.NodeName, &e.Kind, &e.Message, &e.Active, &e.At, &e.Delivered, &e.Attempts, &e.LastError, &e.EvaluationPaused); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

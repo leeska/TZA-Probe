@@ -138,6 +138,26 @@ func TestRecoveryEventsKeepDetailsAndCause(t *testing.T) {
 			if err = engine.Tick(ctx, recoveredAt); err != nil {
 				t.Fatal(err)
 			}
+			if cause == "offline" {
+				firing, err := s.Events(ctx, model.EventQuery{Active: true})
+				if err != nil || len(firing) != 1 || !firing[0].EvaluationPaused {
+					t.Fatalf("offline must pause the active alarm: %+v %v", firing, err)
+				}
+				all, err := s.Events(ctx, model.EventQuery{})
+				if err != nil || len(all) != 1 {
+					t.Fatalf("unavailable metrics emitted recovery: %+v %v", all, err)
+				}
+				// A new normal sample, rather than loss of observations, is the
+				// evidence that permits a recovery event.
+				recoveredAt = recoveredAt.Add(10 * time.Second)
+				m.CPU = 10.5
+				if err = s.Report(ctx, id, m, recoveredAt); err != nil {
+					t.Fatal(err)
+				}
+				if err = engine.Tick(ctx, recoveredAt); err != nil {
+					t.Fatal(err)
+				}
+			}
 			events, err := s.Events(ctx, model.EventQuery{})
 			if err != nil || len(events) != 2 {
 				t.Fatalf("events=%+v err=%v", events, err)
@@ -164,7 +184,7 @@ func TestRecoveryEventsKeepDetailsAndCause(t *testing.T) {
 				}
 			}
 			got := events[0].Message
-			if !strings.Contains(got, "本次条件持续：") {
+			if cause != "offline" && !strings.Contains(got, "本次条件持续：") {
 				t.Fatal(got)
 			}
 			switch cause {
@@ -173,7 +193,7 @@ func TestRecoveryEventsKeepDetailsAndCause(t *testing.T) {
 					t.Fatal(got)
 				}
 			case "offline":
-				if !strings.Contains(got, "使用率告警停止评估") || strings.Contains(got, "当前 CPU：98.5%") {
+				if !strings.Contains(got, "当前 CPU：10.5%") || strings.Contains(got, "本次条件持续：") {
 					t.Fatal(got)
 				}
 			case "rule_removed":
