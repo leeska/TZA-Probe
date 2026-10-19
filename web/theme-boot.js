@@ -5,8 +5,8 @@
 // 切换逻辑见 theme.js / skins.js。
 (function () {
   var d = window.__tzaDefault || {};
-  // 认得的皮肤：/theme-default.js 发来的清单（内置 + 已安装的主题包）；没有清单时只认内置的两套。
-  var list = window.__tzaThemes || [{ id: "shadcn" }, { id: "glass" }];
+  // 认得的皮肤：/theme-default.js 发来的清单（内置 + 已安装的主题包）；没有清单时只认内置默认主题。
+  var list = window.__tzaThemes || [{ id: "shadcn" }];
   var known = function (id) {
     // 附加包（type: "addon"）不是外观，不能当皮肤用。
     for (var i = 0; i < list.length; i++) if (list[i].id === id && list[i].type !== "addon") return true;

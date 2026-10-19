@@ -881,12 +881,7 @@ html[data-skin="anime"] [data-part="card-backdrop"] {
   pointer-events: none;
 }
 
-/* 一张人物图一条规则：data-deco 的值 = anime/<装饰项 id>（本包 theme.json 的 decorations），图片是本包的 anime/<id>.webp。 */
-html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/jp-nosla-gen2"],
-html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/de-nosla-fra"],
-html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/us-vmiss-tri"],
-html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/us-bwh-dc9"],
-html[data-skin="anime"] [data-part="card-backdrop"][data-deco="anime/generic"] {
+html[data-skin="anime"] [data-part="card-backdrop"][data-deco-pack="anime"] {
   background-image: var(--cast-art-url);
 }
 
@@ -1091,26 +1086,6 @@ html[data-skin="anime"] .node-card[data-deco="anime/us-vmiss-tri"] {
   --cast-blink-delay: 3.3s;
 }
 
-/* US-BWH-DC9 · 搬瓦工 × 美国：暖琥珀牌面 + 斜向金线 */
-html[data-skin="anime"] .node-card[data-deco="anime/us-bwh-dc9"] {
-  --cast-art-url: url("anime/us-bwh-dc9.webp");
-  --cast-hands-url: url("anime/us-bwh-dc9-hands.webp");
-  --cast-top-frac: 0.298177;   /* 牌子上外沿 = 458/1536 */
-  --cast-bot-frac: 0.427083;   /* 牌子下外沿 = 656/1536 */
-  --cast-board-min: 457.00px;  /* 板面基准高（min-height 兜底；与几何规则里的 457 同值） */
-  --cast-board: #fff3dc;
-  --cast-cell: rgb(255 255 255 / 0.56);
-  --cast-line: #e9c684;
-  --cast-track: #f9e2b8;
-  --cast-accent: #b0710a;
-  --cast-accent-rgb: 176, 113, 10;
-  --cast-motif: repeating-linear-gradient(135deg, rgb(200 128 20 / 0.14) 0 5px, transparent 5px 15px);
-  --cast-motif-size: auto;
-  --cast-blink-url: url("anime/us-bwh-dc9-blink.webp");
-  --cast-blink-dur: 5.9s;
-  --cast-blink-delay: 1.2s;
-}
-
 /* GENERIC · 通用人物：名单以外的线路机共用这一张中性立绘（无任何国家 / 商家元素）。
    冷灰蓝牌面 + 极淡圆点；几何与那四台同一套约定，只是上下沿比例按这张画布实测。 */
 html[data-skin="anime"] .node-card[data-deco="anime/generic"] {
@@ -1162,16 +1137,6 @@ html[data-skin="anime"][data-theme="dark"] .node-card[data-deco="anime/us-vmiss-
   --cast-accent: #6f9bff;
   --cast-accent-rgb: 111, 155, 255;
   --cast-motif: radial-gradient(circle at 50% 50%, rgb(111 155 255 / 0.11) 1.1px, transparent 1.4px);
-}
-
-html[data-skin="anime"][data-theme="dark"] .node-card[data-deco="anime/us-bwh-dc9"] {
-  --cast-board: #221c13;
-  --cast-cell: #2a2216;
-  --cast-line: #3c2f1c;
-  --cast-track: #33281a;
-  --cast-accent: #e0a63c;
-  --cast-accent-rgb: 224, 166, 60;
-  --cast-motif: repeating-linear-gradient(135deg, rgb(224 166 60 / 0.10) 0 5px, transparent 5px 15px);
 }
 
 html[data-skin="anime"][data-theme="dark"] .node-card[data-deco="anime/generic"] {

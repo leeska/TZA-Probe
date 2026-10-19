@@ -266,6 +266,9 @@ func Inspect(archive []byte) (Info, error) {
 	if m.Frontend != nil {
 		perms = []string{"独立 HTML / JavaScript 前台（隔离运行）", "只读公开监控数据；不授予后台权限"}
 	}
+	if m.SettingsUI != nil {
+		perms = append(perms, "自定义主题设置弹窗（隔离运行）；可修改本主题设置、导入附加包及绑定节点角色")
+	}
 	return Info{ID: m.ID, Type: m.Type, For: m.For, Name: m.Name, Hint: m.Hint, Version: m.Version, Author: m.Author, Swatch: m.Swatch, Permissions: perms, Manifest: &m}, nil
 }
 

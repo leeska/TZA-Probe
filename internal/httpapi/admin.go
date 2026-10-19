@@ -86,6 +86,70 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		write(w, 200, map[string]any{"options": values})
 	})
+	// Dialog bridges have narrow, theme-scoped capabilities, never a general admin proxy.
+	route("POST /api/v1/admin/themes/{id}/addons", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !a.Themes.Known(id) {
+			write(w, 404, map[string]string{"error": "没有这个主题"})
+			return
+		}
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, theme.MaxUpload))
+		if err != nil {
+			write(w, 413, map[string]string{"error": "附加包过大"})
+			return
+		}
+		m, _, err := tzapkg.Open(body)
+		if err != nil || m.Type != theme.TypeAddon || m.For != id {
+			write(w, 400, map[string]string{"error": "只能添加依附当前主题的附加包"})
+			return
+		}
+		for _, existing := range a.Themes.List() {
+			if existing.ID == m.ID && (existing.Type != theme.TypeAddon || existing.For != id) {
+				write(w, 400, map[string]string{"error": "附加包 id 与其他主题或附加包冲突"})
+				return
+			}
+		}
+		m, err = a.Themes.Install(body)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, m)
+	})
+	route("PUT /api/v1/admin/themes/{id}/bindings/{node}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !a.Themes.Known(id) {
+			write(w, 404, map[string]string{"error": "没有这个主题"})
+			return
+		}
+		var v struct {
+			Decoration string `json:"decoration"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		valid := v.Decoration == ""
+		for _, m := range a.Themes.List() {
+			if m.ID != id && !(m.Type == theme.TypeAddon && m.For == id) {
+				continue
+			}
+			for _, d := range m.Decorations {
+				if v.Decoration == m.ID+"/"+d.ID {
+					valid = true
+				}
+			}
+		}
+		if !valid {
+			write(w, 400, map[string]string{"error": "角色不属于当前主题"})
+			return
+		}
+		patch, _ := json.Marshal(v)
+		if _, err := a.svc.PatchNode(r.Context(), r.PathValue("node"), patch); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(204)
+	})
 	route("POST /api/v1/admin/themes", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, theme.MaxUpload))
 		if err != nil {

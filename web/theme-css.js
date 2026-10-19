@@ -5,12 +5,6 @@
 (function () {
   var list = window.__tzaThemes || [];
   var skin = document.documentElement.dataset.skin;
-  // 基础层：主题包声明 "base": "plain" 就停用液态玻璃的材质层（index.html 里带 data-base-css 的那条）。
-  // 本脚本排在内置样式表之后，执行时它们已经加载完、首屏还没画，停用不会闪。规则与 skins.js 的 syncBaseCSS 相同。
-  var plain = false;
-  for (var k = 0; k < list.length; k++) if (list[k].id === skin && list[k].base === "plain") plain = true;
-  var glass = document.querySelector('link[data-base-css="glass"]');
-  if (glass) glass.disabled = plain;
   for (var i = 0; i < list.length; i++) {
     var t = list[i];
     if (t.id !== skin || t.builtin || !t.css) continue;

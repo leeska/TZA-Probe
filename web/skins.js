@@ -1,17 +1,16 @@
-// 外观风格（皮肤）：内置的现代极简（默认）、液态玻璃，加上已安装的主题包（官方的其它外观也是
+// 外观风格（皮肤）：内置的现代极简（默认），加上已安装的主题包（官方的其它外观也是
 // 主题包，从后台「主题」页的市场安装；也可以上传别的主题包）。
 // 明暗（data-theme）仍由 theme.js 决定，风格（data-skin）由这里决定，两者正交：
 // 同一套皮肤在浅色与深色下各有一份令牌。偏好存 localStorage 的 tza-skin，
 // theme-boot.js 在样式表生效前已把 data-skin 写到 <html> 上，避免首屏闪一下默认皮肤。
 //
 // 清单的唯一来源是服务端（internal/theme）：/theme-default.js 把它放在 window.__tzaThemes 上，
-// 后台装 / 删主题包之后由 registerThemes() 换成新清单。没有清单时（jsdom 测试、旧缓存）只认内置的两套。
+// 后台装 / 删主题包之后由 registerThemes() 换成新清单。没有清单时（jsdom 测试、旧缓存）只认内置默认主题。
 const KEY = "tza-skin";
 
 // 顺序即菜单顺序，第一套是内置默认（与 internal/theme 的 Builtins、model.DefaultPanelSkin 一致）。
 const BUILTIN = [
   { id: "shadcn", name: "现代极简", hint: "中性灰 · 发丝描边 · 小圆角", builtin: true, chrome: { light: "#ffffff", dark: "#0a0a0a" }, swatch: ["#f5f5f5", "#ffffff", "#171717"] },
-  { id: "glass", name: "液态玻璃", hint: "毛玻璃 · 圆角 · 柔和阴影", builtin: true, chrome: { light: "#edf2fb", dark: "#0f141c" }, swatch: ["#eef3fc", "#ffffff", "#0071e3"] },
 ];
 
 // 附加包（type: "addon"）不是可选的外观，它只给 for 写的那套主题添装饰项（decorations.js 读它们）。
@@ -90,17 +89,9 @@ function syncThemeCSS(skin) {
   );
 }
 
-// 基础层：声明了 "base": "plain" 的主题包不要液态玻璃的材质层（glass.css），其余的都要。
-// 首屏由 theme-css.js 定好；样式表一直在页面上，切换只改 disabled，同步生效。
-function syncBaseCSS(skin) {
-  const glass = document.querySelector('link[data-base-css="glass"]');
-  if (glass) glass.disabled = byId(skin)?.base === "plain";
-}
-
 // 与 theme.js 各管一半：这里只管 data-skin、按钮文字与 meta 底色，明暗由 applyTheme 负责。
 export function applySkin(skin = skinPreference()) {
   syncThemeCSS(skin);
-  syncBaseCSS(skin);
   document.documentElement.dataset.skin = skin;
   applyOptions(skin);
   applyLayout(skin);

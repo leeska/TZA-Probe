@@ -310,3 +310,23 @@ func frontendZip(t *testing.T, files map[string]string) []byte {
 	}
 	return b.Bytes()
 }
+
+func TestSettingsUIArchiveContract(t *testing.T) {
+	manifest := `{"id":"dialog","name":"Dialog","chrome":{"light":"#ffffff","dark":"#111111"},"swatch":["#ffffff","#eeeeee","#123456"],"styles":["theme.css"],"settings_ui":{"entry":"settings/index.html","api_version":1}}`
+	files := map[string]string{"theme.json": manifest, "theme.css": "body{}", "settings/index.html": `<script src="/theme-settings-sdk.js"></script><script src="main.js"></script>`, "settings/main.js": "TZASettings.ready.then(console.log)"}
+	if info, err := Inspect(frontendZip(t, files)); err != nil || len(info.Permissions) != 1 {
+		t.Fatalf("settings archive/review: %+v %v", info, err)
+	}
+	for _, bad := range []string{
+		strings.Replace(manifest, `"api_version":1`, `"api_version":2`, 1),
+		strings.Replace(manifest, `settings/index.html`, `../index.html`, 1),
+		strings.Replace(manifest, `settings/index.html`, `settings/main.js`, 1),
+		strings.Replace(manifest, `settings/index.html`, `missing.html`, 1),
+		`{"id":"addon","type":"addon","for":"dialog","name":"Addon","decorations":[{"id":"a","name":"A"}],"settings_ui":{"entry":"settings/index.html","api_version":1}}`,
+	} {
+		files["theme.json"] = bad
+		if _, _, err := Open(frontendZip(t, files)); err == nil {
+			t.Fatalf("accepted invalid settings UI: %s", bad)
+		}
+	}
+}

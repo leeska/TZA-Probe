@@ -72,7 +72,7 @@ func TestThemePackageLifecycle(t *testing.T) {
 	if !strings.Contains(boot, "window.__tzaThemes=") || !strings.Contains(boot, `"id":"matcha"`) || !strings.Contains(boot, `/themes/matcha/theme.css?v=`) {
 		t.Fatalf("首屏脚本没列出主题包: %s", boot)
 	}
-	if !strings.Contains(boot, `"id":"glass"`) || !strings.Contains(boot, `"builtin":true`) {
+	if !strings.Contains(boot, `"id":"shadcn"`) || strings.Contains(boot, `"id":"glass"`) || !strings.Contains(boot, `"builtin":true`) {
 		t.Fatalf("首屏脚本要同时列出内置皮肤: %s", boot)
 	}
 	if code, css := request("GET", "/themes/matcha/theme.css", "", "", nil); code != 200 || !strings.Contains(css, `[data-skin="matcha"]`) {
@@ -107,7 +107,7 @@ func TestThemePackageLifecycle(t *testing.T) {
 	}
 
 	// 删除：默认皮肤退回内置，静态文件 404，内置的删不掉。
-	if code, _ := request("DELETE", "/api/v1/admin/themes/glass", admin, "", nil); code != 400 {
+	if code, _ := request("DELETE", "/api/v1/admin/themes/shadcn", admin, "", nil); code != 400 {
 		t.Fatal("内置皮肤不能删")
 	}
 	if code, body := request("DELETE", "/api/v1/admin/themes/matcha", admin, "", nil); code != 204 {

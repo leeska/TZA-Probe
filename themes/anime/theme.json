@@ -2,7 +2,7 @@
   "id": "anime",
   "name": "二次元",
   "hint": "线路机角色 · 樱花粉",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "TZA",
   "chrome": {
     "light": "#fdeef6",
@@ -38,30 +38,29 @@
   "decorations": [
     {
       "id": "jp-nosla-gen2",
-      "name": "家人云 · jp-nosla-gen2",
-      "nodes": [
-        "JP-NoSla-Gen2"
+      "name": "日本角色",
+      "regions": [
+        "日本",
+        "Japan",
+        "JP"
       ]
     },
     {
       "id": "de-nosla-fra",
-      "name": "家人云 · de-nosla-fra",
-      "nodes": [
-        "DE-NoSla-FRA"
+      "name": "德国角色",
+      "regions": [
+        "德国",
+        "Germany",
+        "DE"
       ]
     },
     {
       "id": "us-vmiss-tri",
-      "name": "云上飞行 · us-vmiss-tri",
-      "nodes": [
-        "US-VMISS-Tri"
-      ]
-    },
-    {
-      "id": "us-bwh-dc9",
-      "name": "搬瓦工 · us-bwh-dc9",
-      "nodes": [
-        "US-BWH-DC9"
+      "name": "美国角色",
+      "regions": [
+        "美国",
+        "United States",
+        "US"
       ]
     },
     {
@@ -69,5 +68,9 @@
       "name": "通用角色",
       "default": true
     }
-  ]
+  ],
+  "settings_ui": {
+    "entry": "settings/index.html",
+    "api_version": 1
+  }
 }

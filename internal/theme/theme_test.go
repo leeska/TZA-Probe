@@ -60,7 +60,7 @@ func TestInstallListServeRemove(t *testing.T) {
 	if len(list) != len(Builtins)+1 || !list[0].Builtin || list[len(list)-1].ID != "matcha" {
 		t.Fatalf("list: built-ins first, then installed: %+v", list)
 	}
-	if !s.Known("matcha") || !s.Known("glass") || s.Known("nope") {
+	if !s.Known("matcha") || !s.Known("shadcn") || s.Known("nope") {
 		t.Fatal("Known must cover built-ins and installed packages only")
 	}
 
@@ -93,7 +93,7 @@ func TestInstallListServeRemove(t *testing.T) {
 		t.Fatal("an upgrade replaces the whole package; files of the old version must not linger")
 	}
 
-	if err := s.Remove("glass"); err == nil {
+	if err := s.Remove("shadcn"); err == nil {
 		t.Fatal("built-ins cannot be removed")
 	}
 	if err := s.Remove("matcha"); err != nil {
@@ -123,7 +123,7 @@ func TestInstallRejects(t *testing.T) {
 		"extra json":    pack(t, ok, css, file{name: "data.json", body: "{}"}),
 		"no manifest":   pack(t, css),
 		"missing style": pack(t, ok),
-		"builtin id":    pack(t, file{name: "theme.json", body: strings.Replace(manifest, `"matcha"`, `"glass"`, 1)}, css),
+		"builtin id":    pack(t, file{name: "theme.json", body: strings.Replace(manifest, `"matcha"`, `"shadcn"`, 1)}, css),
 		"bad id":        pack(t, file{name: "theme.json", body: strings.Replace(manifest, `"matcha"`, `"Matcha!"`, 1)}, css),
 		"bad colour":    pack(t, file{name: "theme.json", body: strings.Replace(manifest, "#141811", "red", 1)}, css),
 		"style outside": pack(t, file{name: "theme.json", body: strings.Replace(manifest, `["theme.css"]`, `["../x.css"]`, 1)}, css),
@@ -151,7 +151,7 @@ func TestInstallRejects(t *testing.T) {
 
 func TestNilStoreIsBuiltinsOnly(t *testing.T) {
 	var s *Store
-	if len(s.List()) != len(Builtins) || !s.Known("glass") || s.Known("postcard") || s.Known("matcha") {
+	if len(s.List()) != len(Builtins) || !s.Known("shadcn") || s.Known("postcard") || s.Known("matcha") {
 		t.Fatal("a nil store lists the built-ins only")
 	}
 	if _, err := s.Install(nil); err == nil {

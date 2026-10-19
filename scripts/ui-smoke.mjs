@@ -76,6 +76,7 @@ w.HTMLDialogElement.prototype.showModal = function () {
 };
 w.HTMLDialogElement.prototype.close = function () {
   this.open = false;
+  this.dispatchEvent(new this.ownerDocument.defaultView.Event("close"));
 };
 w.fetch = async (input, opts = {}) => {
   const response = await fetch(new URL(input, base), {
@@ -223,9 +224,9 @@ const adminHeaders = { Authorization: "Bearer " + token };
 // 后面的皮肤断言才有东西可测。没装之前，内置的是现代极简（默认）与液态玻璃。
 {
   const before = await (await fetch(base + "/api/v1/admin/themes", { headers: adminHeaders })).json();
-  assert.deepEqual(before.map((t) => t.id), ["shadcn", "glass"], "没装主题包时只有内置的现代极简与液态玻璃");
+  assert.deepEqual(before.map((t) => t.id), ["shadcn"], "没装主题包时只有内置的现代极简");
   assert(process.env.TZA_TEST_THEMES, "需要 TZA_TEST_THEMES（tools/themepack 打出的官方主题包目录）");
-  for (const id of ["press", "anime"]) {
+  for (const id of ["press", "anime", "glass"]) {
     const zip = await readFile(path.join(process.env.TZA_TEST_THEMES, id + ".zip"));
     const r = await fetch(base + "/api/v1/admin/themes", { method: "POST", headers: { ...adminHeaders, "Content-Type": "application/zip" }, body: zip });
     assert.equal(r.status, 200, `装官方主题包 ${id}: ${await r.clone().text()}`);
@@ -1111,7 +1112,7 @@ assert.equal(
 // 皮肤清单与 web/skins.js 的 SKINS 同源，两边对不上会被 web/look_choices_test.go 抓到。
 assert.equal(
   [...skinField.options].map((o) => o.value).join(","),
-  "shadcn,glass,anime,press",
+  "shadcn,anime,glass,press",
   "默认皮肤只列内置的现代极简、液态玻璃与已安装的主题包",
 );
 // 这三个下拉在页面上是自定义外壳（ui-select.js 把原生 select 换成 .select-trigger + .select-pop），
@@ -1252,28 +1253,20 @@ $('[data-subview="installed"]').click();
 await until(() => $("#theme-file"), "back to installed themes");
 assert.deepEqual(
   [...w.document.querySelectorAll(".theme-panel .theme-list > .theme-row > .theme-copy > b")].map((b) => b.textContent),
-  ["现代极简", "液态玻璃", "二次元", "复古印刷"],
+  ["现代极简", "二次元", "液态玻璃", "复古印刷"],
   "主题页列出内置的现代极简、液态玻璃和刚装的两个官方主题包",
 );
 // 主题设置：声明了 settings 的主题旁边有「设置」，点开是它自己的菜单；二次元的角色包就在里面开关。
 assert(!$('[data-theme-settings="press"]') && !$('[data-theme-settings="glass"]'), "没声明设置的主题没有设置入口");
 const animeGear = $('[data-theme-settings="anime"]');
 assert(animeGear, "二次元旁边有「设置」");
-const animeMenu = $("#theme-settings-anime");
-assert(animeMenu?.hidden && animeMenu.previousElementSibling?.textContent.includes("二次元"), "设置菜单默认收起，紧跟在二次元下面");
+assert(!$("#theme-settings-anime"), "主题列表不内联详细设置");
 animeGear.click();
-assert(!animeMenu.hidden && animeGear.getAttribute("aria-expanded") === "true", "点「设置」展开菜单");
-assert(animeMenu.textContent.includes("角色包") && animeMenu.textContent.includes("二次元自带") && animeMenu.textContent.includes("眨眼与呼吸"), "菜单按 theme.json 的 settings 画出角色包与动效开关");
-assert(!animeMenu.querySelector("[data-scope]"), "市场关着时设置菜单里没有角色包市场");
-const motionSwitch = () => $('#theme-settings-anime [data-opt-key="motion"]');
-assert.equal(motionSwitch().getAttribute("aria-checked"), "true", "没调过时用 default（on）");
-motionSwitch().click();
-await until(() => motionSwitch()?.getAttribute("aria-checked") === "false", "save the motion setting");
-assert(!$("#theme-settings-anime").hidden, "保存后菜单保持展开");
-assert((await (await fetch(base + "/theme-default.js")).text()).includes('"options":{"motion":"off"}'), "设置值随首屏清单发给访客");
-motionSwitch().click();
-await until(() => motionSwitch()?.getAttribute("aria-checked") === "true", "restore the motion setting");
-assert(!$('[data-remove-theme="glass"]') && !$('[data-remove-theme="shadcn"]') && $('[data-remove-theme="press"]'), "内置的不能删，主题包能删");
+assert($("#dialog").open && $("#theme-settings-frame"), "设置在弹窗中的开发者界面打开");
+assert($("#theme-settings-frame").getAttribute("sandbox") === "allow-scripts", "开发者弹窗隔离运行");
+$("#dialog .close").click();
+await until(() => !$("#theme-settings-frame"), "closing settings disposes the developer frame");
+assert($('[data-remove-theme="glass"]') && !$('[data-remove-theme="shadcn"]') && $('[data-remove-theme="press"]'), "只有现代极简不能删除，液态玻璃是普通主题包");
 $('[data-tab="plugins"]').click();
 // 面包屑在切页时立刻换，内容要等接口回来：等插件页自己的上传入口出现，别拿主题页残留的 .market-off 当成功。
 await until(() => $("#plugin-file"), "plugins page without TZA-CC");
@@ -1503,7 +1496,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   const opts = [...menu.querySelectorAll(".skin-option")];
   assert.deepEqual(
     opts.map((o) => o.dataset.skinOption),
-    ["shadcn", "glass", "anime", "press"],
+    ["shadcn", "anime", "glass", "press"],
     "内置的现代极简、液态玻璃与已安装的主题包都要列出来",
   );
   assert.equal(opts.find((o) => o.classList.contains("on"))?.dataset.skinOption, "shadcn", "当前皮肤要有选中态");
@@ -1515,7 +1508,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   // 内置皮肤的颜色在样式表里；主题包的颜色只有清单知道，由 paintSwatches 经 CSSOM 逐格写（CSP 不拦）。
   const skinsSource = await readFile(path.join(root, "web/skins.js"), "utf8");
   assert(!/skin-swatch[^`]*style=/.test(skinsSource), "色板标记里不能带 style 属性（CSP 会忽略）");
-  for (const sw of menu.querySelectorAll('[data-swatch="glass"], [data-swatch="glass"] i, [data-swatch="shadcn"], [data-swatch="shadcn"] i'))
+  for (const sw of menu.querySelectorAll('[data-swatch="shadcn"], [data-swatch="shadcn"] i'))
     assert(!sw.hasAttribute("style"), "内置皮肤的色板颜色来自样式表");
   for (const id of ["press", "anime"])
     assert(
@@ -1546,16 +1539,16 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   const genericCasts = [...pubDoc.querySelectorAll('[data-part="card-backdrop"]')];
   assert(genericCasts.length > 0, "名单外的节点也要摆立绘：落到通用人物 anime/generic（二次元 theme.json 的 default 装饰项）");
   assert(
-    genericCasts.every((el) => el.dataset.deco === "anime/generic"),
-    "名单外的节点都用通用人物 generic 那一张立绘",
+    genericCasts.every((el) => ["anime/generic", "anime/jp-nosla-gen2"].includes(el.dataset.deco)),
+    "日本按地区匹配，香港等无对应角色的地区使用通用人物",
   );
   // 折叠开关：点卡片头那颗名字按钮 → 卡壳挂上 data-rolled、状态按节点 id 落 localStorage；再点一下 →
   // 摊开、本地那份也清掉。这里塞一张合成卡——走的仍是页面里同一段代码（点击是 document 上的委托，
   // 状态机与真实卡片共用）。
   const foldHost = pubDoc.createElement("div");
   foldHost.innerHTML =
-    '<article class="node-card" data-node="fold-fixture" data-deco="anime/us-bwh-dc9" data-deco-pack="anime">' +
-    '<div data-part="card-backdrop" class="card-backdrop" data-deco="anime/us-bwh-dc9" data-bleed><span data-part="card-backdrop-layer" class="card-backdrop-layer"></span></div>' +
+    '<article class="node-card" data-node="fold-fixture" data-deco="anime/us-vmiss-tri" data-deco-pack="anime">' +
+    '<div data-part="card-backdrop" class="card-backdrop" data-deco="anime/us-vmiss-tri" data-bleed><span data-part="card-backdrop-layer" class="card-backdrop-layer"></span></div>' +
     '<div class="card-body"><div class="card-top">' +
     '<button class="fold-name" type="button" data-fold="fold-fixture" aria-expanded="true">' +
     '<span class="node-dot"></span><span class="fold-name-text">US-BWH-DC9</span></button>' +
@@ -1746,8 +1739,8 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
     "人物层：绝对定位、固定像素高（--cast-figure-h）、整张图按图高缩放（auto 100%）、顶对齐居中、不吃指针事件",
   );
   assert(
-    /html\[data-skin="anime"\] \[data-part="card-backdrop"\]\[data-deco="anime\/jp-nosla-gen2"\],[\s\S]*?\[data-part="card-backdrop"\]\[data-deco="anime\/generic"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
-    "五个角色（四台专属 + 通用人物）的立绘层都要挂上自己的图（同一条逗号选择器，五个 data-deco 都得在里面）",
+    /\[data-part="card-backdrop"\]\[data-deco-pack="anime"\] \{\s*background-image: var\(--cast-art-url\);\s*\}/.test(animeCSS),
+    "随主题捆绑的所有地区角色都挂上立绘",
   );
   // 夜版：牌子的底色/描边要有暗色那一份，卡片子树的浅色令牌只能作用在浅色下，
   // 立绘在夜版里只裁到牌沿——不然深色的牌面上会露一条白牌面。
@@ -1836,7 +1829,7 @@ assert(cardText.includes("TCP 延迟"), "latency section keeps its heading");
   );
   // 每台机都要有双手层图址 + 逐台实测的牌子上/下沿占图高比例（--cast-top-frac / --cast-bot-frac）；
   // 立绘高 / 板顶 / 收起态板条高由一条几何规则按上沿比例算出（不再由面板脚本实测）。
-  for (const id of ["jp-nosla-gen2", "de-nosla-fra", "us-vmiss-tri", "us-bwh-dc9", "generic"]) {
+  for (const id of ["jp-nosla-gen2", "de-nosla-fra", "us-vmiss-tri", "generic"]) {
     const block = new RegExp(`\\.node-card\\[data-deco="anime/${id}"\\] \\{([^}]*)\\}`).exec(animeCSS)?.[1] || "";
     assert(
       /--cast-hands-url: url\("anime\//.test(block) &&

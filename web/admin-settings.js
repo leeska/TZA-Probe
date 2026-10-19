@@ -26,7 +26,7 @@ export async function renderSettings(nodesReady) {
     view === "account" ? api("/admin/mcp-key") : null,
     view === "account" ? loadMarket(() => renderSettings()) : null,
   ]);
-  // 主题清单以服务端为准：默认皮肤下拉只列已安装的（内置的现代极简、液态玻璃 + 主题包）。
+  // 主题清单以服务端为准：默认皮肤下拉只列已安装的（内置现代极简 + 已安装的主题包）。
   if (themes) registerThemes(themes);
   const tabs = `<div class="segmented settings-tabs" role="tablist" aria-label="设置分类">${VIEWS.map(([id, label]) => `<button type="button" role="tab" data-settings-view="${id}" class="${view === id ? "active" : ""}" aria-selected="${view === id}">${label}</button>`).join("")}</div>`;
   const body = { look: () => lookView(settings), account: () => accountView(acct, mcp), data: dataView }[view]();

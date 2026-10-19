@@ -56,11 +56,10 @@ const originDir = ".market"
 
 // Builtins are the skins compiled into web/: their stylesheets are always on
 // the page, scoped by html[data-skin]. The first is the default skin
-// (model.DefaultPanelSkin). 现代极简 and 液态玻璃 are compiled in; the other
-// official looks are packages in themes/ that the market distributes.
+// (model.DefaultPanelSkin). Only 现代极简 is compiled in; all other looks
+// are packages in themes/ that the market distributes.
 var Builtins = []Manifest{
 	{ID: "shadcn", Name: "现代极简", Hint: "中性灰 · 发丝描边 · 小圆角", Chrome: Colors{Light: "#ffffff", Dark: "#0a0a0a"}, Swatch: []string{"#f5f5f5", "#ffffff", "#171717"}, Builtin: true},
-	{ID: "glass", Name: "液态玻璃", Hint: "毛玻璃 · 圆角 · 柔和阴影", Chrome: Colors{Light: "#edf2fb", Dark: "#0f141c"}, Swatch: []string{"#eef3fc", "#ffffff", "#0071e3"}, Builtin: true},
 }
 
 // IsBuiltin reports whether id is a compiled-in skin. A package under such an
@@ -332,7 +331,7 @@ func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if m.Frontend != nil {
+	if m.Frontend != nil || m.SettingsUI != nil {
 		// The CSP sandbox also applies when someone opens a package document directly.
 		// No allow-same-origin: package JS cannot see sessions, storage or the parent DOM.
 		w.Header().Del("X-Frame-Options")

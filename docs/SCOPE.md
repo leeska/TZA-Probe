@@ -15,7 +15,7 @@
 | 周期流量、额度、价格、到期时间 | 节点编辑、公开卡片 | model.Cycle、storage/billing.go、web/admin-nodes.js |
 | 续费、流量、降速、负载、离线提醒 | 告警与通知 → 提醒规则 | internal/notify、web/admin-alerts.js |
 | Telegram / Webhook / 通知插件 | 告警与通知 → 配置出口 | notify/transport.go、notify/plugin.go |
-| 公开页与后台，克制的玻璃效果与多套外观 | 公开页、后台 | web/styles.css、web/glass.css |
+| 公开页与后台，克制的玻璃效果与多套外观 | 公开页、后台 | web/styles.css、themes/glass/glass.css |
 | 数据库在线备份下载 | 面板设置 → 数据 → 数据备份 | storage/backup.go |
 | AI 客户端读写探针数据（覆盖管理面板的操作） | `POST /mcp` 的 MCP 工具 | internal/mcp、internal/httpapi |
 | 主题包 / 附加包：本地上传与 TZA-CC 市场安装（验签、来源与更新提示）；内置现代极简（默认）与液态玻璃，官方的复古印刷 / 二次元源码在 themes/；主题设置菜单（theme.json 的 settings，二次元的附加包开关在其中） | 主题（已安装 + 市场） | pkg/tzapkg、internal/theme、internal/market、themes/、tools/themepack、web/admin-themes.js、web/admin-market.js |

@@ -5294,3 +5294,9 @@ dialog.wide-dialog {
 
 /* The public diagnostic badge must stay hidden after metrics recover. */
 .collection-state[hidden] { display: none !important; }
+
+/* Theme settings are modal; a package-owned document controls its own contents. */
+dialog.theme-settings-dialog { width: min(920px, calc(100vw - 32px)); max-width: calc(100vw - 32px); }
+.theme-settings-dialog .theme-settings { margin: 0; padding: 0; border: 0; }
+#theme-settings-frame { display: block; width: 100%; height: min(70vh, 760px); border: 0; border-radius: 12px; }
+.theme-settings-dialog .theme-row { flex-wrap: wrap; }

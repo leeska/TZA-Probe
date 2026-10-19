@@ -2,15 +2,17 @@
 
 面板的外观风格（右上角那颗调色盘按钮）由两部分组成：
 
-- **内置皮肤**：现代极简（默认）与液态玻璃，打包在程序里。
+- **内置皮肤**：只有现代极简（默认），打包在程序里。
 - **主题包**：后台「主题」页从 TZA-CC 市场安装（见[市场](#市场tza-cc)），或上传 zip；存在数据目录的 `themes/` 下，不用重新编译。
 - **附加包**：依附某一套主题的扩展包（`"type": "addon"`），给它添更多按节点挑选的装饰项，见[附加包](#附加包)。
-  官方的复古印刷、二次元也是主题包，源码在仓库的 [`themes/`](../themes)（各自的用法见包目录里的 README），`go run ./tools/themepack themes/*` 打成 zip（发行包里也带一份 `themes/*.zip`，不连市场时上传它们）。
+  官方的液态玻璃、复古印刷、二次元都是主题包，源码在仓库的 [`themes/`](../themes)（各自的用法见包目录里的 README），`go run ./tools/themepack themes/*` 打成 zip（发行包里也带一份 `themes/*.zip`，不连市场时上传它们）。
 
 主题包有两种模式：**CSS 主题**沿用核心组件，**独立前台**用自己的 HTML / JavaScript 完全定义公开页的结构、布局、交互和路由。
 独立前台从 Probe 1.5.0 起支持，详见 [独立前台开发](FRONTENDS.md)；示例是 [`observatory`](../examples/themes/observatory)。后台管理始终由核心提供。
 
 装好的主题包和内置皮肤一样出现在外观菜单里，也能在「面板设置 → 外观与品牌 → 默认外观」里设成访客的首屏皮肤。没配过默认外观的部署，访客首屏是现代极简。
+
+> 液态玻璃从内置改为主题包；升级后未安装 `glass.zip` 的站点会回到现代极简。需要继续使用时，从市场安装或上传发行包中的 `glass.zip`。
 
 > 现代极简在 v1.2 是市场上的主题包（id `shadcn`），从 v1.3 起重新编进程序。升级后数据目录里那份旧包会被忽略（不再列出、同 id 不能再装），市场里也不再显示它；之前选了它的访客和默认设置照常生效。
 
@@ -26,7 +28,7 @@ matcha.zip
 
 只收这些文件类型：`theme.json`、`.css`、`.webp` / `.png` / `.jpg` / `.gif` / `.avif` 图片、`.woff` / `.woff2` 字体。
 上述是 CSS 主题和附加包的文件范围，它们不收脚本、HTML、SVG 或额外 JSON。
-声明 `frontend` 的独立前台还可携带 `.html`、`.js` / `.mjs`、`.json`、`.svg`、`.wasm`、`.ico`、`.webmanifest`、`.ttf` / `.otf`，
+声明 `frontend` 或 `settings_ui` 的隔离界面还可携带 `.html`、`.js` / `.mjs`、`.json`、`.svg`、`.wasm`、`.ico`、`.webmanifest`、`.ttf` / `.otf`，
 运行在单独的隔离文档里。所有模式都不收符号链接；任何文件不合规，整包拒收。
 
 限制：压缩包 ≤ 20 MB，解压后 ≤ 48 MB，单个文件 ≤ 16 MB，最多 300 个文件，文件名只用字母、数字、`. _ - /`。
@@ -48,7 +50,7 @@ matcha.zip
 
 | 字段 | 说明 |
 | --- | --- |
-| `id` | 2–32 位小写字母、数字或连字符，以字母开头；不能与内置皮肤重名（shadcn / glass）；press / anime 是官方主题包的 id。**同一个 id 再次上传即覆盖升级。** |
+| `id` | 2–32 位小写字母、数字或连字符，以字母开头；不能与内置皮肤重名（shadcn）；press / anime 是官方主题包的 id。**同一个 id 再次上传即覆盖升级。** |
 | `name` | 菜单里显示的名字，最多 30 字。 |
 | `hint` | 名字下面的一行说明，最多 60 字，可省略。 |
 | `version` / `author` | 可省略，只用于后台展示。 |
@@ -56,14 +58,43 @@ matcha.zip
 | `swatch` | 菜单里那块三格色样，三个 `#rrggbb`：底色、面、强调色。 |
 | `styles` | CSS 主题的样式表，1–8 个，按顺序加载。独立前台可省略，由它自己的 HTML / JS 引用资源。 |
 | `frontend` | 独立前台入口，如 `{"entry":"index.html","api_version":1}`，见 [开发指南](FRONTENDS.md)。 |
+| `settings_ui` | 可省略：开发者自定义设置弹窗入口，如 `{"entry":"settings/index.html","api_version":1}`。 |
 | `settings` | 可省略：这套主题的设置菜单，见下面的[主题设置](#主题设置)。 |
-| `base` | 可省略：叠在哪一层上，`"glass"`（默认，液态玻璃）或 `"plain"`（只有组件层），见[基础层](#基础层)。 |
+| `base` | 兼容字段：接受 `"glass"` / `"plain"`，材质 CSS 由主题自己携带，见[基础层](#基础层)。 |
 | `layout` | 可省略：卡片的布局变体（板面段落、密度、默认视图），见[布局变体](#布局变体)。 |
 | `decorations` | 可省略：按节点挑选的装饰项，最多 60 项，见[按节点挑装饰](#按节点挑装饰)。 |
 
+## 开发者自定义设置弹窗
+
+从 Probe 1.6.0 起，CSS 主题和独立前台都可以声明 `settings_ui`。弹窗内容、样式和交互由开发者提供；没有声明时，核心在弹窗中按 `settings` 生成控件。附加包不能声明设置界面。
+
+```json
+"settings_ui": { "entry": "settings/index.html", "api_version": 1 }
+```
+
+入口必须是包内存在的 `.html` 文件。可以携带 HTML、JS、CSS 等资源；可执行文件始终受隔离文档 CSP 约束，无法读取后台 DOM、会话和存储。不要把管理员接口地址交给主题脚本。
+在入口中先引入 `<script src="/theme-settings-sdk.js"></script>`，再加载自己的脚本。使用全局 `TZASettings`：
+
+```js
+TZASettings.onContext(({ theme, addons, nodes, mode }) => {
+  // theme 包含清单和当前 options；addons 仅当前主题的附加包。
+  // nodes 仅包含 id / name / region / decoration。
+  // 每次保存成功后重新推送 context。
+});
+await TZASettings.ready;
+await TZASettings.save({ motion: "off" });
+await TZASettings.addAddon(); // 在按钮点击中调用，由核心选择文件并导入
+await TZASettings.uploadAddon(fileInput.files[0]); // File/Blob，依附当前主题的 zip
+await TZASettings.bindNode(nodeID, "my-pack/character-id");
+await TZASettings.bindNode(nodeID, ""); // 恢复自动匹配
+```
+
+只允许修改本主题已声明的设置，导入 `for` 等于本主题 id 的附加包，以及绑定本主题或其附加包内存在的角色。节点绑定只修改 `decoration`，保留节点的其他配置。请求由父页面代办，弹窗关闭后销毁桥接监听与 iframe。
+主题包市场会将声明 `settings_ui` 的版本限制到 Probe >=1.6.0，避免向旧版发放缺少设置桥接的包。可参考 [`themes/anime/settings/`](../themes/anime/settings)。
+
 ## 主题设置
 
-后台「主题」页里，声明了 `settings` 的主题旁边有一颗「设置」，点开是这套主题自己的设置菜单。**菜单里有哪些项由主题开发者决定**，
+后台「主题」页里，声明了 `settings` 的主题旁边有一颗「设置」，点开是这套主题自己的设置弹窗。**菜单里有哪些项由主题开发者决定**，
 但必须按下面的规范声明：面板只认这几种类型，照着画控件、校验取值、存到服务端，对所有访客生效；CSS 主题使用这些控件；独立前台也能通过 SDK 读取设置，自行决定公开页上的呈现。
 
 ```json
@@ -234,17 +265,8 @@ html[data-skin="matcha"] body::before {
 
 ### 基础层
 
-面板的基础样式分两层：**组件层**（版式、颜色、描边与投影，所有皮肤都有）和**液态玻璃材质层**（毛玻璃、玻璃的大圆角、
-`body::before` 上那四团彩色光斑）。`theme.json` 的 `base` 决定主题叠在哪儿：
-
-- `"glass"`（默认，不写就是它）：两层都在，主题在玻璃之上改。只想换配色、底纸的主题用它，抹茶就是这样。
-- `"plain"`：只有组件层。面是平的（底色、描边与投影仍来自颜色变量），没有模糊、没有光斑，也没有玻璃那一套大圆角，
-  不必再写 `backdrop-filter: none !important` 之类的整片覆盖。风格和玻璃差得远的主题（复古印刷、二次元、明信片示例）用它。
-
-`plain` 下 `body` 没有底色，记得在 `html[data-skin="<id>"] body` 上铺自己的底；`body::before` 仍是一个铺满视口的固定层，
-想画底纹就给它 `background`。
-
-> 旧版面板不认 `base`，会把 `plain` 的主题叠在玻璃上显示。发到市场时请给这样的版本声明需要的 Probe 版本。
+核心只加载公共组件结构和内置现代极简；液态玻璃的材质样式在 `themes/glass/glass.css`，随 `glass.zip` 安装、选择后加载。
+`base` 的旧取值 `plain` / `glass` 仍可解析，但不再自动叠加内置玻璃 CSS。旧主题若依赖玻璃材质，需要把该材质 CSS 放进自己的包并在 `styles` 中列出；普通主题使用 `plain`。
 
 ### 布局变体
 
@@ -362,7 +384,7 @@ html[data-skin="postcard"] [data-part="node-card"][data-deco] [data-part="card-b
 | `decorations` | 必填，1–60 项，格式见[按节点挑装饰](#按节点挑装饰)。图片名字与数值名字要按依附的那套主题约定的来写（看那套主题的说明）。 |
 | `name` / `hint` / `version` / `author` | 同主题包。 |
 
-附加包不带 `styles`、`settings`、`base`、`layout`、`chrome`、`swatch`：外观完全由它依附的主题决定。
+附加包不带 `styles`、`settings_ui`、`settings`、`base`、`layout`、`chrome`、`swatch`：外观完全由它依附的主题决定。
 官方二次元的角色包就是依附 `anime` 的附加包，图片与数值的约定见 [themes/anime/README.md](../themes/anime/README.md)。
 
 ## 上传、升级与删除

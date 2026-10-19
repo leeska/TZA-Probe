@@ -73,7 +73,7 @@ func TestPanelDefaultLookSettings(t *testing.T) {
 	if theme, skin := look(); theme != model.DefaultPanelTheme || skin != model.DefaultPanelSkin {
 		t.Fatalf("未配置时该是 %s / %s，得到 %s / %s", model.DefaultPanelTheme, model.DefaultPanelSkin, theme, skin)
 	}
-	if body := defaults(); !strings.Contains(body, `"auto"`) || !strings.Contains(body, `"glass"`) {
+	if body := defaults(); !strings.Contains(body, `"auto"`) || !strings.Contains(body, `"shadcn"`) {
 		t.Fatalf("首屏脚本没带内置默认: %s", body)
 	}
 
@@ -81,15 +81,15 @@ func TestPanelDefaultLookSettings(t *testing.T) {
 	if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"default_skin": "press"}); code != 400 {
 		t.Fatalf("没装的主题包不该能设成默认: %d %s", code, body)
 	}
-	// 存下深色 + 液态玻璃。
-	if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"default_theme": "dark", "default_skin": "glass"}); code != 204 {
+	// 存下深色 + 现代极简。
+	if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"default_theme": "dark", "default_skin": "shadcn"}); code != 204 {
 		t.Fatalf("PUT panel: %d %s", code, body)
 	}
-	if theme, skin := look(); theme != "dark" || skin != "glass" {
+	if theme, skin := look(); theme != "dark" || skin != "shadcn" {
 		t.Fatalf("设置没保存: %s / %s", theme, skin)
 	}
 	body := defaults()
-	if !strings.Contains(body, `theme:"dark"`) || !strings.Contains(body, `skin:"glass"`) {
+	if !strings.Contains(body, `theme:"dark"`) || !strings.Contains(body, `skin:"shadcn"`) {
 		t.Fatalf("首屏脚本没跟上设置: %s", body)
 	}
 
@@ -97,20 +97,21 @@ func TestPanelDefaultLookSettings(t *testing.T) {
 	if code, _ := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"latency_window_minutes": 360}); code != 204 {
 		t.Fatal("只改窗口被拒")
 	}
-	if theme, skin := look(); theme != "dark" || skin != "glass" {
+	if theme, skin := look(); theme != "dark" || skin != "shadcn" {
 		t.Fatalf("改窗口顺手把外观冲了: %s / %s", theme, skin)
 	}
 
 	for _, bad := range []map[string]any{
 		{"default_theme": "sepia"},
 		{"default_skin": "neon"},
+		{"default_skin": "glass"},
 		{},
 	} {
 		if code, body := request("PUT", "/api/v1/admin/panel", admin, bad); code != 400 {
 			t.Fatalf("坏值 %v 该被拒绝，得到 %d %s", bad, code, body)
 		}
 	}
-	if code, _ := request("PUT", "/api/v1/admin/panel", "", map[string]any{"default_skin": "glass"}); code != 401 {
+	if code, _ := request("PUT", "/api/v1/admin/panel", "", map[string]any{"default_skin": "shadcn"}); code != 401 {
 		t.Fatal("匿名改外观没被拒")
 	}
 }

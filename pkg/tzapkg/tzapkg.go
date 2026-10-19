@@ -55,6 +55,9 @@ const (
 // FrontendMinProbe is the first Probe version implementing the isolated API.
 const FrontendMinProbe = "1.5.0"
 
+// SettingsUIMinProbe is the first release supporting developer settings dialogs.
+const SettingsUIMinProbe = "1.6.0"
+
 // Frontend replaces the public UI with a package-owned document. API version 1
 // uses the public-data bridge; it never grants access to administrator APIs.
 type Frontend struct {
@@ -75,6 +78,8 @@ type Manifest struct {
 	Swatch   []string  `json:"swatch,omitempty"`
 	Styles   []string  `json:"styles,omitempty"`
 	Frontend *Frontend `json:"frontend,omitempty"`
+	// SettingsUI is a developer-owned settings dialog, isolated from the admin DOM.
+	SettingsUI *Frontend `json:"settings_ui,omitempty"`
 	// For is the skin an add-on extends (add-ons only).
 	For string `json:"for,omitempty"`
 	// Decorations are the per-node decorations a skin or add-on offers; the
@@ -83,9 +88,7 @@ type Manifest struct {
 	// Settings is the theme's own settings menu, declared by its developer:
 	// what an administrator can switch for this look. See SkinSetting.
 	Settings []SkinSetting `json:"settings,omitempty"`
-	// Base is the built-in visual layer the skin's stylesheets stack on:
-	// BaseGlass (the default, also when empty) or BasePlain (structure only,
-	// no liquid-glass surfaces, blur or backdrop).
+	// Base retains legacy manifest compatibility. Material CSS is now package-owned.
 	Base string `json:"base,omitempty"`
 	// Layout declares card layout variants the panel applies while the skin
 	// is on. Nil keeps the panel's defaults.
@@ -319,12 +322,10 @@ type Decoration struct {
 	Vars    map[string]string `json:"vars,omitempty"`
 }
 
-// Reserved are the ids of the skins compiled into the panel; no package may
-// take one. 液态玻璃 is compiled into every Probe; 现代极简 is compiled in again
-// from Probe v1.3 (the Probe refuses a package under its id itself, so CC keeps
-// serving the v1.2 package to older Probes). The other official looks are
-// packages under themes/ in this repository, installed from the market.
-var Reserved = []string{"glass"}
+// Reserved are package IDs rejected by all versions of the shared registry.
+// Probe itself rejects its compiled-in shadcn ID; CC retains its old releases
+// for older Probes. Glass is distributed as a regular package.
+var Reserved = []string{}
 
 var (
 	idPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
@@ -372,7 +373,7 @@ func ThemeFileAllowed(m Manifest, name string) bool {
 	if _, ok := ContentType(name); !ok {
 		return false
 	}
-	if m.Frontend != nil {
+	if m.Frontend != nil || m.SettingsUI != nil {
 		return true
 	}
 	switch strings.ToLower(path.Ext(name)) {
@@ -429,9 +430,14 @@ func Open(archive []byte) (Manifest, map[string][]byte, error) {
 			return Manifest{}, nil, errors.New("frontend.entry 不在压缩包里")
 		}
 	}
+	if ui := m.SettingsUI; ui != nil {
+		if _, ok := files[ui.Entry]; !ok {
+			return Manifest{}, nil, errors.New("settings_ui.entry 不在压缩包里")
+		}
+	}
 	for name := range files {
 		if !ThemeFileAllowed(m, name) {
-			return Manifest{}, nil, fmt.Errorf("%q：CSS 主题和附加包不收脚本、HTML、SVG 或额外 JSON；独立前台需声明 frontend", name)
+			return Manifest{}, nil, fmt.Errorf("%q：CSS 主题和附加包不收脚本、HTML、SVG 或额外 JSON；独立界面需声明 frontend 或 settings_ui", name)
 		}
 	}
 	for _, p := range m.Styles {
@@ -479,7 +485,7 @@ func Parse(raw []byte) (Manifest, error) {
 		switch {
 		case !idPattern.MatchString(m.For) || m.For == m.ID:
 			return Manifest{}, errors.New("附加包要用 for 写明它依附的主题 id（不能是自己）")
-		case len(m.Styles) > 0 || len(m.Settings) > 0 || m.Base != "" || m.Layout != nil || m.Frontend != nil:
+		case len(m.Styles) > 0 || len(m.Settings) > 0 || m.Base != "" || m.Layout != nil || m.Frontend != nil || m.SettingsUI != nil:
 			return Manifest{}, errors.New("附加包不带 styles / settings / base / layout / frontend：外观由它依附的主题决定")
 		case len(m.Decorations) == 0:
 			return Manifest{}, errors.New("附加包至少要有一个装饰项（decorations）")
@@ -502,6 +508,11 @@ func Parse(raw []byte) (Manifest, error) {
 		}
 		if m.Base != "" || m.Layout != nil {
 			return Manifest{}, errors.New("独立前台自己定义布局，不带 base / layout")
+		}
+	}
+	if ui := m.SettingsUI; ui != nil {
+		if !SafePath(ui.Entry) || path.Ext(ui.Entry) != ".html" || ui.APIVersion != 1 {
+			return Manifest{}, errors.New("settings_ui.entry 须为包内 .html 路径，api_version 须为 1")
 		}
 	}
 	if err := checkSkinSettings(m.Settings); err != nil {

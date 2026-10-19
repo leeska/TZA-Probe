@@ -75,7 +75,7 @@ func TestThemeSettings(t *testing.T) {
 		"bad toggle":    {"postcard", `{"motion":"maybe"}`, 400},
 		"bad pack list": {"postcard", `{"addons":"europe"}`, 400},
 		"empty patch":   {"postcard", `{}`, 400},
-		"no settings":   {"glass", `{"motion":"off"}`, 400},
+		"no settings":   {"shadcn", `{"motion":"off"}`, 400},
 		"no such theme": {"matcha", `{"motion":"off"}`, 404},
 	} {
 		if code, body := put(c.id, c.body); code != c.want {

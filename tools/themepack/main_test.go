@@ -17,6 +17,9 @@ func TestOfficialThemesInstall(t *testing.T) {
 		t.Fatalf("没找到 themes/ 下的主题包: %v", err)
 	}
 	store := &theme.Store{Dir: t.TempDir()}
+	if store.Known("glass") {
+		t.Fatal("liquid glass must require installation")
+	}
 	seen := map[string]bool{}
 	for _, dir := range dirs {
 		archive, err := zipDir(dir)
@@ -38,9 +41,30 @@ func TestOfficialThemesInstall(t *testing.T) {
 		if _, err := store.Install(archive); err != nil {
 			t.Fatalf("%s 装不上: %v", dir, err)
 		}
+		if m.ID == "anime" {
+			regions := map[string]string{}
+			defaults := 0
+			for _, d := range m.Decorations {
+				if len(d.Nodes) > 0 {
+					t.Errorf("bundled characters must match regions, not private node names: %s", d.ID)
+				}
+				if d.Default {
+					defaults++
+				}
+				for _, region := range d.Regions {
+					if previous := regions[region]; previous != "" {
+						t.Errorf("region %s has two bundled characters: %s / %s", region, previous, d.ID)
+					}
+					regions[region] = d.ID
+				}
+			}
+			if defaults != 1 || m.SettingsUI == nil {
+				t.Fatal("anime must bundle a fallback character and developer settings UI")
+			}
+		}
 		seen[m.ID] = true
 	}
-	for _, id := range []string{"press", "anime"} {
+	for _, id := range []string{"press", "anime", "glass"} {
 		if !seen[id] || !store.Known(id) {
 			t.Errorf("官方主题包 %q 缺失或装完不认", id)
 		}
