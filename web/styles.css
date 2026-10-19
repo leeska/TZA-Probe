@@ -4792,26 +4792,6 @@ label .muted {
   white-space: nowrap;
 }
 
-.market-cover.broken > .plugin-glyph {
-  min-width: 96px;
-  height: 44px;
-  font-size: var(--text-md);
-  border-radius: var(--radius-md);
-}
-
-/* 插件卡片没有封面图：类型牌占一条矮横幅就够，不撑成 16:9 的空白。 */
-.market-card.is-plugin .market-cover {
-  aspect-ratio: auto;
-  height: 64px;
-}
-
-.market-card.is-plugin .market-cover.broken > .plugin-glyph {
-  min-width: 72px;
-  height: 32px;
-  font-size: var(--text-sm);
-  border-radius: calc(10px * var(--radius-scale));
-}
-
 /* 已安装列表（市场页与面板设置 → 主题共用）：窄屏上名称独占一行，标签与按钮折到下一行，
    不把名字挤成一字一行；标题行的「上传」按钮也跟着折行。 */
 @media (max-width: 760px) {
@@ -4867,6 +4847,95 @@ label .muted {
 /* 市场块的标题行之下是工具条；插件页只有搜索框，靠右放。 */
 .market-panel .market-toolbar:not(:has(.segmented)) {
   justify-content: flex-end;
+}
+
+/* 市场的信息顺序：用途 → 名称 → 简介 → 价格与详情。 */
+.market-guide {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0 var(--space-6) var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(var(--accent-rgb), 0.06);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.market-guide b { color: var(--ink); white-space: nowrap; }
+.market-results {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6) 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.market-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.market-card { padding: 0; color: var(--ink); background: var(--glass-bg-elevated); }
+.market-card-body { flex: 1; gap: var(--space-2); padding: var(--space-4); }
+.market-card-kind { color: var(--muted); font-size: var(--text-xs); }
+.market-card-title { align-items: flex-start; flex-wrap: wrap; }
+.market-card-title b { white-space: normal; overflow-wrap: anywhere; font-size: var(--text-md); }
+.market-card-body small { min-height: 2.9em; }
+.market-card-meta { margin-top: auto; padding-top: var(--space-1); }
+.market-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+  font-size: var(--text-sm);
+}
+.market-card-footer > span { color: var(--accent); font-weight: 600; }
+.market-cover { position: relative; width: 100%; }
+.market-cover.broken .skin-swatch { width: 100%; height: 100%; border-radius: 0; }
+.market-cover > .market-preview-label,
+.market-cover.broken > .market-preview-label {
+  display: inline-flex;
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-elevated);
+  color: var(--ink);
+  font-size: var(--text-xs);
+}
+.market-card.is-plugin { position: relative; }
+.market-card.is-plugin > .plugin-glyph { position: absolute; right: 16px; top: 16px; }
+.market-card.is-plugin .market-card-kind { min-height: 28px; padding-right: 70px; }
+.market-empty { padding: var(--space-6); text-align: center; }
+.market-empty b { color: var(--ink); }
+.market-empty p { margin: var(--space-2) 0 var(--space-3); }
+.market-install-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(var(--accent-rgb), 0.05);
+}
+.market-install-bar > div { flex: 1 1 240px; }
+.market-install-bar small { display: block; color: var(--muted); margin-top: var(--space-2); line-height: 1.6; }
+.market-install-bar button { white-space: normal; }
+.market-upload-help { margin: var(--space-3) var(--space-6) var(--space-4); }
+.market-upload-help .hint { margin: var(--space-3) 0 0; }
+.market-history { margin-top: var(--space-5); }
+.market-history summary { cursor: pointer; font-weight: 600; padding: var(--space-3) 0; }
+@media (max-width: 760px) {
+  .market-guide { margin-inline: var(--space-4); flex-direction: column; gap: var(--space-1); }
+  .market-results { padding-inline: var(--space-4); }
+  .market-grid { grid-template-columns: minmax(0, 1fr); }
+  .market-toolbar .segmented { max-width: 100%; flex-wrap: wrap; }
+  .market-install-bar button { width: 100%; }
 }
 
 .market-panel > .market-keys,

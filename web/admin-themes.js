@@ -22,7 +22,7 @@ export async function renderThemes(nodesReady) {
   const updates = await loadMarket(() => renderThemes(), themes, scopes);
   if (state.tab !== "themes") return;
   const body = view === "market" ? catalogPanel("themes") : installedPanel(themes, updates, panel.default_skin);
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>访客在公开面板右上角能选的外观。只内置现代极简（默认），液态玻璃等主题从市场安装或上传 zip。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "主题分类")}${body}`;
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>为公开面板选择外观。到市场挑选主题，在已安装中管理主题设置与附加包。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "主题分类")}${body}`;
   content().querySelectorAll("[data-subview]").forEach((b) =>
     (b.onclick = guard(async () => {
       state.themesView = b.dataset.subview;
@@ -58,7 +58,7 @@ function installedPanel(list, updates, defaultSkin) {
   const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   installedPage = Math.min(Math.max(1, installedPage), pages);
   const shown = rows.slice((installedPage - 1) * PER_PAGE, installedPage * PER_PAGE).join("");
-  return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">「市场」是从 TZA-CC 装的，有新版时在这里提示；「本地」是手动上传的 zip。</span></div><div class="panel-actions"><label class="button primary theme-upload">上传主题包 / 附加包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${shown}</div>${pager(installedPage, installedPage < pages, "installed-page", pages)}<p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级（之后按本地包对待，不再提示更新）。主题包存在数据目录的 themes/ 下，不在数据库备份里；前台默认外观在「面板设置」里选。</p></section>`;
+  return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">管理本机外观与主题设置，附加包归在对应主题下。</span></div><div class="panel-actions"><label class="button theme-upload">上传主题包 / 附加包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${shown}</div>${pager(installedPage, installedPage < pages, "installed-page", pages)}<details class="market-upload-help"><summary>手动上传与开发文档</summary><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级（之后按本地包对待，不再提示更新）。主题包存在数据目录的 themes/ 下，不在数据库备份里；前台默认外观在「面板设置」里选。</p></details></section>`;
 }
 
 function skinRow(t, updates, defaultSkin) {

@@ -351,6 +351,7 @@ type Catalog struct {
 // Query selects a catalog page.
 type Query struct {
 	Type string // "", skin, addon or plugin
+	Kind string // "", notify or targets (with Type plugin)
 	// For keeps only the add-ons of this skin (with Type addon).
 	For  string
 	Q    string
@@ -400,6 +401,8 @@ func (c *Client) Catalog(ctx context.Context, q Query) (Catalog, error) {
 	switch {
 	case q.Type != "" && !installable(q.Type):
 		return Catalog{}, model.Invalid(`type 须为 "skin"（主题）、"addon"（附加包）或 "plugin"（插件）`)
+	case q.Kind != "" && (q.Type != tzapkg.TypePlugin || (q.Kind != "notify" && q.Kind != "targets")):
+		return Catalog{}, model.Invalid("kind 须为 notify 或 targets，且 type 须为 plugin")
 	case q.For != "" && !tzapkg.ValidID(q.For):
 		return Catalog{}, model.Invalid("for 须为主题 id")
 	case utf8.RuneCountInString(q.Q) > maxQuery:
@@ -413,6 +416,9 @@ func (c *Client) Catalog(ctx context.Context, q Query) (Catalog, error) {
 	params := url.Values{"probe": {c.probe}, "page": {strconv.Itoa(q.Page)}}
 	if q.Type != "" {
 		params.Set("type", q.Type)
+	}
+	if q.Kind != "" {
+		params.Set("kind", q.Kind)
 	}
 	if q.Q != "" {
 		params.Set("q", q.Q)

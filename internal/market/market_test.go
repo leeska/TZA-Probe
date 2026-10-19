@@ -539,6 +539,21 @@ func TestInstallPlugin(t *testing.T) {
 			t.Fatalf("plugin item: %+v", it)
 		}
 	}
+	for _, kind := range []string{"notify", "targets"} {
+		filtered, err := e.client.Catalog(ctx, Query{Type: "plugin", Kind: kind})
+		if err != nil || len(filtered.Items) != 1 || filtered.Items[0].Kind != kind {
+			t.Fatalf("filtered %s catalog: %+v %v", kind, filtered, err)
+		}
+		seen := e.cc.Requests()
+		if !strings.Contains(seen[len(seen)-1].Query, "kind="+kind) {
+			t.Fatal("plugin filter was not forwarded to CC")
+		}
+	}
+	for _, q := range []Query{{Kind: "notify"}, {Type: "skin", Kind: "notify"}, {Type: "plugin", Kind: "unknown"}} {
+		if _, err := e.client.Catalog(ctx, q); !errors.Is(err, model.ErrInvalid) {
+			t.Fatalf("invalid filter %+v: %v", q, err)
+		}
+	}
 	r, err := e.client.Install(ctx, "ntfy", "")
 	if err != nil || r.Type != "plugin" || r.Kind != "notify" || r.Version != "1.1.0" || r.Source != "market" || len(r.Permissions) == 0 {
 		t.Fatalf("install: %+v %v", r, err)

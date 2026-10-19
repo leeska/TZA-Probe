@@ -6,17 +6,12 @@ import { state, content, confirmAction } from "./admin-state.js";
 // 「面板设置 → 账号与安全」。浏览器只请求本服务器的 /admin/market/*，目录、预览图与安装包都由服务器
 // 代为获取（预览图走 /admin/market/media 代理），CSP 不用放开，TZA-CC 也看不到访客。
 // 安装前服务器核对大小、SHA-256、平台签名与包内 id / 版本；插件装之前先把它能做的事列出来请管理员确认。
-const SCOPES = {
-  themes: [["skin", "主题"]],
-  plugins: [["plugin", "插件"]],
-};
 // 附加包的市场一套主题一块：scope 是 "addons:<主题 id>"。
 const ADDONS = "addons:";
-const scopeTypes = (scope) => SCOPES[scope] || [["addon", "附加包"]];
 const KINDS = { notify: "通知渠道", targets: "探测目标集" };
 const views = {
   themes: { type: "skin", q: "", page: 1, items: [], more: false, error: "" },
-  plugins: { type: "plugin", q: "", page: 1, items: [], more: false, error: "" },
+  plugins: { type: "plugin", kind: "", q: "", page: 1, items: [], more: false, error: "" },
 };
 const viewOf = (scope) => {
   if (!views[scope] && scope.startsWith(ADDONS)) views[scope] = { type: "addon", for: scope.slice(ADDONS.length), q: "", page: 1, items: [], more: false, error: "" };
@@ -80,16 +75,18 @@ export function addonMarket(skin) {
 // 页头右侧的账号状态。
 export function marketPill() {
   if (!status.configured) return '<span class="pill">市场已关闭</span>';
-  return status.bound ? '<span class="pill good">已连接 TZA-CC</span>' : '<span class="pill">未连接 TZA-CC 账号</span>';
+  if (!status.trusted_keys) return '<span class="pill warn">市场仅可浏览</span>';
+  return status.bound ? '<span class="pill good">已连接 TZA-CC</span>' : '<span class="pill">免费内容可直接安装</span>';
 }
 
-// 一页的市场：类型切换（主题页是主题，插件页是插件）、搜索、卡片与上一页 / 下一页。
+// 每页只展示对应的包类型；插件可按用途筛选，搜索与翻页保留筛选条件。
 export function catalogPanel(scope) {
   if (!status.configured) {
     return `<section data-part="panel" class="panel webhook-panel market-off"><div><h3>市场已关闭</h3><p>Server 启动时用 <code>--cc-url off</code>（或环境变量 <code>TZA_CC_URL=off</code>）关掉了市场。去掉它即连官方 TZA-CC；测试或私有部署的 CC 用 <code>--cc-url https://…</code> 指定，签名公钥用 <code>--cc-key</code> / <code>TZA_CC_KEYS</code> 添加。</p><small>不连 TZA-CC 也可以在上面上传 zip 手动安装。</small></div></section>`;
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text market-keys">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
-  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>市场</h3><span class="muted">从 TZA-CC 安装${scope === "plugins" ? "插件" : "主题（附加包在「已安装」里它所依附主题的「设置」里）"}；不连接 TZA-CC 账号也能直接安装。</span></div></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
+  const plugin = scope === "plugins";
+  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>${plugin ? "发现插件" : "挑选主题"}</h3><span class="muted">${plugin ? "按用途选择扩展，查看详情后安装。" : "更换公开面板的外观，查看预览和介绍后安装。"}</span></div></div><div class="market-guide"><b>${plugin ? "安装后怎么用" : "主题与附加包"}</b><span>${plugin ? "通知渠道：到「告警与通知 → 配置出口」选用。探测目标集：新建任务时从目标目录选择。" : "主题决定整体外观；附加包为特定主题添加装饰，在「已安装 → 对应主题 → 设置」中管理。"}</span></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
 }
 
 // 主题、插件页的两个子页「已安装」「市场」，样子与面板设置的子标签一样。
@@ -110,6 +107,7 @@ async function fetchCatalog(scope) {
   const view = viewOf(scope);
   const params = new URLSearchParams({ type: view.type, page: String(view.page) });
   if (view.for) params.set("for", view.for);
+  if (view.kind) params.set("kind", view.kind);
   if (view.q) params.set("q", view.q);
   try {
     const page = await api("/admin/market/catalog?" + params);
@@ -125,29 +123,28 @@ async function fetchCatalog(scope) {
 
 function catalogHTML(scope) {
   const view = viewOf(scope);
-  const types = scopeTypes(scope);
-  const tabs = types.length > 1 ? `<div class="segmented" role="group" aria-label="包类型">${types.map(([id, label]) => `<button type="button" data-market-type="${id}" class="${view.type === id ? "active" : ""}" aria-pressed="${view.type === id}">${label}</button>`).join("")}</div>` : "";
+  const tabs = scope === "plugins" ? `<div class="segmented" role="group" aria-label="插件用途">${[["", "全部插件"], ["notify", "通知渠道"], ["targets", "探测目标集"]].map(([id, label]) => `<button type="button" data-market-kind="${id}" class="${(view.kind || "") === id ? "active" : ""}" aria-pressed="${(view.kind || "") === id}">${label}</button>`).join("")}</div>` : "";
   const cards = view.items.map(card).join("");
   const empty = view.error
-    ? `<p class="market-empty warn-text">${esc(view.error)}</p>`
-    : `<p class="market-empty">${view.q ? `没有找到「${esc(view.q)}」相关的${typeName(view.type)}。` : `市场里还没有${typeName(view.type)}。`}</p>`;
+    ? `<div class="market-empty" role="alert"><b>暂时无法加载市场</b><p class="warn-text">${esc(view.error)}</p><button type="button" class="quiet" data-market-retry>重新加载</button></div>`
+    : `<div class="market-empty"><b>${view.q ? `没有找到「${esc(view.q)}」相关的${typeName(view.type)}` : `这个分类暂时没有${typeName(view.type)}`}</b><p>试试其他关键词，或切换分类继续浏览。</p>${view.q ? '<button type="button" class="quiet" data-market-clear>清除搜索</button>' : ""}</div>`;
   const note = view.for && !skinInstalled(view.for) ? `<p class="hint market-note">这些附加包依附「${esc(skinName(view.for))}」：先装好那套主题，再装附加包。</p>` : "";
-  return `<div class="market-toolbar">${tabs}<form class="market-search" role="search"><input class="market-q" type="search" maxlength="64" placeholder="搜索名称、作者" value="${esc(view.q)}" aria-label="搜索市场"><button type="submit" class="primary">搜索</button></form></div>${note}${cards ? `<div class="market-grid">${cards}</div>` : empty}${pager(view.page, view.more, "market-page")}`;
+  return `<div class="market-toolbar">${tabs}<form class="market-search" role="search"><input class="market-q" type="search" maxlength="64" placeholder="搜索${typeName(view.type)}名称、作者或 ID" value="${esc(view.q)}" aria-label="搜索市场"><button type="submit" class="primary">搜索</button></form></div>${note}<div class="market-results" role="status">${view.error ? "加载失败" : `第 ${view.page} 页 · ${view.items.length} 项${view.more ? " · 还有更多" : ""}`}${view.q ? `<button type="button" class="quiet" data-market-clear>清除搜索</button>` : ""}</div>${cards ? `<div class="market-grid${scope === "plugins" ? " is-plugins" : ""}">${cards}</div>` : empty}${pager(view.page, view.more, "market-page")}`;
 }
 
 function card(it) {
   // 没有封面或封面取不到（.broken）时露出三格色样，附加包没有色样就写类型。
   const fallback = it.type === "plugin" ? glyph(it.kind) : it.swatch?.length ? swatch(it.swatch) : `<span class="muted">${typeName(it.type)}</span>`;
-  const cover = `<span class="market-cover${it.cover ? "" : " broken"}">${it.cover ? `<img data-media src="${esc(media(it.cover))}" alt="" loading="lazy">` : ""}${fallback}</span>`;
+  const plugin = it.type === "plugin";
+  const cover = plugin ? glyph(it.kind) : `<span class="market-cover${it.cover ? "" : " broken"}">${it.cover ? `<img data-media src="${esc(media(it.cover))}" alt="" loading="lazy">` : ""}${fallback}<span class="market-preview-label">${it.cover ? "主题预览" : "配色示意"}</span></span>`;
   const badge = it.installed?.source === "market" && updateIds.has(it.id)
     ? '<span class="pill warn">有更新</span>'
     : it.installed
       ? `<span class="pill good">${it.installed.source === "market" ? "已安装" : "已有本地版"}</span>`
-      : it.price > 0
-        ? `<span class="pill${it.owned ? " good" : ""}">${it.owned ? "已拥有" : yuan(it.price)}</span>`
-        : "";
-  const meta = [it.type === "plugin" && kindName(it.kind), it.latest && "v" + it.latest, it.author?.name, it.downloads ? `${it.downloads} 次下载请求` : ""].filter(Boolean);
-  return `<button type="button" class="market-card${it.type === "plugin" ? " is-plugin" : ""}" data-package="${esc(it.id)}">${cover}<span class="market-card-body"><span class="market-card-title"><b>${esc(it.name)}</b>${badge}</span><small>${esc(it.summary || "")}</small><span class="market-card-meta">${meta.map((m) => `<span>${esc(m)}</span>`).join("")}</span></span></button>`;
+      : it.price > 0 && it.owned ? '<span class="pill good">已拥有</span>' : "";
+  const meta = [it.author?.name, it.latest && "v" + it.latest].filter(Boolean);
+  const action = it.installed?.source === "market" && updateIds.has(it.id) ? "查看更新" : it.installed ? "管理 / 详情" : "查看详情";
+  return `<button type="button" class="market-card${plugin ? " is-plugin" : ""}" data-package="${esc(it.id)}">${cover}<span class="market-card-body"><span class="market-card-kind">${esc(plugin ? kindName(it.kind) : typeName(it.type))}</span><span class="market-card-title"><b>${esc(it.name)}</b>${badge}</span><small>${esc(it.summary || (plugin ? "为 Probe 添加" + kindName(it.kind) : "为公开面板更换外观"))}</small><span class="market-card-meta">${meta.map((m) => `<span>${esc(m)}</span>`).join("")}</span><span class="market-card-footer"><strong>${it.price > 0 ? yuan(it.price) : "免费"}</strong><span>${action} <span aria-hidden="true">→</span></span></span></span></button>`;
 }
 
 // 已安装列表里一行的「市场 / 本地」标记与「有更新 / 详情」按钮，主题页与插件页共用。
@@ -248,13 +245,19 @@ function wireCatalog(box) {
     }
     wireCatalog(box);
   };
-  body.querySelectorAll("[data-market-type]").forEach((b) =>
+  body.querySelectorAll("[data-market-kind]").forEach((b) =>
     (b.onclick = guard(async () => {
-      view.type = b.dataset.marketType;
+      view.kind = b.dataset.marketKind;
       view.page = 1;
       await reload();
     })),
   );
+  body.querySelectorAll("[data-market-clear]").forEach((b) => (b.onclick = guard(async () => {
+    view.q = "";
+    view.page = 1;
+    await reload();
+  })));
+  body.querySelector("[data-market-retry]")?.addEventListener("click", guard(reload));
   body.querySelector(".market-search").onsubmit = guard(async (e) => {
     e.preventDefault();
     view.q = body.querySelector(".market-q").value.trim();
@@ -309,9 +312,13 @@ async function detail(id) {
   const host = needsHost ? `<p class="warn-text">这是依附「${esc(skinName(p.for))}」的附加包：先在「主题」页的市场里装好那套主题。</p>` : "";
   const meta = [p.id, typeName(p.type), p.author?.name, p.downloads ? `${p.downloads} 次下载请求` : "", day(p.updated_at) && "更新于 " + day(p.updated_at)].filter(Boolean).join(" · ");
   const plugin = p.type === "plugin";
+  const usage = plugin
+    ? (p.kind === "targets" ? "安装后：新建任务，在目标目录中选择这些探测目标。" : "安装后：到「告警与通知 → 配置出口」选择这个通知渠道。")
+    : p.type === "addon" ? "安装后：到对应主题的设置中管理附加包。" : "安装后：访客可在外观菜单选择；在「面板设置」中可设为前台默认。";
+  const installBar = `<div class="market-install-bar"><div><b>${esc(plugin ? kindName(p.kind) : typeName(p.type))} · ${p.price > 0 ? yuan(p.price) : "免费"}</b><small>${esc(usage)}</small></div><button class="primary" id="market-install" ${disabled ? "disabled" : ""}>${esc(label)}</button></div>`;
   const d = modal(
     p.name,
-    `<div class="market-detail">${plugin ? `<p>${glyph(p.kind)}</p>` : ""}${shots.length ? `<div class="market-shots">${shots.map((s) => `<span class="market-shot"><img data-media src="${esc(media(s))}" alt="" loading="lazy"></span>`).join("")}</div>` : p.swatch?.length ? `<p>${swatch(p.swatch)}</p>` : ""}<p class="market-meta">${esc(meta)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">在 TZA-CC 查看</a>` : ""}</p>${paid}${host}${p.description ? `<p class="market-desc">${esc(p.description)}</p>` : p.summary ? `<p class="market-desc">${esc(p.summary)}</p>` : ""}${have ? `<p class="hint">本机已有 ${have.version ? "v" + esc(have.version) : ""}（${have.source === "market" ? "市场" : "本地上传"}）。</p>` : ""}${plugin ? `<h3>这个插件能做的事</h3>${permList(p.permissions) || '<p class="muted">市场没有列出。</p>'}` : ""}<h3>版本</h3><div class="market-versions">${versions || '<p class="muted">市场没有列出版本。</p>'}</div><div class="form-footer"><button class="primary" id="market-install" ${disabled ? "disabled" : ""}>${esc(label)}</button></div></div>`,
+    `<div class="market-detail">${installBar}${plugin ? `<p>${glyph(p.kind)}</p>` : ""}${shots.length ? `<div class="market-shots">${shots.map((s) => `<span class="market-shot"><img data-media src="${esc(media(s))}" alt="" loading="lazy"></span>`).join("")}</div>` : p.swatch?.length ? `<p>${swatch(p.swatch)}</p>` : ""}<p class="market-meta">${esc(meta)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">在 TZA-CC 查看</a>` : ""}</p>${paid}${host}${p.description ? `<p class="market-desc">${esc(p.description)}</p>` : p.summary ? `<p class="market-desc">${esc(p.summary)}</p>` : ""}${have ? `<p class="hint">本机已有 ${have.version ? "v" + esc(have.version) : ""}（${have.source === "market" ? "市场" : "本地上传"}）。</p>` : ""}${plugin ? `<h3>这个插件能做的事</h3>${permList(p.permissions) || '<p class="muted">市场没有列出。</p>'}` : ""}<details class="market-history"><summary>版本历史与更新说明</summary><div class="market-versions">${versions || '<p class="muted">市场没有列出版本。</p>'}</div></details></div>`,
   );
   paint(d);
   const run = async (version, button) => {

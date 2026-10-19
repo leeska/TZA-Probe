@@ -204,10 +204,10 @@ func (cc *CC) serve(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	switch {
 	case r.Method == "GET" && r.URL.Path == "/api/v1/catalog":
-		typ, q := r.URL.Query().Get("type"), r.URL.Query().Get("q")
+		typ, q, kind := r.URL.Query().Get("type"), r.URL.Query().Get("q"), r.URL.Query().Get("kind")
 		items := []any{}
 		for _, p := range cc.Packages {
-			if (typ == "" || p.Type == typ) && strings.Contains(p.ID+p.Name, q) {
+			if (typ == "" || p.Type == typ) && (kind == "" || p.Kind == kind) && strings.Contains(p.ID+p.Name, q) {
 				items = append(items, cc.item(p))
 			}
 		}
