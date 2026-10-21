@@ -3040,11 +3040,13 @@ await until(() => unlockCard()?.querySelector(".unlock-badge"), "公开卡片的
   const actions = badge.closest(".card-actions");
   assert(actions && actions.closest(".card-top"), "徽标要挂在 .card-top 的 .card-actions 里");
   assert(actions.querySelector(".os-box"), "系统标签与徽标同一行");
-  assert.equal([...actions.children].find((el) => !el.hidden), badge, "徽标是卡片头第一个可见的徽标，排在系统标签前面（.node-state 在线时是隐藏的）");
-  assert(
-    badge.compareDocumentPosition(actions.querySelector(".os-box")) & publicDOM.window.Node.DOCUMENT_POSITION_FOLLOWING,
-    "徽标要排在系统标签前面",
-  );
+  // 头部还可能有离线徽标（.node-state）与「仅管理员可见」，所以不比 firstElementChild：
+  // 断言解锁徽标紧挨着系统标签、中间不夹别的徽标（顺序与是否离线无关）。
+  {
+    const kids = [...actions.children];
+    const between = kids.slice(kids.indexOf(badge) + 1, kids.indexOf(actions.querySelector(".os-box")));
+    assert(badge !== -1 && between.length === 0, "解锁徽标要排在系统标签前面且中间不夹别的徽标: " + kids.map((el) => el.className).join(","));
+  }
   // 点击展开分类浮层（手机上就是这条路）。
   badge.click();
   const pop = publicDOM.window.document.querySelector("#unlock-pop");
