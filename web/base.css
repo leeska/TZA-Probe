@@ -1294,67 +1294,30 @@ dialog::backdrop {
 }
 }
 
-/* ==========================================================================
-   Custom Checkboxes (replace native accent-color squares)
-   ========================================================================== */
-input[type="checkbox"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  /* 通用 input 的 8px 12px 内边距会漏到勾选框上，border-box 下被撑成 27×20 的圆角条，
-     看起来像按钮（网络探测表格那一列最明显）。勾选框固定成 20×20 的方块。 */
+/* 原生勾选控件：方框 / 圆点由浏览器绘制，颜色随主题，保留半选与禁用状态。 */
+input[type="checkbox"],
+input[type="radio"] {
+  -webkit-appearance: auto;
+  appearance: auto;
+  width: 16px;
+  height: 16px;
   padding: 0;
-  box-sizing: border-box;
   margin: 0;
   flex: 0 0 auto;
-  border: 1.5px solid rgba(var(--accent-rgb), 0.4);
-  background-color: rgba(255, 255, 255, 0.65);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  vertical-align: middle;
+  accent-color: var(--accent);
   cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-input[type="checkbox"]:hover {
-  border-color: rgba(var(--accent-rgb), 0.8);
-}
-
-input[type="checkbox"]:checked {
-  border-color: transparent;
-  background-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5.5 12.5l4.4 4.4L18.5 8' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"), linear-gradient(145deg, #3694ff 0%, #0071e3 60%, #6854ee 100%);
-  background-size: 14px 14px, cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.4);
-}
-
-/* 半选（绑定弹窗里「部分任务已绑定」）：一道横线，配色与选中一致但更淡。 */
-input[type="checkbox"]:indeterminate {
-  border-color: transparent;
-  background-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.5 12h11' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"), linear-gradient(145deg, #7fb8ff 0%, #5a9cf0 100%);
-  background-size: 14px 14px, cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-
-input[type="checkbox"]:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.55);
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-input[type="checkbox"]:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-[data-theme="dark"] input[type="checkbox"] {
-  border-color: rgba(255, 255, 255, 0.3);
-  background-color: rgba(255, 255, 255, 0.1);
-}
-[data-theme="dark"] input[type="checkbox"]:hover {
-  border-color: rgba(255, 255, 255, 0.55);
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  cursor: not-allowed;
 }
 
 /* Page heading sits on the same inner grid as panel content */

@@ -227,8 +227,8 @@ button.danger {
   background: rgba(var(--red-rgb, 255, 59, 48), 0.06);
 }
 
-/* Base Inputs */
-input,
+/* 文本输入样式不套到原生复选框和单选框上。 */
+input:not([type="checkbox"]):not([type="radio"]),
 select {
   border: 1px solid var(--line);
   border-radius: calc(10px * var(--radius-scale));
@@ -238,7 +238,7 @@ select {
   min-width: 0;
 }
 
-input:focus,
+input:not([type="checkbox"]):not([type="radio"]):focus,
 select:focus {
   outline: none;
 }
@@ -2056,7 +2056,7 @@ label {
   font-weight: 500;
 }
 
-label input,
+label input:not([type="checkbox"]):not([type="radio"]),
 label select {
   font-size: var(--text-base);
   color: var(--ink);
