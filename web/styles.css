@@ -727,6 +727,21 @@ html[data-density="compact"] .metrics-grid {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* 折叠箭头原先没有盒子（零宽、靠 svg 的溢出绘制把 8×4 的路径画在盒外）。加了地区国旗后，
+   320px 上最长的名字会把名字撑满整行，箭头就被挤到内容盒右缘之外 12px（card-overflow-check 会红）。
+   给它一个 16px 的盒子（= viewBox 单位，箭头仍按 8×4 画，36px 以上宽度几何逐像素不变），
+   并让它不许压缩。二次元皮肤把这颗箭头绝对定位在右上角，所以排除掉它。 */
+html:not([data-skin="anime"]) .node-card .card-top .fold-caret {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+html:not([data-skin="anime"]) .node-card .card-top .fold-caret svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 /* 「详细」挂在名字下面那排徽标的右端（以前单独占一行、只放这一枚按钮，白占 ~30px）。
    徽标排拉满整行，按钮靠 margin-left: auto 顶到右缘；名字收起时它仍在，照样能进详情。 */
 .node-card .card-top .card-actions {
