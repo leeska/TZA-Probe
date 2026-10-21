@@ -2128,12 +2128,12 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
   // 线路带宽：后台填了才画，1000 Mbit/s 写
   // 「1 Gbit/s」；没填的机器整块不出现（不留「未标注」这类占位）。
   assert.equal(
-    band.querySelector(".line-pill")?.textContent.trim(),
+    compact.querySelector(".traffic-meta .traffic-line .traffic-value")?.textContent.trim(),
     "1 Gbit/s",
-    `信息带要显示线路带宽（1000 Mbit/s → 1 Gbit/s），实际「${band.querySelector(".line-pill")?.textContent}」`,
+    "线路带宽归入周期用量区域（1000 Mbit/s → 1 Gbit/s）",
   );
   assert(
-    /线路带宽/.test(band.querySelector(".line-pill")?.getAttribute("title") || ""),
+    /线路带宽/.test(compact.querySelector(".traffic-line")?.getAttribute("title") || ""),
     "线路带宽的说明放在 title 里",
   );
   // 中列是这张机器开机以来的网卡计数（↑ / ↓ 各一张，顺序跟速率一致：上行在上），
@@ -2174,7 +2174,7 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
   );
   assert(
     /\.metric small\.throttle-note \{[^}]*white-space: normal/.test(styles),
-    "降速说明是整句话，要允许折行（截成省略号就把阈值/额度那半句丢了）",
+    "精简降速摘要在极窄屏仍允许换行",
   );
   const sub = compact.querySelector(".node-sub");
   assert(sub?.querySelector("p"), "地区与分组在头部第二行");
@@ -2193,7 +2193,7 @@ assert(routeCell.dataset.focusCarrier, "回程胶囊要带上运营商");
     "信息带里的数值（速率与累计）要同一档字号——速率的 12px 写在全局 .speed-line strong 上，列表也一并跟上",
   );
   assert(
-    /\.card-stats \.unit,\s*\n\.card-stats \.speed-line \.unit-none,\s*\n\.card-stats \.stat-item,\s*\n\.card-stats \.line-pill,\s*\n\.card-stats \.price-label \{[^}]*font-size: 10px[^}]*color: var\(--muted\)/.test(styles),
+    /\.card-stats \.unit,\s*\n\.card-stats \.speed-line \.unit-none,\s*\n\.card-stats \.stat-item,\s*\n\.card-stats \.price-label \{[^}]*font-size: 10px[^}]*color: var\(--muted\)/.test(styles),
     "信息带里的说明文字（单位、累计、价格）要同一档字号与颜色",
   );
   assert(
@@ -2301,11 +2301,11 @@ assert.deepEqual(
   ["row-identity", "metrics-grid", "speeds-cell", "net-cell", "route-cell", "billing-cell"],
   "列表行固定六格：主机 / 指标 / 网速 / 延迟 / 回程 / 计费",
 );
-// 计费格里也要写线路带宽（与卡片共用 billingInner 这一份渲染）。
+// 列表的线路带宽与卡片共用周期用量里的两列排版。
 assert.equal(
-  listRow.querySelector(".billing-cell .line-pill")?.textContent.trim(),
+  listRow.querySelector(".metrics-grid .traffic-line .traffic-value")?.textContent.trim(),
   "1 Gbit/s",
-  `列表的计费格同样要显示线路带宽，实际「${listRow.querySelector(".billing-cell .line-pill")?.textContent}」`,
+  "列表的线路带宽也归入周期用量区域",
 );
 // 状态不单独占一列：绿点就在名字前面的 .node-identity 里。
 const identityCell = listRow.querySelector(".row-identity .node-identity");
@@ -2379,7 +2379,7 @@ assert(
   "列表里的色带要写明最近 10 次",
 );
 const listSubs = [...listRow.querySelectorAll(".metrics-grid .metric small")].map((s) => s.textContent);
-assert.equal(listSubs.length, 4, "四个指标各留一行副标");
+assert.equal(listSubs.length, 5, "四个指标的副标加上周期用量里的线路速率");
 // CPU 那格的副标是核心数（Agent 报的 runtime.NumCPU），不再写「系统计算负载」。
 assert.equal(listSubs[0], "4 核", `CPU 副标要是核心数，实际是「${listSubs[0]}」`);
 assert(
@@ -2726,7 +2726,7 @@ await until(
     "勾了免费就是「免费」",
   );
   // 这台机器没填线路带宽：信息带里不许出现这一项（也不许留一个空占位）。
-  assert(!long.querySelector(".line-pill"), "没填线路带宽的机器不显示这一项");
+  assert(!long.querySelector(".traffic-line"), "没填线路带宽的机器不显示这一项");
   // 这台机器没有绑定任何探测任务（按设计不挂任务，例如国际线路的机器）：探测段整段不画——
   // 不摆空格子、不摆灰色空条，只留一行说明。以前固定画满四组延迟 + 三组回程，
   // 整块是「未检测 / 未知 + 160 个灰格」的骨架，看着像没加载完。
@@ -2838,15 +2838,16 @@ const throttleCard = () =>
     c.textContent.includes(throttleName),
   );
 await until(
-  () => /近 1 小时均值 [\d.]+ Mbit\/s/.test(throttleCard()?.querySelector(".throttle-note")?.textContent || ""),
+  () => /1h均 [\d.]+M \/ 1M/.test(throttleCard()?.querySelector(".throttle-note")?.textContent || ""),
   "带阈值的卡片要出现降速那一行（含窗口均值）",
 );
 {
   const note = throttleCard().querySelector(".throttle-note");
   assert(
-    /近 1 小时均值 [\d.]+ Mbit\/s · 阈值 1 Mbit\/s/.test(note.textContent),
-    `降速行要写窗口均值与阈值，实际「${note.textContent}」`,
+    /1h均 [\d.]+M \/ 1M/.test(note.textContent),
+    `降速行要精简显示窗口均值与阈值，实际「${note.textContent}」`,
   );
+  assert(/近 1 小时均值 [\d.]+ Mbit\/s · 阈值 1 Mbit\/s/.test(note.title), "悬停说明保留完整单位与规则");
   assert(note.classList.contains("over"), "平均值远超阈值时这一行要标红（.over）");
   // 同一张卡片上的累计流量：6.75 亿字节要按方向写成 675 MB / 0 B（非零值把单位换算也一并盯住）。
   // 这一格只在 10 秒一轮的全量刷新里更新：每秒的轻刷只补速率与指标格（累计/额度那一带不动），
@@ -2950,15 +2951,16 @@ const quotaCard = () =>
     c.textContent.includes(quotaName),
   );
 await until(
-  () => /已用满额度 · 限速 50 Mbit\/s/.test(quotaCard()?.querySelector(".throttle-note")?.textContent || ""),
-  "额度降速的卡片要出现「已用满额度 · 限速 50 Mbit/s」那一行",
+  () => /已限速 50M/.test(quotaCard()?.querySelector(".throttle-note")?.textContent || ""),
+  "额度降速的卡片要出现精简的限速状态",
 );
 {
   const note = quotaCard().querySelector(".throttle-note");
   assert(
-    /^已用满额度 · 限速 50 Mbit\/s$/.test(note.textContent),
-    `额度降速行要写「已用满额度 · 限速 N Mbit/s」，实际「${note.textContent}」`,
+    /^已限速 50M$/.test(note.textContent),
+    `额度降速行要精简显示当前限速，实际「${note.textContent}」`,
   );
+  assert.equal(note.title, "已用满额度 · 限速 50 Mbit/s", "完整额度降速说明移入悬停提示");
   assert(!/小时均值/.test(note.textContent), "额度降速的线路不该写窗口均值");
   assert(note.classList.contains("over"), "用满额度时这一行要标红（.over）");
 }

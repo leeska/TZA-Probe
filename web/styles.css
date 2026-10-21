@@ -424,15 +424,14 @@ html .node-card .os-tag[role="img"] {
   width: 29px;
   height: 29px;
   padding: 5px;
-  background: #fff;
+  background: transparent;
   color: #475569;
-  border: 1px solid #e2e8f0;
+  border: 0;
+  box-shadow: none;
 }
 .node-card .os-tag svg { display: block; width: 100%; height: 100%; }
-/* 深色模式使用低亮度底座与浅色品牌轮廓，黑色 Logo 也不会融进背景。 */
+/* 深浅主题都使用透明底；深色模式提亮品牌轮廓以保持对比度。 */
 html[data-theme="dark"] .node-card .os-tag[role="img"] {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.16);
   color: #e2e8f0;
 }
 html[data-theme="dark"] .node-card .os-tag:not([data-distro="unknown"]) svg {
@@ -976,10 +975,36 @@ button.node-name {
   text-overflow: ellipsis;
 }
 
-/* 降速说明是这一格里唯一的整句话（「近 24 小时均值 … · 阈值 …」/「用满 … 额度 · 限速 …」），
-   让它折行：窄屏上截成省略号等于把阈值/额度这半句信息丢掉，而它是用户专门要看的那一行。
-   （列表视图的次要文字本来就是允许折行的，这里只是把卡片跟上。）折行只让配了降速规则的
-   那几张卡高一点点，不会再出现「整格顶出卡片、右对齐的数值被边框切掉」那种情况。 */
+/* 流量说明统一为左侧标签、右侧数值：额度 / 线路 / 窗口均值。 */
+.metric > .traffic-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  gap: 3px;
+  min-width: 0;
+}
+.metric .traffic-meta > small {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+.metric .traffic-meta > small > span {
+  font-size: inherit;
+  color: inherit;
+}
+.metric .traffic-meta > small > span:first-child { flex: 0 0 auto; }
+.metric .traffic-meta .traffic-value {
+  min-width: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 降速摘要在小卡片中精简展示，极窄屏仍可换行；完整说明见悬停提示。 */
 .metric small.throttle-note {
   white-space: normal;
 }
@@ -1345,7 +1370,6 @@ button.node-name {
 .card-stats .unit,
 .card-stats .speed-line .unit-none,
 .card-stats .stat-item,
-.card-stats .line-pill,
 .card-stats .price-label {
   font-size: var(--text-2xs);
   font-weight: 500;
@@ -1377,19 +1401,6 @@ button.node-name {
 .price-label {
   color: var(--muted);
   font-weight: 500;
-}
-
-/* 线路带宽与价格同一档（10px 灰字）：卡片里由 .card-stats 那条规则定字号，
-   列表的计费格直接用这一条。 */
-.line-pill {
-  color: var(--muted);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-/* 只写「1 Gbit/s」挂在价格下面，看不出是什么（说明只在 title 里）。前面补「线路」二字；
-   用伪元素加，元素文本仍是纯速率（读屏 / 断言取的都是它）。 */
-.line-pill::before {
-  content: "线路 ";
 }
 
 /* Footer */

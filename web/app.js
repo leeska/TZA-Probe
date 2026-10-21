@@ -207,6 +207,25 @@ function overviewInner() {
   return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${hasLiveMetrics ? bytes(rateOut) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${hasLiveMetrics ? bytes(rateIn) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>`;
 }
 
+// 小卡片只保留「窗口均值 / 阈值」；完整单位和规则放在 title 与无障碍标签中。
+const compactBitrate = (bits) => mbps(bits).replace(/^([\d.]+) (Mbit|kbit|bit)\/s$/, (_, value, unit) => `${Number(value)}${{ Mbit: "M", kbit: "k", bit: "b" }[unit]}`);
+function throttleNoteHTML(n) {
+  if (!(n.line.throttle_mbps > 0)) return "";
+  const limit = compactBitrate(n.line.throttle_mbps * 1e6);
+  let label, value, description;
+  if (n.line.throttle_on === "quota") {
+    label = n.throttled ? "已限速" : "满额限";
+    value = limit;
+    description = `${n.throttled ? "已用满额度" : `用满 ${bytes(n.billing.traffic_limit)} 额度`} · 限速 ${n.line.throttle_mbps} Mbit/s`;
+  } else {
+    const hours = n.covered_hours > 0 ? Math.min(n.covered_hours, n.window_hours || 24) : n.window_hours || 24;
+    label = n.covered_hours > 0 ? `${hours}h均` : n.last_seen ? `${hours}h统计中` : "待接入";
+    value = `${n.covered_hours > 0 ? compactBitrate(n.avg_bps) + " " : ""}/ ${limit}`;
+    description = `${n.covered_hours > 0 ? `近 ${hours} 小时均值 ${mbps(n.avg_bps)}` : n.last_seen ? `近 ${hours} 小时均值统计中` : "接入后开始统计均值"} · 阈值 ${n.line.throttle_mbps} Mbit/s`;
+  }
+  return `<small class="throttle-note${n.throttled ? " over" : ""}" title="${esc(description)}" aria-label="${esc(description)}"><span>${esc(label)}</span> <span class="traffic-value">${esc(value)}</span></small>`;
+}
+
 function metricsInner(n) {
   const m = n.metrics,
     hasMetrics = !!m,
@@ -219,25 +238,9 @@ function metricsInner(n) {
   // 速率与流量仍按十进制（bytes），与商家的流量口径一致。
   const memSub = !hasMetrics ? (n.metrics_stale ? "指标不可用" : "未报告") : !n.online ? "离线" : `${gib(m.memory_used)} / ${gib(m.memory_total)}`;
   const diskSub = hasMetrics ? `${gib(m.disk_used)} / ${gib(m.disk_total)}` : n.metrics_stale ? "指标不可用" : "未报告";
-  const trafficSub = n.billing.traffic_limit ? `${bytes(n.billing.traffic_limit)} 额度 · ${esc({ sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.billing.traffic_mode])}` : "无限制额度";
-  // 达量降速：线路自带的两条规则都可能——按窗口平均带宽（德国商家）或按周期额度用满后
-  // 限速（DMIT T1 这类不计量但限速）。只有真配了规则的线路才写这一行，没配的机器不显示
-  // 占位文案；窗口口径按本机实际上报的小时数写，覆盖不满就说还在统计，不假装有一整个窗口。
-  const throttleNote =
-    n.line.throttle_mbps > 0
-      ? `<small class="throttle-note${n.throttled ? " over" : ""}">${
-          n.line.throttle_on === "quota"
-            ? `${n.throttled ? "已用满额度" : `用满 ${bytes(n.billing.traffic_limit)} 额度`} · 限速 ${n.line.throttle_mbps} Mbit/s`
-            : `${
-                n.covered_hours > 0
-                  ? `近 ${Math.min(n.covered_hours, n.window_hours || 24)} 小时均值 ${mbps(n.avg_bps)}`
-                  : n.last_seen
-                    ? "近 " + (n.window_hours || 24) + " 小时均值统计中"
-                    : "接入后开始统计均值"
-              } · 阈值 ${n.line.throttle_mbps} Mbit/s`
-        }</small>`
-      : "";
-  return `${meter("CPU", live ? m.cpu : null, cpuSub)}${meter("内存", live ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div data-part="metric" class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.billing.traffic_limit)}" aria-label="周期流量额度"></progress><small>${trafficSub}</small>${throttleNote}</div>`;
+  const mode = { sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.billing.traffic_mode];
+  const trafficSub = n.billing.traffic_limit ? [bytes(n.billing.traffic_limit), mode].filter(Boolean).join(" · ") : "不限";
+  return `${meter("CPU", live ? m.cpu : null, cpuSub)}${meter("内存", live ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div data-part="metric" class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.billing.traffic_limit)}" aria-label="周期流量额度"></progress><div class="traffic-meta"><small class="traffic-quota"><span>额度</span> <span class="traffic-value">${esc(trafficSub)}</span></small>${bandwidthLine(n)}${throttleNoteHTML(n)}</div></div>`;
 }
 
 // 实时速率：两个视图都是「一行一个方向」（小图标 + 数值靠右，标签收进 title）。
@@ -931,18 +934,17 @@ function priceLabel(n) {
   return `<span class="price-label">${price}</span>`;
 }
 
-// 线路带宽（后台填的 Mbit/s，0 = 商家没写 / 不标注）：前台的「这台机器的线路规格」
-// 与到期、价格同在计费那一组，卡片与列表共用这一份，两处口径不会走岔。没填就整块
-// 不渲染——不摆「未标注」这类占位（用户点名过）。
-function bandwidthPill(n) {
+// 线路规格归入周期用量，与额度、均值使用相同的左右两列。
+// 没填带宽就不显示这一行，避免重复占位。
+function bandwidthLine(n) {
   const text = bandwidth(n.line.mbps);
   return text
-    ? `<span class="line-pill" title="线路带宽（商家标称的端口 / 峰值速率）">${text}</span>`
+    ? `<small class="traffic-line" title="线路带宽（商家标称的端口 / 峰值速率）"><span>线路</span> <span class="traffic-value">${esc(text)}</span></small>`
     : "";
 }
 
 function billingInner(n, expiry) {
-  return `${expiryPill(n, expiry)}${priceLabel(n)}${bandwidthPill(n)}`;
+  return `${expiryPill(n, expiry)}${priceLabel(n)}`;
 }
 
 // 卡片底部的信息带：三列两行——左列实时速率（↓/↑）、中列本次开机网卡累计（↓/↑），

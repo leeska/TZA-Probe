@@ -31,4 +31,4 @@ Source collection: [Simple Icons 16.0.0](https://www.npmjs.com/package/simple-ic
 
 Unknown distributions use the Linux mark when the Agent reports Linux. Unknown systems use a neutral computer symbol. Flags use Unicode regional indicator characters, derived only from the configured node region.
 
-Dark mode uses a translucent dark badge and a light brand-colored SVG fill for contrast; light mode retains the collection colors. The SVG geometry is unchanged.
+Logos have transparent backgrounds with no border or shadow in both color modes. Dark mode uses a light brand-colored SVG fill for contrast; light mode retains the collection colors. The SVG geometry is unchanged.
