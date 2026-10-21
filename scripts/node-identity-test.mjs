@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { distroBadge, regionFlag } from "../web/node-identity.js";
+import { overseasRegions } from "../web/regions.js";
+const require = createRequire(path.join(process.env.TZA_UI_DEPS || "/tmp/tza-ui-deps", "package.json"));
+const { JSDOM } = require("jsdom");
+const { build } = require("esbuild");
+const root = fileURLToPath(new URL("../", import.meta.url));
+const source = await readFile(path.join(root, "web/app.js"), "utf8");
+const contents = source.slice(0, source.lastIndexOf("\nstart().catch(")) + `
+window.identityTest = { gridInner, listInner, liveTick, setNodes(value) { nodes = value; } };`;
+const bundle = await build({ stdin: { contents, resolveDir: path.join(root, "web"), sourcefile: "app.js" }, bundle: true, format: "iife", write: false });
+const dom = new JSDOM('<div id="app"><div id="nodes"></div></div>', { url: "http://127.0.0.1/", runScripts: "outside-only" });
+const w = dom.window;
+w.eval(bundle.outputFiles[0].text);
+const helpers = w.identityTest;
+const n = { id: "identity", name: "Test <node>", online: false, last_seen: 12345, region: "美国 / 洛杉矶", group: "Test", billing: {}, line: {}, traffic_used: 0, ip_families: ["ipv4"], display: {}, probe_targets: [], metrics: { distro: "Debian 13", os: "linux", arch: "amd64" } };
+for (const [label, slug] of [["Debian 13", "debian"], ["Ubuntu 24.04", "ubuntu"], ["Kubuntu 24.04", "kubuntu"], ["Alpine 3.21", "alpinelinux"], ["Rocky 9.5", "rockylinux"], ["AlmaLinux 9", "almalinux"], ["Red Hat Enterprise 9", "redhat"], ["Arch Linux", "archlinux"], ["openSUSE Leap 15", "opensuse"], ["FreeBSD 14", "freebsd"]]) {
+  const html = distroBadge({ metrics: { distro: label } });
+  assert(html.includes(`data-distro="${slug}"`), label);
+  assert(html.includes(`aria-label="${label}"`));
+  assert(html.includes("<svg"));
+}
+assert.match(distroBadge({ metrics: null, agent_status: { distro: "Debian 13", os: "linux" } }), /data-distro="debian"/, "diagnostic heartbeat metadata keeps its distro logo");
+assert.match(distroBadge({ metrics: { distro: "CustomOS", os: "linux" } }), /data-distro="linux"/);
+assert.match(distroBadge({}), /data-distro="unknown"/);
+for (const [region, flag] of [["US-LAX", "🇺🇸"], ["Japan Tokyo", "🇯🇵"], ["香港", "🇭🇰"], ["台湾", "🇹🇼"], ["新西兰", "🇳🇿"], ["印度尼西亚", "🇮🇩"], ["上海", "🇨🇳"], ["德国-法兰克福", "🇩🇪"], ["🇨🇦 Toronto", "🇨🇦"]]) assert(regionFlag(region).includes(flag), region);
+for (const region of overseasRegions) assert(!regionFlag(region).includes("🌐"), region);
+assert(regionFlag("未命名机房").includes("🌐"), "unknown regions must not invent a country");
+assert(!regionFlag('<img onerror="bad()">').includes('<img'));
+const list = w.document.querySelector("#nodes");
+for (const render of [helpers.gridInner, helpers.listInner]) {
+  list.innerHTML = `<article class="node-card is-offline" data-node="identity">${render(n)}</article>`;
+  helpers.setNodes([structuredClone(n)]);
+  const card = list.firstElementChild;
+  assert.equal(card.querySelector(".node-flag").textContent, "🇺🇸");
+  assert.equal(card.querySelector(".os-tag").getAttribute("aria-label"), "Debian 13");
+  assert.equal(card.querySelector(".os-tag").textContent, "", "replace visible distro text with its logo");
+  assert(card.querySelector(".os-tag svg"));
+  assert.equal(card.querySelector(".node-state").textContent, "离线");
+  assert(!card.querySelector(".node-state").hidden);
+  let update = { id: n.id, online: true, metrics: { ...n.metrics, distro: "Ubuntu 24.04" } };
+  w.fetch = async () => new Response(JSON.stringify([update]), { headers: { "Content-Type": "application/json" } });
+  await helpers.liveTick();
+  assert(card.classList.contains("is-online"));
+  assert(card.querySelector(".node-state").hidden, "live recovery immediately hides offline text");
+  assert.equal(card.querySelector(".os-tag").getAttribute("data-distro"), "ubuntu");
+  assert(card.querySelector(".os-tag svg"), "one-second refresh must not overwrite the SVG with text");
+  update = { id: n.id, online: false, metrics: null, agent_status: { distro: "Alpine 3.21", os: "linux", arch: "arm64" } };
+  await helpers.liveTick();
+  assert(card.classList.contains("is-offline"));
+  assert(!card.querySelector(".node-state").hidden, "live disconnection immediately shows offline text");
+  assert.equal(card.querySelector(".node-state").textContent, "离线");
+  assert.equal(card.querySelector(".os-tag").getAttribute("data-distro"), "alpinelinux");
+  assert.equal(card.querySelector(".arch-tag").textContent, "arm64");
+}
+const waiting = w.document.createElement("div");
+waiting.innerHTML = helpers.gridInner({ ...n, last_seen: 0 });
+assert.equal(waiting.querySelector(".node-state").textContent, "等待接入", "never-connected nodes retain their distinct state");
+dom.window.close();
+console.log("PASS: distro artwork, region flags, safe fallbacks, offline labels and live recovery in both views.");

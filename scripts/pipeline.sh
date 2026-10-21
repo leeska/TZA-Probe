@@ -162,6 +162,8 @@ check_ui_smoke() {
     fi || { tail -5 "$TMP/npm.log" | sed 's/^/   /'; FAILED=1; return; }
   fi
   TZA_UI_DEPS="$deps" "$JS" scripts/market-permissions-test.mjs || { FAILED=1; return; }
+  TZA_UI_DEPS="$deps" "$JS" scripts/home-network-test.mjs || { FAILED=1; return; }
+  TZA_UI_DEPS="$deps" "$JS" scripts/node-identity-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/alert-evaluation-test.mjs || { FAILED=1; return; }
   t0=$(now)
   TZA_UI_DEPS="$deps" TZA_TEST_URL="http://127.0.0.1:$port" TZA_TEST_ADMIN_FILE="$TMP/data/admin-token" TZA_TEST_CREDENTIALS_FILE="$TMP/credentials" TZA_TEST_THEMES="$TMP/themes" \

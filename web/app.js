@@ -1,10 +1,11 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
-import { bytes, bandwidth, date, days, gib, mbps, osLabel, percent, statusName, diagnosticHint } from "./format.js";
+import { bytes, bandwidth, date, days, gib, mbps, percent, statusLabel, statusName, diagnosticHint } from "./format.js";
 import { detail } from "./detail.js";
 import { applyTheme, themeButton } from "./theme.js";
 import { applySkin, skinButton, skinLayout } from "./skins.js";
 import { searchMatch } from "./search.js";
 import { carrierMark } from "./carrier-logos.js";
+import { distroBadge, regionFlag, offlineBadge, offlineTitle } from "./node-identity.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
 import { decorationVars, pickDecoration } from "./decorations.js";
 import { brandHTML } from "./brand.js";
@@ -250,16 +251,14 @@ function speedsInner(n) {
   return `<div class="speed-line" title="实时上传"><span class="speed-icon orange-icon">↑</span><strong>${rateOut}</strong></div><div class="speed-line" title="实时下载"><span class="speed-icon teal-icon">↓</span><strong>${rateIn}</strong></div>`;
 }
 
-// 系统标签：优先显示 Agent 报的发行版（见 format.js 的 osLabel），老 Agent 没有这个字段
-// 就退回 runtime.GOOS（linux）。架构单独一个标签，因为它要在列表里换到发行版下面那一行；
-// 写进 os-tag 里会被每秒刷新的 setText(.os-tag) 整段覆盖掉。
-function osTagsInner(n) {
+// 发行版只显示本地 Logo；名称和完整版本保留在 title / aria-label。架构独立显示。
+function osTagsContent(n) {
   const m = n.metrics || n.agent_status;
-  const os = esc(osLabel(n));
   const arch = m?.arch ? esc(m.arch) : "";
-  // 两个标签套一层 .os-box：卡片里是一行两个，列表里那层改成竖排，架构就落在发行版下面
-  // （直接给 arch-tag 撑满一行的话，那颗胶囊的底色会横贯整格）。
-  return `<span class="os-box"><span class="os-tag">${os}</span>${arch ? `<span class="arch-tag">${arch}</span>` : ""}<span class="collection-state pill warn" title="${esc(diagnosticHint(n))}"${n.metrics_stale ? "" : " hidden"}>指标异常</span></span>`;
+  return `${distroBadge(n)}${arch ? `<span class="arch-tag">${arch}</span>` : ""}<span class="collection-state pill warn" title="${esc(diagnosticHint(n))}"${n.metrics_stale ? "" : " hidden"}>指标异常</span>`;
+}
+function osTagsInner(n) {
+  return `<span class="os-box">${osTagsContent(n)}</span>`;
 }
 
 // 文本 / HTML 先比一遍再写：数值没变就不碰 DOM（每秒那层刷新因此只写真正在动的几个数字）。
@@ -297,7 +296,13 @@ async function liveTick() {
       el.classList.toggle("is-online", !!n.online);
       el.classList.toggle("is-offline", !n.online);
       el.querySelector(".node-dot")?.classList.toggle("offline", !n.online);
-      setText(el.querySelector(".os-tag"), osLabel(n));
+      setHTML(el.querySelector(".os-box"), osTagsContent(n));
+      const state = el.querySelector(".node-state");
+      if (state) {
+        state.hidden = !!n.online;
+        setText(state, n.online ? "离线" : statusLabel(n));
+        state.title = offlineTitle(n);
+      }
       const badge = el.querySelector(".collection-state");
       if (badge) { badge.hidden = !n.metrics_stale; badge.title = diagnosticHint(n); }
       setHTML(el.querySelector(".metrics-grid"), metricsInner(n));
@@ -754,7 +759,7 @@ function nodeFacts(n) {
           ? "ipv6"
           : "ipv4";
 
-  // 观测（结果）只用来填数值：取这一族的最新结果（只有启用的任务会被领走，观测本身就来自启用的任务）。
+  // 最新观测用于回程；延迟和丢包使用下方状态条的历史样本。
   const obs = allObs.filter(
     (o) => o.task.family === effectiveFamily,
   );
@@ -809,25 +814,10 @@ function nodeFacts(n) {
           t.carrier === c,
       ) && (!n.display.route_carriers?.length || n.display.route_carriers.includes(c)),
   );
-  const tcp = obs.filter(
-    (o) =>
-      n.online &&
-      o.task.kind === "tcp" &&
-      !o.stale &&
-      o.result.status !== "pending",
-  );
   const latencies = latencyBuckets
     .map((b) => {
       const { carrier } = b;
-      const matches = tcp.filter((o) => inBucket(b, o.task.carrier, o.task.region));
-      const ok = matches.filter((o) => o.result.latency != null);
-      const value = ok.length
-        ? ok.reduce((v, o) => v + o.result.latency, 0) / ok.length
-        : null;
-      const sent = matches.reduce((v, o) => v + o.result.sent, 0),
-        received = matches.reduce((v, o) => v + o.result.received, 0);
-      const loss = sent ? Math.max(0, (sent - received) / sent * 100) : null;
-      // 每个格子是一次探测：20 格 = 最近 20 次，最新在右。失败的那次用空心红格表示。
+      // 数字与状态条共用窗口内最近 BAR_COUNT 次；失败计入丢包，不当作 0 ms。
       const history = latencySamples
         .filter(
           (s) =>
@@ -835,8 +825,14 @@ function nodeFacts(n) {
             s.family === effectiveFamily &&
             inBucket(b, s.carrier, s.region),
         )
-        .slice(-20);
-      const recent = matches.map((o) => o.at).sort((a, b) => b - a)[0];
+        .slice(-BAR_COUNT);
+      const ok = history.filter((s) => s.latency != null);
+      const value = ok.length
+        ? ok.reduce((v, s) => v + s.latency, 0) / ok.length
+        : null;
+      const sent = history.reduce((v, s) => v + s.sent, 0),
+        received = history.reduce((v, s) => v + s.received, 0);
+      const loss = sent ? Math.max(0, (sent - received) / sent * 100) : null;
       return {
         carrier,
         // 海外格的名字（服务名 / 地区）；三网格是 null，靠标志认。
@@ -845,15 +841,14 @@ function nodeFacts(n) {
         value,
         text: value == null ? null : (value < 10 ? value.toFixed(1) : value.toFixed(0)) + " ms",
         // 一次都没成功时区分“没测过”和“测了但超时”
-        missText: matches.length ? "超时" : "未检测",
+        missText: history.length ? "超时" : "未检测",
         loss,
         lossText: loss == null ? "—" : loss.toFixed(1) + "%",
-        // 原始样本交给渲染函数：列表视图画最近 20 次的延迟色带，卡片视图画「延迟 + 丢包」两
-        // 条各 10 格的小色带，两边取的都是这一份。
+        // 卡片和列表的数字、色带都取这一份样本。
         history,
-        title: matches.length
-          ? `${date(recent)} · 成功 ${received}/${sent} 次`
-          : "尚未检测",
+        title: history.length
+          ? `${date(history[0].at)} ~ ${date(history.at(-1).at)} · 最近 ${history.length} 次平均 · 成功 ${received}/${sent} 次`
+          : "当前时间窗口内尚未检测",
       };
     });
 
@@ -1106,9 +1101,9 @@ function gridInner(n) {
   const cardTop =
     `<div data-part="card-top" class="card-top"><button class="fold-name" type="button" data-fold="${fkey}" aria-expanded="true" aria-controls="body-${n.id}">` +
     `<span class="node-dot ${n.online ? "" : "offline"}"></span>` +
-    `<span class="fold-name-text">${esc(n.name)}</span>` +
+    `<span class="fold-name-text">${regionFlag(n.region)}${esc(n.name)}</span>` +
     `<span class="fold-caret" aria-hidden="true">${FOLD_ICON}</span>` +
-    `</button><div class="card-actions">${privateTag(n)}${unlockBadge(n)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div>`;
+    `</button><div class="card-actions">${offlineBadge(n)}${privateTag(n)}${unlockBadge(n)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div>`;
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
@@ -1159,7 +1154,7 @@ function listInner(n) {
   // 里补一枚「详细」——不然列表里就没有任何进详情的入口了，卡片视图那边也是同一枚按钮。
   // 按钮放在名字下面那排徽标的右端，不跟名字抢同一行：主机格只有 190px，同一行时名字只剩 ~108px，
   // 「HK-BGP-01 · 香港直连」这种常见长度也要折行。
-  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${esc(n.name)}</span><p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p></div></div><div class="card-actions">${privateTag(n)}${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div data-part="metrics-grid" class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
+  return `<div class="row-identity"><div class="node-identity"><span class="node-dot ${n.online ? "" : "offline"}"></span><div><span class="node-name">${regionFlag(n.region)}${esc(n.name)}</span>${offlineBadge(n)}<p>${esc(n.region || "未设置地区")}<span> · </span>${esc(n.group || "默认分组")}${vendorPlate(n)}</p></div></div><div class="card-actions">${privateTag(n)}${familySwitch(n, f)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div><div data-part="metrics-grid" class="metrics-grid">${metricsInner(n)}</div><div class="speeds-cell"><div class="route-heading"><span>实时网速</span></div><div class="speeds">${speedsInner(n)}</div></div><div class="net-cell">${netCell}</div><div class="route-cell">${routeCell}</div><div class="billing-cell">${billingInner(n, f.expiry)}</div>`;
 }
 
 // 展示方式只在这里分叉：两个视图取数完全相同，liveTick 那一层找的也是同一批类名。

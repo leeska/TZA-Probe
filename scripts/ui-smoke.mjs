@@ -2050,9 +2050,9 @@ await until(() => {
   );
   // 系统标签显示 Agent 报的发行版（读 /etc/os-release），不再只有笼统的 linux。
   assert.equal(
-    single.querySelector(".os-tag").textContent,
+    single.querySelector(".os-tag").getAttribute("aria-label"),
     "Debian 13",
-    "系统标签要显示发行版与版本",
+    "发行版 Logo 的无障碍标签要保留完整版本",
   );
   assert.equal(single.querySelector(".arch-tag").textContent, "amd64", "架构标签照旧在发行版下面");
   // 槽位定宽，单栈与双栈行后面的标签才对得齐（真机实测两行标签同在同一个 x）。
@@ -2311,9 +2311,9 @@ assert.equal(
   "在线节点的点是绿的",
 );
 assert.equal(
-  identityCell.querySelector(".node-name").textContent,
+  identityCell.querySelector(".node-name").textContent.slice(identityCell.querySelector(".node-flag").textContent.length),
   name,
-  "节点名要给全，不做省略",
+  "节点名前显示国旗，名称要给全，不做省略",
 );
 // 延迟与回程在列表视图里是行内文本（卡片那格是方形格子），每家运营商一行。
 assert.equal(listRow.querySelectorAll(".net-cell .net-line").length, 4, "延迟四行：三网各一行 + 新加坡的自定义目标一行");
@@ -2447,8 +2447,8 @@ assert(
   "要用 Agent 上报的架构渲染 arch-tag",
 );
 assert(
-  /class="os-tag">\$\{os\}/.test(appSource) && /osLabel\(n\)/.test(appSource),
-  "系统标签要走 osLabel（优先发行版，退回 GOOS）",
+  /distroBadge\(n\)/.test(appSource),
+  "系统标签使用本地发行版 Logo，版本保留在无障碍标签与提示里",
 );
 assert(
   /\.node-grid\.node-list \.os-box \{[^}]*flex-direction: column/.test(styles),

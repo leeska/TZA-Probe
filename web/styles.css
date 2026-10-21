@@ -380,6 +380,70 @@ input[type="checkbox"] {
   display: inline-block;
 }
 
+/* 国旗保持在节点名之前，长名称换行时图标与首行对齐。 */
+.node-flag {
+  display: inline-block;
+  margin-right: 7px;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 1.1em;
+  line-height: 1;
+  vertical-align: -0.06em;
+  white-space: nowrap;
+}
+.node-card .node-state {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border: 1px solid rgba(var(--red-rgb, 220, 38, 38), 0.45);
+  border-radius: 5px;
+  color: #b91c1c;
+  background: #fef2f2;
+  font-size: var(--text-xs);
+  font-weight: 750;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.row-identity .node-name + .node-state { margin-inline-start: 6px; vertical-align: 1px; }
+.node-card .node-state[hidden] { display: none !important; }
+html[data-theme="dark"] .node-card .node-state { color: #fca5a5; background: #450a0a; }
+/* 同时保留文字与红点，避免只靠颜色表达离线。左侧红线在卡片和列表中都清晰可见。 */
+html .node-grid .node-card.is-offline {
+  border-color: rgba(var(--red-rgb, 220, 38, 38), 0.55);
+  border-inline-start: 4px solid var(--red);
+}
+html .node-grid .node-card.is-offline .node-dot.offline {
+  background: var(--red);
+  box-shadow: 0 0 0 3px rgba(var(--red-rgb, 220, 38, 38), 0.15);
+}
+html .node-card .os-tag[role="img"] {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  padding: 5px;
+  background: #fff;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.node-card .os-tag svg { display: block; width: 100%; height: 100%; }
+/* 深色模式使用低亮度底座与浅色品牌轮廓，黑色 Logo 也不会融进背景。 */
+html[data-theme="dark"] .node-card .os-tag[role="img"] {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #e2e8f0;
+}
+html[data-theme="dark"] .node-card .os-tag:not([data-distro="unknown"]) svg {
+  fill: currentColor;
+}
+html[data-theme="dark"] .node-card .os-tag:is([data-distro="debian"], [data-distro="redhat"], [data-distro="freebsd"]) { color: #fda4af; }
+html[data-theme="dark"] .node-card .os-tag:is([data-distro="ubuntu"], [data-distro="ubuntumate"]) { color: #fdba74; }
+html[data-theme="dark"] .node-card .os-tag:is([data-distro="alpinelinux"], [data-distro="archlinux"], [data-distro="fedora"], [data-distro="nixos"], [data-distro="kubuntu"], [data-distro="lubuntu"], [data-distro="xubuntu"], [data-distro="kalilinux"]) { color: #93c5fd; }
+html[data-theme="dark"] .node-card .os-tag:is([data-distro="rockylinux"], [data-distro="linuxmint"], [data-distro="opensuse"], [data-distro="voidlinux"]) { color: #86efac; }
+html[data-theme="dark"] .node-card .os-tag:is([data-distro="centos"], [data-distro="gentoo"]) { color: #c4b5fd; }
+
 /* 连续几拍取数失败（app.js markLive）：绿点换红、停掉脉冲环，「最近同步」的说明行一起变红。 */
 .live-label.stale {
   color: var(--red);
