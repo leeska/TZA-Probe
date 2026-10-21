@@ -11,7 +11,7 @@ const { build } = require("esbuild");
 const root = fileURLToPath(new URL("../", import.meta.url));
 const source = await readFile(path.join(root, "web/app.js"), "utf8");
 const contents = source.slice(0, source.lastIndexOf("\nstart().catch(")) + `
-window.identityTest = { gridInner, listInner, liveTick, setNodes(value) { nodes = value; } };`;
+window.identityTest = { gridInner, listInner, liveTick, applyFolded, setNodes(value) { nodes = value; } };`;
 const bundle = await build({ stdin: { contents, resolveDir: path.join(root, "web"), sourcefile: "app.js" }, bundle: true, format: "iife", write: false });
 const dom = new JSDOM('<div id="app"><div id="nodes"></div></div>', { url: "http://127.0.0.1/", runScripts: "outside-only" });
 const w = dom.window;
@@ -60,5 +60,36 @@ for (const render of [helpers.gridInner, helpers.listInner]) {
 const waiting = w.document.createElement("div");
 waiting.innerHTML = helpers.gridInner({ ...n, last_seen: 0 });
 assert.equal(waiting.querySelector(".node-state").textContent, "等待接入", "never-connected nodes retain their distinct state");
+// Only decorated anime cards provide a real fold interaction.
+w.__tzaThemes = [{ id: "anime", name: "二次元", decorations: [{ id: "generic", name: "Generic", default: true }] }];
+for (const skin of ["shadcn", "press", "glass"]) {
+  w.document.documentElement.dataset.skin = skin;
+  list.innerHTML = `<article class="node-card" data-node="identity">${helpers.gridInner(n)}</article>`;
+  assert.equal(list.querySelector("[data-fold], .fold-caret"), null, skin);
+  assert.equal(list.querySelector(".fold-name").tagName, "DIV");
+}
+w.document.documentElement.dataset.skin = "anime";
+list.innerHTML = `<article class="node-card" data-node="identity" data-deco="anime/generic">${helpers.gridInner(n)}</article>`;
+const animeCard = list.firstElementChild;
+helpers.applyFolded();
+assert(animeCard.querySelector("[data-fold] .fold-caret"));
+animeCard.querySelector("[data-fold]").click();
+assert.equal(animeCard.dataset.rolled, "true");
+assert.equal(animeCard.querySelector("[data-fold]").getAttribute("aria-expanded"), "false");
+w.document.documentElement.dataset.skin = "shadcn";
+animeCard.innerHTML = helpers.gridInner(n);
+helpers.applyFolded();
+assert.equal(animeCard.dataset.rolled, undefined, "leaving anime clears the visual fold state");
+assert.equal(animeCard.querySelector("[data-fold], .fold-caret"), null);
+animeCard.querySelector(".fold-name").click();
+assert.equal(JSON.parse(w.localStorage.getItem("tza-folded-cards")).length, 1, "clicking a static name must not change saved fold state");
+w.document.documentElement.dataset.skin = "anime";
+animeCard.innerHTML = helpers.gridInner(n);
+helpers.applyFolded();
+assert.equal(animeCard.dataset.rolled, "true", "returning to anime restores its remembered state");
+animeCard.querySelector("[data-fold]").click();
+assert.equal(animeCard.dataset.rolled, undefined);
+w.__tzaThemes = [];
+assert(!helpers.gridInner(n).includes("data-fold="), "anime without a decoration has no foldable visual layout");
 dom.window.close();
 console.log("PASS: distro artwork, region flags, safe fallbacks, offline labels and live recovery in both views.");

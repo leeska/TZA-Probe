@@ -2060,12 +2060,8 @@ await until(() => {
     /\.node-grid\.node-list \.family-slot \{[^}]*min-width: 94px/.test(styles),
     "列表里地址族开关的槽位要定宽",
   );
-  // 折叠箭头要有真实盒子：零宽靠溢出绘制时，320px 上最长的名字会把它挤到卡片内容盒外。
-  assert(
-    /html:not\(\[data-skin="anime"\]\) \.node-card \.card-top \.fold-caret \{[^}]*flex: 0 0 auto/.test(styles) &&
-      /html:not\(\[data-skin="anime"\]\) \.node-card \.card-top \.fold-caret \{[^}]*width: 16px/.test(styles),
-    "折叠箭头要占一个 16px 的盒子（不然窄屏长名字会把它画到卡片外）",
-  );
+  assert.equal(single.querySelector("[data-fold]"), null, "普通主题不应显示没有实际效果的折叠按钮");
+  assert.equal(single.querySelector(".fold-caret"), null, "普通主题节点名称旁不显示折叠箭头");
 }
 // 整张卡片现在可点开综合信息，所以卡片内的控件必须被排除，否则点协议开关会误弹详情
 assert(

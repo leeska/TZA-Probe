@@ -628,10 +628,11 @@ function saveFolded() {
 // 卡壳上的状态 + 名字那颗按钮的 aria-expanded：折叠开关就是卡片头那颗「绿点 + 名字」按钮。
 function applyFolded() {
   for (const card of document.querySelectorAll(".node-card")) {
-    const rolled = foldedCards.has(card.dataset.node);
+    const toggles = card.querySelectorAll("[data-fold]");
+    const rolled = toggles.length > 0 && foldedCards.has(card.dataset.node);
     if (rolled) card.dataset.rolled = "true";
     else delete card.dataset.rolled;
-    for (const btn of card.querySelectorAll("[data-fold]"))
+    for (const btn of toggles)
       btn.setAttribute("aria-expanded", String(!rolled));
   }
 }
@@ -1094,18 +1095,21 @@ function gridInner(n) {
   // 但越过边框 Box 就还是越界——scripts/card-overflow-check.mjs 按这个标记区分。
   const deco = pickDecoration(n);
   const fkey = n.id;
+  // 当前只有二次元的立绘卡定义了卷起布局；其他主题显示普通名称，避免无效按钮。
+  const foldable = document.documentElement.dataset.skin === "anime" && !!deco;
+  const nameTag = foldable ? "button" : "div";
+  const foldAttrs = foldable ? ` type="button" data-fold="${fkey}" aria-expanded="true" aria-controls="body-${n.id}"` : "";
   const figureA11y = deco ? `data-deco="${esc(deco.key)}" role="img" aria-label="${esc(deco.d.name)}"` : 'aria-hidden="true"';
   const figure = `<div data-part="card-backdrop" class="card-backdrop" data-bleed ${figureA11y}><span data-part="card-backdrop-layer" class="card-backdrop-layer" data-bleed aria-hidden="true"></span></div>`;
   const hands = `<div data-part="card-overlay" class="card-overlay" data-bleed aria-hidden="true"></div>`;
   const plate = n.vendor ? `<div data-part="card-plate" class="card-plate" aria-hidden="true">${esc(n.vendor)}</div>` : "";
-  // 头部：状态点 + 名字 + 折叠箭头合成**一颗**按钮。点与箭头都绝对定位在两端，名字的横向中心
-  // 不被它们挤动——收起 / 展开时名字落在同一坐标（折叠只影响板面上其余的内容/数据）。
+  // 支持卷起的立绘卡使用名字按钮；普通主题没有按钮语义、箭头或折叠状态。
   const cardTop =
-    `<div data-part="card-top" class="card-top"><button class="fold-name" type="button" data-fold="${fkey}" aria-expanded="true" aria-controls="body-${n.id}">` +
+    `<div data-part="card-top" class="card-top"><${nameTag} class="fold-name"${foldAttrs}>` +
     `<span class="node-dot ${n.online ? "" : "offline"}"></span>` +
     `<span class="fold-name-text">${regionFlag(n.region)}${esc(n.name)}</span>` +
-    `<span class="fold-caret" aria-hidden="true">${FOLD_ICON}</span>` +
-    `</button><div class="card-actions">${offlineBadge(n)}${privateTag(n)}${unlockBadge(n)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div>`;
+    (foldable ? `<span class="fold-caret" aria-hidden="true">${FOLD_ICON}</span>` : "") +
+    `</${nameTag}><div class="card-actions">${offlineBadge(n)}${privateTag(n)}${unlockBadge(n)}${osTagsInner(n)}<button class="quiet detail-open" type="button" data-detail="${n.id}">详细</button></div></div>`;
   // 头部两行：第一行只有状态点 + 名字，右侧是发行版与架构胶囊；地区 / 分组与地址族开关落到第二行。
   // 以前地址族开关、系统、架构三样都挤在第一行，卡片窄时名字被挤成三行（手机上一张卡的头部 104px）。
   // 下面紧接着的一条信息带（实时速率 + 到期 + 价格）取代了原来的两个速率方块与独立页脚。
