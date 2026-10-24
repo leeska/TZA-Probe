@@ -105,8 +105,10 @@ func TestAccountLoginAndChange(t *testing.T) {
 	}
 }
 
-// Past the limit a password login is refused even when right: for passwords
-// the limit is what stops guessing.
+// Past the limit wrong passwords are refused, but a correct password always
+// gets in — filling the shared bucket must not lock the administrator out of
+// a new device. Guessing stays bounded by the failure counter and the PBKDF2
+// concurrency cap (login_limit.go).
 func TestPasswordLoginRateLimit(t *testing.T) {
 	dir := t.TempDir()
 	s, err := storage.Open(filepath.Join(dir, "limit.db"))
@@ -135,7 +137,7 @@ func TestPasswordLoginRateLimit(t *testing.T) {
 	r.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
-	if w.Code != 429 {
+	if w.Code != 204 {
 		t.Fatalf("password login while limited: %d", w.Code)
 	}
 }
@@ -182,24 +184,34 @@ func TestDeviceCookieSurvivesSharedLimit(t *testing.T) {
 	for i := 0; i <= sharedLoginLimit; i++ {
 		api.loginLimited(anonymous, time.Now(), true)
 	}
-	if w := login("right-password", nil); w.Code != 429 {
-		t.Fatalf("anonymous login while shared bucket is full: %d", w.Code)
+	// 共享桶刷满后，匿名猜错的尝试被拒……
+	if w := login("wrong-password", nil); w.Code != 429 {
+		t.Fatalf("anonymous wrong password while shared bucket is full: %d", w.Code)
+	}
+	// ……但密码正确就放行：刷满桶关不住知道密码的管理员。
+	if w := login("right-password", nil); w.Code != 204 {
+		t.Fatalf("anonymous correct password while shared bucket is full: %d", w.Code)
 	}
 	if w := login("right-password", device); w.Code != 204 {
 		t.Fatalf("device login while shared bucket is full: %d", w.Code)
 	}
 	forged := &http.Cookie{Name: deviceCookie, Value: strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + ".forged"}
-	if w := login("right-password", forged); w.Code != 429 {
+	// 伪造的设备 Cookie 退回共享桶：猜错的尝试同样被拒。
+	if w := login("wrong-password", forged); w.Code != 429 {
 		t.Fatalf("forged device cookie: %d", w.Code)
 	}
-	// 改密码后旧设备 Cookie 签的是旧哈希，退回共享桶。
+	// 改密码后旧设备 Cookie 签的是旧哈希，退回共享桶：猜错被拒（证明退回了
+	// 已经刷满的共享桶），正确密码依然放行。
 	if err := account.Save(dir, "admin", "another-password"); err != nil {
 		t.Fatal(err)
 	}
-	if w := login("another-password", device); w.Code != 429 {
-		t.Fatalf("device cookie after password change: %d", w.Code)
+	if w := login("wrong-password", device); w.Code != 429 {
+		t.Fatalf("stale device cookie after password change: %d", w.Code)
 	}
-	// 设备自己的桶也有上限。
+	if w := login("another-password", device); w.Code != 204 {
+		t.Fatalf("correct password after password change: %d", w.Code)
+	}
+	// 设备自己的桶挡的也是猜错的尝试。
 	api.mu.Lock()
 	api.loginFailures = nil
 	api.mu.Unlock()
@@ -214,7 +226,10 @@ func TestDeviceCookieSurvivesSharedLimit(t *testing.T) {
 	for i := 0; i <= deviceLoginLimit; i++ {
 		api.loginLimited(probe, time.Now(), true)
 	}
-	if w := login("another-password", device); w.Code != 429 {
+	if w := login("wrong-password", device); w.Code != 429 {
 		t.Fatalf("device past its own limit: %d", w.Code)
+	}
+	if w := login("another-password", device); w.Code != 204 {
+		t.Fatalf("correct password past the device limit: %d", w.Code)
 	}
 }

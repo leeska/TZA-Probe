@@ -501,7 +501,7 @@ func (c *Client) Package(ctx context.Context, id string) (Package, error) {
 		if v.Permissions != nil {
 			permissions := []string{}
 			for _, permission := range v.Permissions {
-				if permission = clean(permission, 200); permission != "" && len(permissions) < 10 {
+				if permission = clean(permission, maxJSON); permission != "" && len(permissions) < 10 {
 					permissions = append(permissions, permission)
 				}
 			}
@@ -527,7 +527,7 @@ func (c *Client) cleanItem(it *Item, installed map[string]Installed) bool {
 		}
 		perms := []string{}
 		for _, p := range it.Permissions {
-			if p = clean(p, 200); p != "" && len(perms) < 10 {
+			if p = clean(p, maxJSON); p != "" && len(perms) < 10 {
 				perms = append(perms, p)
 			}
 		}

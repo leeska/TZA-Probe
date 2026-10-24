@@ -48,8 +48,16 @@ func stage(t *testing.T, state string, binary []byte, sig agentsig.Signature) {
 	os.WriteFile(filepath.Join(state, stagedName+".sig"), raw, 0o600)
 }
 
+func testAgentVersion(t *testing.T) {
+	t.Helper()
+	previous := model.Version
+	model.Version = "1.0.0"
+	t.Cleanup(func() { model.Version = previous })
+}
+
 func newTestUpdater(t *testing.T, binary []byte) (*Updater, string) {
 	t.Helper()
+	testAgentVersion(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the updater runs shell scripts as fake binaries")
 	}
@@ -143,6 +151,7 @@ func TestUpdaterRefusesBadDownloads(t *testing.T) {
 }
 
 func TestApplyStagedDiscardsTamperedFile(t *testing.T) {
+	testAgentVersion(t)
 	state, bin := t.TempDir(), t.TempDir()
 	exe := filepath.Join(bin, "tza-agent")
 	os.WriteFile(exe, []byte("old"), 0o755)

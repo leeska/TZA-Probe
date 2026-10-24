@@ -57,6 +57,7 @@ type API struct {
 	sessions      map[string]time.Time
 	loginWindow   time.Time
 	loginFailures map[string]int // 当前一分钟内各限流桶的失败次数，见 login_limit.go
+	loginSlots    chan struct{}  // 密码验证的并发上限，懒初始化，见 verifyLogin
 	deviceKey     []byte         // 设备 Cookie 的签名密钥
 	// 匿名面板共用的快照，见 panelNodes / allObservations / latencySamples。
 	nodesSnap        snapshot[[]model.NodeView]
@@ -402,11 +403,12 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	if a.loginLimited(r, now, false) {
+	ok, busy := a.verifyLogin(v.Username, v.Password)
+	if busy {
 		write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 		return
 	}
-	if !a.checkAccount(v.Username, v.Password) {
+	if !ok {
 		if a.loginLimited(r, now, true) {
 			write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 			return
@@ -700,6 +702,11 @@ func respond(w http.ResponseWriter, err error) {
 // body. The bare sentinels get a generic Chinese line; a message built with
 // model.Invalid / NotFound / Conflict is shown as is.
 func fail(w http.ResponseWriter, err error) {
+	var challenge *model.AgentSessionChallenge
+	if errors.As(err, &challenge) {
+		write(w, http.StatusConflict, challenge)
+		return
+	}
 	var sendErr service.SendError
 	switch {
 	case errors.Is(err, model.ErrInvalid):

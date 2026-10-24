@@ -109,6 +109,7 @@ func (a Agent) Run(ctx context.Context) {
 			health.collected(m, err)
 			var reply model.ReportReply
 			if err == nil {
+				health.prepareReport(&m)
 				reply, err = a.Transport.Report(ctx, m)
 				health.reported(err)
 				if err != nil && ctx.Err() == nil {
@@ -244,7 +245,16 @@ func (t *HTTPTransport) request(ctx context.Context, method, path string, body, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &HTTPStatusError{Status: resp.StatusCode}
+		failure := &HTTPStatusError{Status: resp.StatusCode}
+		if resp.StatusCode == http.StatusConflict {
+			var challenge model.AgentSessionChallenge
+			if json.NewDecoder(io.LimitReader(resp.Body, 1024)).Decode(&challenge) == nil {
+				if len(challenge.Challenge) == 64 && strings.Trim(challenge.Challenge, "0123456789abcdef") == "" {
+					failure.SessionChallenge = challenge.Challenge
+				}
+			}
+		}
+		return failure
 	}
 	if out != nil && resp.StatusCode != http.StatusNoContent {
 		return json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(out)
@@ -252,7 +262,10 @@ func (t *HTTPTransport) request(ctx context.Context, method, path string, body, 
 	return nil
 }
 
-type HTTPStatusError struct{ Status int }
+type HTTPStatusError struct {
+	Status           int
+	SessionChallenge string
+}
 
 func (e *HTTPStatusError) Error() string { return fmt.Sprintf("server returned HTTP %d", e.Status) }
 
@@ -261,7 +274,8 @@ func (t *HTTPTransport) Heartbeat(ctx context.Context, status model.AgentStatus)
 		return model.ReportReply{}, nil
 	}
 	var reply model.ReportReply
-	err := t.request(ctx, "POST", "/api/v1/agent/heartbeat", model.Heartbeat{Protocol: model.Protocol, Status: status}, &reply)
+	body := model.Heartbeat{Protocol: model.Protocol, Status: status}
+	err := t.stateRequest(ctx, "/api/v1/agent/heartbeat", &body, &body.Status.AgentState, &reply)
 	var httpErr *HTTPStatusError
 	if errors.As(err, &httpErr) && (httpErr.Status == http.StatusNotFound || httpErr.Status == http.StatusMethodNotAllowed) {
 		t.heartbeatUnsupported.Store(true)
@@ -271,9 +285,25 @@ func (t *HTTPTransport) Heartbeat(ctx context.Context, status model.AgentStatus)
 }
 func (t *HTTPTransport) Report(ctx context.Context, m model.Metrics) (model.ReportReply, error) {
 	var reply model.ReportReply
-	err := t.request(ctx, "POST", "/api/v1/agent/report", model.Report{Protocol: model.Protocol, Metrics: m}, &reply)
+	body := model.Report{Protocol: model.Protocol, Metrics: m}
+	err := t.stateRequest(ctx, "/api/v1/agent/report", &body, &body.Metrics.AgentState, &reply)
 	return reply, err
 }
+
+// Retry only explicit session challenges, with a bound on competing owners.
+// Ordinary conflicts (rate limiting), auth failures and transport errors retain
+// their existing behavior. The proof lives only in this request's copy.
+func (t *HTTPTransport) stateRequest(ctx context.Context, path string, body any, state *model.AgentState, out *model.ReportReply) error {
+	for attempt := 0; ; attempt++ {
+		err := t.request(ctx, "POST", path, body, out)
+		var status *HTTPStatusError
+		if attempt >= 2 || state.Session == "" || !errors.As(err, &status) || status.SessionChallenge == "" {
+			return err
+		}
+		state.Proof = status.SessionChallenge
+	}
+}
+
 func (t *HTTPTransport) Jobs(ctx context.Context) ([]model.Job, error) {
 	var jobs []model.Job
 	err := t.request(ctx, "GET", "/api/v1/agent/jobs", nil, &jobs)

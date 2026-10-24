@@ -132,7 +132,16 @@ else
   echo "安装方式：从源码构建 ${REF}"
   echo "克隆 ${REPO} 并构建（需要能访问 github.com 与 Go 模块代理）"
   git clone --depth 1 --branch "$REF" "https://github.com/${REPO}.git" "${WORK}/src"
-  VERSION="1.0.0-dev+$(git -C "${WORK}/src" rev-parse --short HEAD)"
+  if [ -f "${WORK}/src/scripts/version.sh" ]; then
+    VERSION=$(sh "${WORK}/src/scripts/version.sh" "${WORK}/src")
+  else
+    # Older release tags predate the shared resolver. Preserve the checked-out tag.
+    VERSION=$(git -C "${WORK}/src" describe --exact-match --tags --match 'v[0-9]*' HEAD 2>/dev/null || true)
+    if ! printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+      BASE_VERSION=$(sed -n 's/^var Version = "\([^"]*\)".*/\1/p' "${WORK}/src/internal/model/model.go")
+      VERSION="${BASE_VERSION%%-*}-dev+$(git -C "${WORK}/src" rev-parse --short HEAD)"
+    fi
+  fi
   LDFLAGS="-s -w -X github.com/${REPO}/internal/model.Version=${VERSION}"
   (cd "${WORK}/src" && CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" \
     -o "${WORK}/tza-server" ./cmd/server)

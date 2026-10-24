@@ -1,10 +1,45 @@
 package model
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
+
+// AgentState orders reports and diagnostics within one Agent process. A fresh
+// random session on restart avoids depending on either machine's wall clock.
+// Zero fields retain the legacy receipt-order protocol.
+type AgentState struct {
+	Session  string `json:"agent_session,omitempty"`
+	Sequence int64  `json:"agent_sequence,omitempty"`
+	Proof    string `json:"agent_session_proof,omitempty"`
+}
+
+func (s AgentState) Validate() error {
+	if s.Session == "" && s.Sequence == 0 && s.Proof == "" {
+		return nil
+	}
+	if len(s.Session) != 64 || strings.Trim(s.Session, "0123456789abcdef") != "" || s.Sequence <= 0 {
+		return errors.New("invalid agent state sequence")
+	}
+	if s.Proof != "" && (len(s.Proof) != 64 || strings.Trim(s.Proof, "0123456789abcdef") != "") {
+		return errors.New("invalid agent session proof")
+	}
+	return nil
+}
+
+// AgentSessionChallenge requires a round trip before a new process can take
+// ownership. It is bound to the currently active session, so an in-flight
+// confirmation from an older process cannot supersede a newer process.
+type AgentSessionChallenge struct {
+	Challenge string `json:"agent_session_challenge"`
+}
+
+func (e *AgentSessionChallenge) Error() string { return "confirm agent session" }
 
 // AgentStatus contains bounded diagnostic codes, never raw OS/HTTP errors,
 // interface names, paths or credentials. Heartbeats carry no metric values.
 type AgentStatus struct {
+	AgentState
 	State        string   `json:"state"`
 	Reason       string   `json:"reason,omitempty"`
 	Version      string   `json:"version"`
@@ -16,6 +51,9 @@ type AgentStatus struct {
 }
 
 func (s AgentStatus) Validate() error {
+	if err := s.AgentState.Validate(); err != nil {
+		return err
+	}
 	switch s.State {
 	case "starting", "collecting", "reporting", "ok", "collect_failed", "collect_timeout", "report_failed":
 	default:

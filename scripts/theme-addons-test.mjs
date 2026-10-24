@@ -1,0 +1,68 @@
+// Custom settings must retain trusted-core add-on discovery and management.
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+const require = createRequire(path.join(process.env.TZA_UI_DEPS || "/tmp/tza-ui-deps", "package.json"));
+const { JSDOM } = require("jsdom"), { build } = require("esbuild");
+const root = fileURLToPath(new URL("../", import.meta.url));
+const bundle = await build({ stdin: { contents: 'export { renderThemes } from "./web/admin-themes.js"; export { state } from "./web/admin-state.js";', resolveDir: root }, bundle: true, format: "iife", globalName: "Themes", write: false });
+const dom = new JSDOM('<main id="admin-content"></main><dialog id="dialog"></dialog><div id="toast"></div>', { url: "http://127.0.0.1/admin", runScripts: "outside-only" });
+const w = dom.window;
+w.matchMedia = () => ({ matches: false, addEventListener() {} });
+w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+w.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new w.Event("close")); };
+const anime = { id: "anime", name: "二次元", type: "skin", version: "2.1.0", styles: [], settings_ui: { entry: "settings/index.html", api_version: 1 }, settings: [{ id: "addons", type: "addons", label: "角色包" }, { id: "motion", type: "toggle", label: "动效" }], decorations: [] };
+const pack = (id, version) => ({ id, name: id, type: "addon", for: "anime", source: "market", version, decorations: [] });
+let themes = [anime, pack("old-pack", "1.0.0")];
+const mutations = [];
+w.fetch = async (url, options = {}) => {
+ let data;
+ if (url.endsWith("/admin/themes")) data = themes;
+ else if (url.endsWith("/admin/panel")) data = { default_skin: "anime" };
+ else if (url.endsWith("/admin/nodes")) data = [];
+ else if (url.endsWith("/market/status")) data = { configured: true, trusted_keys: 1 };
+ else if (url.endsWith("/market/updates")) data = { updates: themes.some((t) => t.id === "old-pack" && t.version === "1.0.0") ? [{ id: "old-pack", latest: "1.1.0" }] : [] };
+ else if (url.includes("/market/catalog?")) data = { items: [{ id: "new-pack", name: "New character pack", type: "addon", for: "anime", latest: "1.0.0" }], page: 1, more: false };
+ else if (url.includes("/market/packages/")) {
+  const id = url.split("/").at(-1), installed = themes.find((t) => t.id === id);
+  data = { id, name: id, type: "addon", for: "anime", latest: id === "old-pack" ? "1.1.0" : "1.0.0", installed: installed && { source: "market", version: installed.version }, versions: [{ version: id === "old-pack" ? "1.1.0" : "1.0.0", compatible: true }] };
+ } else if (url.endsWith("/market/install")) {
+  const req = JSON.parse(options.body); mutations.push({ action: "install", ...req });
+  themes = [...themes.filter((t) => t.id !== req.id), pack(req.id, req.version)]; data = themes.at(-1);
+ } else if (url.endsWith("/admin/themes/old-pack") && options.method === "DELETE") {
+  mutations.push({ action: "delete", id: "old-pack" }); themes = themes.filter((t) => t.id !== "old-pack");
+  return new Response(null, { status: 204 });
+ } else throw new Error("Unexpected request: " + url);
+ return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
+};
+w.eval(bundle.outputFiles[0].text);
+w.Themes.state.container = w.document; w.Themes.state.tab = "themes";
+const $ = (s) => w.document.querySelector(s);
+const until = async (fn) => { for (let i = 0; i < 100; i++) { if (fn()) return; await new Promise((r) => setTimeout(r, 5)); } throw new Error("UI did not settle: " + w.document.body.textContent); };
+await w.Themes.renderThemes();
+$('[data-theme-settings="anime"]').click();
+assert.equal($("iframe").getAttribute("sandbox"), "allow-scripts", "custom settings stay isolated");
+$("#dialog").close();
+await w.Themes.renderThemes();
+$('[data-theme-addons="anime"]').click();
+assert($("#dialog").textContent.includes("从市场添加附加包"));
+assert($('[data-remove-theme="old-pack"]'), "installed add-on can be removed");
+assert($('[data-market-update="old-pack"]'), "installed add-on can be updated");
+assert(!$("#dialog").textContent.includes("动效"), "developer-owned controls stay in the custom dialog");
+$('[data-market-update="old-pack"]').click();
+await until(() => themes.find((t) => t.id === "old-pack")?.version === "1.1.0" && !$("#dialog").open);
+await w.Themes.renderThemes();
+$('[data-theme-addons="anime"]').click();
+$('[data-remove-theme="old-pack"]').click();
+$("#confirm").click();
+await until(() => mutations.some((m) => m.action === "delete"));
+await w.Themes.renderThemes();
+$('[data-theme-addons="anime"]').click();
+$('#dialog .market-card[data-package="new-pack"]').click();
+await until(() => $("#market-install"));
+$("#market-install").click();
+await until(() => themes.some((t) => t.id === "new-pack") && !$("#dialog").open);
+assert.deepEqual(mutations.map((m) => [m.action, m.id]), [["install", "old-pack"], ["delete", "old-pack"], ["install", "new-pack"]]);
+dom.window.close();
+console.log("PASS: isolated custom settings and core add-on browsing, update, deletion and installation.");

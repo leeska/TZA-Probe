@@ -9,7 +9,7 @@
 - **主机监控**：CPU / 内存 / 根挂载点磁盘 / 网络速率 / 网卡累计 / 在线状态，30 天分钟级历史。
 - **网络探测**：按节点显式绑定的 IPv4 / IPv6 TCP 延迟与三网回程；回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / CTG / 4837 / 9929 / 10099 / CMIN2 / CMI）。
 - **解锁检测**：节点用自己的出口检测 24 个流媒体 / AI / 交易所 / 常用服务，给出 `19/24` 式分数与明细。
-- **计费与提醒**：计费周期、流量额度、价格与到期时间、达量降速；离线 / 续费 / 流量 / 降速 / 负载提醒，经 Telegram 或 Webhook 发送。
+- **计费与提醒**：计费周期、流量额度、价格与到期时间、达量降速、按剩余时间比例估算的剩余价值；离线 / 续费 / 流量 / 降速 / 负载提醒，经 Telegram 或 Webhook 发送。
 - **公开面板**：卡片与列表两种视图，浅色 / 深色主题与多套外观风格；搜索认中文、全拼、拼音首字母、英文与代号（香港 = `xianggang` / `xg` / `hk`）。
 - **管理后台**：节点管理与拖动排序、密钥轮换、任务目录检索与批量绑定、用量校正、告警事件与投递状态。
 - **MCP 接口** `/mcp`：AI 客户端用后台生成的 MCP API Key 读写整站，能力与管理面板一致。
@@ -60,7 +60,7 @@ git clone --depth 1 https://github.com/leeska/TZA-Probe && cd TZA-Probe
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-后台初始用户名与密码只在首次启动的容器日志里出现一次（`docker compose -f deploy/docker-compose.yml logs tza-server`）。
+后台初始密码不会写进容器日志（日志会被永久保留）：首次启动把它写进数据卷的 `admin-password.txt`，用 `docker compose -f deploy/docker-compose.yml exec tza-server cat /data/admin-password.txt` 读取，登录改密后删除该文件；也可以在 compose 里配置 `TZA_ADMIN_PASSWORD`（8–128 个字符）自定义初始密码。
 
 被监控主机不需要装 Go：后台新增节点后，“接入”弹窗给出的 `curl ... | sh -s -- --endpoint ... --token ...` 命令会下载并启动 Agent。
 

@@ -6,6 +6,7 @@ import (
 )
 
 type Metrics struct {
+	AgentState
 	CounterID   string  `json:"counter_id"`
 	CPU         float64 `json:"cpu"`
 	MemoryUsed  uint64  `json:"memory_used"`
@@ -41,6 +42,9 @@ type Metrics struct {
 }
 
 func (m Metrics) Validate() error {
+	if err := m.AgentState.Validate(); err != nil {
+		return err
+	}
 	if len(m.CounterID) > 64 || !percent(m.CPU) || m.MemoryTotal == 0 || m.MemoryUsed > m.MemoryTotal || m.DiskUsed > m.DiskTotal || !finite(m.RateIn) || !finite(m.RateOut) || m.RateIn < 0 || m.RateOut < 0 || m.Cores < 0 || m.Cores > 4096 || len(m.OS) > 100 || len(m.Arch) > 30 || len(m.Distro) > 60 || len(m.Version) > 40 || m.NetIn > math.MaxInt64 || m.NetOut > math.MaxInt64 {
 		return errors.New("invalid metrics")
 	}

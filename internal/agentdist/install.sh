@@ -158,8 +158,8 @@ if command -v sha256sum >/dev/null 2>&1; then
 elif command -v shasum >/dev/null 2>&1; then
   ACTUAL=$(shasum -a 256 "$TMP/tza-agent" | cut -d' ' -f1)
 else
-  ACTUAL="$EXPECTED"
-  echo "警告: 系统没有 sha256sum，跳过完整性校验" >&2
+  # 下面以 root 安装下载来的二进制，宁可拒绝安装也不能跳过校验。
+  fail "系统没有 sha256sum 或 shasum，无法校验完整性；请安装任一工具后重试"
 fi
 [ "$ACTUAL" = "$EXPECTED" ] || fail "校验和不匹配，下载不完整，请重试"
 chmod 0755 "$TMP/tza-agent"

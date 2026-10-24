@@ -258,6 +258,11 @@ func (s *Store) Clean(ctx context.Context, now time.Time) error {
 			return err
 		}
 	}
+	// Retired sessions outlive the Agent's 15-second HTTP request budget by
+	// seven days; keep the current watermark even for a long-offline node.
+	if _, err := s.deleteChunks(ctx, "node_agent_sessions", "active=0 AND seen_at<?", now.Add(-7*24*time.Hour).Unix()); err != nil {
+		return err
+	}
 	// 后台删除的兜底：上次唤醒时失败的那条也在这里再试一次。
 	s.wakePurger()
 	return nil

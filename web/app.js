@@ -1,5 +1,5 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
-import { bytes, bandwidth, date, days, gib, mbps, percent, statusLabel, statusName, diagnosticHint } from "./format.js";
+import { bytes, bandwidth, date, days, gib, mbps, percent, statusLabel, statusName, diagnosticHint, remainingValueLabel, remainingValueHint } from "./format.js";
 import { detail } from "./detail.js";
 import { applyTheme, themeButton } from "./theme.js";
 import { applySkin, skinButton, skinLayout } from "./skins.js";
@@ -310,6 +310,7 @@ async function liveTick() {
       if (badge) { badge.hidden = !n.metrics_stale; badge.title = diagnosticHint(n); }
       setHTML(el.querySelector(".metrics-grid"), metricsInner(n));
       setHTML(el.querySelector(".speeds"), speedsInner(n));
+      setText(el.querySelector(".remaining-value"), "剩余价值 " + remainingValueLabel(n));
     }
     alignCardRows();
     setText(document.querySelector("#updated"), new Date().toLocaleTimeString("zh-CN", { hour12: false }));
@@ -945,7 +946,7 @@ function bandwidthLine(n) {
 }
 
 function billingInner(n, expiry) {
-  return `${expiryPill(n, expiry)}${priceLabel(n)}`;
+  return `${expiryPill(n, expiry)}${priceLabel(n)}<span class="remaining-value" title="${esc(remainingValueHint)}">剩余价值 ${esc(remainingValueLabel(n))}</span>`;
 }
 
 // 卡片底部的信息带：三列两行——左列实时速率（↓/↑）、中列本次开机网卡累计（↓/↑），

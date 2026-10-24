@@ -41,6 +41,9 @@ func (s *Store) Report(ctx context.Context, id string, m model.Metrics, now time
 	if err = tx.QueryRowContext(ctx, "SELECT metrics,last_seen FROM nodes WHERE id=?", id).Scan(&previous, &seen); err != nil {
 		return err
 	}
+	if accept, err := acceptAgentState(ctx, tx, id, m.AgentState, now); err != nil || !accept {
+		return err
+	}
 	if now.Unix()-seen < 3 {
 		return model.Conflict("上报过于频繁")
 	}
@@ -59,12 +62,14 @@ func (s *Store) Report(ctx context.Context, id string, m model.Metrics, now time
 			}
 		}
 	}
+	m.Proof = "" // A session confirmation is not a metric or public metadata.
 	payload := encode(m)
 	if _, err = tx.ExecContext(ctx, "UPDATE nodes SET metrics=?,last_seen=? WHERE id=?", payload, now.Unix(), id); err != nil {
 		return err
 	}
 	// A valid report supersedes diagnostics atomically, including heartbeats
-	// received in the same second. A later heartbeat may diagnose a new failure.
+	// received in the same second. The generation watermark rejects in-flight
+	// diagnostics from before this recovery, even when they arrive later.
 	if _, err = tx.ExecContext(ctx, "DELETE FROM node_health WHERE node_id=?", id); err != nil {
 		return err
 	}

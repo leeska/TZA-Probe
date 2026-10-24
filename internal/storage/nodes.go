@@ -78,6 +78,7 @@ func (s *Store) Nodes(ctx context.Context, now time.Time) ([]model.NodeView, err
 		start, end := model.Cycle(now, model.BillingAnchor(v.Billing.ResetAt, now))
 		v.CycleStart = start.Unix()
 		v.CycleEnd = end.Unix()
+		v.RemainingValue = model.RemainingValue(v.Billing, now)
 		views = append(views, v)
 	}
 	err = rows.Err()
@@ -215,7 +216,7 @@ func (s *Store) DeleteNode(ctx context.Context, id string) error {
 			return ErrNotFound
 		}
 		// What the cascade used to do for the small tables; jobs and samples are queued.
-		for _, table := range []string{"bindings", "alert_state", "latest", "unlocks", "retries", "traffic", "traffic_hour", "node_health"} {
+		for _, table := range []string{"bindings", "alert_state", "latest", "unlocks", "retries", "traffic", "traffic_hour", "node_health", "node_agent_sessions"} {
 			if _, err = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE node_id=?", id); err != nil {
 				return err
 			}

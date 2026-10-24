@@ -67,10 +67,12 @@ function skinRow(t, updates, defaultSkin) {
   const isDefault = t.id === defaultSkin ? '<span class="pill good">前台默认</span>' : "";
   const remove = t.builtin ? "" : `<button type="button" class="danger" data-remove-theme="${esc(t.id)}">删除</button>`;
   const open = opened.has(t.id);
+  const addonGear = t.settings_ui && (t.settings || []).some((st) => st.type === "addons")
+    ? `<button type="button" data-theme-addons="${esc(t.id)}">附加包</button>` : "";
   const gear = (t.settings?.length || t.settings_ui)
     ? `<button type="button" class="theme-gear${open ? " on" : ""}" data-theme-settings="${esc(t.id)}" aria-haspopup="dialog" title="${esc(t.name)}的主题设置">${GEAR}<span>设置</span></button>`
     : "";
-  return `<div class="theme-row">${swatch(t.swatch)}<span class="theme-copy"><b>${esc(t.name)}</b>${t.frontend ? '<small>独立前台 · HTML / JavaScript</small>' : ""}<small>${esc(meta).replace("\n", "<br>")}</small></span>${isDefault}${bits.pills}${bits.actions}${gear}${remove}</div>`;
+  return `<div class="theme-row">${swatch(t.swatch)}<span class="theme-copy"><b>${esc(t.name)}</b>${t.frontend ? '<small>独立前台 · HTML / JavaScript</small>' : ""}<small>${esc(meta).replace("\n", "<br>")}</small></span>${isDefault}${bits.pills}${bits.actions}${gear}${addonGear}${remove}</div>`;
 }
 
 const GEAR = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.8v1.8M10 15.4v1.8M2.8 10h1.8M15.4 10h1.8M4.9 4.9l1.3 1.3M13.8 13.8l1.3 1.3M4.9 15.1l1.3-1.3M13.8 6.2l1.3-1.3"/></svg>`;
@@ -140,6 +142,12 @@ function wireInstalled(list, updates, root = content()) {
     const host = (window.__tzaThemes || []).find((t) => t.id === m.for && t.type !== "addon");
     toast(m.type === "addon" ? `附加包已安装：${m.name}${host ? `（「${host.name}」里按节点名 / 地区自动用上，也可以在节点设置里指定）` : `（要装好主题「${m.for}」才生效）`}` : `主题包已安装：${m.name}（右上角外观菜单里可以选它）`);
   });
+  root.querySelectorAll("[data-theme-addons]").forEach((b) => {
+    b.onclick = () => {
+      const t = list.find((x) => x.id === b.dataset.themeAddons);
+      if (t) { opened.add(t.id); showSettings(t, list, updates); }
+    };
+  });
   root.querySelectorAll("[data-theme-settings]").forEach((b) =>
     (b.onclick = () => {
       const t = list.find((x) => x.id === b.dataset.themeSettings);
@@ -185,7 +193,8 @@ function wireInstalled(list, updates, root = content()) {
 }
 
 function showSettings(t, list, updates) {
-  const d = modal(`${t.name} · 设置`, settingsMenu(t, list.filter((x) => x.type === "addon" && x.for === t.id), updates));
+  const menu = t.settings_ui ? { ...t, settings: (t.settings || []).filter((st) => st.type === "addons") } : t;
+  const d = modal(`${t.name} · ${t.settings_ui ? "附加包" : "设置"}`, settingsMenu(menu, list.filter((x) => x.type === "addon" && x.for === t.id), updates));
   d.classList.add("theme-settings-dialog");
   d.addEventListener("close", () => { opened.delete(t.id); d.classList.remove("theme-settings-dialog"); }, { once: true });
   wireInstalled(list, updates, d);

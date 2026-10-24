@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -604,5 +607,54 @@ func TestPluginReleasePermissions(t *testing.T) {
 	}
 	if len(detail.Versions) != 2 || !strings.Contains(strings.Join(detail.Versions[0].Permissions, " "), "hooks.example.com") || strings.Contains(strings.Join(detail.Versions[1].Permissions, " "), "hooks.example.com") {
 		t.Fatalf("per-version permissions: %+v", detail.Versions)
+	}
+}
+
+func TestLongPluginPermissionsRemainComplete(t *testing.T) {
+	e := newEnv(t)
+	var manifest map[string]any
+	if err := json.Unmarshal(markettest.PluginJSON(t, "feishu"), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	hosts := []string{"open.feishu.cn", "open.larksuite.com"}
+	for i := 0; i < 18; i++ {
+		hosts = append(hosts, strings.Repeat("a", 50)+fmt.Sprintf("-%d.example.com", i))
+	}
+	manifest["notify"].(map[string]any)["hosts"] = hosts
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := markettest.Zip(t, map[string]string{"plugin.json": string(raw)})
+	info, err := tzapkg.Inspect(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.cc.Add(&markettest.Package{ID: "feishu", Type: "plugin", Kind: "notify", Name: "飞书", Releases: []markettest.Release{{Version: "1.0.0", Archive: archive}}})
+	detail, err := e.client.Package(context.Background(), "feishu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(detail.Permissions, info.Permissions) || !reflect.DeepEqual(detail.Versions[0].Permissions, info.Permissions) {
+		t.Fatalf("permission description truncated: %+v", detail)
+	}
+	catalog, err := e.client.Catalog(context.Background(), Query{Type: "plugin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range catalog.Items {
+		if item.ID == "feishu" && !reflect.DeepEqual(item.Permissions, info.Permissions) {
+			t.Fatal("catalog permissions truncated")
+		}
+	}
+	if _, err := e.client.Install(context.Background(), "feishu", "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	installed, err := e.plugins.Plugin("feishu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(installed.Permissions(), detail.Versions[0].Permissions) {
+		t.Fatal("confirmation differs from installed permissions")
 	}
 }

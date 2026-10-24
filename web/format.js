@@ -132,3 +132,12 @@ export const reasonName = {
   timeout: "探测超时",
   connect_failed: "TCP 连接失败",
 };
+
+// All surfaces use the server's estimate; null stays distinct from a real zero.
+export function remainingValueLabel(n) {
+  const value = n.remaining_value;
+  if (value == null || !Number.isFinite(value)) return "未配置";
+  const currency = n.billing?.currency;
+  return `${currency ? currency + " " : ""}${value.toFixed(2)}${!currency && !n.billing?.free ? "（币种未设）" : ""}`;
+}
+export const remainingValueHint = "价格 × 剩余时间 ÷ 价格周期；周 7 天、月 30 天、季 90 天、半年 180 天、年 365 天，两年和三年按年折算。到期后为 0；缺少价格、到期时间或可识别的价格周期时不估算。";

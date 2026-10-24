@@ -5455,3 +5455,15 @@ dialog.theme-settings-dialog { width: min(920px, calc(100vw - 32px)); max-width:
 .theme-settings-dialog .theme-settings { margin: 0; padding: 0; border: 0; }
 #theme-settings-frame { display: block; width: 100%; height: min(70vh, 760px); border: 0; border-radius: 12px; }
 .theme-settings-dialog .theme-row { flex-wrap: wrap; }
+
+/* The estimate shares the existing billing area in cards, rows and admin. */
+.remaining-value {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.detail-stats > .detail-remaining-value {
+  grid-column: 1 / -1;
+}

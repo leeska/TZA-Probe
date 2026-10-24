@@ -77,3 +77,25 @@ func Traffic(in, out int64, mode string) int64 {
 		return in + out
 	}
 }
+
+// RemainingValue estimates the prepaid time left using fixed price-period
+// lengths, independently of monthly traffic resets. Nil means not configured.
+// Multiple prepaid periods may be worth more than one period's price.
+func RemainingValue(b Billing, now time.Time) *float64 {
+	zero := 0.0
+	if b.Free {
+		return &zero
+	}
+	periods := map[string]int{"周": 7, "月": 30, "季": 90, "半年": 180, "年": 365, "两年": 730, "三年": 1095}
+	days := periods[b.PricePeriod]
+	expiry, err := time.Parse(time.RFC3339, b.ExpiresAt)
+	if err != nil || days == 0 || b.Price <= 0 || !finite(b.Price) {
+		return nil
+	}
+	remaining := float64(expiry.Unix()-now.Unix()) + float64(expiry.Nanosecond()-now.Nanosecond())/1e9
+	value := b.Price * (max(0, remaining) / float64(days*86400))
+	if !finite(value) {
+		return nil
+	}
+	return &value
+}

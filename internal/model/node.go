@@ -211,17 +211,18 @@ type NodeView struct {
 	Node
 	// Alerts is the rules in effect on this node, one per kind at most,
 	// resolved from the rule list by scope (see EffectiveAlerts).
-	Alerts       Alerts       `json:"alerts"`
-	Online       bool         `json:"online"`
-	LastSeen     int64        `json:"last_seen"`
-	MetricsAt    int64        `json:"metrics_at"`
-	MetricsStale bool         `json:"metrics_stale"`
-	AgentStatus  *AgentStatus `json:"agent_status"`
-	Metrics      *Metrics     `json:"metrics"`
-	IPFamilies   []string     `json:"ip_families"`
-	CycleStart   int64        `json:"cycle_start"`
-	CycleEnd     int64        `json:"cycle_end"`
-	TrafficUsed  int64        `json:"traffic_used"`
+	Alerts         Alerts       `json:"alerts"`
+	Online         bool         `json:"online"`
+	LastSeen       int64        `json:"last_seen"`
+	MetricsAt      int64        `json:"metrics_at"`
+	MetricsStale   bool         `json:"metrics_stale"`
+	AgentStatus    *AgentStatus `json:"agent_status"`
+	Metrics        *Metrics     `json:"metrics"`
+	IPFamilies     []string     `json:"ip_families"`
+	CycleStart     int64        `json:"cycle_start"`
+	CycleEnd       int64        `json:"cycle_end"`
+	TrafficUsed    int64        `json:"traffic_used"`
+	RemainingValue *float64     `json:"remaining_value"`
 	// AvgBits / CoveredHours / Throttled describe the throttle window: the average
 	// transfer rate over that window (bits per second, computed the same way as
 	// TrafficUsed, i.e. by the node's traffic_mode), how many hours of it the host
@@ -250,22 +251,23 @@ type NodeView struct {
 // public panel's one-second tick redraws. Everything else on NodeView changes
 // only when a node or task is edited.
 type LiveView struct {
-	ID           string       `json:"id"`
-	Online       bool         `json:"online"`
-	LastSeen     int64        `json:"last_seen"`
-	MetricsAt    int64        `json:"metrics_at"`
-	MetricsStale bool         `json:"metrics_stale"`
-	AgentStatus  *AgentStatus `json:"agent_status"`
-	Metrics      *Metrics     `json:"metrics"`
-	TrafficUsed  int64        `json:"traffic_used"`
-	AvgBits      float64      `json:"avg_bps"`
-	CoveredHours int          `json:"covered_hours"`
-	WindowHours  int          `json:"window_hours"`
-	Throttled    bool         `json:"throttled"`
+	ID             string       `json:"id"`
+	Online         bool         `json:"online"`
+	LastSeen       int64        `json:"last_seen"`
+	MetricsAt      int64        `json:"metrics_at"`
+	MetricsStale   bool         `json:"metrics_stale"`
+	AgentStatus    *AgentStatus `json:"agent_status"`
+	Metrics        *Metrics     `json:"metrics"`
+	TrafficUsed    int64        `json:"traffic_used"`
+	RemainingValue *float64     `json:"remaining_value"`
+	AvgBits        float64      `json:"avg_bps"`
+	CoveredHours   int          `json:"covered_hours"`
+	WindowHours    int          `json:"window_hours"`
+	Throttled      bool         `json:"throttled"`
 }
 
 func (v NodeView) Live() LiveView {
-	return LiveView{ID: v.ID, Online: v.Online, LastSeen: v.LastSeen, Metrics: v.Metrics, MetricsAt: v.MetricsAt, MetricsStale: v.MetricsStale, AgentStatus: v.AgentStatus, TrafficUsed: v.TrafficUsed,
+	return LiveView{ID: v.ID, Online: v.Online, LastSeen: v.LastSeen, Metrics: v.Metrics, MetricsAt: v.MetricsAt, MetricsStale: v.MetricsStale, AgentStatus: v.AgentStatus, TrafficUsed: v.TrafficUsed, RemainingValue: v.RemainingValue,
 		AvgBits: v.AvgBits, CoveredHours: v.CoveredHours, WindowHours: v.WindowHours, Throttled: v.Throttled}
 }
 

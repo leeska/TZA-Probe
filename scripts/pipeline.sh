@@ -9,7 +9,7 @@
 #
 # 环境变量：
 #   SHA=<短 sha>        写进版本号（默认 git rev-parse --short HEAD）
-#   VERSION=<字符串>    覆盖版本号（默认：HEAD 正好在 tag 上就用 tag，否则 1.0.0-dev+<sha>）
+#   VERSION=<字符串>    覆盖版本号（默认：HEAD 正好在 tag 上就用 tag，否则源码版本-dev+<sha>）
 #   OUT=<目录>          产物目录（默认 <仓库>/dist）
 #   UI_SMOKE=0          跳过 ui-smoke（只跑纯 Go 与纯前端部分）
 #   TZA_NODE / TZA_NPM  指定 Node / npm（默认取 PATH 里的）
@@ -164,6 +164,8 @@ check_ui_smoke() {
   TZA_UI_DEPS="$deps" "$JS" scripts/market-permissions-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/home-network-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/node-identity-test.mjs || { FAILED=1; return; }
+  TZA_UI_DEPS="$deps" "$JS" scripts/remaining-value-test.mjs || { FAILED=1; return; }
+  TZA_UI_DEPS="$deps" "$JS" scripts/theme-addons-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/alert-evaluation-test.mjs || { FAILED=1; return; }
   t0=$(now)
   TZA_UI_DEPS="$deps" TZA_TEST_URL="http://127.0.0.1:$port" TZA_TEST_ADMIN_FILE="$TMP/data/admin-token" TZA_TEST_CREDENTIALS_FILE="$TMP/credentials" TZA_TEST_THEMES="$TMP/themes" \
@@ -185,10 +187,7 @@ run_check() {
 
 version() {
   if [ -n "${VERSION:-}" ]; then echo "$VERSION"; return; fi
-  local tag
-  tag=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
-  [ -n "$tag" ] && { echo "$tag"; return; }
-  echo "1.0.0-dev+$SHA"
+  sh "$ROOT/scripts/version.sh" "$ROOT" "$SHA"
 }
 
 run_build() {

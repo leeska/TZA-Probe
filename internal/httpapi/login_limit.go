@@ -16,10 +16,12 @@ import (
 )
 
 // 登录限流分两档。没有设备凭据的请求共用一个桶（每分钟 30 次失败）：这是挡猜密码的那道闸，
-// 匿名者能把它刷满。为了不让人靠刷满它把管理员关在门外，成功登录过的浏览器会拿到一张
+// 只数猜错的尝试——密码正确的登录永远放行，刷满共享桶的人关不住知道密码的管理员。为了不让
+// 「不限次正确登录」变成 CPU 洪泛的入口，密码验证的并发数由信号量限住（见 verifyLogin），
+// 匿名洪泛最多占满两核，正确登录最多排队一次验证的时间。成功登录过的浏览器会拿到一张
 // 「设备」Cookie——HMAC 签过的用户名、密码哈希与到期时间——之后它用自己的桶（每分钟 10 次）。
-// 攻击者伪造不出设备 Cookie，猜密码的速度仍受共享桶限制；改密码后旧设备 Cookie 随密码哈希一起失效。
-// 不按来源 IP 分桶：Server 通常在本机反代甚至 CDN 之后，看到的地址并不可信。
+// 攻击者伪造不出设备 Cookie，猜密码的速度仍受失败计数限制；改密码后旧设备 Cookie 随密码哈希
+// 一起失效。不按来源 IP 分桶：Server 通常在本机反代甚至 CDN 之后，看到的地址并不可信。
 
 const (
 	deviceCookie       = "tza_device"
@@ -96,6 +98,31 @@ func (a *API) loginLimited(r *http.Request, now time.Time, failed bool) bool {
 		limit = deviceLoginLimit
 	}
 	return a.loginFailures[bucket] > limit
+}
+
+// loginConcurrency caps how many password verifications (PBKDF2, a few
+// hundred milliseconds each) run at once. It, not the failure counter, is
+// what bounds an anonymous flood's CPU use now that correct passwords are
+// never refused.
+const loginConcurrency = 2
+
+// verifyLogin checks the credentials. busy is true when the semaphore stayed
+// full for a couple of seconds — the caller answers 429; otherwise ok is the
+// password check's verdict and the failed attempt is the caller's to count.
+func (a *API) verifyLogin(username, password string) (ok, busy bool) {
+	a.mu.Lock()
+	if a.loginSlots == nil {
+		a.loginSlots = make(chan struct{}, loginConcurrency)
+	}
+	slots := a.loginSlots
+	a.mu.Unlock()
+	select {
+	case slots <- struct{}{}:
+	case <-time.After(2 * time.Second):
+		return false, true
+	}
+	defer func() { <-slots }()
+	return a.checkAccount(username, password), false
 }
 
 // secureRequest reports whether r reached the panel over HTTPS, directly or

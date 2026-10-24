@@ -11,7 +11,7 @@ import (
 )
 
 // Version is overridden at release time with -ldflags "-X …/internal/model.Version=v1.0.0".
-var Version = "1.0.0-dev"
+var Version = "1.6.0-dev"
 
 const Protocol = 1
 

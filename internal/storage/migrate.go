@@ -20,7 +20,7 @@ func migrate(db *sql.DB) (err error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 16 {
+	if version > 17 {
 		return errors.New("database version is newer than this binary")
 	}
 	if version == 0 {
@@ -133,6 +133,18 @@ func migrate(db *sql.DB) (err error) {
 		if _, err = db.Exec(`BEGIN;
 			CREATE TABLE IF NOT EXISTS node_health(node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE, seen_at INTEGER NOT NULL, status TEXT NOT NULL);
 			PRAGMA user_version=16; COMMIT;`); err != nil {
+			return err
+		}
+	}
+	if version < 17 {
+		if _, err = db.Exec(`BEGIN;
+   CREATE TABLE IF NOT EXISTS node_agent_sessions(
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    session TEXT NOT NULL, sequence INTEGER NOT NULL,
+    active INTEGER NOT NULL, seen_at INTEGER NOT NULL,
+    PRIMARY KEY(node_id,session));
+   CREATE UNIQUE INDEX IF NOT EXISTS node_agent_session_active ON node_agent_sessions(node_id) WHERE active=1;
+   PRAGMA user_version=17; COMMIT;`); err != nil {
 			return err
 		}
 	}

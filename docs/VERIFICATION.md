@@ -64,3 +64,9 @@ jsdom 不做布局，排版类问题只有真浏览器量得出来。用法见�
 ## 告警评估暂停回归
 
 `internal/notify/evaluation_test.go` 覆盖 CPU / 内存在离线、采集失败、采集超时、上报失败时保留当前告警、不产生伪恢复或新重复提醒，以及 Server 重启、有效高/低读数恢复、持续计时重置和规则删除。storage 检查暂停状态只写一次，HTTP 检查当前状态字段与不可变历史隔离。流水线中的 `scripts/alert-evaluation-test.mjs` 使用真实页面模块验证「待确认」提示、历史与恢复状态和转义；仍需在一次性 Server 上用内置浏览器检查实际布局。
+
+## 审阅修复回归
+
+源码版本解析由 `cmd/server` 的版本测试覆盖精确 tag、开发分支、无 Git 的源码目录及安装旧 tag 的兼容路径。`scripts/theme-addons-test.mjs` 验证自定义设置主题仍可浏览、安装、更新和删除附加包；与 `scripts/market-permissions-test.mjs` 使用相同的临时前端依赖。
+
+Agent 的状态序号测试覆盖故障心跳在恢复报告之后到达、报告尚未应答时的心跳，以及服务端重启和 Agent 新会话。CC 的 `TestConcurrentFirstRegistration` 需配置独立测试数据库，跨两个连接池并发注册，验证仅一位首次管理员及关闭注册时的行为。
