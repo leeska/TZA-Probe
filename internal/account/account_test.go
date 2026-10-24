@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +69,23 @@ func TestCorruptFileIsReported(t *testing.T) {
 	}
 	if _, _, _, err := Ensure(dir); err == nil {
 		t.Fatal("Ensure overwrote a corrupt account silently")
+	}
+}
+
+func TestWriteInitialCredentials(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteInitialCredentials(dir, DefaultUsername, "a-generated-password"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, InitialFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), DefaultUsername) || !strings.Contains(string(data), "a-generated-password") {
+		t.Fatalf("credentials file is missing the credentials: %s", data)
+	}
+	info, err := os.Stat(filepath.Join(dir, InitialFileName))
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("credentials file mode: %v %v", info, err)
 	}
 }

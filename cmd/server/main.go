@@ -71,12 +71,29 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	// Docker 与手动启动不经过安装脚本的 init，首次启动时在这里建账号，初始密码只在这一次
-	// 写进日志；安装脚本会先跑 init，systemd 部署的日志里不会出现密码。
+	// Docker 与手动启动不经过安装脚本的 init，首次启动时在这里建账号。初始密码不写日志
+	// ——容器日志会被永久保留：配置了 TZA_ADMIN_PASSWORD 就用它，否则写进数据目录的
+	// 一次性文件 admin-password.txt，登录改密后删除该文件。
+	if env := os.Getenv("TZA_ADMIN_PASSWORD"); env != "" {
+		if _, err := account.Load(*dir); errors.Is(err, account.ErrNotFound) {
+			if err := account.Validate(account.DefaultUsername, env); err != nil {
+				return fmt.Errorf("TZA_ADMIN_PASSWORD %w", err)
+			}
+			if err := account.Save(*dir, account.DefaultUsername, env); err != nil {
+				return err
+			}
+			slog.Info("administrator account created from TZA_ADMIN_PASSWORD; change it in the panel")
+		} else if err != nil {
+			return err
+		}
+	}
 	if username, password, created, err := account.Ensure(*dir); err != nil {
 		return err
 	} else if created {
-		slog.Warn("administrator account created; this password is shown only once, change it in the panel", "username", username, "password", password)
+		if err := account.WriteInitialCredentials(*dir, username, password); err != nil {
+			return err
+		}
+		slog.Warn("administrator account created; initial credentials are in admin-password.txt in the data directory, delete that file after signing in", "dir", *dir)
 	}
 	dbPath := databasePath(*dir)
 	store, err := storage.Open(dbPath)

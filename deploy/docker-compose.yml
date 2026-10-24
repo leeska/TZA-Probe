@@ -1,8 +1,9 @@
 # 用仓库里的 Dockerfile 起一个 Server 容器（数据放命名卷，端口只绑本机）。
 #   docker compose -f deploy/docker-compose.yml up -d --build
 #   docker compose -f deploy/docker-compose.yml logs -f
-# 后台初始用户名与密码只在首次启动的日志里出现一次：docker compose -f deploy/docker-compose.yml logs tza-server
-# 首次启动日志显示后台用户名与密码；MCP API Key 在后台“面板设置”生成
+# 首次启动把初始后台密码写进数据卷的 /data/admin-password.txt（不进日志）：
+#   docker compose -f deploy/docker-compose.yml exec tza-server cat /data/admin-password.txt
+# 也可以在 services.tza-server.environment 里配 TZA_ADMIN_PASSWORD（8–128 个字符）自定义初始密码
 # 忘记后台密码：docker exec tza-server tza-server reset-password --data /data
 services:
   tza-server:

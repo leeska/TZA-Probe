@@ -172,6 +172,38 @@ func Ensure(dir string) (username, password string, created bool, err error) {
 	return DefaultUsername, password, true, nil
 }
 
+// InitialFileName is the one-time file WriteInitialCredentials drops into the
+// data directory. Container logs are kept forever, so the auto-generated
+// password must never go there; the operator reads this file instead and
+// deletes it after signing in.
+const InitialFileName = "admin-password.txt"
+
+// WriteInitialCredentials stores an auto-generated username and password as
+// InitialFileName (0600) in dir.
+func WriteInitialCredentials(dir, username, password string) error {
+	tmp, err := os.CreateTemp(dir, "."+InitialFileName+"-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err = fmt.Fprintf(tmp, "用户名：%s\n密码：%s\n（登录后请在面板改成自己的密码，并删除本文件）\n", username, password); err == nil {
+		err = tmp.Sync()
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0600); err != nil {
+		return err
+	}
+	if err := OwnLikeDir(tmp.Name(), dir); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(dir, InitialFileName))
+}
+
 // RandomPassword returns 16 symbols from an alphabet without look-alikes
 // (0/O, 1/l/I), so a password read off a terminal is typed right first time.
 func RandomPassword() string {
