@@ -1085,6 +1085,30 @@ button.node-name {
   font-weight: 500;
 }
 
+/* 延迟小标题右端：地区注记与（国内外都有格子时的）国内 / 国际切换。 */
+.heading-side {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* 国内 / 国际的小号分段控件：标题行本身只有一行文字高，按 .overview-head 的做法把按钮压小。
+   列表视图的延迟格最窄 300px，两个短词的控件放得下；flex:none 免得被标题挤压变形。 */
+.route-heading .segmented.latency-scope {
+  height: 20px;
+  padding: 2px;
+  gap: 2px;
+  flex: none;
+}
+
+.route-heading .segmented.latency-scope button {
+  height: auto;
+  padding: 1px 8px;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+}
+
 /* 三个格子等宽（与参考图一致）：格子宽度不跟内容走，长标签最多占两行（完整值在 title 里）。
    按内容定宽会让三格宽度不等。 */
 .route-grid {

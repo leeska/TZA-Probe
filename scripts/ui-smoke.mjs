@@ -1361,18 +1361,37 @@ assert.notEqual(
   "回程标签要按真实结果渲染",
 );
 const cardText = card.textContent;
-// 格子只画这台机器真有任务的组：它挂的是「上海 电信 / 联通 / 移动」，外加一个在新加坡的
-// 自定义「其他」目标。三网按卡片的延迟地区（上海）筛；三网之外的目标一个一格、写上自己的
-// 地区名，不受延迟地区限制（用户点名：多选了几个国际目标，卡片上却只剩一行）。
-// 延迟块的行首是官方标志（用户点名：文字换成 logo），按 data-focus-carrier 认家；
-// 名字没丢——aria-label 与筛选用的 data-focus-carrier 里都在。
+// 延迟分国内 / 国际两栏（标题行右端的 tab）：国内栏是三网（按卡片的延迟地区「上海」筛），
+// 国际栏是三网之外的目标——一个一格、写上自己的地区名，不受延迟地区限制（用户点名：多选了
+// 几个国际目标，卡片上却只剩一行）。默认国内栏；延迟块的行首是官方标志（用户点名：文字换成
+// logo），按 data-focus-carrier 认家；名字没丢——aria-label 与筛选用的 data-focus-carrier 里都在。
+const domHead = card.querySelector(".latency-bands").previousElementSibling;
+assert(domHead.querySelector(".rep-label")?.textContent === "上海", "国内栏的标题右端要写延迟地区");
 const bandCarriers = [...card.querySelectorAll(".latency-bands .net-band")].map(
   (b) => b.dataset.focusCarrier,
 );
+assert.equal(bandCarriers.length, 3, "默认国内栏：三网各一块，海外格不在这栏");
 for (const carrier of ["电信", "联通", "移动"])
-  assert(bandCarriers.includes(carrier), `延迟块要覆盖 ${carrier}，实际 ${bandCarriers.join("/")}`);
-const overseasBands = [...card.querySelectorAll('.latency-bands .net-band[data-focus-carrier="其他"]')];
-assert.equal(overseasBands.length, 1, "三网之外的目标一个一格：这台只有新加坡那一个");
+  assert(bandCarriers.includes(carrier), `国内栏要覆盖 ${carrier}，实际 ${bandCarriers.join("/")}`);
+assert(!bandCarriers.includes("其他"), "国内栏不画海外格");
+assert(!card.querySelector(".latency-bands").classList.contains("named"), "国内栏没有带名字的格子，名字槽不占位");
+{
+  // 标题右端的两枚切换按钮：默认选中国内；点「国际」整个面板翻到海外目标那栏。
+  const tabs = [...domHead.querySelectorAll("[data-latency-scope]")];
+  assert.equal(tabs.length, 2, "国内外都有格子时给国内 / 国际两枚按钮");
+  assert(tabs[0].classList.contains("active") && tabs[0].textContent === "国内", "默认选中国内");
+  assert(tabs[1].textContent === "国际", "另一枚是国际");
+  tabs[1].click();
+}
+const intlCard = findPublicCard();
+assert(intlCard.querySelector('[data-latency-scope="intl"]').classList.contains("active"), "点了国际，选中态要跟上");
+assert.equal(
+  publicDOM.window.localStorage.getItem("tza-latency-scope"),
+  "intl",
+  "延迟分栏的选择要记在浏览器本地",
+);
+const overseasBands = [...intlCard.querySelectorAll('.latency-bands .net-band[data-focus-carrier="其他"]')];
+assert.equal(overseasBands.length, 1, "国际栏一个目标一格：这台只有新加坡那一个");
 assert.equal(overseasBands[0].dataset.focusRegion, "新加坡", "海外格带上自己的地区，点开只看这一个目标");
 assert.equal(
   overseasBands[0].querySelector(".band-name")?.textContent,
@@ -1380,7 +1399,13 @@ assert.equal(
   "海外格把「延迟」二字换成目标名",
 );
 assert(overseasBands[0].querySelector(".carrier-mark.cx svg"), "海外格行首是地球图标");
-assert.equal(card.querySelectorAll(".latency-bands .net-band").length, 4, "三网各一块 + 海外目标一块");
+assert.equal(intlCard.querySelectorAll(".latency-bands .net-band").length, 1, "国际栏不画三网格");
+assert(intlCard.querySelector(".latency-bands").classList.contains("named"), "国际栏的格子带名字，名字槽要占位");
+const intlHead = intlCard.querySelector(".latency-bands").previousElementSibling;
+assert(!intlHead.querySelector(".rep-label"), "国际栏不显示三网的延迟地区注记（地区只管三网）");
+// 卡片与 intlCard 是同一个卡壳元素（切栏只换内容），点回国内后接着用 card 验国内栏的细节。
+intlCard.querySelector('[data-latency-scope="domestic"]').click();
+assert(card.querySelector('[data-latency-scope="domestic"]').classList.contains("active"), "翻回国内，选中态要跟上");
 {
   // 商家名牌：节点填了 vendor，公开卡片上就多一枚 .vendor-plate（名字转义后显示），搜索也能按它找到。
   const patched = await fetch(base + "/api/v1/admin/nodes/" + card.dataset.node, {
@@ -2317,12 +2342,26 @@ assert.equal(
   name,
   "节点名前显示国旗，名称要给全，不做省略",
 );
-// 延迟与回程在列表视图里是行内文本（卡片那格是方形格子），每家运营商一行。
-assert.equal(listRow.querySelectorAll(".net-cell .net-line").length, 4, "延迟四行：三网各一行 + 新加坡的自定义目标一行");
+// 延迟与回程在列表视图里是行内文本（卡片那格是方形格子），每家运营商一行。分栏的选择全局
+// 共用：上面卡片段落点回了国内，列表的延迟格也停在国内栏（三行），标题右端同样是国内 / 国际
+// 切换——两个视图同一个控件、同一个选择。
+assert.equal(listRow.querySelectorAll(".net-cell .net-line").length, 3, "国内栏三行：三网各一行");
+assert(!listRow.querySelector(".net-cell .net-name"), "国内栏没有带名字的行，名字槽不占位");
 {
-  // 海外行多一个定宽名字槽；同一格里三网行留同宽空槽，数值列照样对齐。
-  const names = [...listRow.querySelectorAll(".net-cell .net-line .net-name")].map((x) => x.textContent);
-  assert.deepEqual(names, ["", "", "", "新加坡"], "名字槽：三网空着，海外行写目标名");
+  const listTabs = [...listRow.querySelectorAll(".net-cell [data-latency-scope]")];
+  assert.equal(listTabs.length, 2, "列表的延迟格标题右端也给国内 / 国际切换");
+  assert(listTabs[0].classList.contains("active"), "列表同样默认选中国内");
+  listTabs[1].click();
+}
+{
+  // 海外行多一个定宽名字槽；翻到国际栏，那一行写目标名。
+  const intlRow = [...publicDOM.window.document.querySelectorAll("#nodes .node-card")].find((c) =>
+    c.textContent.includes(name),
+  );
+  const intlLines = [...intlRow.querySelectorAll(".net-cell .net-line")];
+  assert.equal(intlLines.length, 1, "国际栏一行：新加坡的自定义目标");
+  assert.equal(intlLines[0].querySelector(".net-name")?.textContent, "新加坡", "海外行写目标名");
+  intlRow.querySelector('[data-latency-scope="domestic"]').click();
 }
 assert.equal(listRow.querySelectorAll(".route-cell .route-line").length, 3, "回程三行");
 for (const line of listRow.querySelectorAll(".net-line")) {

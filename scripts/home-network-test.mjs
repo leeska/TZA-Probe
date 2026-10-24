@@ -13,7 +13,8 @@ const source = await readFile(path.join(root, "web/app.js"), "utf8");
 const contents = source.slice(0, source.lastIndexOf("\nstart().catch(")) + `
 window.homeNetwork = { nodeFacts, latencyBands, latencyLines,
   set(samples, latest = []) { latencySamples = samples; observations.set("test", latest); },
-  family(value) { cardFamilies.set("test", value); }
+  family(value) { cardFamilies.set("test", value); },
+  scope(value) { latencyScope = value; }
 };`;
 const bundle = await build({ stdin: { contents, resolveDir: path.join(root, "web"), sourcefile: "app.js" }, bundle: true, format: "iife", write: false });
 const dom = new JSDOM('<div id="app"></div>', { url: "http://127.0.0.1/", runScripts: "outside-only" });
@@ -46,6 +47,31 @@ for (const render of [api.latencyBands, api.latencyLines]) {
   assert.equal(first.querySelector(".quality-bars").children.length, 10);
   assert.equal(first.querySelector(".quality-bars .fail").getAttribute("title").includes("失败"), true);
 }
+assert.equal(facts.scope, "domestic", "default scope is domestic");
+assert.equal(facts.hasBothScopes, true, "this node has both domestic and overseas entries");
+// 延迟分国内 / 国际两栏：两边都有格子时有效分栏跟访客的选择走，渲染函数只画当前栏的格子；
+// latencies 本身始终是全部格子（两个分栏共用同一份取数，切换不改任何数字）。
+api.scope("intl");
+facts = api.nodeFacts(node);
+assert.equal(facts.scope, "intl", "the visitor's choice wins when both scopes have entries");
+for (const render of [api.latencyBands, api.latencyLines]) {
+  const host = w.document.createElement("div");
+  host.innerHTML = render(node, facts);
+  assert.equal(host.children.length, 1, "国际栏只画海外目标那一格");
+  assert.match(host.firstElementChild.textContent, /25 ms/);
+}
+api.scope("domestic");
+facts = api.nodeFacts(node);
+{
+  const host = w.document.createElement("div");
+  host.innerHTML = api.latencyBands(node, facts);
+  assert.equal(host.children.length, 1, "国内栏只画三网那一格");
+  assert.match(host.textContent, /50 ms/);
+}
+// 只挂了海外目标的机器（国际线路按设计不挂三网任务）：没有可点的 tab，有效分栏固定是国际。
+const intlOnly = { ...node, probe_targets: [node.probe_targets[2]] };
+assert.equal(api.nodeFacts(intlOnly).hasBothScopes, false, "a single-scope node offers no tab");
+assert.equal(api.nodeFacts(intlOnly).scope, "intl", "single overseas scope falls back to intl regardless of the stored choice");
 api.family("ipv6");
 assert.equal(api.nodeFacts(node).latencies[0].value, 75, "IPv6 has its own window");
 api.family("ipv4");

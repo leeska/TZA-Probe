@@ -37,6 +37,28 @@ function storedView() {
 const skinView = () => (skinLayout().default_view === "list" ? "list" : "card");
 let view = storedView() || skinView();
 
+// 延迟分栏：domestic = 三网（电信 / 联通 / 移动），intl = 海外预设与自定义目标。
+// 访客的选择全局生效——同一屏的卡片与列表一起翻，方便横向比较同一栏的延迟——并存在浏览器
+// 本地，刷新与换页保持；没选过（或存不进去，隐私模式等）默认国内。
+const LATENCY_SCOPE_KEY = "tza-latency-scope";
+function storedLatencyScope() {
+  try {
+    return localStorage.getItem(LATENCY_SCOPE_KEY) === "intl" ? "intl" : "domestic";
+  } catch {
+    return "domestic";
+  }
+}
+let latencyScope = storedLatencyScope();
+function setLatencyScope(next) {
+  if ((next !== "domestic" && next !== "intl") || next === latencyScope) return;
+  latencyScope = next;
+  try {
+    localStorage.setItem(LATENCY_SCOPE_KEY, latencyScope);
+  } catch {
+    /* 隐私模式写不进去，忽略：这一轮的选择仍在内存里 */
+  }
+  renderCards();
+}
 
 // 滚动页面时不要顺手改掉已填好的值：数字、日期时间与下拉在被滚动时先失焦
 // （失焦后浏览器不会再按滚轮改值），页面滚动不受影响。
@@ -590,6 +612,9 @@ function renderCards() {
   // 数据行（回程 / 延迟那一排）也不再是 data-detail 按钮——但每一格自己的聚焦视图照旧（见上）。
   for (const b of document.querySelectorAll("[data-card-family]"))
     b.onclick = () => { cardFamilies.set(b.dataset.cardNode, b.dataset.cardFamily); renderCards(); };
+  // 延迟的国内 / 国际切换：点任何一张卡（或列表任何一格）上的按钮，整个面板一起翻。
+  for (const b of document.querySelectorAll("[data-latency-scope]"))
+    b.onclick = () => setLatencyScope(b.dataset.latencyScope);
   // 解锁徽标：桌面悬停展开，手机上点一下展开 / 收起（都是同一个单例浮层）。
   for (const b of document.querySelectorAll("[data-unlock]")) {
     b.onmouseenter = () => showUnlockPop(b);
@@ -885,13 +910,21 @@ function nodeFacts(n) {
       : scoped.some((t) => t.kind === "tcp" || t.kind === "route")
         ? "region"
         : "family";
+  // 延迟分国内 / 国际两栏：没写名字的三网格在国内栏，写了目标名的海外格在国际栏。
+  // 两边都有格子时才给切换（只有一边不摆一个点不动的 tab），此时有效分栏跟访客的选择走；
+  // 只有一边时有效分栏就是那一边，访客的选择留着——这台机器哪天两边都有了再生效。
+  const domesticCount = latencies.filter((l) => l.name == null).length;
+  const intlCount = latencies.length - domesticCount;
   return {
     hasIPv4,
     hasIPv6,
     effectiveFamily,
     familyLabel: effectiveFamily === "ipv4" ? "IPv4" : "IPv6",
     latencyRegion,
+    // 全部格子都在这里（两个分栏共用一份取数）；当前分栏画哪些由 scopedLatencies() 挑。
     latencies,
+    scope: domesticCount && intlCount ? latencyScope : intlCount ? "intl" : "domestic",
+    hasBothScopes: domesticCount > 0 && intlCount > 0,
     routes,
     hasProbe,
     probeState,
@@ -993,8 +1026,8 @@ function networkSections(n, f) {
   if (!f.hasIPv4 && !f.hasIPv6) return noFamilyNote(n);
   if (!f.hasProbe) return probeNote(f.probeState);
   // 延迟与回程在这里各占一段：延迟是一家运营商一块（文字在上、延迟与丢包两条色带并排在下），
-  // 回程仍是三个并排的胶囊。
-  return `${f.latencies.length ? `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${f.latencyRegion ? `<span class="rep-label">${esc(latencyRegionLabel(f))}</span>` : ""}</div><div class="latency-bands${f.latencies.some((l) => l.name) ? " named" : ""}">${latencyBands(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.display.route_region ? `<span class="rep-label">${esc(n.display.route_region)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
+  // 标题行右端按分栏给地区注记与国内 / 国际切换；回程仍是三个并排的胶囊。
+  return `${f.latencies.length ? `${latencyHead(f)}<div class="latency-bands${scopedLatencies(f).some((l) => l.name) ? " named" : ""}">${latencyBands(n, f)}</div>` : ""}${f.routes.length ? `<div class="route-heading"><span>三网回程 <b>${f.familyLabel}</b></span>${n.display.route_region ? `<span class="rep-label">${esc(n.display.route_region)}</span>` : ""}</div><div class="route-grid">${routeCells(n, f)}</div>` : ""}`;
 }
 
 // 回程格子里的运营商身份：用各家的官方图形标志（电信 / 联通 / 移动，见 web/carrier-logos.js）。
@@ -1019,8 +1052,9 @@ function routeCells(n, f) {
 // title / data-focus-carrier 里，点选与筛选照旧按 carrier 走。
 // 海外格（l.name）多一个名字槽：同一格里只要有一行带名字，三网行也留同宽的空槽，数值仍排成一列。
 function latencyLines(n, f) {
-  const named = f.latencies.some((l) => l.name);
-  return f.latencies
+  const shown = scopedLatencies(f);
+  const named = shown.some((l) => l.name);
+  return shown
     .map(
       (l) =>
         `<button class="net-line ${l.value == null ? "unknown" : "known"}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}"${focusRegion(l)} data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.name || l.carrier} ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="carrier-name">${carrierMark(l.carrier, l.name)}</span>${named ? `<span class="net-name" title="${esc(l.name || "")}">${esc(l.name || "")}</span>` : ""}<strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong><span class="net-loss">丢包 ${l.lossText}</span><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span></button>`,
@@ -1037,16 +1071,35 @@ function latencyLines(n, f) {
 // 用户点名统一到卡片的 10 格（列表那条吃满格子剩余宽度，10 格比 20 格更接近卡片里格子的大小）。
 const BAR_COUNT = 10;
 
-// 延迟地区只管三网那几格；有海外格（各自写了名字、不按地区筛）时注明「三网」，免得看成整块都是这个地区。
-const latencyRegionLabel = (f) =>
-  f.latencies.some((l) => l.name) && f.latencies.some((l) => !l.name) ? `三网 · ${f.latencyRegion}` : f.latencyRegion;
+// 当前分栏要画的格子：国内栏是三网（没写名字的格），国际栏是海外预设与自定义（写了目标名的格）。
+const scopedLatencies = (f) => f.latencies.filter((l) => (l.name == null) === (f.scope !== "intl"));
+
+// 延迟段的小标题：左边「TCP 延迟 + 协议」，右边地区注记与国内 / 国际切换（两个视图共用这一段）。
+// 地区注记只管三网那几格，所以只在国内栏显示；国际栏每一格都写着目标自己的名字，再挂一个地区
+// 反而让人以为是海外目标的地区。
+function latencyHead(f) {
+  const label =
+    f.scope === "domestic" && f.latencyRegion ? `<span class="rep-label">${esc(f.latencyRegion)}</span>` : "";
+  const tabs = f.hasBothScopes ? latencyScopeTabs() : "";
+  return `<div class="route-heading"><span>TCP 延迟 <b>${f.familyLabel}</b></span>${label || tabs ? `<span class="heading-side">${label}${tabs}</span>` : ""}</div>`;
+}
+
+// 国内 / 国际切换：选择全局生效并存在本地（见文件顶部的 LATENCY_SCOPE_KEY），点击在 renderCards
+// 里按 data-latency-scope 绑定。
+const latencyScopeTabs = () =>
+  `<div class="segmented latency-scope" role="group" aria-label="延迟分栏">${["domestic", "intl"]
+    .map(
+      (s) =>
+        `<button type="button" data-latency-scope="${s}" class="${latencyScope === s ? "active" : ""}" aria-pressed="${latencyScope === s}">${s === "domestic" ? "国内" : "国际"}</button>`,
+    )
+    .join("")}</div>`;
 
 // 海外格点开的聚焦视图只看那一个目标：带上它的地区（三网格不带，照旧按运营商聚焦）。
 const focusRegion = (l) => (l.region == null ? "" : ` data-focus-region="${esc(l.region)}"`);
 const lossPercent = (s) => (s.sent ? Math.max(0, (s.sent - s.received) / s.sent * 100) : null);
 
 function latencyBands(n, f) {
-  return f.latencies
+  return scopedLatencies(f)
     .map(
       (l) =>
         `<button class="net-band ${l.value == null ? "unknown" : "known"}" data-focus-kind="latency" data-focus-carrier="${esc(l.carrier)}"${focusRegion(l)} data-focus-family="${f.effectiveFamily}" title="${esc(l.title)}" aria-label="${esc(`${l.name || l.carrier} 延迟 ${l.value == null ? l.missText : l.text} 丢包 ${l.lossText}`)}"><span class="band-head"><span class="carrier-name">${carrierMark(l.carrier, l.name)}</span><span class="band-metric">${l.name ? `<i class="band-name" title="${esc(l.name)}">${esc(l.name)}</i>` : "<i>延迟</i>"}<strong class="${l.value == null ? "muted" : ""}">${l.value == null ? l.missText : l.text}</strong></span><span class="band-metric"><i>丢包</i><strong class="${l.loss == null ? "muted" : ""}">${l.lossText}</strong></span></span><span class="band-bars"><span class="quality-bars" title="最近 ${BAR_COUNT} 次延迟">${sampleBars(l.history, (s) => s.latency, 200, BAR_COUNT)}</span><span class="quality-bars loss-bars" title="最近 ${BAR_COUNT} 次丢包">${sampleBars(l.history, lossPercent, 20, BAR_COUNT)}</span></span></button>`,
@@ -1143,13 +1196,14 @@ function listInner(n) {
   const head = (label, region) =>
     `<div class="route-heading"><span>${label} <b>${f.familyLabel}</b></span>${region ? `<span class="rep-label">${esc(region)}</span>` : ""}</div>`;
   // 没有任务的机器在这两格里不画空格子 / 空行（与卡片视图同一套判断），只在延迟格给一行说明。
+  // 延迟格的小标题与卡片视图共用 latencyHead：右端同样是地区注记与国内 / 国际切换。
   const netCell =
     f.probeState === "none"
       ? probeNote("none")
       : !detected
         ? noFamilyNote(n)
         : f.latencies.length
-          ? head("TCP 延迟", f.latencyRegion && latencyRegionLabel(f)) + latencyLines(n, f)
+          ? latencyHead(f) + latencyLines(n, f)
           : f.hasProbe
             ? ""
             : probeNote(f.probeState);
