@@ -39,7 +39,15 @@ type Dist struct {
 	Dir     string
 	noEmbed bool // tests: ignore binaries embedded in this build
 	mu      sync.Mutex
-	sums    map[string]string // sha256 of embedded copies, computed once
+	sums    map[string]cachedSum // sha256 per arch, keyed by mtime so a swapped binary is re-hashed
+}
+
+// cachedSum memoizes one binary's SHA-256. Embedded copies never change, so
+// their modTime stays zero; Dir copies are re-hashed when the file's mtime
+// moves.
+type cachedSum struct {
+	modTime time.Time
+	sum     string
 }
 
 func Name(arch string) string { return "tza-agent-linux-" + arch }
@@ -155,29 +163,32 @@ func (d *Dist) Available() []string {
 
 // Sum returns the hex SHA-256 of the binary for arch.
 func (d *Dist) Sum(arch string) (string, error) {
-	f, fromDir, err := d.open(arch)
+	f, _, err := d.open(arch)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
-	if !fromDir {
-		d.mu.Lock()
-		defer d.mu.Unlock()
-		if s, ok := d.sums[arch]; ok {
-			return s, nil
-		}
+	var modTime time.Time
+	if info, err := f.Stat(); err == nil {
+		modTime = info.ModTime()
 	}
+	d.mu.Lock()
+	if c, ok := d.sums[arch]; ok && c.modTime.Equal(modTime) {
+		d.mu.Unlock()
+		return c.sum, nil
+	}
+	d.mu.Unlock()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
 	s := hex.EncodeToString(h.Sum(nil))
-	if !fromDir {
-		if d.sums == nil {
-			d.sums = map[string]string{}
-		}
-		d.sums[arch] = s
+	d.mu.Lock()
+	if d.sums == nil {
+		d.sums = map[string]cachedSum{}
 	}
+	d.sums[arch] = cachedSum{modTime, s}
+	d.mu.Unlock()
 	return s, nil
 }
 
