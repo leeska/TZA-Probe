@@ -115,3 +115,95 @@ func TestPanelDefaultLookSettings(t *testing.T) {
 		t.Fatal("匿名改外观没被拒")
 	}
 }
+
+// 计费汇总单位：后台设置、读回设置，并随 /theme-default.js 交给公开面板首屏。
+// 未知币种（汇率表里没有）不能存，匿名不能改。
+func TestPanelPriceUnitSetting(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "unit.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	request := func(method, path, token string, body any) (int, []byte) {
+		t.Helper()
+		var data []byte
+		if body != nil {
+			data, _ = json.Marshal(body)
+		}
+		req, _ := http.NewRequest(method, server.URL+path, bytes.NewReader(data))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
+
+	// 没配置就是内置默认（CNY），首屏脚本里也写着它。
+	code, body := request("GET", "/api/v1/admin/panel", admin, nil)
+	if code != 200 {
+		t.Fatalf("settings: %d %s", code, body)
+	}
+	var view struct {
+		PriceUnit string `json:"price_unit"`
+	}
+	if err = json.Unmarshal(body, &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.PriceUnit != model.DefaultPriceUnit {
+		t.Fatalf("未配置时该是 %s，得到 %s", model.DefaultPriceUnit, view.PriceUnit)
+	}
+	if _, js := request("GET", "/theme-default.js", "", nil); !strings.Contains(string(js), `__tzaPriceUnit="`+model.DefaultPriceUnit+`"`) {
+		t.Fatalf("首屏脚本没带默认汇总单位: %s", js)
+	}
+
+	// 存美元，读回与首屏脚本都跟上；小写顺带归一成大写。
+	if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"price_unit": "usd"}); code != 204 {
+		t.Fatalf("PUT price_unit: %d %s", code, body)
+	}
+	code, body = request("GET", "/api/v1/admin/panel", admin, nil)
+	if code != 200 {
+		t.Fatalf("settings: %d %s", code, body)
+	}
+	if err = json.Unmarshal(body, &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.PriceUnit != "USD" {
+		t.Fatalf("设置没保存: %s", view.PriceUnit)
+	}
+	if _, js := request("GET", "/theme-default.js", "", nil); !strings.Contains(string(js), `__tzaPriceUnit="USD"`) {
+		t.Fatalf("首屏脚本没跟上汇总单位: %s", js)
+	}
+
+	// 未知币种被拒；改单位不动其他设置。
+	for _, bad := range []string{"USDT", "", "CNY2"} {
+		if code, body := request("PUT", "/api/v1/admin/panel", admin, map[string]any{"price_unit": bad}); code != 400 {
+			t.Fatalf("坏单位 %q 该被拒绝，得到 %d %s", bad, code, body)
+		}
+	}
+	code, body = request("GET", "/api/v1/admin/panel", admin, nil)
+	if code != 200 {
+		t.Fatalf("settings: %d %s", code, body)
+	}
+	var after struct {
+		PriceUnit string `json:"price_unit"`
+		SiteName  string `json:"site_name"`
+	}
+	if err = json.Unmarshal(body, &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.PriceUnit != "USD" {
+		t.Fatalf("被拒的请求改掉了单位: %s", after.PriceUnit)
+	}
+	if code, _ := request("PUT", "/api/v1/admin/panel", "", map[string]any{"price_unit": "USD"}); code != 401 {
+		t.Fatal("匿名改汇总单位没被拒")
+	}
+}

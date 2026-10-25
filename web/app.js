@@ -1,5 +1,5 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
-import { bytes, bandwidth, date, days, gib, mbps, percent, statusLabel, statusName, diagnosticHint, remainingValueLabel, remainingValueHint } from "./format.js";
+import { bytes, bandwidth, date, days, gib, mbps, percent, statusLabel, statusName, diagnosticHint, remainingValueLabel, remainingValueHint, monthlyCostIn, remainingValueIn, fxHint } from "./format.js";
 import { detail } from "./detail.js";
 import { applyTheme, themeButton } from "./theme.js";
 import { applySkin, skinButton, skinLayout } from "./skins.js";
@@ -217,16 +217,40 @@ function meter(label, value, sub = "") {
   return `<div data-part="metric" class="metric"><div><span>${label}</span><strong>${value == null ? "—" : value.toFixed(1) + "%"}</strong></div><progress max="100" value="${value ?? 0}" aria-label="${label}"></progress><small>${esc(sub)}</small></div>`;
 }
 
-// 顶部四个数字与卡片上的「指标 / 实时速率」两块抽成函数：每秒的轻刷新只换这两处的 HTML，
+// 顶部六个数字与卡片上的「指标 / 实时速率」两块抽成函数：每秒的轻刷新只换这两处的 HTML，
 // 整卡重建留给 10 秒一轮的探测明细（那一轮要打十几个请求，也会整块换 DOM）。
 // 上传 / 下载的顺序全站统一为「上传在前」，跟卡片里「上行在上」一致（用户点名的顺序）。
+// 计费汇总单位：后台「面板设置」选的统一币种，/theme-default.js 首屏写在 window.__tzaPriceUnit
+// 上；取不到（旧缓存、独立前台）就用内置默认 CNY，与 model.DefaultPriceUnit 一致。
+const priceUnit = typeof window.__tzaPriceUnit === "string" && window.__tzaPriceUnit ? window.__tzaPriceUnit : "CNY";
+// 汇总数字：两位小数 + 千分位，跟单台的 toFixed(2) 一套口径，长数字在磁贴里更好读。
+const money = (v) => v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 function overviewInner() {
   const online = nodes.filter((n) => n.online),
     traffic = nodes.reduce((v, n) => v + n.traffic_used, 0),
     rateIn = online.reduce((v, n) => v + (n.metrics?.rate_in || 0), 0),
     rateOut = online.reduce((v, n) => v + (n.metrics?.rate_out || 0), 0),
     hasLiveMetrics = !online.length || online.some((n) => n.metrics);
-  return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${hasLiveMetrics ? bytes(rateOut) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${hasLiveMetrics ? bytes(rateIn) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>`;
+  // 计费汇总：单台口径与卡片一致（每月成本 = 价格 × 30 ÷ 周期天数；剩余价值用服务端的估算），
+  // 跨币种按固定参考汇率统一折算成 priceUnit。折不动（币种不在汇率表、没填价格 / 到期）的
+  // 不计入，台数与口径写进 title——磁贴上永远是一个干净的数，细节悬停才看。
+  let cost = 0, costCount = 0, value = 0, valueCount = 0;
+  for (const n of nodes) {
+    const c = monthlyCostIn(n, priceUnit);
+    if (c != null) {
+      cost += c;
+      costCount++;
+    }
+    const r = remainingValueIn(n, priceUnit);
+    if (r != null) {
+      value += r;
+      valueCount++;
+    }
+  }
+  const valueTile = `<div data-part="overview-tile" class="overview-tile" title="已估算 ${valueCount} 台 · 价格 × 剩余时间 ÷ 价格周期，到期后为 0；${esc(fxHint)}"><div class="tile-header"><span>剩余价值汇总</span><span class="tile-badge green-badge">${esc(priceUnit)}</span></div><strong>${valueCount ? money(value) : "—"}</strong></div>`;
+  const costTile = `<div data-part="overview-tile" class="overview-tile" title="已计价 ${costCount} 台 · 价格按周期折算为每月（月按 30 天），免费机器为 0；${esc(fxHint)}"><div class="tile-header"><span>每月成本</span><span class="tile-badge green-badge">${esc(priceUnit)}</span></div><strong>${costCount ? money(cost) + '<small> / 月</small>' : "—"}</strong></div>`;
+  return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${hasLiveMetrics ? bytes(rateOut) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${hasLiveMetrics ? bytes(rateIn) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>${valueTile}${costTile}`;
 }
 
 // 小卡片只保留「窗口均值 / 阈值」；完整单位和规则放在 title 与无障碍标签中。

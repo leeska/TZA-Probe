@@ -334,7 +334,8 @@ function nodeRegions(values) {
 const PRICE_PERIODS = ["周", "月", "季", "半年", "年", "两年", "三年"];
 // 货币的显示一直是 ISO 代码（卡片写「CNY 179.25 / 年」），所以选项的 value 也保持代码，
 // 只有标签是中文名——换中文当 value 会把既有节点的显示从 CNY 改成人民币，那是另一件事。
-const CURRENCIES = [
+// 「面板设置 → 计费汇总」的单位下拉复用这一份（服务端 model.PriceUnits 与汇率表都按它对齐）。
+export const CURRENCIES = [
   ["CNY", "人民币（CNY）"],
   ["USD", "美元（USD）"],
   ["EUR", "欧元（EUR）"],

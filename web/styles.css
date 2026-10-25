@@ -515,10 +515,11 @@ h1 {
   color: var(--muted);
 }
 
-/* Overview Section (4 Modular Tiles) */
+/* Overview Section (6 Modular Tiles)：四个实时数字加两块计费汇总（剩余价值 / 每月成本）。
+   中屏起 6 列放不下金额（「12,345.67」+ 单位徽标），折成 3 列两行；手机维持 760px 的 2 列。 */
 .overview {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: var(--space-4);
   margin-bottom: 26px;
 }
@@ -3127,6 +3128,9 @@ pre,
 @media (max-width: 1150px) {
   .node-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .overview {
+    grid-template-columns: repeat(3, 1fr);
   }
   .admin-layout {
     grid-template-columns: 200px 1fr;

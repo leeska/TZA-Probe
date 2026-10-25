@@ -621,11 +621,16 @@ func (s *Service) Panel(ctx context.Context) (model.PanelSettings, error) {
 	if err != nil {
 		return model.PanelSettings{}, err
 	}
+	unit, err := s.Store.Setting(ctx, model.SettingPriceUnit)
+	if err != nil {
+		return model.PanelSettings{}, err
+	}
 	panel := model.PanelSettings{
 		LatencyWindowMinutes: model.LatencyWindowMinutes(window),
 		DefaultTheme:         model.PanelTheme(theme),
 		DefaultSkin:          s.panelSkin(skin),
 		SiteName:             model.SiteName(name),
+		PriceUnit:            model.PriceUnit(unit),
 	}
 	if s.Logo != nil {
 		panel.SiteLogo = s.Logo.URL()
@@ -674,6 +679,11 @@ func (s *Service) writePanel(ctx context.Context, patch model.PanelPatch) error 
 	}
 	if patch.SiteName != nil {
 		if err := s.Store.SetSetting(ctx, model.SettingSiteName, strings.TrimSpace(*patch.SiteName)); err != nil {
+			return err
+		}
+	}
+	if patch.PriceUnit != nil {
+		if err := s.Store.SetSetting(ctx, model.SettingPriceUnit, strings.ToUpper(strings.TrimSpace(*patch.PriceUnit))); err != nil {
 			return err
 		}
 	}

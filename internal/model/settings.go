@@ -129,6 +129,38 @@ func ValidateSiteName(v string) error {
 	return nil
 }
 
+// 计费汇总单位：公开面板顶部「每月成本 / 剩余价值汇总」两块磁贴统一折算成的货币。
+// 节点各自的计价币种不变（卡片照旧显示 billing.currency），只有这两块汇总换算——
+// 换算用 web/format.js 里的固定参考汇率，不取行情，所以单位必须取汇率表里有的币种。
+const (
+	SettingPriceUnit = "price_unit"
+
+	DefaultPriceUnit = "CNY"
+)
+
+// PriceUnits 是汇总单位可取的币种，与后台节点表单的货币选项、web/format.js 的
+// FX_CNY 汇率表一一对应（web 包的测试把三处钉在一起）。
+var PriceUnits = []string{"CNY", "USD", "EUR", "GBP", "JPY", "CAD", "HKD", "SGD", "TWD", "AUD", "KRW", "RUB", "CHF"}
+
+// PriceUnit 把存下来的值变成可用单位：空值或认不出来的值退回默认。
+func PriceUnit(stored string) string {
+	v := strings.ToUpper(strings.TrimSpace(stored))
+	for _, ok := range PriceUnits {
+		if v == ok {
+			return v
+		}
+	}
+	return DefaultPriceUnit
+}
+
+// ValidatePriceUnit 拦住写入的未知币种：汇率表里没有的单位算不出汇总。
+func ValidatePriceUnit(v string) error {
+	if PriceUnit(v) != strings.ToUpper(strings.TrimSpace(v)) {
+		return fmt.Errorf("汇总单位须为 %s 之一", strings.Join(PriceUnits, " / "))
+	}
+	return nil
+}
+
 // PanelSettings is the visitor-facing panel configuration as the admin pages
 // and the MCP tools read it: every value already normalized. SiteName "" and
 // SiteLogo "" mean the built-in TZA Probe brand; SiteLogo is the uploaded
@@ -139,6 +171,7 @@ type PanelSettings struct {
 	DefaultSkin          string `json:"default_skin"`
 	SiteName             string `json:"site_name"`
 	SiteLogo             string `json:"site_logo"`
+	PriceUnit            string `json:"price_unit"`
 }
 
 // PanelPatch changes only the fields it carries. An empty SiteName restores
@@ -148,11 +181,12 @@ type PanelPatch struct {
 	DefaultTheme         *string `json:"default_theme"`
 	DefaultSkin          *string `json:"default_skin"`
 	SiteName             *string `json:"site_name"`
+	PriceUnit            *string `json:"price_unit"`
 }
 
 // Empty reports whether the patch changes nothing.
 func (p PanelPatch) Empty() bool {
-	return p.LatencyWindowMinutes == nil && p.DefaultTheme == nil && p.DefaultSkin == nil && p.SiteName == nil
+	return p.LatencyWindowMinutes == nil && p.DefaultTheme == nil && p.DefaultSkin == nil && p.SiteName == nil && p.PriceUnit == nil
 }
 
 // Validate checks every carried field before anything is written. installed
@@ -175,6 +209,11 @@ func (p PanelPatch) Validate(installed func(string) bool) error {
 	}
 	if p.SiteName != nil {
 		if err := ValidateSiteName(*p.SiteName); err != nil {
+			return err
+		}
+	}
+	if p.PriceUnit != nil {
+		if err := ValidatePriceUnit(*p.PriceUnit); err != nil {
 			return err
 		}
 	}

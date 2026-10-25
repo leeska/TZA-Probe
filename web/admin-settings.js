@@ -3,6 +3,7 @@ import { SKINS, registerThemes } from "./skins.js";
 import { api, send, toast, guard, modal, esc } from "./api.js";
 import { state, content, field, confirmAction } from "./admin-state.js";
 import { applyBrand, DEFAULT_NAME } from "./brand.js";
+import { CURRENCIES } from "./admin-nodes.js";
 import { accountPanel, loadMarket, wireAccount } from "./admin-market.js";
 const MCP_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/MCP.md";
 const mcpDocs = () => `<p class="hint mcp-doc">接入文档：<a href="${MCP_DOC_URL}" target="_blank" rel="noopener noreferrer">${MCP_DOC_URL}</a></p>`;
@@ -59,7 +60,15 @@ function lookView(settings) {
   // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
   const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
   const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : SKINS[0].id;
-  return `${brandPanel(settings)}<section data-part="panel" class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。风格只列已安装的主题，更多主题在「主题」里安装。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${esc(s.id)}"${s.id === skinNow ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section><section data-part="panel" class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片和列表的延迟、丢包率按色带内的最近 10 次探测统计；每格一次探测，早于这个范围的探测不参与统计，对应格子留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section>`;
+  return `${brandPanel(settings)}<section data-part="panel" class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。风格只列已安装的主题，更多主题在「主题」里安装。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${esc(s.id)}"${s.id === skinNow ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section><section data-part="panel" class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片和列表的延迟、丢包率按色带内的最近 10 次探测统计；每格一次探测，早于这个范围的探测不参与统计，对应格子留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section>${priceUnitPanel(settings)}`;
+}
+
+// 计费汇总：公开面板顶部「剩余价值汇总 / 每月成本」两块磁贴统一折算成的货币。
+// 单位列表与节点表单的货币选项同源（admin-nodes.js CURRENCIES），服务端 model.PriceUnits
+// 只认这些——汇率表（web/format.js FX_CNY）里没有的币种折不出汇总。
+function priceUnitPanel(settings) {
+  const unitNow = settings.price_unit || "CNY";
+  return `<section data-part="panel" class="panel webhook-panel"><div><h3>计费汇总</h3><p>公开面板顶部「剩余价值汇总」与「每月成本」统一折算成的货币，两块磁贴用同一个单位。</p><small>节点卡片仍显示各自计价时填的币种，只有汇总换算。节点币种与单位一致时是精确值；跨币种按内置固定参考汇率折算，不随市场更新，仅供估算。没填价格 / 到期时间或币种不在列表里的节点不计入汇总。</small></div><div class="webhook-actions"><label class="window-field">汇总单位<select id="price-unit">${CURRENCIES.map(([code, label]) => `<option value="${code}"${code === unitNow ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></label><button id="save-price-unit" class="primary">保存</button></div></section>`;
 }
 
 function accountView(acct, mcp) {
@@ -88,6 +97,15 @@ function wireLook(settings) {
     await send("/admin/panel", "PUT", { default_theme: theme, default_skin: skin });
     await renderSettings();
     toast(`前台默认外观：${THEMES.find((t) => t.id === theme).name} · ${SKINS.find((s) => s.id === skin).name}`);
+  });
+  // 计费汇总单位：保存后写进 /theme-default.js，公开面板下一次打开（含已开着的页面刷新后）
+  // 就是新单位。
+  content().querySelector("#save-price-unit").onclick = guard(async () => {
+    const unit = content().querySelector("#price-unit").value;
+    await send("/admin/panel", "PUT", { price_unit: unit });
+    await renderSettings();
+    const label = CURRENCIES.find(([code]) => code === unit)?.[1] || unit;
+    toast(`计费汇总单位：${label}`);
   });
   wireBrand(settings);
 }

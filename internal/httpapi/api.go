@@ -158,9 +158,11 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /theme-default.js", func(w http.ResponseWriter, r *http.Request) {
 		theme, skin := model.DefaultPanelTheme, model.DefaultPanelSkin
 		var site siteBrand
+		unit := model.DefaultPriceUnit
 		if panel, err := a.svc.Panel(r.Context()); err == nil {
 			theme, skin = panel.DefaultTheme, panel.DefaultSkin
 			site = siteBrand{Name: panel.SiteName, Logo: panel.SiteLogo}
+			unit = panel.PriceUnit
 		}
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -175,6 +177,9 @@ func (a *API) Handler() http.Handler {
 			// app.js 拼品牌区时直接用，不先闪一下内置的 TZA Probe。空值即内置品牌。
 			brandJS, _ := json.Marshal(site)
 			fmt.Fprintf(w, "window.__tzaBrand=%s;\n", brandJS)
+			// 计费汇总单位：公开面板顶部「每月成本 / 剩余价值汇总」用它统一折算（web/format.js
+			// 的固定参考汇率表按币种查）。跟着首屏脚本走，面板设置改完下一次打开即生效。
+			fmt.Fprintf(w, "window.__tzaPriceUnit=%q;\n", unit)
 		}
 	})
 	// 后台上传的站点 logo（没有时 404）；类型白名单、SVG 检查与它自己的 CSP 见 brand.Store。

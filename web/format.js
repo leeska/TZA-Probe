@@ -141,3 +141,62 @@ export function remainingValueLabel(n) {
   return `${currency ? currency + " " : ""}${value.toFixed(2)}${!currency && !n.billing?.free ? "（币种未设）" : ""}`;
 }
 export const remainingValueHint = "价格 × 剩余时间 ÷ 价格周期；周 7 天、月 30 天、季 90 天、半年 180 天、年 365 天，两年和三年按年折算。到期后为 0；缺少价格、到期时间或可识别的价格周期时不估算。";
+
+// 价格周期的固定天数，与服务端 RemainingValue（internal/model/billing.go）同一张表：
+// 每月成本的折算（价格 × 30 ÷ 天数）必须跟剩余价值的口径一致，两个数字才对得上。
+const PRICE_PERIOD_DAYS = { 周: 7, 月: 30, 季: 90, 半年: 180, 年: 365, 两年: 730, 三年: 1095 };
+
+// 顶部汇总（每月成本 / 剩余价值汇总）的固定参考汇率：1 单位外币 = N CNY。
+// Server 不连行情（CSP connect-src 'self'、数据不出本机），跨币种汇总只能取一组写死的
+// 参考值折算，仅供估算——数字会随市场偏离，币种单一时完全不受影响（CNY 项恒为 1）。
+// 键与后台节点表单的货币选项（admin-nodes.js CURRENCIES）、model.PriceUnits 一一对应。
+export const FX_CNY = {
+  CNY: 1,
+  USD: 7.1,
+  EUR: 7.8,
+  GBP: 9.0,
+  JPY: 0.048,
+  CAD: 5.2,
+  HKD: 0.91,
+  SGD: 5.3,
+  TWD: 0.22,
+  AUD: 4.7,
+  KRW: 0.0052,
+  RUB: 0.079,
+  CHF: 8.0,
+};
+export const fxHint = "跨币种按内置固定参考汇率折算，不随市场更新，仅供估算。";
+
+// 把 value 从 from 币种换算到 to：任一头没有参考汇率就返回 null（调用方整块不计入）。
+// 节点没填币种时卡片按 CNY 显示价格，这里同样按 CNY 处理。
+export function convertCurrency(value, from, to) {
+  const f = FX_CNY[from || "CNY"];
+  const t = FX_CNY[to];
+  if (!Number.isFinite(value) || f == null || t == null) return null;
+  return (value * f) / t;
+}
+
+// 节点的每月成本（按节点自己的币种计）：价格 × 30 ÷ 周期天数。
+// 免费机器为 0；没填价格或周期认不出来时返回 null（不知道怎么折算，不能当 0 加进汇总）。
+export function monthlyCost(n) {
+  if (!n?.billing || n.billing.free) return 0;
+  const days = PRICE_PERIOD_DAYS[n.billing.price_period];
+  const price = n.billing.price;
+  if (!days || !Number.isFinite(price) || price <= 0) return null;
+  return (price * 30) / days;
+}
+
+// 节点剩余价值换算到统一单位：服务端只给节点自己币种的估算（remaining_value），
+// 没配置（null）或币种不在汇率表里时返回 null，汇总不计入。
+export function remainingValueIn(n, unit) {
+  const value = n?.remaining_value;
+  if (value == null || !Number.isFinite(value)) return null;
+  return convertCurrency(value, n.billing?.currency, unit);
+}
+
+// 每月成本换算到统一单位；币种换不动时返回 null。
+export function monthlyCostIn(n, unit) {
+  const cost = monthlyCost(n);
+  if (cost == null) return null;
+  return convertCurrency(cost, n.billing?.currency, unit);
+}

@@ -157,13 +157,13 @@ var adminTools = []tool{
 	},
 	{
 		Name:        "get_settings",
-		Description: "查看通知渠道状态（Telegram / Webhook / 通知插件 / 关闭）与公开面板显示项（延迟色带时间窗、访客默认明暗与皮肤、站点名称 site_name 与 logo 地址 site_logo；两者空值表示内置的 TZA Probe 品牌）。通知插件渠道另回 plugin、plugin_name、非密钥设置 plugin_settings 与 plugin_secrets（哪些密钥已保存）；插件失效时回 plugin_error。不返回任何凭据。",
+		Description: "查看通知渠道状态（Telegram / Webhook / 通知插件 / 关闭）与公开面板显示项（延迟色带时间窗、访客默认明暗与皮肤、站点名称 site_name 与 logo 地址 site_logo；两者空值表示内置的 TZA Probe 品牌、计费汇总单位 price_unit）。通知插件渠道另回 plugin、plugin_name、非密钥设置 plugin_settings 与 plugin_secrets（哪些密钥已保存）；插件失效时回 plugin_error。不返回任何凭据。",
 		InputSchema: schema(map[string]any{}),
 		Annotations: annotations("Settings", true, false, true),
 	},
 	{
 		Name:        "update_settings",
-		Description: "修改设置，只改传了的项。通知出口：channel 取 telegram、webhook、plugin 或 none（关闭通知必须显式传 none）；不传 channel 时沿用当前渠道；Telegram 的 bot_token、chat_id 留空沿用已存的；channel=plugin 时 plugin 是已安装通知插件的 id（list_plugins），plugin_settings 按插件的 settings 填，没传或留空的项沿用已存值（同一插件时）；切换渠道时另一渠道的凭据会被清掉。面板显示项：latency_window_minutes、default_theme、default_skin、site_name（站点名称，传空串恢复默认；logo 只能在后台上传）。",
+		Description: "修改设置，只改传了的项。通知出口：channel 取 telegram、webhook、plugin 或 none（关闭通知必须显式传 none）；不传 channel 时沿用当前渠道；Telegram 的 bot_token、chat_id 留空沿用已存的；channel=plugin 时 plugin 是已安装通知插件的 id（list_plugins），plugin_settings 按插件的 settings 填，没传或留空的项沿用已存值（同一插件时）；切换渠道时另一渠道的凭据会被清掉。面板显示项：latency_window_minutes、default_theme、default_skin、site_name（站点名称，传空串恢复默认；logo 只能在后台上传）、price_unit（公开面板顶部每月成本与剩余价值汇总的统一币种，跨币种按固定参考汇率折算）。",
 		InputSchema: schema(map[string]any{
 			"channel":                map[string]any{"type": "string", "enum": []string{"telegram", "webhook", "plugin", "none"}, "description": "通知渠道；不传则沿用当前渠道"},
 			"plugin":                 map[string]any{"type": "string", "description": "channel=plugin 时：已安装通知插件的 id（list_plugins）"},
@@ -175,6 +175,7 @@ var adminTools = []tool{
 			"default_theme":          map[string]any{"type": "string", "enum": model.PanelThemes, "description": "访客默认明暗"},
 			"default_skin":           map[string]any{"type": "string", "description": "访客默认皮肤：内置的 " + strings.Join(model.PanelSkins, " / ") + "，或后台已安装的主题包 id"},
 			"site_name":              map[string]any{"type": "string", "maxLength": model.MaxSiteNameLen, "description": "站点名称：浏览器标签页标题与公开面板、后台品牌区显示的名字；空串恢复默认的 TZA Probe"},
+			"price_unit":             map[string]any{"type": "string", "enum": model.PriceUnits, "description": "公开面板顶部「每月成本 / 剩余价值汇总」统一折算成的货币"},
 		}),
 		Annotations: annotations("Update notification settings", false, false, true),
 	},
@@ -701,6 +702,7 @@ func settingsView(svc *service.Service, config notify.Config, panel model.PanelS
 	view[model.SettingDefaultSkin] = panel.DefaultSkin
 	view[model.SettingSiteName] = panel.SiteName
 	view["site_logo"] = panel.SiteLogo
+	view[model.SettingPriceUnit] = panel.PriceUnit
 	return view
 }
 
