@@ -39,15 +39,7 @@ type Dist struct {
 	Dir     string
 	noEmbed bool // tests: ignore binaries embedded in this build
 	mu      sync.Mutex
-	sums    map[string]cachedSum // sha256 per arch, keyed by mtime so a swapped binary is re-hashed
-}
-
-// cachedSum memoizes one binary's SHA-256. Embedded copies never change, so
-// their modTime stays zero; Dir copies are re-hashed when the file's mtime
-// moves.
-type cachedSum struct {
-	modTime time.Time
-	sum     string
+	sums    map[string]string // immutable embedded binaries only
 }
 
 func Name(arch string) string { return "tza-agent-linux-" + arch }
@@ -161,35 +153,37 @@ func (d *Dist) Available() []string {
 	return out
 }
 
-// Sum returns the hex SHA-256 of the binary for arch.
+// Sum returns the hex SHA-256 of the binary for arch. Only embedded copies
+// are cached: an override can change in place while retaining both its size
+// and modification time, so metadata cannot prove that its bytes are unchanged.
 func (d *Dist) Sum(arch string) (string, error) {
-	f, _, err := d.open(arch)
+	f, fromDir, err := d.open(arch)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
-	var modTime time.Time
-	if info, err := f.Stat(); err == nil {
-		modTime = info.ModTime()
-	}
-	d.mu.Lock()
-	if c, ok := d.sums[arch]; ok && c.modTime.Equal(modTime) {
+	if !fromDir {
+		d.mu.Lock()
+		sum, ok := d.sums[arch]
 		d.mu.Unlock()
-		return c.sum, nil
+		if ok {
+			return sum, nil
+		}
 	}
-	d.mu.Unlock()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
-	s := hex.EncodeToString(h.Sum(nil))
-	d.mu.Lock()
-	if d.sums == nil {
-		d.sums = map[string]cachedSum{}
+	sum := hex.EncodeToString(h.Sum(nil))
+	if !fromDir {
+		d.mu.Lock()
+		if d.sums == nil {
+			d.sums = map[string]string{}
+		}
+		d.sums[arch] = sum
+		d.mu.Unlock()
 	}
-	d.sums[arch] = cachedSum{modTime, s}
-	d.mu.Unlock()
-	return s, nil
+	return sum, nil
 }
 
 // ServeBinary writes the binary for arch, with range support so interrupted

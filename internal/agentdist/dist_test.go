@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDirectoryOverrideChecksumAndRanges(t *testing.T) {
@@ -110,5 +111,52 @@ func TestEmbeddedCopiesWhenPresent(t *testing.T) {
 		if err := d.ServeBinary(w, httptest.NewRequest("GET", "/dl/"+Name(arch), nil), arch); err != nil || w.Code != 200 || w.Body.Len() == 0 {
 			t.Fatalf("%s: serve %d %v", arch, w.Code, err)
 		}
+	}
+}
+
+// Deployments can preserve mtimes when installing or rolling back binaries.
+func TestChecksumCacheDetectsPreservedTimestampReplacement(t *testing.T) {
+	for _, mode := range []string{"in-place-size-change", "atomic-same-size-replacement", "in-place-same-size-change"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, Name("amd64"))
+			stamp := time.Unix(1700000000, 0)
+			old, next := []byte("old binary"), []byte("new binary")
+			if mode == "in-place-size-change" {
+				next = append(next, []byte(" with more bytes")...)
+			}
+			write := func(path string, data []byte) {
+				t.Helper()
+				if err := os.WriteFile(path, data, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chtimes(path, stamp, stamp); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(path, old)
+			d := &Dist{Dir: dir, noEmbed: true}
+			if _, err := d.Sum("amd64"); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "atomic-same-size-replacement" {
+				replacement := filepath.Join(dir, "next")
+				write(replacement, next)
+				if err := os.Rename(replacement, path); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				write(path, next)
+			}
+			want := sha256.Sum256(next)
+			got, err := d.Sum("amd64")
+			if err != nil || got != hex.EncodeToString(want[:]) {
+				t.Fatalf("checksum after replacement = %s, %v; want %x", got, err, want)
+			}
+			w := httptest.NewRecorder()
+			if err := d.ServeBinary(w, httptest.NewRequest("GET", "/dl/"+Name("amd64"), nil), "amd64"); err != nil || w.Body.String() != string(next) {
+				t.Fatalf("served bytes do not match replacement: %q, %v", w.Body.String(), err)
+			}
+		})
 	}
 }
