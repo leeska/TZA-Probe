@@ -37,7 +37,7 @@ func TestCurrentAlertPauseIsLiveStateAndHistoryIsImmutable(t *testing.T) {
 	a := &API{Store: s, AdminToken: model.Secret(), Assets: web.Handler()}
 	h := a.Handler()
 	login := httptest.NewRecorder()
-	a.startSession(login, httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil), now)
+	a.startSession(login, httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil), now, "")
 	cookie := login.Result().Cookies()[0]
 	call := func(path string, session bool) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("GET", "https://probe.example"+path, nil)

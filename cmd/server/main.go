@@ -349,6 +349,6 @@ func resetPasswordCommand(args []string) error {
 	}
 	fmt.Printf("后台用户名：%s\n", strings.TrimSpace(username))
 	fmt.Printf("后台新密码：%s\n", password)
-	fmt.Println("（登录后可在“面板设置 → 后台账号”改成自己的密码；已登录的浏览器会话在服务重启后失效）")
+	fmt.Println("（登录后可在“面板设置 → 后台账号”改成自己的密码；旧浏览器会话已失效，无需重启服务）")
 	return nil
 }

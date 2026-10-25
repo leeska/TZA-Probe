@@ -595,13 +595,14 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 				return
 			}
 		}
-		if err := account.Save(a.AccountDir, username, v.Password); err != nil {
+		hash, err := account.SaveWithHash(a.AccountDir, username, v.Password)
+		if err != nil {
 			fail(w, err)
 			return
 		}
-		a.dropOtherSessions(r)
+		a.dropOtherSessions(r, hash)
 		// 设备 Cookie 签的是旧密码哈希，改完给这台浏览器换一张新的。
-		a.setDeviceCookie(w, r, time.Now())
+		a.setDeviceCookie(w, r, time.Now(), hash)
 		write(w, 200, map[string]any{"username": username, "configured": true})
 	})
 
@@ -674,16 +675,19 @@ func rawBody(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
 
 // dropOtherSessions signs out every browser except the one making r, after
 // the password changed.
-func (a *API) dropOtherSessions(r *http.Request) {
+func (a *API) dropOtherSessions(r *http.Request, accountHash string) {
 	keep := ""
 	if c, err := r.Cookie("tza_session"); err == nil {
 		keep = model.Hash(c.Value)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	for key := range a.sessions {
+	for key, session := range a.sessions {
 		if key != keep {
 			delete(a.sessions, key)
+		} else {
+			session.AccountHash = accountHash
+			a.sessions[key] = session
 		}
 	}
 }

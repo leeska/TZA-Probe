@@ -623,7 +623,7 @@ func TestSessionLimitEvictsOldest(t *testing.T) {
 	for i := 0; i <= maxSessions; i++ {
 		r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil)
 		w := httptest.NewRecorder()
-		api.startSession(w, r, time.Now())
+		api.startSession(w, r, time.Now(), "")
 		if i == 0 {
 			first = w.Result().Cookies()
 		}

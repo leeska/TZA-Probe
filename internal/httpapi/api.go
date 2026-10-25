@@ -42,6 +42,11 @@ type Repository interface {
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
 }
+type browserSession struct {
+	Expires     time.Time
+	AccountHash string
+}
+
 type API struct {
 	Store         Repository
 	Notifier      notify.Sender
@@ -54,11 +59,12 @@ type API struct {
 	Plugins       *plugin.Store   // installed declarative plugins; nil means none
 	Logo          *brand.Store    // uploaded site logo; nil means the built-in mark only
 	mu            sync.Mutex
-	sessions      map[string]time.Time
+	sessions      map[string]browserSession
 	loginWindow   time.Time
-	loginFailures map[string]int // 当前一分钟内各限流桶的失败次数，见 login_limit.go
-	loginSlots    chan struct{}  // 密码验证的并发上限，懒初始化，见 verifyLogin
-	deviceKey     []byte         // 设备 Cookie 的签名密钥
+	loginFailures map[string]int       // 当前一分钟内各限流桶的失败次数，见 login_limit.go
+	loginNext     map[string]time.Time // 各桶的下一次密码校验预约时间
+	loginSlots    chan struct{}        // 密码验证的并发上限，懒初始化，见 verifyLogin
+	deviceKey     []byte               // 设备 Cookie 的签名密钥
 	// 匿名面板共用的快照，见 panelNodes / allObservations / latencySamples。
 	nodesSnap        snapshot[[]model.NodeView]
 	observationsSnap snapshot[map[string][]model.Observation]
@@ -122,7 +128,7 @@ func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) 
 }
 
 func (a *API) Handler() http.Handler {
-	a.sessions = map[string]time.Time{}
+	a.sessions = map[string]browserSession{}
 	a.deviceKey = deviceSigningKey(a.AdminToken)
 	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier, Themes: a.Themes, Plugins: a.Plugins, Logo: a.Logo}
 	mux := http.NewServeMux()
@@ -350,10 +356,24 @@ func (a *API) isAdmin(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
+	key := model.Hash(c.Value)
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	expiry, ok := a.sessions[model.Hash(c.Value)]
-	return ok && time.Now().Before(expiry)
+	session, ok := a.sessions[key]
+	a.mu.Unlock()
+	if !ok || !time.Now().Before(session.Expires) {
+		return false
+	}
+	if a.AccountDir == "" {
+		return session.AccountHash == ""
+	}
+	acct, err := account.Load(a.AccountDir)
+	if err == nil && session.AccountHash != "" && subtle.ConstantTimeCompare([]byte(session.AccountHash), []byte(acct.Hash)) == 1 {
+		return true
+	}
+	a.mu.Lock()
+	delete(a.sessions, key)
+	a.mu.Unlock()
+	return false
 }
 func sameOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
@@ -408,12 +428,18 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	ok, busy := a.verifyLogin(v.Username, v.Password)
+	if retry, allowed := a.reserveLogin(r, now); !allowed {
+		seconds := max(1, int((retry+time.Second-1)/time.Second))
+		w.Header().Set("Retry-After", strconv.Itoa(seconds))
+		write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
+		return
+	}
+	hash, busy := a.verifyLogin(v.Username, v.Password)
 	if busy {
 		write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 		return
 	}
-	if !ok {
+	if hash == "" {
 		if a.loginLimited(r, now, true) {
 			write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 			return
@@ -421,29 +447,32 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		write(w, 401, map[string]string{"error": "用户名或密码错误"})
 		return
 	}
-	a.startSession(w, r, now)
+	a.startSession(w, r, time.Now(), hash)
 }
 
-func (a *API) checkAccount(username, password string) bool {
+func (a *API) checkAccount(username, password string) string {
 	if a.AccountDir == "" || username == "" || password == "" {
-		return false
+		return ""
 	}
 	acct, err := account.Load(a.AccountDir)
 	if err != nil {
 		if !errors.Is(err, account.ErrNotFound) {
 			slog.Warn("administrator account unreadable", "error", err)
 		}
-		return false
+		return ""
 	}
-	return acct.Check(username, password)
+	if !acct.Check(username, password) {
+		return ""
+	}
+	return acct.Hash
 }
 
 // startSession issues a browser session cookie.
-func (a *API) startSession(w http.ResponseWriter, r *http.Request, now time.Time) {
+func (a *API) startSession(w http.ResponseWriter, r *http.Request, now time.Time, accountHash string) {
 	token := model.Secret()
 	a.mu.Lock()
-	for key, expiry := range a.sessions {
-		if now.After(expiry) {
+	for key, session := range a.sessions {
+		if now.After(session.Expires) {
 			delete(a.sessions, key)
 		}
 	}
@@ -451,17 +480,17 @@ func (a *API) startSession(w http.ResponseWriter, r *http.Request, now time.Time
 	// fails because older browsers are still signed in.
 	for len(a.sessions) >= maxSessions {
 		oldest, first := "", time.Time{}
-		for key, expiry := range a.sessions {
-			if oldest == "" || expiry.Before(first) {
-				oldest, first = key, expiry
+		for key, session := range a.sessions {
+			if oldest == "" || session.Expires.Before(first) {
+				oldest, first = key, session.Expires
 			}
 		}
 		delete(a.sessions, oldest)
 	}
-	a.sessions[model.Hash(token)] = now.Add(12 * time.Hour)
+	a.sessions[model.Hash(token)] = browserSession{Expires: now.Add(12 * time.Hour), AccountHash: accountHash}
 	a.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: "tza_session", Value: token, Path: "/", HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode, MaxAge: 43200})
-	a.setDeviceCookie(w, r, now)
+	a.setDeviceCookie(w, r, now, accountHash)
 	w.WriteHeader(204)
 }
 

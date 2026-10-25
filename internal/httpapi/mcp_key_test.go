@@ -23,7 +23,7 @@ func TestMCPKeyLifecycleAndIsolation(t *testing.T) {
 	a := &API{Store: s, AdminToken: model.Secret(), Assets: web.Handler()}
 	handler := a.Handler()
 	w := httptest.NewRecorder()
-	a.startSession(w, httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil), time.Now())
+	a.startSession(w, httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil), time.Now(), "")
 	cookie := w.Result().Cookies()[0]
 	call := func(method, path, key, body, origin string, session bool) *httptest.ResponseRecorder {
 		t.Helper()
@@ -107,7 +107,7 @@ func TestMCPKeyLifecycleAndIsolation(t *testing.T) {
 	handler = a.Handler()
 	check(key, 200)
 	w = httptest.NewRecorder()
-	a.startSession(w, httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil), time.Now())
+	a.startSession(w, httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil), time.Now(), "")
 	cookie = w.Result().Cookies()[0]
 	if w := call("DELETE", "/api/v1/admin/mcp-key", "", "", "", true); w.Code != 204 {
 		t.Fatal(w.Code, w.Body.String())

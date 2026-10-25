@@ -96,6 +96,9 @@ func TestAccountLoginAndChange(t *testing.T) {
 	if err := account.Save(dir, "ops", "reset-password"); err != nil {
 		t.Fatal(err)
 	}
+	if w, _ := call("GET", "/api/v1/session", mine, nil); w.Code != 401 {
+		t.Fatalf("browser session survived terminal password reset: %d", w.Code)
+	}
 	if code, _ := login("ops", "reset-password"); code != 204 {
 		t.Fatalf("terminal reset not picked up: %d", code)
 	}
@@ -105,10 +108,8 @@ func TestAccountLoginAndChange(t *testing.T) {
 	}
 }
 
-// Past the limit wrong passwords are refused, but a correct password always
-// gets in — filling the shared bucket must not lock the administrator out of
-// a new device. Guessing stays bounded by the failure counter and the PBKDF2
-// concurrency cap (login_limit.go).
+// Correct and incorrect passwords are both refused before verification when
+// the attempt budget is full; the next refill permits a normal login again.
 func TestPasswordLoginRateLimit(t *testing.T) {
 	dir := t.TempDir()
 	s, err := storage.Open(filepath.Join(dir, "limit.db"))
@@ -121,30 +122,30 @@ func TestPasswordLoginRateLimit(t *testing.T) {
 	}
 	api := &API{Store: s, AdminToken: model.Secret(), AccountDir: dir, Assets: web.Handler()}
 	handler := api.Handler()
-	// 预先记满失败次数，省得在测试里真算 30 次 PBKDF2。
-	anonymous := httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil)
-	for i := 0; i < 30; i++ {
-		api.loginLimited(anonymous, time.Now(), true)
+	login := func(password string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"username":"admin","password":"`+password+`"}`))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
 	}
-	r := httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"username":"admin","password":"wrong-password"}`))
-	r.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
-	if w.Code != 429 {
-		t.Fatalf("31st wrong password: %d", w.Code)
+	api.loginNext = map[string]time.Time{"": time.Now().Add(time.Minute)}
+	for _, password := range []string{"wrong-password", "right-password"} {
+		w := login(password)
+		if w.Code != 429 || w.Header().Get("Retry-After") == "" || len(w.Result().Cookies()) != 0 {
+			t.Fatalf("exhausted budget: status %d, retry %q, cookies %d", w.Code, w.Header().Get("Retry-After"), len(w.Result().Cookies()))
+		}
 	}
-	r = httptest.NewRequest("POST", "https://probe.example/api/v1/login", strings.NewReader(`{"username":"admin","password":"right-password"}`))
-	r.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
-	if w.Code != 204 {
-		t.Fatalf("password login while limited: %d", w.Code)
+	api.mu.Lock()
+	api.loginNext[""] = time.Now().Add(time.Minute - 2*time.Second)
+	api.mu.Unlock()
+	if w := login("right-password"); w.Code != 204 {
+		t.Fatalf("login after refill: %d", w.Code)
 	}
 }
 
-// A browser that has logged in before keeps its own limit: filling the shared
-// bucket with wrong passwords does not lock the administrator out, while a
-// forged or outdated device cookie falls back to the shared bucket.
+// Trusted devices have a separate budget; forged cookies and cookies signed
+// for the old password use the shared budget and cannot bypass throttling.
 func TestDeviceCookieSurvivesSharedLimit(t *testing.T) {
 	dir := t.TempDir()
 	s, err := storage.Open(filepath.Join(dir, "device.db"))
@@ -167,69 +168,103 @@ func TestDeviceCookieSurvivesSharedLimit(t *testing.T) {
 		handler.ServeHTTP(w, r)
 		return w
 	}
-	w := login("right-password", nil)
-	if w.Code != 204 {
-		t.Fatalf("first login: %d", w.Code)
+	exhaust := func(bucket string) {
+		api.mu.Lock()
+		api.loginNext[bucket] = time.Now().Add(time.Minute)
+		api.mu.Unlock()
 	}
-	var device *http.Cookie
-	for _, c := range w.Result().Cookies() {
-		if c.Name == deviceCookie {
-			device = c
+	deviceFrom := func(w *httptest.ResponseRecorder) *http.Cookie {
+		t.Helper()
+		if w.Code != 204 {
+			t.Fatalf("device login: %d", w.Code)
+		}
+		for _, c := range w.Result().Cookies() {
+			if c.Name == deviceCookie {
+				if !c.HttpOnly || c.Path != "/api/v1/" {
+					t.Fatalf("device cookie: %+v", c)
+				}
+				return c
+			}
+		}
+		t.Fatal("no device cookie")
+		return nil
+	}
+	device := deviceFrom(login("right-password", nil))
+	exhaust("")
+	for _, password := range []string{"wrong-password", "right-password"} {
+		if w := login(password, nil); w.Code != 429 {
+			t.Fatalf("anonymous login while shared budget is full: %d", w.Code)
 		}
 	}
-	if device == nil || !device.HttpOnly || device.Path != "/api/v1/" {
-		t.Fatalf("device cookie: %+v", device)
-	}
-	anonymous := httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil)
-	for i := 0; i <= sharedLoginLimit; i++ {
-		api.loginLimited(anonymous, time.Now(), true)
-	}
-	// 共享桶刷满后，匿名猜错的尝试被拒……
-	if w := login("wrong-password", nil); w.Code != 429 {
-		t.Fatalf("anonymous wrong password while shared bucket is full: %d", w.Code)
-	}
-	// ……但密码正确就放行：刷满桶关不住知道密码的管理员。
-	if w := login("right-password", nil); w.Code != 204 {
-		t.Fatalf("anonymous correct password while shared bucket is full: %d", w.Code)
-	}
+	exhaust("")
 	if w := login("right-password", device); w.Code != 204 {
-		t.Fatalf("device login while shared bucket is full: %d", w.Code)
+		t.Fatalf("trusted device affected by shared budget: %d", w.Code)
 	}
 	forged := &http.Cookie{Name: deviceCookie, Value: strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + ".forged"}
-	// 伪造的设备 Cookie 退回共享桶：猜错的尝试同样被拒。
-	if w := login("wrong-password", forged); w.Code != 429 {
-		t.Fatalf("forged device cookie: %d", w.Code)
+	exhaust("")
+	if w := login("right-password", forged); w.Code != 429 {
+		t.Fatalf("forged device bypassed budget: %d", w.Code)
 	}
-	// 改密码后旧设备 Cookie 签的是旧哈希，退回共享桶：猜错被拒（证明退回了
-	// 已经刷满的共享桶），正确密码依然放行。
 	if err := account.Save(dir, "admin", "another-password"); err != nil {
 		t.Fatal(err)
 	}
-	if w := login("wrong-password", device); w.Code != 429 {
-		t.Fatalf("stale device cookie after password change: %d", w.Code)
+	exhaust("")
+	if w := login("another-password", device); w.Code != 429 {
+		t.Fatalf("old-password device bypassed budget: %d", w.Code)
 	}
-	if w := login("another-password", device); w.Code != 204 {
-		t.Fatalf("correct password after password change: %d", w.Code)
-	}
-	// 设备自己的桶挡的也是猜错的尝试。
 	api.mu.Lock()
-	api.loginFailures = nil
+	api.loginNext[""] = time.Now().Add(-time.Minute)
 	api.mu.Unlock()
-	w = login("another-password", nil)
-	for _, c := range w.Result().Cookies() {
-		if c.Name == deviceCookie {
-			device = c
-		}
-	}
+	device = deviceFrom(login("another-password", nil))
 	probe := httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil)
 	probe.AddCookie(device)
-	for i := 0; i <= deviceLoginLimit; i++ {
-		api.loginLimited(probe, time.Now(), true)
+	bucket := api.loginBucket(probe, time.Now())
+	if bucket == "" {
+		t.Fatal("trusted device not recognized")
 	}
-	if w := login("wrong-password", device); w.Code != 429 {
-		t.Fatalf("device past its own limit: %d", w.Code)
+	api.mu.Lock()
+	api.loginNext[bucket] = time.Now().Add(time.Minute)
+	api.mu.Unlock()
+	for _, password := range []string{"wrong-password", "another-password"} {
+		if w := login(password, device); w.Code != 429 || w.Header().Get("Retry-After") == "" {
+			t.Fatalf("device exceeded its own budget: %d", w.Code)
+		}
 	}
-	if w := login("another-password", device); w.Code != 204 {
-		t.Fatalf("correct password past the device limit: %d", w.Code)
+	if w := login("another-password", nil); w.Code != 204 {
+		t.Fatalf("device budget affected shared budget: %d", w.Code)
+	}
+}
+
+// A login that verified the old password just before a terminal reset must
+// not create a session for the new password version when its reply is delayed.
+func TestDelayedLoginCannotSurvivePasswordReset(t *testing.T) {
+	dir := t.TempDir()
+	if err := account.Save(dir, "admin", "first-password"); err != nil {
+		t.Fatal(err)
+	}
+	a := &API{AccountDir: dir, Assets: web.Handler()}
+	h := a.Handler()
+	verifiedHash := a.checkAccount("admin", "first-password")
+	if verifiedHash == "" {
+		t.Fatal("credentials were not verified")
+	}
+	if err := account.Save(dir, "admin", "reset-password"); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	a.startSession(w, httptest.NewRequest("POST", "https://probe.example/api/v1/login", nil), time.Now(), verifiedHash)
+	r := httptest.NewRequest("GET", "https://probe.example/api/v1/session", nil)
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == deviceCookie {
+			t.Fatal("stale login issued a device credential for the reset account")
+		}
+		if cookie.Name == "tza_session" {
+			r.AddCookie(cookie)
+		}
+	}
+	result := httptest.NewRecorder()
+	h.ServeHTTP(result, r)
+	if result.Code != 401 {
+		t.Fatalf("delayed login survived reset: %d", result.Code)
 	}
 }

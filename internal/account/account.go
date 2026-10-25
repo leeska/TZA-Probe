@@ -111,17 +111,24 @@ func Validate(username, password string) error {
 // one atomically. When run as root (the terminal reset), the file is handed to
 // the owner of dir so the service account can still read it.
 func Save(dir, username, password string) error {
+	_, err := SaveWithHash(dir, username, password)
+	return err
+}
+
+// SaveWithHash returns the exact stored hash, so a session retained across a
+// password change cannot accidentally bind to a later terminal reset.
+func SaveWithHash(dir, username, password string) (string, error) {
 	username = strings.TrimSpace(username)
 	if err := Validate(username, password); err != nil {
-		return err
+		return "", err
 	}
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
-		return err
+		return "", err
 	}
 	hash, err := pbkdf2.Key(sha256.New, password, salt, iterations, 32)
 	if err != nil {
-		return err
+		return "", err
 	}
 	data, err := json.MarshalIndent(Account{
 		Username:   username,
@@ -130,11 +137,11 @@ func Save(dir, username, password string) error {
 		Iterations: iterations,
 	}, "", "  ")
 	if err != nil {
-		return err
+		return "", err
 	}
 	tmp, err := os.CreateTemp(dir, "."+FileName+"-*")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.Remove(tmp.Name())
 	if _, err = tmp.Write(append(data, '\n')); err == nil {
@@ -144,15 +151,18 @@ func Save(dir, username, password string) error {
 		err = closeErr
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.Chmod(tmp.Name(), 0600); err != nil {
-		return err
+		return "", err
 	}
 	if err := OwnLikeDir(tmp.Name(), dir); err != nil {
-		return err
+		return "", err
 	}
-	return os.Rename(tmp.Name(), path(dir))
+	if err := os.Rename(tmp.Name(), path(dir)); err != nil {
+		return "", err
+	}
+	return base64.RawStdEncoding.EncodeToString(hash), nil
 }
 
 // Ensure creates the default account with a random password when dir has
