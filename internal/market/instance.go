@@ -316,7 +316,14 @@ func (c *Client) Disconnect(ctx context.Context) (warning string, err error) {
 		return "", nil
 	}
 	if in.URL == c.base.String() {
-		err := c.call(ctx, http.MethodDelete, []string{"instance"}, nil, nil, nil, true)
+		// Revoke the snapshot we started with, even if a new binding is saved
+		// while this network request is pending.
+		requestCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+		status, data, err := c.send(requestCtx, http.MethodDelete, c.base.JoinPath("api", "v1", "instance").String(), nil, in.Token)
+		cancel()
+		if err == nil && (status < 200 || status > 299) {
+			err = remoteError(status, data)
+		}
 		var remote *RemoteError
 		// 401 / 404: CC already forgot this token, which is the goal.
 		if err != nil && !(errors.As(err, &remote) && (remote.Status == http.StatusUnauthorized || remote.Status == http.StatusNotFound)) {
@@ -327,6 +334,9 @@ func (c *Client) Disconnect(ctx context.Context) (warning string, err error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if current := c.load(); current == nil || current.Token != in.Token || current.URL != in.URL {
+		return warning, nil
+	}
 	if err := os.Remove(c.instancePath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}

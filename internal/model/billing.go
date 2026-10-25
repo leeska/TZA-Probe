@@ -39,11 +39,12 @@ func parseUTC(value string) (time.Time, error) {
 func Cycle(now time.Time, anchor time.Time) (time.Time, time.Time) {
 	now, anchor = now.UTC(), anchor.UTC()
 	shift := func(months int) time.Time {
-		year, month := anchor.Year(), int(anchor.Month())-1+months
-		year += month / 12
-		month = ((month % 12) + 12) % 12
-		last := time.Date(year, time.Month(month+1)+1, 0, 0, 0, 0, 0, time.UTC).Day()
-		return time.Date(year, time.Month(month+1), min(anchor.Day(), last),
+		// Let time.Date normalize negative month offsets across year boundaries.
+		// Integer division truncates toward zero and misplaces December in the
+		// anchor's year when a January anchor is shifted back one month.
+		month := time.Date(anchor.Year(), anchor.Month()+time.Month(months), 1, 0, 0, 0, 0, time.UTC)
+		last := month.AddDate(0, 1, -1).Day()
+		return time.Date(month.Year(), month.Month(), min(anchor.Day(), last),
 			anchor.Hour(), anchor.Minute(), anchor.Second(), 0, time.UTC)
 	}
 	// Months between the anchor month and now, corrected by one when the day
