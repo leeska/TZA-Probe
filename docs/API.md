@@ -18,6 +18,7 @@
 | GET、POST /admin/alert-rules | 提醒规则列表、新建一条（返回 `{"id":…}`）；同类型同范围覆盖同一台节点时 400 并说明冲突在哪 |
 | PUT、PATCH、DELETE /admin/alert-rules/{id} | 整份替换、只改提交的字段（返回改后的规则）、删除一条提醒规则；PATCH 与 MCP 的 `update_alert_rule` 同一套合并规则 |
 | POST /admin/nodes/{id}/token | 撤销旧令牌，返回新令牌 |
+| GET /admin/block-checks | IP 被墙检测结论与节点最近两轮证据，需管理员鉴权；状态为 reachable / suspected / partial / unreachable / unknown / paused |
 | GET、POST /admin/tasks | 列表、创建探测任务（返回 `{"id":…}`） |
 | PUT、PATCH、DELETE /admin/tasks/{id} | 编辑（PUT 整份替换；PATCH 同上合并语义）、删除任务 |
 | PUT /admin/tasks/{id}/enabled | `{"enabled":true|false}`：恢复 / 暂停 |
@@ -63,7 +64,7 @@
 - `2026-07-28`（无握手）：每个请求在 `_meta` 里声明版本，并在头部镜像 `MCP-Protocol-Version`、`Mcp-Method`（`tools/call` 还有 `Mcp-Name`，非 ASCII 用 `=?base64?…?=`），三者必须与请求体一致，缺失或不符返回 400 与 `-32020 HeaderMismatch`；版本不认识返回 400 与 `-32022 UnsupportedProtocolVersionError`（`data.supported` 列出支持版本）；方法不认识返回 404 与 `-32601`。结果带 `resultType: "complete"` 与 `_meta["io.modelcontextprotocol/serverInfo"]`，`server/discover` 与 `tools/list` 带 `ttlMs` / `cacheScope`。
 - `2025-11-25`、`2025-06-18`（`initialize` 握手）：按客户端声明的版本回答，之后用 `MCP-Protocol-Version` 头声明，结果不带 `resultType` / 缓存字段。完全没有版本头的请求按 `2025-11-25` 处理（`2025-03-26` 及更早的客户端不发这个头）。
 
-工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`list_nodes`、`list_tasks`、`list_alert_rules`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤，含已装目标集插件的目标）、`task_runs`、`list_plugins`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`create_alert_rule` / `update_alert_rule`（`rule_id` + 要改的字段，合并语义）/ `delete_alert_rule`、`update_settings`、`test_notification`；市场：`search_market`（只读）与 `install_market_package`（见 [MCP.md](MCP.md)，市场关闭时不可用）。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`（`rule_id` 缺失按工具错误返回）、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` / `update_alert_rule` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`billing` 等）按字段合并，列表整份替换；`update_alert_rule` 改了 `scope` 时，新范围用不上的列表没重新提交就清掉（`exclude_node_ids` 在 `all` 与 `group` 之间切换时保留，被排除的节点不会因为换了范围就开始告警）。
+工具分读写两部分，`tools/list` 的 `annotations` 用 `readOnlyHint` / `destructiveHint` 标注。读取：`block_checks`（IP 被墙检测结论与节点最近两轮证据）、`list_nodes`、`list_tasks`、`list_alert_rules`、`node_history`、`node_network_history`、`node_observations`、`recent_events`（可选 `before` / `limit` / `node_id` / `kind`，与 HTTP 同一套分页）、`latency_samples`、`list_catalog`（可选 `region` / `carrier` / `family` 过滤，含已装目标集插件的目标）、`task_runs`、`list_plugins`、`get_settings`。写入：`create_node`、`update_node`、`delete_node`、`rotate_node_token`、`correct_node_traffic`、`create_task`、`update_task`、`delete_task`、`control_task`（`action` 取 `pause` / `resume` / `run` / `bind`，`bind` 带 `node_ids`；内部分别走启停、立即执行、绑定三个操作）、`create_alert_rule` / `update_alert_rule`（`rule_id` + 要改的字段，合并语义）/ `delete_alert_rule`、`update_settings`、`test_notification`；市场：`search_market`（只读）与 `install_market_package`（见 [MCP.md](MCP.md)，市场关闭时不可用）。参数规则与 HTTP 接口一致：`hours` 省略或为 0 用默认 24（主机历史上限 720、网络历史上限 168），`limit` 默认 20、上限 60，超出按上限截断并在结果里回显实际窗口；未知参数、缺少 `node_id` / `task_id`（`rule_id` 缺失按工具错误返回）、未知工具、非法枚举，以及存储校验拒绝的输入（如绑定不存在的节点）都返回 `-32602`；节点或任务不存在、存储读写失败按工具结果返回 `isError: true` 与说明文字。`update_node` / `update_task` / `update_alert_rule` 是合并语义：只提交要改的字段，没提到的字段保持原值，嵌套对象（`billing` 等）按字段合并，列表整份替换；`update_alert_rule` 改了 `scope` 时，新范围用不上的列表没重新提交就清掉（`exclude_node_ids` 在 `all` 与 `group` 之间切换时保留，被排除的节点不会因为换了范围就开始告警）。
 `create_node` 与 `rotate_node_token` 返回 `id`、`token` 和 `install_command`——与面板「接入」弹窗同一条命令，`--endpoint` 由请求的 Host 与 `X-Forwarded-Proto` 拼出，端点不是 HTTPS 时附 `warning` 提示。`update_settings` / `get_settings` 只回渠道状态与掩码字段，已存的 Bot Token / Webhook 从不回显（两者另外回面板显示项：延迟色带时间窗 `latency_window_minutes`、访客默认明暗 `default_theme` 与皮肤 `default_skin`、站点名称 `site_name` 与 logo 地址 `site_logo`、计费汇总单位 `price_unit`；logo 不能经 MCP 上传）。`update_settings` 只改传了的项：不传 `channel` 沿用当前渠道，Telegram 的 `bot_token` / `chat_id` 留空沿用已存的，只传显示项时不动通知配置；关闭通知须显式传 `channel: "none"`，一项都不传返回 `-32602`；`test_notification` 复用面板的发送路径，未配置渠道或发送失败按工具错误返回原因。
 
 ## 主题市场（TZA-CC）
@@ -199,3 +200,31 @@ Server 把任务展开为单项探测（checks × targets，目标自带 `checks
 ## 剩余价值
 
 节点完整视图与 `/nodes/live` 的 `remaining_value` 为同币种的时间比例估算：`价格 × max(0, 到期时刻 − 当前时刻) ÷ 价格周期时长`，精确到秒，界面显示两位小数。固定折算：周 7 天、月 30 天、季 90 天、半年 180 天、年 365 天、两年 730 天、三年 1095 天；与流量重置周期独立，也不按流量余量打折。多期预付可高于单期价格。免费节点为 0；付费节点缺少正价格、有效到期时间或上述周期时为 `null`，不推测未知值。沿用 `billing.currency`，不换汇或混合汇总币种。公开面板顶部的「剩余价值汇总 / 每月成本」两块磁贴在前端把各节点的估算与每月折算价（`价格 × 30 ÷ 周期天数`）按面板设置 `price_unit` 统一：跨币种按 `web/format.js` 里的内置固定参考汇率折算，不取行情、不随市场更新；币种不在汇率表、未配置剩余价值或未填价格 / 周期的节点不计入，磁贴的悬停说明给出计入台数。
+
+
+## IP 被墙检测任务
+
+通过现有任务 CRUD 创建 `type=block`，例如：
+
+```json
+{
+  "name": "目标 IP 可达性",
+  "type": "block",
+  "enabled": true,
+  "node_ids": ["mainland-node", "overseas-node"],
+  "block": {
+    "host": "1.1.1.1",
+    "port": 443,
+    "family": "ipv4",
+    "interval": 300,
+    "mainland_node_ids": ["mainland-node"],
+    "overseas_node_ids": ["overseas-node"]
+  }
+}
+```
+
+`host` 须为公网 IP 字面量，协议须匹配，端口 1–65535，间隔 60–3600 秒；两组节点至少各一个，不能重复，合计最多 20 个，`node_ids` 必须等于两组的并集。不能带 `probe` / `unlock`。节点角色由管理员依据实际直连出口选择，不从节点名称或地区标签自动推断。修改角色请用任务 PUT / PATCH 同时更新 `node_ids` 与 `block`，批量绑定不支持更改此类任务的角色。
+
+Server 向这些节点派发普通 TCP 作业，兼容现有 Agent，每轮连接 3 次；`block_checks` MCP 工具与 `GET /api/v1/admin/block-checks` 提供相同结果。每项含 `task_id/name/host/port/family/status/detail/evidence`；`evidence` 含 `node_id/node_name/role/state/attempts`，`role` 为 mainland / overseas，`attempts` 最多两条（新的在前，含 issued / finished / result）。离线或已删除节点不使用历史证据；上报异常、协议不可用、未返回结果也不算连接失败。
+
+大陆节点全部连续两轮失败（每轮实际尝试 3 次且无成功，两轮至少间隔 30 秒），并有境外节点在相邻检测周期可达时返回 `suspected`。全部大陆节点可达为 `reachable`；部分大陆节点可达且另有节点连续失败为 `partial`；大陆与境外全部连续两轮失败为 `unreachable`；证据不足为 `unknown`，暂停为 `paused`。证据有效期为 2 倍检测间隔加 30 秒；疑似判定还要求境内外最新检测发起时间相差不超过 1 倍间隔加 30 秒。修改检测配置立即隔离旧作业证据。目标防火墙、地区封禁、服务异常与路由故障均可能影响结果，此判定不能证明封锁原因，不会自动发送告警。

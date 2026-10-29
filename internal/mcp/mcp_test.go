@@ -227,6 +227,9 @@ func (f *fakeSource) ChangeBindings(context.Context, []string, []string, []strin
 func (f *fakeSource) TaskHealth(context.Context, time.Time) (map[string]model.TaskHealth, error) {
 	return map[string]model.TaskHealth{}, f.failure
 }
+func (f *fakeSource) BlockChecks(context.Context, time.Time) ([]model.BlockCheckView, error) {
+	return []model.BlockCheckView{}, f.failure
+}
 func (f *fakeSource) TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error) {
 	if f.failure != nil {
 		return nil, f.failure
@@ -427,7 +430,8 @@ func structured(t *testing.T, result map[string]any) map[string]any {
 
 // readOnly says which tools only read; the annotations must agree.
 var readOnly = map[string]bool{
-	"list_nodes": true, "list_tasks": true, "node_history": true, "node_network_history": true,
+	"block_checks": true,
+	"list_nodes":   true, "list_tasks": true, "node_history": true, "node_network_history": true,
 	"node_observations": true, "recent_events": true, "latency_samples": true,
 	"list_alert_rules": true, "list_catalog": true, "task_runs": true, "get_settings": true,
 	"search_market": true, "list_plugins": true,
@@ -435,6 +439,10 @@ var readOnly = map[string]bool{
 
 func TestModernRevisionRoundTrip(t *testing.T) {
 	env := newEnv(t)
+	checks := structured(t, invoke(t, env, "block_checks", `{}`))
+	if len(checks["checks"].([]any)) != 0 {
+		t.Fatalf("unexpected block checks: %v", checks)
+	}
 
 	code, out := env.modern(t, `"discover-1"`, "server/discover", "", "")
 	if code != 200 {
@@ -464,6 +472,7 @@ func TestModernRevisionRoundTrip(t *testing.T) {
 	}
 	entries, _ := list["tools"].([]any)
 	want := []string{
+		"block_checks",
 		"list_nodes", "list_tasks", "node_history", "node_network_history", "node_observations", "recent_events", "latency_samples",
 		"create_node", "update_node", "delete_node", "batch_update_nodes", "rename_group", "rotate_node_token", "correct_node_traffic",
 		"list_alert_rules", "create_alert_rule", "update_alert_rule", "delete_alert_rule", "list_catalog",

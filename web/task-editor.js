@@ -75,6 +75,9 @@ function every(seconds) {
 export function taskSummary(t) {
   // 解锁检测没有目标与端口：它的对象是内置目录里的 24 项服务，列表里要一眼看出它是这一类任务，
   // 所以「检测内容」写「解锁检测」、目标写「内置目录」，不去算不存在的地址数。
+  if (t.type === "block") {
+    return { block: true, checks: "IP 被墙检测", targets: "大陆 / 境外对照", targetsFull: t.block.host + ":" + t.block.port, regions: 0, families: t.block.family === "ipv4" ? "IPv4" : "IPv6", count: 1, intervals: every(t.block.interval) };
+  }
   if (t.type === "unlock") {
     return {
       unlock: true,

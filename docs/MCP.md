@@ -45,7 +45,7 @@ TZA Probe 在 `POST /mcp` 提供 MCP 接口，AI 客户端可查询节点、探�
 
 地址是 `/mcp`，不带 `/api/v1` 前缀，也没有单独的 `/sse` 地址。用浏览器直接打开地址会发送 GET 并得到 405，这不代表服务不可用。若客户端只能填写 URL、不能携带自定义认证头，无法直接连接当前端点；本服务没有 OAuth 登录流程。
 
-连接成功后应能列出 **28 个工具**。可以先让客户端执行只读查询，例如：“列出所有节点，告诉我哪些离线”或“查看当前正在告警的项目”。
+连接成功后应能列出 **31 个工具**。可以先让客户端执行只读查询，例如：“列出所有节点，告诉我哪些离线”或“查看当前正在告警的项目”。
 
 ## 3. 权限与凭据
 
@@ -67,7 +67,8 @@ MCP Key 具有下表中全部工具的权限，包含写入与删除；当前没
 | 工具 | 用途 |
 | --- | --- |
 | `list_nodes` | 查询全部节点、运行状态、计费与生效提醒规则 |
-| `list_tasks` | 查询网络探测和解锁任务、启停状态与绑定节点 |
+| `list_tasks` | 查询网络探测、解锁与 IP 被墙检测任务、启停状态和绑定节点 |
+| `block_checks` | 查询 IP 被墙检测结论、节点角色与最近两轮 TCP 证据；疑似结果不证明封锁原因 |
 | `node_history` | 查询指定节点的主机历史，`node_id` 必填，可传 `hours` |
 | `node_network_history` | 查询指定节点的网络历史，`node_id` 必填，可传 `hours` |
 | `node_observations` | 查询指定节点的探测结论与脱敏回程跳表 |
@@ -87,7 +88,7 @@ MCP Key 具有下表中全部工具的权限，包含写入与删除；当前没
 | `create_alert_rule` | 新建一条提醒规则 |
 | `update_alert_rule` | 按字段修改提醒规则，`rule_id` 必填 |
 | `delete_alert_rule` | 删除提醒规则，`rule_id` 必填 |
-| `create_task` | 新建 `probe` 网络探测或 `unlock` 解锁任务 |
+| `create_task` | 新建 `probe` 网络探测、`unlock` 解锁或 `block` IP 被墙检测任务（见 [API.md](API.md)） |
 | `update_task` | 按字段修改任务，`task_id` 必填 |
 | `delete_task` | 删除任务及结果，`task_id` 必填 |
 | `control_task` | 暂停、恢复、立即执行或替换节点绑定 |
@@ -126,7 +127,7 @@ curl -sS -i "$MCP_URL" \
   -H 'Accept: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl-check","version":"1.0"}}}'
 
-# 查询工具清单：应返回 30 个工具。
+# 查询工具清单：应返回 31 个工具。
 curl -sS "$MCP_URL" \
   -H "Authorization: Bearer $MCP_API_KEY" \
   -H 'Content-Type: application/json' \

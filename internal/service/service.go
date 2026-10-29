@@ -49,6 +49,7 @@ type Store interface {
 	Backup(context.Context) (string, func(), error)
 	TaskRuns(context.Context, string, time.Time) ([]model.TaskRun, error)
 	TaskHealth(context.Context, time.Time) (map[string]model.TaskHealth, error)
+	BlockChecks(context.Context, time.Time) ([]model.BlockCheckView, error)
 
 	History(context.Context, string, int, time.Time) ([]model.Sample, error)
 	NetworkHistory(context.Context, string, int, time.Time) ([]model.NetworkSeries, error)
@@ -535,6 +536,10 @@ func (s *Service) TaskRuns(ctx context.Context, id string) ([]model.TaskRun, err
 // TaskHealth is TaskRuns summed per task, for the task list.
 func (s *Service) TaskHealth(ctx context.Context) (map[string]model.TaskHealth, error) {
 	return s.Store.TaskHealth(ctx, time.Now())
+}
+
+func (s *Service) BlockChecks(ctx context.Context) ([]model.BlockCheckView, error) {
+	return s.Store.BlockChecks(ctx, time.Now())
 }
 
 // ---------------------------------------------------------------- reads

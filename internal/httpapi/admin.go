@@ -357,6 +357,14 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 	})
 
 	// ---- tasks
+	route("GET /api/v1/admin/block-checks", func(w http.ResponseWriter, r *http.Request) {
+		checks, err := a.svc.BlockChecks(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, checks)
+	})
 	route("GET /api/v1/admin/tasks", func(w http.ResponseWriter, r *http.Request) {
 		tasks, err := a.svc.Tasks(r.Context())
 		if err != nil {

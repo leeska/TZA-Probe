@@ -37,6 +37,12 @@ func annotations(title string, readOnly, destructive, idempotent bool) map[strin
 // the modern revision asks for so a client can cache the list.
 var readTools = []tool{
 	{
+		Name:        "block_checks",
+		Annotations: annotations("IP reachability comparisons", true, false, true),
+		Description: "读取 IP 被墙检测的结论与各大陆/境外节点最近两轮 TCP 证据。suspected 只表示疑似被墙，也可能是地区防火墙或路由故障；unknown 表示证据不足。",
+		InputSchema: schema(map[string]any{}),
+	},
+	{
 		Name:        "list_nodes",
 		Annotations: annotations("List nodes", true, false, true),
 		Description: "列出全部节点：在线状态、最近一次上报的 CPU / 内存 / 磁盘 / 上下行速率、当前计费周期的已用流量、额度与到期时间。",
@@ -125,6 +131,15 @@ func (s *Server) callTool(ctx context.Context, params call) (map[string]any, *rp
 	}
 	svc := s.service()
 	switch params.Name {
+	case "block_checks":
+		if e := arguments(params.Arguments, &struct{}{}); e != nil {
+			return nil, e, http.StatusOK
+		}
+		checks, err := svc.BlockChecks(ctx)
+		if err != nil {
+			return toolFailure("读取 IP 被墙检测失败", err)
+		}
+		return toolResult(map[string]any{"checks": checks, "count": len(checks)}), nil, 0
 	case "list_nodes":
 		if e := arguments(params.Arguments, &struct{}{}); e != nil {
 			return nil, e, http.StatusOK

@@ -70,3 +70,10 @@ jsdom 不做布局，排版类问题只有真浏览器量得出来。用法见�
 源码版本解析由 `cmd/server` 的版本测试覆盖精确 tag、开发分支、无 Git 的源码目录及安装旧 tag 的兼容路径。`scripts/theme-addons-test.mjs` 验证自定义设置主题仍可浏览、安装、更新和删除附加包；与 `scripts/market-permissions-test.mjs` 使用相同的临时前端依赖。
 
 Agent 的状态序号测试覆盖故障心跳在恢复报告之后到达、报告尚未应答时的心跳，以及服务端重启和 Agent 新会话。CC 的 `TestConcurrentFirstRegistration` 需配置独立测试数据库，跨两个连接池并发注册，验证仅一位首次管理员及关闭注册时的行为。
+
+
+## IP 被墙检测回归
+
+`go test ./internal/model ./internal/storage ./internal/httpapi ./internal/mcp` 覆盖公网 IP / 角色校验、两轮 TCP 证据、异步对照、暂停、旧 Agent 调度、删除节点、修改角色隔离旧证据与接口鉴权。`scripts/block-checks-test.mjs` 随流水线执行，覆盖两组节点互斥选择、IPv6 表单提交、结果明细与 HTML 转义。
+
+真实封锁结论须在自有中国大陆和境外直连节点上对同一已开放端口检测。本地测试使用合成连接结果，验证调度与判定流程，不能验证实际线路是否被墙。

@@ -300,7 +300,7 @@ func withGroupWarning(ctx context.Context, svc *service.Service, rule model.Aler
 func taskSchema(withID bool) map[string]any {
 	properties := map[string]any{
 		"name": map[string]any{"type": "string", "description": "任务名称，必填"},
-		"type": map[string]any{"type": "string", "enum": []string{model.TaskProbe, model.TaskUnlock}, "description": "任务类型：probe 为网络探测（填 probe）；unlock 为解锁检测（填 unlock），由节点自己的出口逐项检测流媒体 / AI / 交易所（目录见 GET /api/v1/unlock-catalog）"},
+		"type": map[string]any{"type": "string", "enum": []string{model.TaskProbe, model.TaskUnlock, model.TaskBlock}, "description": "任务类型：block 为 IP 被墙检测（填 block，指定大陆与境外检测节点）；probe 为网络探测（填 probe）；unlock 为解锁检测（填 unlock），由节点自己的出口逐项检测流媒体 / AI / 交易所（目录见 GET /api/v1/unlock-catalog）"},
 		"probe": map[string]any{
 			"type": "object", "additionalProperties": false,
 			"description": "type=probe 时必填：每个检测项都对每个目标执行",
@@ -317,6 +317,19 @@ func taskSchema(withID bool) map[string]any {
 			"properties": map[string]any{
 				"interval": map[string]any{"type": "integer", "minimum": model.UnlockMinInterval, "maximum": 86400, "description": "检测间隔秒数，最短 3600"},
 				"family":   map[string]any{"type": "string", "enum": []string{"", "ipv4", "ipv6"}, "description": "出口协议；留空自动（纯 IPv6 机器走 IPv6）"},
+			},
+		},
+
+		"block": map[string]any{
+			"type": "object", "additionalProperties": false,
+			"description": "type=block 时必填；node_ids 须等于两组节点的并集，至少各一个且不能重叠，合计最多 20 个。仅检测指定 IP 与 TCP 端口，结果为疑似，不能证明封锁原因。",
+			"properties": map[string]any{
+				"host":              map[string]any{"type": "string", "description": "公网 IP，不能填域名"},
+				"port":              map[string]any{"type": "integer", "minimum": 1, "maximum": 65535},
+				"family":            map[string]any{"type": "string", "enum": []string{"ipv4", "ipv6"}},
+				"interval":          map[string]any{"type": "integer", "minimum": 60, "maximum": 3600},
+				"mainland_node_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"overseas_node_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			},
 		},
 		"enabled":  map[string]any{"type": "boolean", "description": "是否启用调度"},

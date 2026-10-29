@@ -167,6 +167,7 @@ check_ui_smoke() {
   TZA_UI_DEPS="$deps" "$JS" scripts/remaining-value-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/theme-addons-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/alert-evaluation-test.mjs || { FAILED=1; return; }
+  TZA_UI_DEPS="$deps" "$JS" scripts/block-checks-test.mjs || { FAILED=1; return; }
   t0=$(now)
   TZA_UI_DEPS="$deps" TZA_TEST_URL="http://127.0.0.1:$port" TZA_TEST_ADMIN_FILE="$TMP/data/admin-token" TZA_TEST_CREDENTIALS_FILE="$TMP/credentials" TZA_TEST_THEMES="$TMP/themes" \
     "$JS" scripts/ui-smoke.mjs 2>&1 | tail -20 | sed 's/^/   /'

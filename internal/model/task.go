@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -35,10 +36,12 @@ func (t Target) runs(kind string) bool {
 
 // Task kinds: a probe task runs TCP latency and/or route checks against a
 // target list; an unlock task checks the built-in service catalogue from each
-// bound node's own egress and has no targets.
+// bound node's own egress. A block task compares one IP/port across mainland
+// and overseas nodes, using ordinary TCP leaves.
 const (
 	TaskProbe  = "probe"
 	TaskUnlock = "unlock"
+	TaskBlock  = "block"
 )
 
 // Task is a management task as the panel and MCP edit it: a tagged union whose
@@ -52,6 +55,7 @@ type Task struct {
 	NodeIDs []string    `json:"node_ids"`
 	Probe   *ProbeSpec  `json:"probe,omitempty"`
 	Unlock  *UnlockSpec `json:"unlock,omitempty"`
+	Block   *BlockSpec  `json:"block,omitempty"`
 }
 
 // ProbeSpec is a probe task's definition: every check runs against every
@@ -91,6 +95,12 @@ type Probe struct {
 // a single catalogue round for an unlock task.
 func (t Task) Leaves() []Probe {
 	switch {
+	case t.Type == TaskBlock && t.Block != nil:
+		b := t.Block
+		// A changed role/interval gets a new key immediately, even while the
+		// background purger is still removing the previous definition's jobs.
+		data, _ := json.Marshal(b)
+		return []Probe{{ID: t.ID, Name: t.Name, Kind: "tcp", Host: b.Host, Port: b.Port, Family: b.Family, Interval: b.Interval, Region: "IP 被墙检测/" + Hash(string(data))[:16], Carrier: "其他"}}
 	case t.Type == TaskUnlock && t.Unlock != nil:
 		return []Probe{{ID: t.ID, Name: t.Name, Kind: UnlockKind, Family: t.Unlock.Family, Interval: t.Unlock.Interval}}
 	case t.Type == TaskProbe && t.Probe != nil:
@@ -136,8 +146,8 @@ func (t Task) Validate() error {
 	}
 	switch t.Type {
 	case TaskProbe:
-		if t.Probe == nil || t.Unlock != nil {
-			return errors.New("网络探测任务须给 probe（检测内容与目标），不能带 unlock")
+		if t.Probe == nil || t.Unlock != nil || t.Block != nil {
+			return errors.New("网络探测任务须给 probe（检测内容与目标），不能带 unlock 或 block")
 		}
 		p := t.Probe
 		if len(p.Checks) < 1 || len(p.Checks) > 2 || len(p.Targets) < 1 || len(p.Targets) > 200 {
@@ -172,14 +182,21 @@ func (t Task) Validate() error {
 			}
 		}
 	case TaskUnlock:
-		if t.Unlock == nil || t.Probe != nil {
-			return errors.New("解锁检测任务须给 unlock（间隔与协议），不能带 probe")
+		if t.Unlock == nil || t.Probe != nil || t.Block != nil {
+			return errors.New("解锁检测任务须给 unlock（间隔与协议），不能带 probe 或 block")
 		}
 		if err := t.Leaves()[0].Validate(); err != nil {
 			return err
 		}
+	case TaskBlock:
+		if t.Block == nil || t.Probe != nil || t.Unlock != nil {
+			return errors.New("IP 被墙检测须给 block，不能带 probe 或 unlock")
+		}
+		if err := t.validateBlock(); err != nil {
+			return err
+		}
 	default:
-		return errors.New("任务类型须为 probe（网络探测）或 unlock（解锁检测）")
+		return errors.New("任务类型须为 probe（网络探测）、unlock（解锁检测）或 block（IP 被墙检测）")
 	}
 	if len(t.NodeIDs) > 1000 {
 		return errors.New("绑定节点过多")

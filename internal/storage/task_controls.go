@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -173,6 +174,9 @@ func bindTask(ctx context.Context, tx *sql.Tx, id string, nodeIDs []string) erro
 	task, err := loadTask(ctx, tx, id)
 	if err != nil {
 		return err
+	}
+	if task.Type == model.TaskBlock && !slices.Equal(task.NodeIDs, nodeIDs) {
+		return model.Invalid("IP 被墙检测需分别指定大陆和境外节点，请通过编辑任务调整")
 	}
 	task.NodeIDs = nodeIDs
 	if err = task.Validate(); err != nil {

@@ -99,7 +99,7 @@ func (s *Store) ProbeTargets(ctx context.Context) (map[string][]model.ProbeTarge
 	plan := map[string][]model.ProbeTarget{}
 	seen := map[string]map[key]bool{}
 	for _, t := range tasks {
-		if !t.Enabled {
+		if !t.Enabled || t.Type == model.TaskBlock {
 			continue
 		}
 		for _, leaf := range t.Leaves() {
@@ -186,7 +186,7 @@ func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) (string
 	if _, err = tx.ExecContext(ctx, "UPDATE tasks SET config=? WHERE id=?", encode(t), t.ID); err != nil {
 		return "", err
 	}
-	if sameKeys(previous.ProbeKeys(), t.ProbeKeys()) {
+	if sameKeys(previous.ProbeKeys(), t.ProbeKeys()) && previous.Type == t.Type {
 		// 探测内容没变：只按绑定差异增删（保留未变绑定的调度时间与历史），与 BindTasks 同一条路。
 		if err = bindTask(ctx, tx, t.ID, t.NodeIDs); err != nil {
 			return "", err
