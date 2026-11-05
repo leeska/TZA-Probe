@@ -325,7 +325,7 @@ type Decoration struct {
 // Reserved are package IDs rejected by all versions of the shared registry.
 // Probe itself rejects its compiled-in shadcn ID; CC retains its old releases
 // for older Probes. Glass is distributed as a regular package.
-var Reserved = []string{}
+var Reserved = []string{OfficialExecutorID}
 
 var (
 	idPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)

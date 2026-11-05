@@ -1760,6 +1760,21 @@ button.agent-stale {
 }
 
 /* Panel */
+.executor-list .panel,
+#dialog article.panel {
+  padding: var(--space-5);
+  overflow-wrap: anywhere;
+}
+.executor-list .panel p {
+  margin: var(--space-3) 0;
+}
+.executor-list .heading-actions,
+.executor-list .page-heading {
+  flex-wrap: wrap;
+}
+.executor-list details {
+  margin: var(--space-4) 0;
+}
 .panel {
   border: 1px solid var(--line);
   border-radius: var(--panel-radius, var(--radius-xl));
@@ -5494,4 +5509,35 @@ dialog.theme-settings-dialog { width: min(920px, calc(100vw - 32px)); max-width:
 
 .detail-stats > .detail-remaining-value {
   grid-column: 1 / -1;
+}
+.executor-slot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.executor-service-set {
+  min-width: 0;
+  padding: 0;
+  margin: var(--space-4) 0;
+  border: 0;
+}
+
+.executor-service-set legend {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.executor-slot-row label {
+  min-width: 0;
+}
+
+@media (max-width: 540px) {
+  .executor-slot-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
 }

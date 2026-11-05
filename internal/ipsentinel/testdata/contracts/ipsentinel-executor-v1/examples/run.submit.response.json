@@ -1,0 +1,16 @@
+{
+  "protocol": "ipsentinel.executor/1",
+  "request_id": "77777777-7777-4777-8777-000000000005",
+  "method": "run.submit",
+  "ok": true,
+  "result": {
+    "duplicate": false,
+    "run": {
+      "job_id": "44444444-4444-4444-8444-444444444444",
+      "run_id": "55555555-5555-4555-8555-555555555555",
+      "state": "accepted",
+      "accepted_at": "2026-11-04T01:00:00Z",
+      "result": null
+    }
+  }
+}

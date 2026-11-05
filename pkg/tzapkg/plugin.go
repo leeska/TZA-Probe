@@ -246,10 +246,22 @@ func Inspect(archive []byte) (Info, error) {
 		return Info{}, errors.New("不是有效的 zip 压缩包")
 	}
 	plugin := false
+	executor := false
 	for _, f := range zr.File {
-		if base := f.Name[strings.LastIndex(f.Name, "/")+1:]; base == "plugin.json" {
+		base := f.Name[strings.LastIndex(f.Name, "/")+1:]
+		if base == "plugin.json" {
 			plugin = true
 		}
+		if base == "executor.json" {
+			executor = true
+		}
+	}
+	if executor {
+		manifest, err := OpenExecutor(archive)
+		if err != nil {
+			return Info{}, err
+		}
+		return Info{ID: manifest.ID, Type: TypeExecutor, Kind: "ipsentinel", Name: manifest.Name, Hint: manifest.Hint, Version: manifest.Version, Author: manifest.Author, Permissions: manifest.Permissions(), Manifest: &manifest}, nil
 	}
 	if plugin {
 		p, err := OpenPlugin(archive)

@@ -1,0 +1,11 @@
+{
+  "protocol": "ipsentinel.executor/1",
+  "request_id": "77777777-7777-4777-8777-000000000009",
+  "method": "control.resume",
+  "ok": false,
+  "error": {
+    "code": "permission_denied",
+    "message": "Operation not permitted",
+    "retryable": false
+  }
+}

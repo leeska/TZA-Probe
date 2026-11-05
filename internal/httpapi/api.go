@@ -158,6 +158,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
 	mux.HandleFunc("GET /api/v1/unlock-catalog", a.unlockCatalog)
 	a.adminRoutes(mux)
+	a.executorRoutes(mux)
 	// 前台默认外观必须在样式表之前定下来，否则首屏会先按内置默认闪一下再跳到设置里的皮肤。
 	// CSP 是 script-src 'self'，index.html 里写不了内联脚本，所以这里发一份几十字节的
 	// 动态脚本，由 index.html 在 theme-boot.js 之前引用。

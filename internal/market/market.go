@@ -532,6 +532,17 @@ func (c *Client) cleanItem(it *Item, installed map[string]Installed) bool {
 			}
 		}
 		it.Permissions = perms
+	} else if it.Type == tzapkg.TypeExecutor {
+		if it.ID != tzapkg.OfficialExecutorID || it.Kind != "ipsentinel" || len(it.Permissions) == 0 {
+			return false
+		}
+		perms := []string{}
+		for _, permission := range it.Permissions {
+			if permission = clean(permission, maxJSON); permission != "" && len(perms) < 10 {
+				perms = append(perms, permission)
+			}
+		}
+		it.Permissions = perms
 	} else {
 		it.Kind, it.Permissions = "", nil
 	}

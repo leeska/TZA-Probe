@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/unlock"
 )
 
 // Runner executes one job. Route tasks run through Embedded unless the operator
@@ -22,92 +21,23 @@ import (
 type Runner struct {
 	Nexttrace string
 	Embedded  *Embedded
+	Registry  *Registry
 }
 
 func (r Runner) Run(ctx context.Context, j model.Job) model.Result {
-	result := model.Result{JobID: j.ID, Status: "failed", Route: "未知", Hops: []model.Hop{}}
-	if err := j.Task.Validate(); err != nil {
-		return result
+	if r.Registry != nil {
+		return r.Registry.Run(ctx, j)
 	}
-	if j.Task.Kind == model.UnlockKind {
-		return r.runUnlock(ctx, j)
-	}
-	if j.Task.Kind == "route" && r.Nexttrace == "" && r.Embedded == nil {
-		result.Status = "unavailable"
-		result.Reason = "tool_missing"
-		return result
-	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	network := "ip4"
-	tcp := "tcp4"
-	if j.Task.Family == "ipv6" {
-		network = "ip6"
-		tcp = "tcp6"
-	}
-	addresses, err := net.DefaultResolver.LookupIP(ctx, network, j.Task.Host)
-	if err != nil || len(addresses) == 0 {
-		result.Reason = "dns"
-		return result
-	}
-	ip := addresses[0].String()
-	// Fake-IP DNS proxies commonly synthesize RFC2544 benchmarking addresses.
-	// A connection/trace to that proxy is not a measurement of the configured host.
-	if syntheticAddress(addresses[0]) {
-		result.Reason = "synthetic_dns"
-		return result
-	}
-	if j.Task.Kind == "tcp" {
-		result.Sent = 3
-		var total float64
-		for i := 0; i < 3; i++ {
-			start := time.Now()
-			dialer := net.Dialer{Timeout: 3 * time.Second}
-			conn, err := dialer.DialContext(ctx, tcp, net.JoinHostPort(ip, strconv.Itoa(j.Task.Port)))
-			if err == nil {
-				conn.Close()
-				result.Received++
-				total += float64(time.Since(start).Microseconds()) / 1000
-			}
-		}
-		if result.Received > 0 {
-			ms := total / float64(result.Received)
-			result.Latency = &ms
-			result.Status = "ok"
-		} else {
-			result.Status = "timeout"
-			result.Reason = "connect_failed"
-		}
-		return result
-	}
-
-	outcome := r.traceRoute(ctx, j, ip)
-	result.Hops, result.Sent = outcome.Hops, 1
-	result.Received, result.Latency = outcome.Received, outcome.Latency
-	switch {
-	case outcome.Received > 0:
-		result.Status = "ok"
-		result.Route = model.RouteLabel(result.Hops)
-	case outcome.Reason == "timeout":
-		result.Status = "timeout"
-		result.Reason = "timeout"
-	case outcome.Reason == "tool_missing":
-		result.Status = "unavailable"
-		result.Reason = "tool_missing"
-	default:
-		result.Status = "failed"
-		result.Reason = outcome.Reason
-	}
-	return result
+	return r.DefaultRegistry().Run(ctx, j)
 }
 
-// traceRoute picks the tracer: an operator-configured binary wins, otherwise
-// the embedded NTrace-core tracer runs in process.
-func (r Runner) traceRoute(ctx context.Context, j model.Job, ip string) traceOutcome {
-	if r.Nexttrace != "" {
-		return execTrace(ctx, r.Nexttrace, j, ip)
-	}
-	return r.Embedded.Trace(ctx, net.ParseIP(ip), j.Task.Port)
+// DefaultRegistry builds the built-in executor registry for TCP, Route, and Unlock.
+func (r Runner) DefaultRegistry() *Registry {
+	return NewRegistry(
+		TCPExecutor{},
+		RouteExecutor{Nexttrace: r.Nexttrace, Embedded: r.Embedded},
+		UnlockExecutor{},
+	)
 }
 
 // execTrace runs an operator-installed NextTrace binary and parses --raw output.
@@ -205,31 +135,3 @@ func syntheticAddress(ip net.IP) bool {
 // HTTPS requests, each with its own deadline inside the package; this is the
 // outer bound so one hung service cannot hold the job forever.
 const unlockBudget = 4 * time.Minute
-
-// runUnlock executes the built-in unlock catalogue from this host's own egress
-// and maps it onto the job result. The verdicts ride on the result; the Server
-// stores them per node (see storage.Finish).
-func (r Runner) runUnlock(ctx context.Context, j model.Job) model.Result {
-	result := model.Result{JobID: j.ID, Status: "failed", Route: "未知", Hops: []model.Hop{}}
-	ctx, cancel := context.WithTimeout(ctx, unlockBudget)
-	defer cancel()
-	// The round describes the node's IPv4 egress — pinned, not left to the
-	// host's default. A dual-stack box otherwise probed over IPv6, and the two
-	// paths disagree on the catalogue: one US box reads a Hong Kong catalogue
-	// over v4 and a US one over v6, a Hong Kong box reports Youtube GL=HK over
-	// v4 and GL=US over v6. That is why these numbers disagreed with every
-	// other checker's. j.Task.Family still overrides when a task names one.
-	family := j.Task.Family
-	if family == "" {
-		family = "ipv4"
-	}
-	results := unlock.Run(ctx, unlock.Options{Family: family})
-	if len(results) == 0 {
-		// 一项都没跑出来（被取消、目录为空）不是「未解锁」，是一轮没完成。
-		result.Reason = "tool_failed"
-		return result
-	}
-	result.Status = "ok"
-	result.Unlocks = results
-	return result
-}

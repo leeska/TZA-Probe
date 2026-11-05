@@ -1,0 +1,65 @@
+{
+  "protocol": "ipsentinel.executor/1",
+  "request_id": "77777777-7777-4777-8777-000000000003",
+  "method": "config.validate",
+  "target": {
+    "controller_id": "22222222-2222-4222-8222-222222222222",
+    "node_id": "33333333-3333-4333-8333-333333333333"
+  },
+  "params": {
+    "config": {
+      "config_version": 1,
+      "egress": {
+        "expected_ip": "8.8.8.8",
+        "family": "ipv4",
+        "check_profile_id": "ipify-public-v1"
+      },
+      "services": [
+        {
+          "service_id": "google",
+          "enabled": true,
+          "adapter_id": "google_home",
+          "observation_profile_id": "google-home-neutral-v1",
+          "observation_environment": {
+            "locale": "en-US",
+            "timezone": "UTC"
+          },
+          "experiment": {
+            "profile_id": "google-home-ncr-v1",
+            "environment": {
+              "locale": "en-US",
+              "timezone": "America/Chicago"
+            },
+            "geolocation": {
+              "latitude_microdegrees": 31845700,
+              "longitude_microdegrees": -102367600,
+              "accuracy_m": 20
+            },
+            "dwell_min_ms": 4000,
+            "dwell_max_ms": 12000
+          },
+          "allowed_origins": [
+            "https://www.google.com",
+            "https://www.google.com.hk",
+            "https://www.gstatic.com",
+            "https://api64.ipify.org"
+          ],
+          "target_country": "US"
+        }
+      ],
+      "limits": {
+        "timeout_ms": 120000,
+        "memory_bytes": 461373440,
+        "cpu_millicores": 850,
+        "pids": 256,
+        "network_bytes": 31457280,
+        "http_requests": 150
+      },
+      "daily_budget": {
+        "runs": 8,
+        "navigations": 32,
+        "network_bytes": 209715200
+      }
+    }
+  }
+}

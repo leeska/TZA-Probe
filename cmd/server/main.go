@@ -121,7 +121,24 @@ func run() error {
 	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Market: cc, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				cycle, cancel := context.WithTimeout(ctx, 5*time.Second)
+				if err := store.TickExecutorSchedules(cycle, now); err != nil && ctx.Err() == nil {
+					slog.Error("executor schedule failed", "error", err)
+				}
+				cancel()
+			}
+		}
+	}()
 	go func() {
 		defer wg.Done()
 		channels := &service.Service{Store: store, Plugins: plugins}

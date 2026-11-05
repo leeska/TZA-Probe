@@ -85,6 +85,8 @@ func (c *Client) Install(ctx context.Context, id, version string) (Result, error
 	switch {
 	case err != nil:
 		return Result{}, fmt.Errorf("%w：%v", ErrRejected, err)
+	case info.Type == tzapkg.TypeExecutor:
+		return Result{}, fmt.Errorf("%w：节点运行时不得作为主题或插件安装；请使用专门的节点安装流程", ErrRejected)
 	case info.ID != id:
 		return Result{}, rejected("包内清单的 id %q 与市场包 %q 不符", info.ID, id)
 	case info.Version != sig.Version:

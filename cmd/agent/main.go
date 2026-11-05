@@ -12,22 +12,30 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/leeska/TZA-Probe/internal/agent"
+	"github.com/leeska/TZA-Probe/internal/ipsentinel"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/probe"
 )
 
 type config struct {
-	Endpoint    string   `json:"endpoint"`
-	Token       string   `json:"token"`
-	Interfaces  []string `json:"interfaces"`
-	Mount       string   `json:"mount"`
-	Nexttrace   string   `json:"nexttrace"`
-	GeoProvider string   `json:"geo_provider"`
-	TraceMethod string   `json:"trace_method"`
-	AllowHTTP   bool     `json:"allow_http"`
+	Endpoint    string          `json:"endpoint"`
+	Token       string          `json:"token"`
+	Interfaces  []string        `json:"interfaces"`
+	Mount       string          `json:"mount"`
+	Nexttrace   string          `json:"nexttrace"`
+	GeoProvider string          `json:"geo_provider"`
+	TraceMethod string          `json:"trace_method"`
+	AllowHTTP   bool            `json:"allow_http"`
+	IPSentinel  *executorConfig `json:"ipsentinel,omitempty"`
+}
+
+type executorConfig struct {
+	SocketPath string            `json:"socket_path"`
+	Target     ipsentinel.Target `json:"target"`
 }
 
 // errRestart ends the process with agent.ExitRestart so the service manager
@@ -109,6 +117,21 @@ func run() error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	app := agent.Agent{Collector: &agent.SystemCollector{Interfaces: cfg.Interfaces, Mount: cfg.Mount}, Prober: prober, Transport: transport}
+	app.Prober = prober.DefaultRegistry()
+	if cfg.IPSentinel != nil {
+		if runtime.GOOS != "linux" {
+			return errors.New("IPSentinel integration requires Linux")
+		}
+		if cfg.IPSentinel.SocketPath != "" && !filepath.IsAbs(cfg.IPSentinel.SocketPath) {
+			return errors.New("IPSentinel socket_path must be absolute")
+		}
+		if !ipsentinel.ValidUUID(cfg.IPSentinel.Target.ControllerID) || !ipsentinel.ValidUUID(cfg.IPSentinel.Target.NodeID) {
+			return errors.New("IPSentinel target requires provisioned controller/node UUIDs")
+		}
+		client := ipsentinel.NewClient(cfg.IPSentinel.SocketPath, cfg.IPSentinel.Target)
+		defer client.Close()
+		app.ExecutorSync = ipsentinel.Synchronizer{Reader: client, Transport: transport, Target: cfg.IPSentinel.Target}
+	}
 	restart := false
 	if *selfUpdate {
 		keys, err := agent.LoadKeys(keyPath)

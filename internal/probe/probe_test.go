@@ -80,3 +80,21 @@ func TestFakeIPCannotBecomeSuccessfulMeasurement(t *testing.T) {
 		t.Fatal("overbroad synthetic range")
 	}
 }
+
+func TestRegistryIsolatesBuiltInExecutors(t *testing.T) {
+	reg := (Runner{}).DefaultRegistry()
+	kinds := reg.Kinds()
+	if len(kinds) != 3 || kinds[0] != "route" || kinds[1] != "tcp" || kinds[2] != "unlock" {
+		t.Fatalf("unexpected built-in kinds: %v", kinds)
+	}
+	// Removing route from a custom registry returns unavailable/tool_missing without affecting tcp.
+	tcpOnly := NewRegistry(TCPExecutor{})
+	routeJob := model.Job{
+		ID:   "r1",
+		Task: model.Probe{Name: "r", Kind: "route", Host: "127.0.0.1", Port: 80, Family: "ipv4", Region: "上海", Carrier: "电信", Interval: 900},
+	}
+	res := (Runner{Registry: tcpOnly}).Run(context.Background(), routeJob)
+	if res.Status != "unavailable" || res.Reason != "tool_missing" {
+		t.Fatalf("expected unavailable tool_missing, got %+v", res)
+	}
+}

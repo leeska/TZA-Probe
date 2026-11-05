@@ -1,6 +1,8 @@
 package market
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -28,6 +30,42 @@ type env struct {
 	plugins *plugin.Store
 	dir     string
 	clock   time.Time
+}
+
+func executorRuntimeArchive(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile("../../pkg/tzapkg/testdata/runtime/executor.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	file, err := writer.Create("executor.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func TestExecutorRuntimeIsHiddenFromGenericInstallCatalog(t *testing.T) {
+	e := newEnv(t)
+	e.client.probe = "1.6.0"
+	e.cc.Add(&markettest.Package{ID: tzapkg.OfficialExecutorID, Type: tzapkg.TypeExecutor, Kind: "ipsentinel", Name: "IPSentinel runtime", Releases: []markettest.Release{{Version: "0.4.0", Probe: ">=1.6.0", Archive: executorRuntimeArchive(t)}}})
+	if _, err := e.client.Catalog(context.Background(), Query{Type: tzapkg.TypeExecutor}); !errors.Is(err, model.ErrInvalid) {
+		t.Fatal("runtime entered generic theme/plugin installation UI", err)
+	}
+	if _, err := e.client.Catalog(context.Background(), Query{Type: "arbitrary-executable"}); !errors.Is(err, model.ErrInvalid) {
+		t.Fatal("arbitrary executable package type accepted", err)
+	}
+	if _, err := e.client.Catalog(context.Background(), Query{Type: "executor", Kind: "ipsentinel"}); !errors.Is(err, model.ErrInvalid) {
+		t.Fatal("executor used plugin kind filter", err)
+	}
 }
 
 func newEnv(t *testing.T) *env {

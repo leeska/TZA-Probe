@@ -1,0 +1,489 @@
+{
+  "contract_version": "1.0.0",
+  "valid": [
+    {
+      "file": "examples/hello.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/hello.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/hello.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/status.get.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/status.get.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/status.get.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/config.validate.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/config.validate.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/config.validate.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/config.apply.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/config.apply.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/config.apply.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/run.submit.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/run.submit.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/run.submit.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/run.get.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/run.get.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/run.get.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/run.cancel.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/run.cancel.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/run.cancel.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/control.pause.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/control.pause.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/control.pause.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/control.resume.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/control.resume.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/control.resume.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/records.list.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/records.list.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/records.list.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/records.ack.request.json",
+      "definition": "request"
+    },
+    {
+      "file": "examples/records.ack.response.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/records.ack.error.json",
+      "definition": "response"
+    },
+    {
+      "file": "examples/config.json",
+      "definition": "config"
+    },
+    {
+      "file": "examples/result.observe.json",
+      "definition": "result"
+    },
+    {
+      "file": "examples/result.experiment.json",
+      "definition": "result"
+    },
+    {
+      "file": "examples/result.failed.json",
+      "definition": "result"
+    },
+    {
+      "file": "examples/runtime-descriptor.json",
+      "definition": "runtime_descriptor"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "no_remote_command",
+      "base": "examples/run.submit.request.json",
+      "definition": "request",
+      "replace": [
+        "params",
+        "command"
+      ],
+      "value": "curl example.com",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "no_remote_state_dir",
+      "base": "examples/config.json",
+      "definition": "config",
+      "replace": [
+        "state_dir"
+      ],
+      "value": "/etc",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "no_observe_coordinates",
+      "base": "examples/result.observe.json",
+      "definition": "result",
+      "replace": [
+        "session",
+        "geolocation_override"
+      ],
+      "value": true,
+      "rejected_by": "schema"
+    },
+    {
+      "name": "no_persistent_clean_session",
+      "base": "examples/result.observe.json",
+      "definition": "result",
+      "replace": [
+        "session",
+        "kind"
+      ],
+      "value": "persistent",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "experiment_not_qualified",
+      "base": "examples/result.experiment.json",
+      "definition": "result",
+      "replace": [
+        "assessment_eligible"
+      ],
+      "value": true,
+      "rejected_by": "schema"
+    },
+    {
+      "name": "unknown_not_zero",
+      "base": "examples/result.observe.json",
+      "definition": "result",
+      "replace": [
+        "pages",
+        0,
+        "signals",
+        0,
+        "status"
+      ],
+      "value": "unknown",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "observed_requires_value",
+      "base": "examples/result.observe.json",
+      "definition": "result",
+      "replace": [
+        "pages",
+        0,
+        "signals",
+        0,
+        "value"
+      ],
+      "value": null,
+      "rejected_by": "schema"
+    },
+    {
+      "name": "no_cookie_export",
+      "base": "examples/result.experiment.json",
+      "definition": "result",
+      "replace": [
+        "geolocation_evidence",
+        "uule_cookie"
+      ],
+      "value": "secret",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "completed_cannot_be_null_result",
+      "base": "examples/run.get.response.json",
+      "definition": "response",
+      "replace": [
+        "result",
+        "result"
+      ],
+      "value": null,
+      "rejected_by": "schema"
+    },
+    {
+      "name": "protocol_major_mismatch",
+      "base": "examples/hello.request.json",
+      "definition": "request",
+      "replace": [
+        "protocol"
+      ],
+      "value": "ipsentinel.executor/2",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "no_http_origin",
+      "base": "examples/config.json",
+      "definition": "config",
+      "replace": [
+        "services",
+        0,
+        "allowed_origins",
+        0
+      ],
+      "value": "http://www.google.com",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "no_origin_query",
+      "base": "examples/config.json",
+      "definition": "config",
+      "replace": [
+        "services",
+        0,
+        "allowed_origins",
+        0
+      ],
+      "value": "https://www.google.com?q=x",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "config_dwell_reversed",
+      "base": "examples/config.json",
+      "definition": "config",
+      "replace": [
+        "services",
+        0,
+        "experiment",
+        "dwell_min_ms"
+      ],
+      "value": 13000,
+      "rejected_by": "semantic"
+    },
+    {
+      "name": "config_duplicate_service",
+      "base": "examples/config.json",
+      "definition": "config",
+      "replace": [
+        "services"
+      ],
+      "value": [
+        {
+          "service_id": "google",
+          "enabled": true,
+          "adapter_id": "google_home",
+          "observation_profile_id": "google-home-neutral-v1",
+          "observation_environment": {
+            "locale": "en-US",
+            "timezone": "UTC"
+          },
+          "experiment": {
+            "profile_id": "google-home-ncr-v1",
+            "environment": {
+              "locale": "en-US",
+              "timezone": "America/Chicago"
+            },
+            "geolocation": {
+              "latitude_microdegrees": 31845700,
+              "longitude_microdegrees": -102367600,
+              "accuracy_m": 20
+            },
+            "dwell_min_ms": 4000,
+            "dwell_max_ms": 12000
+          },
+          "allowed_origins": [
+            "https://www.google.com",
+            "https://www.google.com.hk",
+            "https://www.gstatic.com",
+            "https://api64.ipify.org"
+          ],
+          "target_country": "US"
+        },
+        {
+          "service_id": "google",
+          "enabled": true,
+          "adapter_id": "google_home",
+          "observation_profile_id": "google-home-neutral-v1",
+          "observation_environment": {
+            "locale": "en-US",
+            "timezone": "UTC"
+          },
+          "experiment": {
+            "profile_id": "google-home-ncr-v1",
+            "environment": {
+              "locale": "en-US",
+              "timezone": "America/Chicago"
+            },
+            "geolocation": {
+              "latitude_microdegrees": 31845700,
+              "longitude_microdegrees": -102367600,
+              "accuracy_m": 20
+            },
+            "dwell_min_ms": 4000,
+            "dwell_max_ms": 12000
+          },
+          "allowed_origins": [
+            "https://www.google.com",
+            "https://www.google.com.hk",
+            "https://www.gstatic.com",
+            "https://api64.ipify.org"
+          ],
+          "target_country": "US"
+        }
+      ],
+      "rejected_by": "semantic"
+    },
+    {
+      "name": "family_ip_mismatch",
+      "base": "examples/config.json",
+      "definition": "config",
+      "replace": [
+        "egress",
+        "family"
+      ],
+      "value": "ipv6",
+      "rejected_by": "semantic"
+    },
+    {
+      "name": "run_window_reversed",
+      "base": "examples/run.submit.request.json",
+      "definition": "request",
+      "replace": [
+        "params",
+        "expires_at"
+      ],
+      "value": "2026-11-04T00:59:00Z",
+      "rejected_by": "semantic"
+    },
+    {
+      "name": "phase_purpose_mismatch",
+      "base": "examples/run.submit.request.json",
+      "definition": "request",
+      "replace": [
+        "params",
+        "phase"
+      ],
+      "value": "experiment",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "qualify_without_postflight",
+      "base": "examples/result.observe.json",
+      "definition": "result",
+      "replace": [
+        "egress",
+        "after"
+      ],
+      "value": null,
+      "rejected_by": "semantic"
+    },
+    {
+      "name": "qualify_without_neutral_entry",
+      "base": "examples/result.observe.json",
+      "definition": "result",
+      "replace": [
+        "pages",
+        0,
+        "neutral_entry"
+      ],
+      "value": false,
+      "rejected_by": "semantic"
+    },
+    {
+      "name": "qualify_with_unclean_shutdown",
+      "base": "examples/result.observe.json",
+      "definition": "result",
+      "replace": [
+        "resources",
+        "cleanup"
+      ],
+      "value": "failed",
+      "rejected_by": "semantic"
+    },
+    {
+      "name": "signal_provider_mismatch",
+      "base": "examples/result.observe.json",
+      "definition": "result",
+      "replace": [
+        "pages",
+        0,
+        "signals",
+        0,
+        "provider"
+      ],
+      "value": "meta",
+      "rejected_by": "semantic"
+    },
+    {
+      "name": "terminal_state_disagrees",
+      "base": "examples/run.get.response.json",
+      "definition": "response",
+      "replace": [
+        "result",
+        "state"
+      ],
+      "value": "failed",
+      "rejected_by": "schema"
+    },
+    {
+      "name": "config_profile_mismatch",
+      "base": "examples/config.json",
+      "definition": "config",
+      "replace": [
+        "services",
+        0,
+        "observation_profile_id"
+      ],
+      "value": "google-home-ncr-v1",
+      "rejected_by": "semantic"
+    }
+  ],
+  "canonical_config_sha256": "4cc67c5cb9199d4913afad0eeb088bc62993d15bebcc94a64c20aa00acd75a5a"
+}

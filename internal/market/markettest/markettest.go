@@ -172,7 +172,7 @@ func (cc *CC) item(p *Package) map[string]any {
 		"latest": latest, "price": 0, "downloads": 12, "updated_at": "2026-10-01T00:00:00Z",
 		"swatch": []string{"#eef0e2", "#fbfaf3", "#5f8f3a"}, "cover": cc.Server.URL + "/media/" + p.ID + ".png",
 	}
-	if p.Type == tzapkg.TypePlugin {
+	if p.Type == tzapkg.TypePlugin || p.Type == tzapkg.TypeExecutor {
 		// Plugins: no swatch or cover; kind and what the newest release may do.
 		delete(out, "cover")
 		out["swatch"] = []string{}
@@ -181,6 +181,9 @@ func (cc *CC) item(p *Package) map[string]any {
 			if info, err := tzapkg.Inspect(p.Releases[0].Archive); err == nil {
 				out["permissions"] = info.Permissions
 			}
+		}
+		if p.Type == tzapkg.TypeExecutor {
+			out["permissions"] = []string{"network.public_https", "browser.execute"}
 		}
 	}
 	return out

@@ -1,0 +1,73 @@
+{
+  "format_version": 1,
+  "id": "ipsentinel-runtime",
+  "type": "executor",
+  "name": "IPSentinel distribution fixture",
+  "hint": "Metadata and inert bytes for distribution tests; no executable runtime",
+  "version": "0.4.0",
+  "author": "Test fixture",
+  "compatibility": {
+    "cc_format": 1,
+    "probe_min": "1.6.0",
+    "agent_min": "1.6.0",
+    "python": "3.12"
+  },
+  "descriptor": {
+    "descriptor_version": 1,
+    "executor_id": "ipsentinel",
+    "runtime_version": "0.4.0",
+    "protocols": ["ipsentinel.executor/1"],
+    "contract_version": "1.0.0",
+    "platforms": ["linux-amd64"],
+    "permissions": ["network.public_https", "browser.execute", "profile.persist", "geolocation.override"],
+    "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "profiles": [
+      {
+        "profile_id": "ipify-public-v1",
+        "adapter_id": "egress",
+        "adapter_version": "1",
+        "purpose": "egress_check",
+        "origins": ["https://api64.ipify.org"],
+        "recovery_capable": false
+      }
+    ],
+    "runtime_artifacts": [
+      {
+        "platform": "linux-amd64",
+        "sha256": "5f37ec62462abe72820da0a27866cc09d404bad8b2eea7da94cf769c443d6e00",
+        "size_bytes": 31,
+        "entrypoint": "ipsentinel-control",
+        "browser_revision": "fixture-chromium-1",
+        "dependencies_sha256": "06142cf40d0402b5776842171e4e3070e3eeac072fae423dd95a092239b26ed0"
+      }
+    ]
+  },
+  "dependencies": [
+    {
+      "platform": "linux-amd64",
+      "artifacts": [
+        {
+          "id": "python",
+          "kind": "python",
+          "version": "3.12",
+          "sha256": "0140f81b98931fea3f6888538c8ece21dc9c0e9113300252141bd489578b1f43",
+          "size_bytes": 30
+        },
+        {
+          "id": "chromium",
+          "kind": "chromium",
+          "version": "fixture-chromium-1",
+          "sha256": "ed647dea18c344e0ecf0782c89dd7ca6269bd50eeafda6e9e322c7aabe865d0c",
+          "size_bytes": 32
+        },
+        {
+          "id": "libseccomp",
+          "kind": "libraries",
+          "version": "fixture-linux-1",
+          "sha256": "6b68e865bb88ee73092eed5f34247b9bc99a038f2537eab0be63099cc2b77ae3",
+          "size_bytes": 33
+        }
+      ]
+    }
+  ]
+}

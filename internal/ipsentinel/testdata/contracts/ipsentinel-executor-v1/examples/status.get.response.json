@@ -1,0 +1,56 @@
+{
+  "protocol": "ipsentinel.executor/1",
+  "request_id": "77777777-7777-4777-8777-000000000002",
+  "method": "status.get",
+  "ok": true,
+  "result": {
+    "executor_instance_id": "11111111-1111-4111-8111-111111111111",
+    "observed_at": "2026-11-04T01:00:30Z",
+    "health": "ready",
+    "control": {
+      "mode": "managed",
+      "epoch": 1,
+      "paused": false,
+      "pause_generation": 0,
+      "pause_reason": null,
+      "draining": false,
+      "active_run_id": null
+    },
+    "config": {
+      "revision": 1,
+      "sha256": "4cc67c5cb9199d4913afad0eeb088bc62993d15bebcc94a64c20aa00acd75a5a"
+    },
+    "budget": {
+      "day_utc": "2026-11-04",
+      "used_runs": 1,
+      "used_navigations": 3,
+      "accounted_network_bytes": 1048576,
+      "limits": {
+        "runs": 8,
+        "navigations": 32,
+        "network_bytes": 209715200
+      },
+      "network_accounting": "sampled"
+    },
+    "assessments": [
+      {
+        "service_id": "google",
+        "rule_version": "ipsentinel-assessment/1",
+        "state": "anomaly_observed",
+        "signal_kind": "google_home_redirect",
+        "basis_run_ids": [
+          "55555555-5555-4555-8555-555555555555"
+        ],
+        "last_observed_at": "2026-11-04T01:00:30Z",
+        "valid_until": "2026-11-06T01:00:30Z",
+        "environment_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reason": "cn_hkredirect_observed"
+      }
+    ],
+    "journal": {
+      "earliest_seq": 1,
+      "latest_seq": 4,
+      "acked_seq": 0
+    }
+  }
+}

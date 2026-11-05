@@ -165,6 +165,7 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 - [插件](docs/PLUGINS.md)：声明式通知渠道与探测目标集的格式、模板变量与安全边界。
 - [主题包与附加包](docs/THEMES.md)：自己做一套外观风格，或用附加包给某套主题添按节点 / 地区匹配的装饰（zip 上传，只含样式表与图片），格式、颜色变量与示例。
 - [组件边界](docs/ARCHITECTURE.md)、[HTTP 协议](docs/API.md)、[项目范围](docs/SCOPE.md)。
+- [IPSentinel 节点执行器](docs/EXECUTORS.md)：只读接入、托管控制、中控日程、官方签名运行声明分发与验收边界。
 - [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为只能在真实环境验证。
 
 检查与构建用自带的流水线（不依赖 GitHub Actions），Linux 与 macOS 都能跑。需要 Go 1.27；`check` 的前端部分另需 Node ≥ 20.19 或 Bun（没有 Node 时自动用 Bun）：

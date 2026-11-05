@@ -113,6 +113,7 @@ export const statusName = {
   failed: "检测失败",
 };
 export const kindName = {
+  executor: "执行器状态变化",
   offline: "离线提醒",
   renewal: "续费提醒",
   traffic: "流量警告",

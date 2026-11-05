@@ -3,7 +3,9 @@ module github.com/leeska/TZA-Probe
 go 1.27.1
 
 require (
+	github.com/cyberphone/json-canonicalization v0.0.0-20261011152517-32a48195b9b2
 	github.com/nxtrace/NTrace-core v1.7.4
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/shirou/gopsutil/v4 v4.26.4
 	modernc.org/sqlite v1.44.3
 )
