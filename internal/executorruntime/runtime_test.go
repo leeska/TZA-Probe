@@ -385,6 +385,18 @@ func TestVerifyAndRetryRehashStoredFilesAndRejectForgedReceipts(t *testing.T) {
 }
 
 func TestStagingRejectsUnsafeDirectoriesAndSerializesWriters(t *testing.T) {
+	t.Run("symlink-artifact-source", func(t *testing.T) {
+		data := newFixture(t)
+		release := data.inspect(t)
+		store := newStore(t)
+		link := filepath.Join(t.TempDir(), "source-link")
+		if err := os.Symlink(data.source, link); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Stage(context.Background(), release, approved(t, release), link); err == nil {
+			t.Fatal("symlink artifact root accepted")
+		}
+	})
 	t.Run("world-readable-store", func(t *testing.T) {
 		data := newFixture(t)
 		store := newStore(t)

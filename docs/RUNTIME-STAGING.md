@@ -6,13 +6,13 @@
 
 ## 输入与信任
 
-运维者先通过已有的 CC 官方制品分发接口，取得同一发布版本的声明归档、签名 JSON，以及签名清单列出的依赖字节。下载和传输由已有受控通道负责；本工具只读本机文件，不接受 URL，不保存 CC 会话或实例 token。未审核的源文件和网络下载都不能代替 CC 签名。
+运维者可先通过已有的 CC 官方制品分发接口取得文件后从本机暂存，也可用显式 `--cc-url` 让本工具通过 CC 的精确版本与摘要接口下载。后者只信任本机固定公钥，不保存下载票据，不接受非同源 URL或重定向，也不发送 CC 会话、Cookie 或实例 token。无论选择哪种方式，CC 发布签名和全部制品摘要都要本机复验。
 
 - `archive.zip`：仅包含 `executor.json` 的声明包，最多 20 MiB。
 - `signature.json`：CC 现有 `tzapkg.Signature` 格式，最多 4 KiB；未知字段和重复字段拒绝。
 - `cc-keys`：本机事先固定的 CC Ed25519 公钥，一行一个 `key-id:base64`；不从包或网络自动获取信任密钥。重复 key ID 拒绝。
 - `binding.json`：本机已配置的 `controller_id`、`node_id` UUID，与 IPSentinel 交接身份一致。这里不是 TZA 的旧节点 ID，不会自动生成或替换已有绑定。
-- `artifacts/`：该架构需要的原始制品，文件名固定为 `<sha256>.bin`。只接受有界普通文件，不跟随制品符号链接。
+- `artifacts/`：该架构需要的原始制品，文件名固定为 `<sha256>.bin`。只接受普通目录内的有界普通文件，不跟随制品目录或制品文件符号链接。
 
 工具以实际编译运行平台选择 `linux-amd64` 或 `linux-arm64`，没有远程下发或命令行覆盖架构的开关。`--probe-version` 和 `--agent-version` 是本机运维者核对后填写的版本声明，必须满足签名清单；工具不会据此声称已探测线上版本。开发版后缀不作为正式发布版本接受。
 
@@ -46,6 +46,31 @@ go build -o /private/qa/executor-runtime ./cmd/executor-runtime
 ```
 
 这份文件只批准暂存；不是中控托管授权、OS 权限授予或激活许可。
+
+也可以让工具直接从配置的 CC 下载声明与依赖；该模式仅使用本地公钥和已有公开下载票据，不带 CC 管理员会话、Cookie 或实例 token。CC 声明下载票据限定为该仓库发布的精确 package/version 路径，拒绝重定向及外站 URL；依赖按签名清单的摘要路径下载。未批准前不下载依赖字节：
+
+```bash
+/private/qa/executor-runtime plan \
+  --cc-url https://tza.cc \
+  --release-version <已审核的精确版本> \
+  --cc-keys /private/config/cc-keys \
+  --binding /private/config/binding.json \
+  --probe-version 1.9.2 \
+  --agent-version 1.9.2 \
+  > /private/qa/review.json
+
+/private/qa/executor-runtime stage \
+  --cc-url https://tza.cc \
+  --release-version <同一个精确版本> \
+  --cc-keys /private/config/cc-keys \
+  --binding /private/config/binding.json \
+  --probe-version 1.9.2 \
+  --agent-version 1.9.2 \
+  --approval /private/qa/approval.json \
+  --store /private/runtime-staging
+```
+
+HTTP 仅为 literal loopback 测试地址开放；任意非 loopback CC 必须使用 HTTPS。请求禁用自动重定向和压缩、限制 metadata/headers/响应体/超时，并且不附加授权头。CC 托管仍须通过现有审核和发布；本机 plan 不是替代 CC 发布审批。
 
 ```bash
 /private/qa/executor-runtime stage \
@@ -90,4 +115,4 @@ go build -o /private/qa/executor-runtime ./cmd/executor-runtime
 go test -race ./internal/executorruntime ./cmd/executor-runtime
 ```
 
-2026-11-05 验证：Probe 全量 `go test ./...` 和 `go test -race ./...` 均通过（608 项、26 个包），`go vet ./...` 通过。上述两个新包也编译成 Linux amd64 测试程序，在既有 MeowBox 测试机的独立临时目录以 `nobody` 身份执行通过，覆盖实际 Linux 平台选择、目录权限、文件同步、暂存和重新验证；测试前后原 `tza-agent.service` 均为 active。所有依赖仍为不可执行文本 fixture，没有进行 runtime 激活或浏览器验收。
+2026-11-05 验证：Probe 全量 `go test ./...` 和 `go test -race ./...` 均通过（639 项、26 个包），`go vet ./...` 通过。CC 临时 PostgreSQL 17.11 集成测试会启动 Probe runtime 客户端，走已审核签名 ticket、精确版本 archive 下载、摘要路径依赖下载、受批准暂存及本机回执复核；测试服务、密钥和依赖均为本地 fixture。最新暂存及 CC 客户端代码也编译成 Linux amd64 测试程序，在既有 MeowBox 测试机的独立临时目录以 `nobody` 身份通过，使用本地 fixture endpoint，不访问生产 CC；测试前后原 `tza-agent.service` 均为 active。没有真实官方 runtime 制品，没有进行 runtime 激活或浏览器验收。

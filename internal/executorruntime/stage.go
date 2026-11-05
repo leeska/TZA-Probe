@@ -32,6 +32,26 @@ type Store struct {
 }
 
 func (store Store) Stage(ctx context.Context, release *Release, approval []byte, artifactDir string) (Receipt, error) {
+	info, err := os.Lstat(artifactDir)
+	if err != nil {
+		return Receipt{}, err
+	}
+	if !info.IsDir() {
+		return Receipt{}, errors.New("runtime artifact source must be a directory without a symlink")
+	}
+	source, err := os.OpenRoot(artifactDir)
+	if err != nil {
+		return Receipt{}, err
+	}
+	defer source.Close()
+	return store.stage(ctx, release, approval, func(_ context.Context, artifact Artifact) (io.ReadCloser, error) {
+		return openRegular(source, artifact.SHA256+".bin", artifact.SizeBytes)
+	})
+}
+
+type artifactOpener func(context.Context, Artifact) (io.ReadCloser, error)
+
+func (store Store) stage(ctx context.Context, release *Release, approval []byte, openArtifact artifactOpener) (Receipt, error) {
 	if release == nil || release.digest == "" {
 		return Receipt{}, errors.New("a verified runtime release is required")
 	}
@@ -41,11 +61,6 @@ func (store Store) Stage(ctx context.Context, release *Release, approval []byte,
 	if err := ctx.Err(); err != nil {
 		return Receipt{}, err
 	}
-	source, err := os.OpenRoot(artifactDir)
-	if err != nil {
-		return Receipt{}, err
-	}
-	defer source.Close()
 	root, err := store.open(true)
 	if err != nil {
 		return Receipt{}, err
@@ -92,7 +107,7 @@ func (store Store) Stage(ctx context.Context, release *Release, approval []byte,
 		if seen[artifact.SHA256] {
 			continue
 		}
-		if err := copyArtifact(ctx, source, bundle, artifact); err != nil {
+		if err := copyArtifact(ctx, openArtifact, bundle, artifact); err != nil {
 			return Receipt{}, err
 		}
 		seen[artifact.SHA256] = true
@@ -279,8 +294,8 @@ func (reader contextReader) Read(buffer []byte) (int, error) {
 	return reader.reader.Read(buffer)
 }
 
-func copyArtifact(ctx context.Context, source, bundle *os.Root, artifact Artifact) error {
-	file, err := openRegular(source, artifact.SHA256+".bin", artifact.SizeBytes)
+func copyArtifact(ctx context.Context, openArtifact artifactOpener, bundle *os.Root, artifact Artifact) error {
+	file, err := openArtifact(ctx, artifact)
 	if err != nil {
 		return err
 	}

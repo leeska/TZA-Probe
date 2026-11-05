@@ -48,6 +48,8 @@ func runOnHost(ctx context.Context, arguments []string, output, diagnostics io.W
 	agentVersion := flags.String("agent-version", "", "declared node Agent release version X.Y.Z")
 	storePath := flags.String("store", "", "private local staging directory")
 	artifactsPath := flags.String("artifacts", "", "local artifact directory containing SHA256.bin files")
+	ccURL := flags.String("cc-url", "", "configured TZA-CC HTTPS repository URL")
+	releaseVersion := flags.String("release-version", "", "exact published executor version to stage from CC")
 	approvalPath := flags.String("approval", "", "explicitly approved plan JSON")
 	planDigest := flags.String("plan-sha256", "", "staged plan SHA-256 to verify")
 	if err := flags.Parse(arguments[1:]); err != nil {
@@ -80,25 +82,44 @@ func runOnHost(ctx context.Context, arguments []string, output, diagnostics io.W
 	store := executorruntime.Store{Dir: *storePath}
 	var result any
 	if command == "verify" {
-		if *archivePath != "" || *signaturePath != "" || *artifactsPath != "" || *approvalPath != "" {
-			return errors.New("verify reads the staged bundle; input archive, signature, artifacts and approval flags are not accepted")
+		if *archivePath != "" || *signaturePath != "" || *artifactsPath != "" || *approvalPath != "" || *ccURL != "" || *releaseVersion != "" {
+			return errors.New("verify reads the staged bundle; input archive, signature, artifacts, approval and repository flags are not accepted")
 		}
 		result, err = store.Verify(ctx, *planDigest, keys, host, target)
 	} else {
 		if *planDigest != "" {
 			return errors.New("plan-sha256 is only accepted by verify")
 		}
-		archive, readErr := readLocal(*archivePath, tzapkg.MaxUpload)
-		if readErr != nil {
-			return fmt.Errorf("runtime archive: %w", readErr)
-		}
-		signature, readErr := readLocal(*signaturePath, 4096)
-		if readErr != nil {
-			return fmt.Errorf("runtime signature: %w", readErr)
-		}
-		release, inspectErr := executorruntime.Inspect(archive, signature, keys, host, target)
-		if inspectErr != nil {
-			return inspectErr
+		var repository *executorruntime.Repository
+		var release *executorruntime.Release
+		if *ccURL != "" {
+			if *archivePath != "" || *signaturePath != "" || !tzapkg.ValidVersion(*releaseVersion) {
+				return errors.New("CC staging requires --release-version and does not accept local archive or signature files")
+			}
+			repository, err = executorruntime.NewRepository(*ccURL, keys)
+			if err != nil {
+				return err
+			}
+			release, err = repository.Fetch(ctx, *releaseVersion, host, target)
+			if err != nil {
+				return err
+			}
+		} else {
+			if *releaseVersion != "" {
+				return errors.New("--release-version requires --cc-url")
+			}
+			archive, readErr := readLocal(*archivePath, tzapkg.MaxUpload)
+			if readErr != nil {
+				return fmt.Errorf("runtime archive: %w", readErr)
+			}
+			signature, readErr := readLocal(*signaturePath, 4096)
+			if readErr != nil {
+				return fmt.Errorf("runtime signature: %w", readErr)
+			}
+			release, err = executorruntime.Inspect(archive, signature, keys, host, target)
+			if err != nil {
+				return err
+			}
 		}
 		if command == "plan" {
 			if *storePath != "" || *artifactsPath != "" || *approvalPath != "" {
@@ -110,7 +131,14 @@ func runOnHost(ctx context.Context, arguments []string, output, diagnostics io.W
 			if readErr != nil {
 				return fmt.Errorf("runtime approval: %w", readErr)
 			}
-			result, err = store.Stage(ctx, release, approval, *artifactsPath)
+			if repository != nil {
+				if *artifactsPath != "" {
+					return errors.New("CC staging fetches signed artifacts from CC and does not accept --artifacts")
+				}
+				result, err = repository.Stage(ctx, store, release, approval)
+			} else {
+				result, err = store.Stage(ctx, release, approval, *artifactsPath)
+			}
 		}
 	}
 	if err != nil {
