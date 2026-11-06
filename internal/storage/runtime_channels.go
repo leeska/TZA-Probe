@@ -24,6 +24,63 @@ CREATE UNIQUE INDEX IF NOT EXISTS runtime_requests_active ON runtime_requests(no
  WHERE state IN ('requested','awaiting_approval','approved','running');
 `
 
+const runtimeMaintenanceSchema = `
+CREATE TABLE IF NOT EXISTS runtime_maintenance(
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+ request_id TEXT NOT NULL, created_at INTEGER NOT NULL);
+`
+
+func runtimeMaintenanceTx(ctx context.Context, tx *sql.Tx, node string) (bool, error) {
+	var count int
+	err := tx.QueryRowContext(ctx, "SELECT count(*) FROM runtime_maintenance WHERE node_id=?", node).Scan(&count)
+	return count != 0, err
+}
+
+func releaseRuntimeMaintenanceTx(ctx context.Context, tx *sql.Tx, node string, binding ipsentinel.Binding) (bool, error) {
+	held, err := runtimeMaintenanceTx(ctx, tx, node)
+	if err != nil || !held {
+		return held, err
+	}
+	var raw string
+	err = tx.QueryRowContext(ctx, `SELECT r.payload FROM runtime_requests r JOIN runtime_maintenance m ON m.node_id=r.node_id
+ WHERE r.node_id=? AND r.state='started_paused' AND r.rowid>(SELECT rowid FROM runtime_requests WHERE id=m.request_id)
+ ORDER BY r.rowid DESC LIMIT 1`, node).Scan(&raw)
+	if err != nil {
+		return true, model.Conflict("升级维护尚未取得启动验收回执，不能重新授权或恢复派发")
+	}
+	var request runtimepkg.ChannelRequest
+	if json.Unmarshal([]byte(raw), &request) != nil || request.LifecycleReceipt == nil {
+		return true, model.Conflict("启动验收回执无效")
+	}
+	var changed int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM runtime_requests WHERE node_id=? AND (
+ state IN ('requested','awaiting_approval','approved','running') OR
+ (rowid>(SELECT rowid FROM runtime_requests WHERE id=?) AND json_extract(payload,'$.action') IN ('select','drain','activate')
+ AND state IN ('selected','drained','started_paused','unknown')))`, node, request.ID).Scan(&changed); err != nil {
+		return true, err
+	}
+	if changed != 0 {
+		return true, model.Conflict("启动验收后存在新的运行时操作，须先完成并重新检查当前状态")
+	}
+	enrollment, seen, err := runtimeChannelTx(ctx, tx, node)
+	if err != nil {
+		return true, err
+	}
+	hello := request.LifecycleReceipt.Hello
+	expected := ipsentinel.Binding{
+		Target: request.Enrollment.Target, ExecutorInstanceID: hello.Status.ExecutorInstanceID,
+		Epoch: hello.Status.Control.Epoch, DescriptorSHA256: hello.DescriptorSHA256, Mode: ipsentinel.ModeManaged,
+	}
+	if binding != expected || request.Enrollment != enrollment || time.Now().Unix()-seen > 45 ||
+		time.Now().Unix()-request.UpdatedAt > 900 {
+		return true, model.Conflict("请按当前启动验收回执重新授权实例、epoch、descriptor 和目标；过期回执须重新验收")
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM runtime_maintenance WHERE node_id=?", node); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
 func runtimeChannelTx(ctx context.Context, tx *sql.Tx, node string) (runtimepkg.Enrollment, int64, error) {
 	var raw string
 	var seen int64
@@ -82,6 +139,9 @@ func (s *Store) RuntimeChannels(ctx context.Context) ([]runtimepkg.ChannelView, 
 	}
 	for index := range views {
 		view := &views[index]
+		if err := s.queryRow(ctx, "SELECT EXISTS(SELECT 1 FROM runtime_maintenance WHERE node_id=?)", view.NodeID).Scan(&view.Maintenance); err != nil {
+			return nil, err
+		}
 		view.Requests = []runtimepkg.ChannelRequest{}
 		rows, err := s.query(ctx, "SELECT payload FROM runtime_requests WHERE node_id=? ORDER BY created_at DESC,rowid DESC LIMIT 50", view.NodeID)
 		if err != nil {
@@ -111,7 +171,7 @@ func (s *Store) RuntimeChannels(ctx context.Context) ([]runtimepkg.ChannelView, 
 
 func (s *Store) CreateRuntimeRequest(ctx context.Context, node string, input runtimepkg.ChannelInput) (runtimepkg.ChannelRequest, error) {
 	if input.Validate() != nil {
-		return runtimepkg.ChannelRequest{}, model.Invalid("请指定 stage/install/select、精确版本及对应暂存请求")
+		return runtimepkg.ChannelRequest{}, model.Invalid("请指定 stage/install/select/drain/activate、精确版本及对应暂存请求")
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -145,6 +205,36 @@ func (s *Store) CreateRuntimeRequest(ctx context.Context, node string, input run
 			return request, model.Conflict("选择当前节点与配置范围下已完成的同版本暂存请求")
 		}
 		request.StagePlanSHA256 = source.PlanSHA256
+	}
+	if input.Action == "activate" {
+		held, err := runtimeMaintenanceTx(ctx, tx, node)
+		if err != nil {
+			return request, err
+		}
+		if !held {
+			return request, model.Conflict("启动验收前须先建立升级维护暂停并完成排空")
+		}
+	}
+	if input.Action == "drain" {
+		binding, hello, _, err := executorBindingTx(ctx, tx, node)
+		if err != nil {
+			return request, err
+		}
+		if err := validateManagedHello(binding, hello, time.Now()); err != nil {
+			return request, err
+		}
+		if binding.Target != enrollment.Target {
+			return request, model.Conflict("安装身份与托管执行器目标不一致")
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO runtime_maintenance(node_id,request_id,created_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET request_id=excluded.request_id,created_at=excluded.created_at`, node, request.ID, now); err != nil {
+			return request, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE executor_bindings SET dispatch_paused=1 WHERE node_id=?", node); err != nil {
+			return request, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE executor_actions SET status='cancelled',updated_at=? WHERE node_id=? AND status='pending' AND attempt=0 AND kind IN ('run.submit','control.resume','config.apply')`, now, node); err != nil {
+			return request, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO runtime_requests(id,node_id,state,payload,created_at) VALUES(?,?,?,?,?)", request.ID, node, request.State, encode(request), now); err != nil {
 		return request, err
@@ -296,9 +386,9 @@ func applyRuntimeResult(request *runtimepkg.ChannelRequest, result runtimepkg.Ch
 			}
 			return model.Conflict("安装计划已改变，不能覆盖原批准")
 		}
-		request.Review, request.Operation, request.PlanSHA256 = result.Review, result.Operation, result.PlanSHA256
+		request.Review, request.Operation, request.Lifecycle, request.PlanSHA256 = result.Review, result.Operation, result.Lifecycle, result.PlanSHA256
 	case "running":
-		if result.PlanSHA256 != request.PlanSHA256 || result.Receipt != nil || result.OperationReceipt != nil || result.Review != nil || result.Operation != nil || result.ErrorCode != "" {
+		if result.PlanSHA256 != request.PlanSHA256 || result.Receipt != nil || result.OperationReceipt != nil || result.LifecycleReceipt != nil || result.Review != nil || result.Operation != nil || result.Lifecycle != nil || result.ErrorCode != "" {
 			return model.Invalid("安装执行确认无效")
 		}
 		if request.State == "running" {
@@ -307,12 +397,12 @@ func applyRuntimeResult(request *runtimepkg.ChannelRequest, result runtimepkg.Ch
 		if request.State != "approved" || now-request.ApprovedAt > 900 {
 			return model.Conflict("安装批准已过期或已撤销")
 		}
-	case "staged", "installed", "selected":
+	case "staged", "installed", "selected", "drained", "started_paused":
 		if runtimepkg.ValidateChannelReceipt(*request, result) != nil {
 			return model.Invalid("安装回执与批准不符，或试图越过激活边界")
 		}
 		if request.State == result.State {
-			if encode(request.Receipt) == encode(result.Receipt) && encode(request.OperationReceipt) == encode(result.OperationReceipt) {
+			if encode(request.Receipt) == encode(result.Receipt) && encode(request.OperationReceipt) == encode(result.OperationReceipt) && encode(request.LifecycleReceipt) == encode(result.LifecycleReceipt) {
 				return nil
 			}
 			return model.Conflict("已保存的安装回执不能被改写")
@@ -321,8 +411,9 @@ func applyRuntimeResult(request *runtimepkg.ChannelRequest, result runtimepkg.Ch
 			return model.Conflict("安装请求尚未执行，或已经结束")
 		}
 		request.Receipt, request.OperationReceipt = result.Receipt, result.OperationReceipt
+		request.LifecycleReceipt = result.LifecycleReceipt
 	case "failed", "unknown":
-		if result.Review != nil || result.Operation != nil || result.Receipt != nil || result.OperationReceipt != nil ||
+		if result.Review != nil || result.Operation != nil || result.Lifecycle != nil || result.LifecycleReceipt != nil || result.Receipt != nil || result.OperationReceipt != nil ||
 			result.PlanSHA256 != request.PlanSHA256 ||
 			(result.ErrorCode != "plan_unavailable" && result.ErrorCode != "plan_changed" && result.ErrorCode != "operation_interrupted") {
 			return model.Invalid("安装失败回执无效")

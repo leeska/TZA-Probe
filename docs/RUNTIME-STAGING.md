@@ -105,9 +105,51 @@ HTTP 仅为 literal loopback 测试地址开放；任意非 loopback CC 必须�
 
 ## 本机安装与版本选择
 
-### Agent 安装通道
+### 升级排空与启动交接
 
-`runtime_install` 仅由 `tza-agent --runtime-installer` 显式启用；普通 Agent 即使读取到该配置，也不启动安装通道。安装进程不采集指标、不运行 TCP/Route/Unlock、不处理 Agent 自更新，也不访问 IPSentinel UDS。使用独立 `deploy/tza-runtime-installer.service`，沿用该节点的 Agent token；普通 `tza-agent.service` 的沙箱和行为保持原样。
+升级仍逐步批准：`stage` → `install` → `drain` → `select` → `activate` → 重新授权 → 单独恢复。回退也是对保留的兼容版本重新生成这些计划，不恢复旧数据库或 ACK 游标。首次 managed adopt、普通用户和服务定义的部署仍是本机运维步骤，`activate` 只接受已有托管实例的排空检查点。
+
+创建 `drain` 请求会立即在中控持久建立维护暂停，阻止新任务、配置应用和恢复命令，取消未派发任务；本机暂停和停止服务仍须管理员批准精确计划。普通状态同步、journal 落库与 ACK、原任务查询和取消继续工作。撤销、过期、配置变更或 `unknown` 不解除维护暂停。已经租出的配置/恢复命令不能被假定撤回；本机执行前和排空期间会再次核对身份、配置及暂停状态，检测变化后拒绝继续。
+
+`drain` 使用原实例/epoch 的 `control.pause`，会触发 IPSentinel 原有取消语义；它不是让活动浏览任务无限等待自然结束。最多等待两分钟，只有本机 accepted/running/cancelling 全部消失且 journal `acked_seq == latest_seq` 后才停止专用服务，确认 inactive 并持久保存 root 私有的 `drained.json`。未 ACK 结果或未知状态不允许切换。独立的参考 `select` 仍负责 control-server/node 锁、数据库 schema 兼容性和一致性备份。
+
+`activate` 精确绑定已选发行摘要、配置/策略摘要、systemd unit 与 drop-in 定义摘要、非 root UDS UID/GID、旧实例/epoch/descriptor/config 以及排空检查点和 journal 水位。启动前重新验证已安装文件清单、宿主库和版本；执行期间持有与参考安装器相同的 `.install.lock`。不执行制品脚本，不启用服务自启动，不执行 adopt。
+
+启动后同时检查 systemd active 与新鲜 hello：版本精确匹配，实例与配置不变，数据库版本和 journal 水位不倒退，原 ACK 后无缺口，运行能力与 hard limits 可用，本机仍暂停且没有活动任务。runtime/descriptor 改变必须递增 epoch。暂停状态的 hello 允许 `degraded`，因此成功回执明确为 `started_paused`，不能显示成恢复或可派发；只有独立恢复后，本机 `health=ready` 才允许新准入。启动失败或检查超时会尝试停止该专用服务，并保留维护暂停；停止本身失败或进程中断仍为 `unknown`，必须在节点核对，不自动重试、选回旧版或覆盖数据库。
+
+管理员从启动回执核对目标、实例、epoch 和 descriptor，明确重新授权后才解除维护锁；派发仍保持暂停。普通 Agent 重新同步有效 hello，再按当前暂停 generation 单独恢复。重绑会停用旧日程；管理员需要重新审查并启用日程。旧 epoch、过期/其他配置范围的启动回执不能解除维护锁。
+
+专用安装配置可增加：
+
+```json
+{
+  "peer": {
+    "socket_path": "/run/ipsentinel/control.sock",
+    "uid": 1001,
+    "gid": 1001
+  }
+}
+```
+
+UID/GID 必须是本机实际授权的普通 Agent 身份，并有 Socket 路径访问权限；不能直接照抄示例数值。安装程序固定在 root 所有且其他用户不可写的 `/usr/local/libexec/tza/tza-runtime-installer`。root 安装器以这个身份启动该受限可执行文件的 `--runtime-peer` 子进程，清除附加组，只允许 hello 与 fenced pause。子进程不读取中控凭据、安装配置或签名密钥。为此专用安装 unit 需要 `CAP_SETUID` / `CAP_SETGID`；普通 Agent 不增加 root 能力。不配置 peer 时原有 stage/install/select 仍可用，drain/activate 会拒绝生成计划。
+
+保留 `PrivateDevices`、`RestrictAddressFamilies`、`RestrictSUIDSGID` 和 `RestrictRealtime`。Free2 的实际 systemd 沙箱中，仅配置 capability bounding set 时 `CAP_SETUID` 会从有效集合消失；为专用 root 安装器增加 `AmbientCapabilities=CAP_SETUID CAP_SETGID`，使启动受限 peer 前可以降权。切换到非 root UID 后这两项能力必须清空，peer 入口会拒绝有效/许可/ambient capability 非零或仍持有附加组的进程。普通 Agent 和浏览器 worker 不增加这些能力。安装二进制和父目录需 root 所有、普通 peer 可遍历执行（目录/二进制 0755），不能将父目录设为 0700。
+
+进程中断后仍复用持久执行标记与回执：没有已提交的终态回执就报告 `unknown`，不会再启动/停止一次服务。管理员应核对服务、`current`、`selection.json`、本机 journal 和数据库，再决定新的显式请求；不要删除执行标记来让旧请求重新执行。
+
+#### 2026-11-06 升级编排验证
+
+本轮本地 Go 全量 **697 项 / 26 包**、竞态测试和 `go vet ./...` 通过，完整 `pipeline.sh check` 通过，含 runtime UI 回归；流水线 SHA `2fdc830` 是运行时 HEAD，不代表本轮后续改动已包含在该提交。测试覆盖持久维护暂停、撤销后仍暂停、配置/身份变化、活动任务或未 ACK journal 阻止停止、启动失败、旧 epoch、实例更换、journal 回退、缺少隔离能力、启动后意外恢复及检查点篡改。HTTP/存储通道验证完整计划、幂等回执、明确新 epoch 授权以及绑定后仍暂停；新的运行时操作不能复用更早的启动验收来解除维护。Agent 补充启动终态回执丢失只重传、重启执行标记转 unknown 而不再次启动服务的测试。`stage/install/select` 旧通道回归保留。
+
+Free2 在与最终专用安装服务一致的 NNP、capability bounding/ambient、只读系统、私有 tmp/设备、受限地址族、SUID/实时限制与有限写路径中通过目标测试。真实编译 Agent 子进程以 UID/GID 65534 且无附加组连接本机测试 UDS；内核 SO_PEERCRED 确认 UID，root peer 被拒绝，入口检查有效/许可/ambient capability 为零。临时 IPSentinel 名称的 sleep 服务实际完成定义核对、启动/active、停止/inactive；`systemd-analyze verify` 通过。状态机的发行、hello 与执行能力仍是受控 fixture，不是 Free2 上真实 Chromium 或候选升级验收；当前候选宿主库不匹配的结论未改变。
+
+本地真实后台使用上述测试创建的一致 SQLite 快照核对维护提示、通道过期禁用、启动回执预填新 epoch/descriptor、保存重新授权后清除维护提示但等待新的 Agent 同步。390px 页面无横向溢出，授权弹窗截图已核对。为检查成功提交，本机 QA 数据库只刷新通道/回执时间，不改变已通过测试的计划与回执；没有调用生产 API。证据在 `/tmp/tza-lifecycle-20261106/`，Free2 的 `evidence/free2/` 包含最终测试与 unit 校验日志；远端临时 unit、专用 helper 和测试目录清理后，原 Agent 状态保持 inactive。
+
+本轮不修改 IPSentinel 权威协议，不部署 bero/netcup，不发布 fixture 或测试签名。下一验收是匹配宿主库的真实候选在兼容测试 VPS 上完整走通排空、选版、Chromium 启动检查、新 epoch 授权、重新同步、单独恢复和兼容回退，再决定 CC 正式发布。
+
+### Agent 安装通道配置
+
+`runtime_install` 仅由 `tza-agent --runtime-installer` 显式启用；普通 Agent 即使读取到该配置，也不启动安装通道。安装进程不采集指标、不运行 TCP/Route/Unlock、不处理 Agent 自更新；只在批准 drain/activate 后通过受限普通用户子进程访问本机 Socket，或调用固定的参考验证器及 systemctl。使用独立 `deploy/tza-runtime-installer.service`，沿用该节点的 Agent token；普通 `tza-agent.service` 的沙箱和行为保持原样。
 
 专用服务以 root 运行，保留 `ProtectSystem=strict`、`ProtectHome=true`、`PrivateTmp=true` 和 `NoNewPrivileges=true`，仅开放声明的暂存、安装及 IPSentinel 状态目录写入，能力限制为 CHOWN/DAC_OVERRIDE/FOWNER。管理员须事先准备配置、公钥、固定 helper、root 所有的安装根和专用普通用户拥有的状态目录，并用 `systemd-analyze verify` 核对单元。自定义安装路径需要相应调整这份专用单元的 `ReadWritePaths`，不能通过放宽普通 Agent 的沙箱完成安装。
 
@@ -140,7 +182,7 @@ Agent 使用本机 CC 公钥和固定平台/版本生成暂存计划，后台才
 
 批准 15 分钟过期；执行前再次生成计划并取得中控 running 确认，随后在本机 fsync 执行标记，再调用安装器。完成回执先持久保存，HTTP 确认丢失只重发回执；同节点安装进程由文件锁串行处理。若进程在执行标记与完成回执之间终止，重启只上报“结果未知”，不再次执行或自动恢复旧数据库；管理员先核对本机 `current`、`selection.json` 和 journal，再生成新计划。已确认的计划及回执保留在 `agent-pending/receipts/`。损坏或权限异常的 journal 会拒绝工作，不能删除日志来假装操作未发生。
 
-API 为 `POST /api/v1/agent/runtime`、`GET /api/v1/admin/runtime` 和 `/api/v1/admin/nodes/{id}/runtime/requests[/{request}]`。后台“节点执行器 → Runtime 安装通道”展示分阶段状态与完整批准计划。管理接口沿用管理员会话、CSRF/same-origin 保护；Agent token 不能创建或批准自己的请求。SQLite schema 22 保存节点配置范围和安装请求。通道回执不等于服务健康、adopt 或托管执行授权；这些仍是后续独立步骤。
+API 为 `POST /api/v1/agent/runtime`、`GET /api/v1/admin/runtime` 和 `/api/v1/admin/nodes/{id}/runtime/requests[/{request}]`。后台“节点执行器 → Runtime 安装通道”展示分阶段状态与完整批准计划。管理接口沿用管理员会话、CSRF/same-origin 保护；Agent token 不能创建或批准自己的请求。SQLite schema 23 保存节点配置范围、安装请求和维护暂停。安装/选择回执不等于服务健康、adopt 或托管执行授权；启动验收也不等于可派发或恢复。
 
 2026-11-06 已使用真实 IPSentinel 候选在测试 CC 上验证 Agent 的计划生成、批准后下载及暂存复核，不经生产 CC。管理员认证、跨站写入拒绝、完整计划校验、重复回执与配置范围变化均有集成测试；浏览器在本地临时管理员账户中检查空状态、计划展开、批准操作和 390px 无横向溢出，展开完整 JSON 时弹窗 client/scroll 均为 356px。`scripts/runtime-ui-test.mjs` 覆盖批准目标索引、转义、状态过期、未知历史和关联暂存，并纳入流水线。
 

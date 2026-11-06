@@ -190,5 +190,5 @@ export async function renderExecutors(nodesPromise = loadNodes()) {
     container.querySelectorAll("button").forEach(button=>{if(!["托管命令","托管日程"].includes(button.textContent)){button.dataset.executorWrite="";button.dataset.received=String(view.received_at);}});
   });
   refreshValidity();
-  await renderRuntime();
+  await renderRuntime(bindForm);
 }

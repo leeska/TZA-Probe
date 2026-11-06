@@ -101,6 +101,10 @@ func (s *Store) BindExecutor(ctx context.Context, node string, binding ipsentine
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
+	maintenance, err := releaseRuntimeMaintenanceTx(ctx, tx, node, binding)
+	if err != nil {
+		return err
+	}
 	var previous string
 	err = tx.QueryRowContext(ctx, "SELECT binding FROM executor_bindings WHERE node_id=?", node).Scan(&previous)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -112,6 +116,11 @@ func (s *Store) BindExecutor(ctx context.Context, node string, binding ipsentine
 			return err
 		}
 		if before == binding {
+			if maintenance {
+				if _, err := tx.ExecContext(ctx, "UPDATE executor_bindings SET dispatch_paused=1 WHERE node_id=?", node); err != nil {
+					return err
+				}
+			}
 			return tx.Commit()
 		}
 	}
@@ -122,8 +131,8 @@ func (s *Store) BindExecutor(ctx context.Context, node string, binding ipsentine
  WHERE node_id=? AND status IN ('pending','leased')`, node); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO executor_bindings(node_id,binding,instance_id) VALUES(?,?,?)
- ON CONFLICT(node_id) DO UPDATE SET binding=excluded.binding,instance_id=excluded.instance_id,cursor=0,received_at=0,hello=NULL,dispatch_paused=0`, node, encode(binding), binding.ExecutorInstanceID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO executor_bindings(node_id,binding,instance_id,dispatch_paused) VALUES(?,?,?,?)
+ ON CONFLICT(node_id) DO UPDATE SET binding=excluded.binding,instance_id=excluded.instance_id,cursor=0,received_at=0,hello=NULL,dispatch_paused=excluded.dispatch_paused`, node, encode(binding), binding.ExecutorInstanceID, maintenance); err != nil {
 		return err
 	}
 	return tx.Commit()

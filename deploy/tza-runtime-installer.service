@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 User=root
-ExecStart=/usr/local/bin/tza-agent --runtime-installer --config /etc/tza-probe/runtime-installer.json
+ExecStart=/usr/local/libexec/tza/tza-runtime-installer --runtime-installer --config /etc/tza-probe/runtime-installer.json
 StateDirectory=tza-agent-runtime
 StateDirectoryMode=0700
 WorkingDirectory=/var/lib/tza-agent-runtime
@@ -15,7 +15,8 @@ RestartSec=10
 TimeoutStopSec=20
 KillMode=control-group
 NoNewPrivileges=true
-CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SETUID CAP_SETGID
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true

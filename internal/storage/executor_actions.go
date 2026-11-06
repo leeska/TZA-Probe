@@ -76,6 +76,13 @@ func (s *Store) CreateExecutorAction(ctx context.Context, node string, action ip
 }
 
 func createExecutorActionTx(ctx context.Context, tx *sql.Tx, node string, action ipsentinel.ExecutorAction, now time.Time) error {
+	held, err := runtimeMaintenanceTx(ctx, tx, node)
+	if err != nil {
+		return err
+	}
+	if held && (action.Kind == ipsentinel.MethodRunSubmit || action.Kind == ipsentinel.MethodControlResume || action.Kind == ipsentinel.MethodConfigApply) {
+		return model.Conflict("执行器处于升级维护暂停；完成启动验收并重新授权后才可恢复")
+	}
 	binding, hello, paused, err := executorBindingTx(ctx, tx, node)
 	if err != nil {
 		return err
@@ -284,8 +291,15 @@ func (s *Store) LeaseExecutorAction(ctx context.Context, node string, hello ipse
 		return ipsentinel.ExecutorAction{}, err
 	}
 	rows.Close()
+	held, err := runtimeMaintenanceTx(ctx, tx, node)
+	if err != nil {
+		return ipsentinel.ExecutorAction{}, err
+	}
 	for _, entry := range candidates {
 		action := entry.action
+		if held && ((action.Kind == ipsentinel.MethodRunSubmit && entry.attempt == 0) || action.Kind == ipsentinel.MethodControlResume || action.Kind == ipsentinel.MethodConfigApply) {
+			continue
+		}
 		if action.Kind == ipsentinel.MethodRunSubmit {
 			end, _ := ipsentinel.ParseContractTime(action.ExpiresAt)
 			if entry.attempt == 0 && !end.After(now) {
@@ -484,7 +498,11 @@ func (s *Store) FinishExecutorAction(ctx context.Context, node string, result ip
 		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM executor_actions WHERE node_id=? AND kind='control.pause' AND rowid>(SELECT rowid FROM executor_actions WHERE id=?)`, node, action.ID).Scan(&newer); err != nil {
 			return err
 		}
-		if newer == 0 {
+		held, err := runtimeMaintenanceTx(ctx, tx, node)
+		if err != nil {
+			return err
+		}
+		if newer == 0 && !held {
 			if _, err := tx.ExecContext(ctx, "UPDATE executor_bindings SET dispatch_paused=0 WHERE node_id=?", node); err != nil {
 				return err
 			}

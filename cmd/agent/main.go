@@ -14,8 +14,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/leeska/TZA-Probe/internal/agent"
+	runtimepkg "github.com/leeska/TZA-Probe/internal/executorruntime"
 	"github.com/leeska/TZA-Probe/internal/ipsentinel"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/probe"
@@ -57,7 +59,13 @@ func run() error {
 	selfUpdate := flag.Bool("self-update", false, "accept upgrades offered by the Server (needs a service manager that restarts the Agent)")
 	applyUpdate := flag.Bool("apply-update", false, "install an upgrade staged by --self-update, then exit (run before start, with write access to the binary)")
 	runtimeInstaller := flag.Bool("runtime-installer", false, "run only the explicitly provisioned runtime installation channel in a dedicated privileged service")
+	runtimePeer := flag.Bool("runtime-peer", false, "serve one bounded local runtime inspection or pause request as a non-root peer")
 	flag.Parse()
+	if *runtimePeer {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return runtimepkg.ServeRuntimePeer(ctx, os.Stdin, os.Stdout)
+	}
 	// 升级公钥由安装脚本放在配置文件旁边；没有它就不接受任何升级。
 	keyPath := filepath.Join(filepath.Dir(*path), agent.KeyFile)
 	if *version {

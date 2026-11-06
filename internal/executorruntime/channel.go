@@ -1,6 +1,7 @@
 package executorruntime
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -34,6 +35,8 @@ type ChannelRequest struct {
 	Operation        *OperationReview  `json:"operation,omitempty"`
 	Receipt          *Receipt          `json:"receipt,omitempty"`
 	OperationReceipt *OperationReceipt `json:"operation_receipt,omitempty"`
+	Lifecycle        *LifecycleReview  `json:"lifecycle,omitempty"`
+	LifecycleReceipt *LifecycleReceipt `json:"lifecycle_receipt,omitempty"`
 	ErrorCode        string            `json:"error_code,omitempty"`
 }
 
@@ -45,6 +48,8 @@ type ChannelResult struct {
 	Operation        *OperationReview  `json:"operation,omitempty"`
 	Receipt          *Receipt          `json:"receipt,omitempty"`
 	OperationReceipt *OperationReceipt `json:"operation_receipt,omitempty"`
+	Lifecycle        *LifecycleReview  `json:"lifecycle,omitempty"`
+	LifecycleReceipt *LifecycleReceipt `json:"lifecycle_receipt,omitempty"`
 	ErrorCode        string            `json:"error_code,omitempty"`
 }
 
@@ -58,10 +63,11 @@ type ChannelReply struct {
 }
 
 type ChannelView struct {
-	NodeID     string           `json:"node_id"`
-	Enrollment Enrollment       `json:"enrollment"`
-	SeenAt     int64            `json:"seen_at"`
-	Requests   []ChannelRequest `json:"requests"`
+	NodeID      string           `json:"node_id"`
+	Enrollment  Enrollment       `json:"enrollment"`
+	SeenAt      int64            `json:"seen_at"`
+	Requests    []ChannelRequest `json:"requests"`
+	Maintenance bool             `json:"maintenance"`
 }
 
 type ChannelApproval struct {
@@ -76,10 +82,10 @@ func (input ChannelInput) Validate() error {
 	if input.Action == "stage" && input.StageRequestID == "" {
 		return nil
 	}
-	if (input.Action == "install" || input.Action == "select") && ipsentinel.ValidUUID(input.StageRequestID) {
+	if (input.Action == "install" || input.Action == "select" || input.Action == "drain" || input.Action == "activate") && ipsentinel.ValidUUID(input.StageRequestID) {
 		return nil
 	}
-	return errors.New("only stage, install and select are supported; installation and selection require a staged request")
+	return errors.New("only stage, install, select, drain and activate are supported; non-stage actions require a staged request")
 }
 
 func (enrollment Enrollment) Validate() error {
@@ -98,8 +104,25 @@ func ActiveChannelState(state string) bool {
 }
 
 func ValidateChannelPlan(request ChannelRequest, result ChannelResult) error {
-	if request.ChannelInput.Validate() != nil || request.Enrollment.Validate() != nil || result.RequestID != request.ID || result.State != "awaiting_approval" || !validDigest(result.PlanSHA256) || result.Receipt != nil || result.OperationReceipt != nil || result.ErrorCode != "" {
+	if request.ChannelInput.Validate() != nil || request.Enrollment.Validate() != nil || result.RequestID != request.ID || result.State != "awaiting_approval" || !validDigest(result.PlanSHA256) || result.Receipt != nil || result.OperationReceipt != nil || result.LifecycleReceipt != nil || result.ErrorCode != "" {
 		return errors.New("invalid runtime plan report")
+	}
+	if request.Action == "drain" || request.Action == "activate" {
+		if result.Lifecycle == nil || result.Review != nil || result.Operation != nil || result.Lifecycle.PlanSHA256 != result.PlanSHA256 {
+			return errors.New("a lifecycle review is required")
+		}
+		if err := validateLifecycleReview(*result.Lifecycle); err != nil {
+			return err
+		}
+		operation := result.Lifecycle.Plan.Operation
+		if operation.Target != request.Enrollment.Target || operation.Options.Action != request.Action ||
+			operation.Version != request.Version || operation.StagePlanSHA256 != request.StagePlanSHA256 {
+			return errors.New("lifecycle plan differs from the requested node or release")
+		}
+		return nil
+	}
+	if result.Lifecycle != nil {
+		return errors.New("unexpected lifecycle review")
 	}
 	if request.Action == "stage" {
 		if result.Review == nil || result.Operation != nil {
@@ -169,8 +192,36 @@ func ValidateChannelPlan(request ChannelRequest, result ChannelResult) error {
 }
 
 func ValidateChannelReceipt(request ChannelRequest, result ChannelResult) error {
-	if result.RequestID != request.ID || result.PlanSHA256 != request.PlanSHA256 || result.Review != nil || result.Operation != nil || result.ErrorCode != "" {
+	if result.RequestID != request.ID || result.PlanSHA256 != request.PlanSHA256 || result.Review != nil || result.Operation != nil || result.Lifecycle != nil || result.ErrorCode != "" {
 		return errors.New("invalid runtime receipt")
+	}
+	if request.Action == "drain" || request.Action == "activate" {
+		if request.Lifecycle == nil || result.LifecycleReceipt == nil || result.Receipt != nil || result.OperationReceipt != nil {
+			return errors.New("a lifecycle receipt is required")
+		}
+		receipt := result.LifecycleReceipt
+		raw, err := json.Marshal(receipt.Hello)
+		if err != nil || ipsentinel.ValidateDefinition("hello", raw, nil) != nil {
+			return errors.New("lifecycle receipt has an invalid executor observation")
+		}
+		digest, err := ipsentinel.CanonicalSHA256(receipt.Plan)
+		if err != nil || digest != request.PlanSHA256 || receipt.PlanSHA256 != digest || receipt.FormatVersion != 1 || result.State != receipt.State {
+			return errors.New("lifecycle receipt differs from approval")
+		}
+		if request.Action == "drain" {
+			identity, err := runtimeIdentityAtCheckpoint(receipt.Hello)
+			if err != nil || identity != receipt.Plan.Before || receipt.State != "drained" || !drainedHello(receipt.Hello) {
+				return errors.New("drain receipt does not confirm pause, empty runs and acknowledged records")
+			}
+		} else {
+			if receipt.State != "started_paused" || validateStarted(receipt.Plan, receipt.Hello) != nil {
+				return errors.New("startup receipt does not confirm a paused compatible executor")
+			}
+		}
+		return nil
+	}
+	if result.LifecycleReceipt != nil {
+		return errors.New("unexpected lifecycle receipt")
 	}
 	if request.Action == "stage" {
 		if result.State != "staged" || result.Receipt == nil || result.OperationReceipt != nil || request.Review == nil {

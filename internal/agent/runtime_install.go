@@ -17,17 +17,18 @@ import (
 )
 
 type RuntimeInstallConfig struct {
-	CCURL            string            `json:"cc_url"`
-	CCKeysPath       string            `json:"cc_keys_path"`
-	ProbeVersion     string            `json:"probe_version"`
-	StagingDir       string            `json:"staging_dir"`
-	InstallRoot      string            `json:"install_root"`
-	TrustedInstaller string            `json:"trusted_installer"`
-	StateDir         string            `json:"state_dir"`
-	ConfigPath       string            `json:"config_path"`
-	PolicyPath       string            `json:"policy_path"`
-	Unit             string            `json:"unit"`
-	Target           ipsentinel.Target `json:"target"`
+	CCURL            string                 `json:"cc_url"`
+	CCKeysPath       string                 `json:"cc_keys_path"`
+	ProbeVersion     string                 `json:"probe_version"`
+	StagingDir       string                 `json:"staging_dir"`
+	InstallRoot      string                 `json:"install_root"`
+	TrustedInstaller string                 `json:"trusted_installer"`
+	StateDir         string                 `json:"state_dir"`
+	ConfigPath       string                 `json:"config_path"`
+	PolicyPath       string                 `json:"policy_path"`
+	Unit             string                 `json:"unit"`
+	Target           ipsentinel.Target      `json:"target"`
+	Peer             runtimepkg.RuntimePeer `json:"peer,omitempty"`
 }
 
 type RuntimeTransport interface {
@@ -122,12 +123,13 @@ func (installer RuntimeInstaller) Sync(ctx context.Context) error {
 	if request.State != "approved" || request.ApprovedAt <= 0 || time.Now().Unix()-request.ApprovedAt > 900 || request.ApprovedAt > time.Now().Unix()+5 {
 		return errors.New("runtime operation has no current approval")
 	}
-	review := runtimepkg.ChannelResult{RequestID: request.ID, State: "awaiting_approval", PlanSHA256: request.PlanSHA256, Review: request.Review, Operation: request.Operation}
+	review := runtimepkg.ChannelResult{RequestID: request.ID, State: "awaiting_approval", PlanSHA256: request.PlanSHA256, Review: request.Review, Operation: request.Operation, Lifecycle: request.Lifecycle}
 	if err := runtimepkg.ValidateChannelPlan(*request, review); err != nil {
 		return err
 	}
 	preflight := *request
 	preflight.State, preflight.PlanSHA256, preflight.Review, preflight.Operation = "requested", "", nil, nil
+	preflight.Lifecycle = nil
 	current, err := installer.Worker.Run(ctx, preflight)
 	if err != nil || current.State != "awaiting_approval" || current.PlanSHA256 != request.PlanSHA256 || !sameRuntimeReview(*request, current) {
 		return installer.publish(ctx, runtimepkg.ChannelResult{RequestID: request.ID, State: "failed", PlanSHA256: request.PlanSHA256, ErrorCode: "plan_changed"})
@@ -171,8 +173,8 @@ func runtimeUnknown(id, digest string) runtimepkg.ChannelResult {
 }
 
 func sameRuntimeReview(request runtimepkg.ChannelRequest, result runtimepkg.ChannelResult) bool {
-	first, firstErr := json.Marshal([]any{request.PlanSHA256, request.Review, request.Operation})
-	second, secondErr := json.Marshal([]any{result.PlanSHA256, result.Review, result.Operation})
+	first, firstErr := json.Marshal([]any{request.PlanSHA256, request.Review, request.Operation, request.Lifecycle})
+	second, secondErr := json.Marshal([]any{result.PlanSHA256, result.Review, result.Operation, result.Lifecycle})
 	return firstErr == nil && secondErr == nil && string(first) == string(second)
 }
 
@@ -253,11 +255,11 @@ func (local *LocalRuntime) Run(ctx context.Context, request runtimepkg.ChannelRe
 	if request.State != "requested" && request.State != "approved" {
 		return runtimepkg.ChannelResult{}, errors.New("runtime request is neither a plan request nor an approved operation")
 	}
-	if request.State == "requested" && (request.Review != nil || request.Operation != nil || request.PlanSHA256 != "") {
+	if request.State == "requested" && (request.Review != nil || request.Operation != nil || request.Lifecycle != nil || request.PlanSHA256 != "") {
 		return runtimepkg.ChannelResult{}, errors.New("runtime plan request contains an existing approval")
 	}
 	if request.State == "approved" {
-		review := runtimepkg.ChannelResult{RequestID: request.ID, State: "awaiting_approval", PlanSHA256: request.PlanSHA256, Review: request.Review, Operation: request.Operation}
+		review := runtimepkg.ChannelResult{RequestID: request.ID, State: "awaiting_approval", PlanSHA256: request.PlanSHA256, Review: request.Review, Operation: request.Operation, Lifecycle: request.Lifecycle}
 		if err := runtimepkg.ValidateChannelPlan(request, review); err != nil {
 			return runtimepkg.ChannelResult{}, err
 		}
@@ -291,8 +293,33 @@ func (local *LocalRuntime) Run(ctx context.Context, request runtimepkg.ChannelRe
 		return result, nil
 	}
 	options := runtimepkg.OperationOptions{Action: request.Action, InstallRoot: local.Config.InstallRoot, ReferencePath: local.Config.TrustedInstaller}
-	if request.Action == "select" {
+	if request.Action == "select" || request.Action == "drain" || request.Action == "activate" {
 		options.StateDir, options.ConfigPath, options.PolicyPath, options.Unit = local.Config.StateDir, local.Config.ConfigPath, local.Config.PolicyPath, local.Config.Unit
+	}
+	if request.Action == "drain" || request.Action == "activate" {
+		control := runtimepkg.LocalLifecycle{Peer: local.Config.Peer, Target: local.Enrollment.Target}
+		store := runtimepkg.Store{Dir: local.Config.StagingDir}
+		review, err := runtimepkg.PrepareLifecycle(ctx, store, request.StagePlanSHA256, local.Keys, local.Enrollment.Host, local.Enrollment.Target, options, local.Config.Peer, control)
+		if err != nil {
+			return result, err
+		}
+		if request.State == "requested" {
+			result.State, result.PlanSHA256, result.Lifecycle = "awaiting_approval", review.PlanSHA256, &review
+			return result, nil
+		}
+		if review.PlanSHA256 != request.PlanSHA256 {
+			return result, errors.New("approved lifecycle inputs changed")
+		}
+		permission := review.ApprovalTemplate
+		permission.Approved = true
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		receipt, err := runtimepkg.ApplyLifecycle(ctx, store, review, permission, control)
+		if err != nil {
+			return result, err
+		}
+		result.State, result.PlanSHA256, result.LifecycleReceipt = receipt.State, receipt.PlanSHA256, &receipt
+		return result, nil
 	}
 	review, err := runtimepkg.PrepareOperation(ctx, runtimepkg.Store{Dir: local.Config.StagingDir}, request.StagePlanSHA256, local.Keys, local.Enrollment.Host, local.Enrollment.Target, options)
 	if err != nil {

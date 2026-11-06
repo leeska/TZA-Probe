@@ -82,5 +82,39 @@ assert(!installForm.elements.stage_request_id.disabled);
 installForm.elements.stage_request_id.value = "staged-source";
 await installForm.onsubmit({preventDefault() {}});
 assert.deepEqual(writes.at(-1).body, {action: "install", version: "0.4.0", stage_request_id: "staged-source"});
+views[0].maintenance = true;
+views[0].requests = [{
+  ...request("startup", "started_paused", "activate"),
+  lifecycle_receipt: {hello: {descriptor_sha256: "e".repeat(64), status: {executor_instance_id: "new-instance", control: {epoch: 8}}}},
+}, request("staged-source", "staged")];
+let authorized;
+await window.runtimeUI.renderRuntime(view => { authorized = view; });
+assert.match(window.document.body.textContent, /升级维护暂停中/);
+assert.match(window.document.body.textContent, /等待重新授权与恢复/);
+assert.equal(window.document.querySelector('option[value="activate"]').disabled, false);
+const authorize = [...window.document.querySelectorAll("button")].find(button => button.textContent === "按启动回执核对重新授权");
+assert(authorize);
+authorize.click();
+assert.equal(authorized.binding.epoch, 8);
+assert.equal(authorized.binding.descriptor_sha256, "e".repeat(64));
+assert.equal(authorized.binding.mode, "managed");
+const lifecycleForm = window.document.querySelector("[data-runtime-create]");
+lifecycleForm.elements.action.value = "activate";
+lifecycleForm.elements.action.onchange();
+lifecycleForm.elements.stage_request_id.value = "staged-source";
+await lifecycleForm.onsubmit({preventDefault() {}});
+assert.deepEqual(writes.at(-1).body, {action: "activate", version: "0.4.0", stage_request_id: "staged-source"});
+views[0].requests = [{
+  ...request("drain-plan", "awaiting_approval", "drain"),
+  lifecycle: {plan: {
+    operation: {version: "0.4.0", archive_sha256: "b".repeat(64), target: enrollment.target, options: {install_root: "/opt/ipsentinel-runtime", unit: "ipsentinel-runtime.service"}},
+    before: {instance_id: "old-instance", epoch: 7},
+    peer: {uid: 1001, gid: 1001, socket_path: "/run/ipsentinel/control.sock"},
+  }},
+}];
+await window.runtimeUI.renderRuntime();
+assert.match(window.document.body.textContent, /UID 1001/);
+assert([...window.document.querySelectorAll(".runtime-json")].some(element => element.textContent.includes('"peer"')));
+assert.match(window.document.body.textContent, /撤销或失败仍保留维护暂停/);
 window.close();
-console.log("runtime UI: approval identity, full review, escaping, expiry, unknown history and staged source passed");
+console.log("runtime UI: approval identity, full review, expiry, maintenance, lifecycle plans and explicit epoch reauthorization passed");

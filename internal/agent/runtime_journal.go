@@ -167,7 +167,7 @@ func (journal FileRuntimePending) Save(pending RuntimePending) error {
 		return errors.New("invalid runtime journal identity")
 	}
 	switch pending.Result.State {
-	case "awaiting_approval", "running", "staged", "installed", "selected", "unknown", "failed":
+	case "awaiting_approval", "running", "staged", "installed", "selected", "drained", "started_paused", "unknown", "failed":
 	default:
 		return errors.New("invalid runtime journal state")
 	}
