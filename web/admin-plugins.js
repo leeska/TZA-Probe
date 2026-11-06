@@ -9,9 +9,8 @@ export async function renderPlugins(nodesReady) {
   const view = state.pluginsView === "market" ? "market" : "installed";
   const [, plugins] = await Promise.all([nodesReady, api("/admin/plugins").catch(() => [])]);
   const updates = await loadMarket(() => renderPlugins(), plugins, view === "market" ? "plugins" : "");
-  const nodePanel = view === "installed" ? await nodePluginsPanel() : "";
-  const body = view === "market" ? catalogPanel("plugins") : nodePanel + installedPanel(plugins, updates);
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PLUGINS</div><h1>插件</h1><p>通知与目标集安装到主控；节点插件选择节点后按需下载，安装、配置和运行状态都在插件详情的「设置」中管理。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "插件分类")}${body}`;
+  const body = view === "market" ? catalogPanel("plugins") : installedPanel(plugins, updates);
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PLUGINS</div><h1>插件</h1><p>安装插件扩展功能；需要在 Agent 运行的组件，在插件详情中按需安装。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "插件分类")}${body}`;
   content().querySelectorAll("[data-subview]").forEach((b) =>
     (b.onclick = guard(async () => {
       state.pluginsView = b.dataset.subview;
@@ -20,23 +19,6 @@ export async function renderPlugins(nodesReady) {
   );
   wireMarket();
   if (view === "installed") wireInstalled();
-  content().querySelector("[data-node-plugin-settings]")?.addEventListener("click", guard(async () => {
-    const pkg = await api("/admin/market/packages/ipsentinel-runtime").catch(() => ({
-      id: "ipsentinel-runtime", type: "executor", name: "IPSentinel",
-    }));
-    await openNodePluginDetail(pkg, { trusted: Boolean(marketStatus().trusted_keys), back: () => renderPlugins() });
-  }));
-}
-
-async function nodePluginsPanel() {
-  try {
-    const [bindings, channels] = await Promise.all([api("/admin/executors"), api("/admin/runtime")]);
-    const requests = channels.flatMap(channel => channel.requests || []);
-    if (!bindings.length && !requests.length) return "";
-    return `<section class="panel theme-panel"><div class="panel-head"><h3>节点插件</h3></div><div class="theme-row"><span class="plugin-glyph" aria-hidden="true">节点</span><span class="theme-copy"><b>IP 地区防护 · IPSentinel</b><small>防送中检测、拉回尝试与干净复测<br>${bindings.length} 个节点接入记录 · ${requests.length} 条安装记录</small></span><button data-node-plugin-settings>查看防护</button></div></section>`;
-  } catch {
-    return '<section class="panel"><p role="status">节点插件记录加载失败，请刷新重试；主控插件仍可管理。</p></section>';
-  }
 }
 
 // 已安装列表每页几个插件。
@@ -49,12 +31,24 @@ function installedPanel(list, updates) {
   const rows = list.slice((installedPage - 1) * PER_PAGE, installedPage * PER_PAGE).map((p) => {
     const bits = sourceBits(p, updates);
     const meta = [p.id, p.version && "v" + p.version, p.author, kindName(p.kind)].filter(Boolean).join(" · ");
-    return `<div class="theme-row">${glyph(p.kind)}<span class="theme-copy"><b>${esc(p.name)}</b><small>${esc(p.hint || "")}${p.hint ? "<br>" : ""}${esc(meta)}</small></span>${bits.pills}${bits.actions}<button type="button" class="danger" data-remove-plugin="${esc(p.id)}">删除</button></div>`;
+    const actions = p.kind === "agent" ? `<button data-plugin-manage="${esc(p.id)}">管理</button>` : bits.actions;
+    return `<div class="theme-row">${glyph(p.kind)}<span class="theme-copy"><b>${esc(p.name)}</b><small>${esc(p.hint || "")}${p.hint ? "<br>" : ""}${esc(meta)}</small></span>${bits.pills}${actions}<button type="button" class="danger" data-remove-plugin="${esc(p.id)}">删除</button></div>`;
   }).join("");
   return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">管理本机插件，市场安装的插件有新版时会在这里提示。</span></div><div class="panel-actions"><label class="button theme-upload">上传插件<input id="plugin-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${rows || '<div class="market-empty"><b>还没有安装插件</b><p>添加通知渠道，或为任务添加探测目标。</p><button type="button" class="primary" data-subview="market">浏览插件市场</button></div>'}</div>${pager(installedPage, installedPage < pages, "installed-page", pages)}<details class="market-upload-help"><summary>手动上传与开发文档</summary><p class="hint">插件格式见 <a href="${PLUGIN_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/PLUGINS.md</a>。本地上传同一个 id 会替换市场装的插件（之后按本地包对待，不再提示更新）；正被用作通知渠道的插件要先在「告警与通知」换掉渠道才能删除。</p></details></section>`;
 }
 
 function wireInstalled() {
+  content().querySelectorAll("[data-plugin-manage]").forEach(button => {
+    button.onclick = guard(async () => {
+      const installed = (await api("/admin/plugins")).find(plugin => plugin.id === button.dataset.pluginManage);
+      if (!installed) throw new Error("插件管理部分已移除，请刷新列表");
+      const pkg = await api("/admin/market/packages/" + encodeURIComponent(installed.id)).catch(() => ({
+        ...installed, type: "executor", versions: [],
+      }));
+      pkg.installed = { version: installed.version, source: installed.source };
+      await openNodePluginDetail(pkg, { trusted: Boolean(marketStatus().trusted_keys), back: () => renderPlugins() });
+    });
+  });
   content().querySelectorAll("[data-installed-page]").forEach((b) =>
     (b.onclick = guard(async () => {
       installedPage = Number(b.dataset.installedPage);
@@ -77,7 +71,7 @@ function wireInstalled() {
   });
   content().querySelectorAll("[data-remove-plugin]").forEach((b) =>
     (b.onclick = () =>
-      confirmAction(`删除插件 · ${b.dataset.removePlugin}`, "删除后通知插件不再出现在渠道列表里，目标集的目标从任务目录里消失（已经建好的任务照常运行）。", async () => {
+      confirmAction(`删除插件 · ${b.dataset.removePlugin}`, b.dataset.removePlugin === "ipsentinel-runtime" ? "只移除主控管理入口，不会卸载 Agent 组件、停止本机任务或删除历史。重新从市场安装插件即可接回管理。" : "删除后通知插件不再出现在渠道列表里，目标集的目标从任务目录里消失（已经建好的任务照常运行）。", async () => {
         await send("/admin/plugins/" + encodeURIComponent(b.dataset.removePlugin), "DELETE");
         state.catalog = null;
         await renderPlugins();

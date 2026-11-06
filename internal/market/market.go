@@ -433,7 +433,7 @@ func (c *Client) Catalog(ctx context.Context, q Query) (Catalog, error) {
 	installed := c.installed()
 	items := make([]Item, 0, len(out.Items))
 	for _, it := range out.Items {
-		if (q.Type == "" || it.Type == q.Type) && (it.Type != tzapkg.TypeExecutor || q.Type == tzapkg.TypeExecutor) && c.cleanItem(&it, installed) {
+		if (q.Type == "" || it.Type == q.Type || q.Type == tzapkg.TypePlugin && q.Kind == "" && it.Type == tzapkg.TypeExecutor) && c.cleanItem(&it, installed) {
 			items = append(items, it)
 		}
 	}
@@ -566,7 +566,7 @@ func (c *Client) cleanItem(it *Item, installed map[string]Installed) bool {
 	it.Cover = c.mediaURL(it.Cover)
 	it.URL = c.mediaURL(it.URL) // same rule: a link on CC's own origin only
 	it.Installed = nil
-	if have, ok := installed[it.ID]; ok && it.Type != tzapkg.TypeExecutor {
+	if have, ok := installed[it.ID]; ok {
 		it.Installed = &have
 	}
 	return true
@@ -575,6 +575,9 @@ func (c *Client) cleanItem(it *Item, installed map[string]Installed) bool {
 // installed maps the ids of installed packages to their version and source.
 func (c *Client) installed() map[string]Installed {
 	out := map[string]Installed{}
+	for _, manager := range c.Managers() {
+		out[manager.ID] = Installed{Version: manager.Version, Source: manager.Source}
+	}
 	for _, m := range c.themes.Installed() {
 		have := Installed{Version: m.Version, Source: "local"}
 		if o, ok := c.themes.Origin(m.ID); ok {

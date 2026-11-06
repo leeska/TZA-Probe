@@ -43,9 +43,6 @@ func (c *Client) Install(ctx context.Context, id, version string) (Result, error
 	if err != nil {
 		return Result{}, err
 	}
-	if detail.Type == tzapkg.TypeExecutor {
-		return Result{}, rejected("节点插件须选择目标节点并批准安装计划，不能安装到主控")
-	}
 	if version, err = c.pick(detail, version); err != nil {
 		return Result{}, err
 	}
@@ -88,14 +85,17 @@ func (c *Client) Install(ctx context.Context, id, version string) (Result, error
 	switch {
 	case err != nil:
 		return Result{}, fmt.Errorf("%w：%v", ErrRejected, err)
-	case info.Type == tzapkg.TypeExecutor:
-		return Result{}, fmt.Errorf("%w：节点运行时不得作为主题或插件安装；请使用专门的节点安装流程", ErrRejected)
+	case info.Type != detail.Type:
+		return Result{}, rejected("包内类型与市场类型不符")
 	case info.ID != id:
 		return Result{}, rejected("包内清单的 id %q 与市场包 %q 不符", info.ID, id)
 	case info.Version != sig.Version:
 		return Result{}, rejected("包内清单的 version %q 与签名版本 %s 不符", info.Version, sig.Version)
 	}
 	at := c.now().UTC()
+	if info.Type == tzapkg.TypeExecutor {
+		return c.installManager(archive, sig)
+	}
 	if info.Type == tzapkg.TypePlugin {
 		if c.plugins == nil || c.plugins.Dir == "" {
 			return Result{}, errors.New("这个 Server 没有配置插件目录")

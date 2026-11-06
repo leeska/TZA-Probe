@@ -53,7 +53,7 @@ func executorRuntimeArchive(t *testing.T) []byte {
 	return buffer.Bytes()
 }
 
-func TestExecutorRuntimeIsHiddenFromGenericInstallCatalog(t *testing.T) {
+func TestOfficialPluginManagerInstallAndPersistence(t *testing.T) {
 	e := newEnv(t)
 	e.client.probe = "1.6.0"
 	e.cc.Add(&markettest.Package{ID: tzapkg.OfficialExecutorID, Type: tzapkg.TypeExecutor, Kind: "ipsentinel", Name: "IPSentinel runtime", Releases: []markettest.Release{{Version: "0.4.0", Probe: ">=1.6.0", Archive: executorRuntimeArchive(t)}}})
@@ -66,25 +66,116 @@ func TestExecutorRuntimeIsHiddenFromGenericInstallCatalog(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		found := false
 		for _, item := range page.Items {
-			if item.Type == tzapkg.TypeExecutor {
-				t.Fatal("node plugin entered a controller installation catalog", kind)
-			}
+			found = found || item.Type == tzapkg.TypeExecutor
+		}
+		if found != (kind != "skin") {
+			t.Fatal("incorrect unified plugin catalog", kind, page)
 		}
 	}
-	if _, err := e.client.Install(context.Background(), tzapkg.OfficialExecutorID, "0.4.0"); !errors.Is(err, ErrRejected) {
-		t.Fatal("node plugin entered the controller installer", err)
+	result, err := e.client.Install(context.Background(), tzapkg.OfficialExecutorID, "0.4.0")
+	if err != nil || result.Kind != "agent" || result.Version != "0.4.0" {
+		t.Fatal("manager installation failed", result, err)
 	}
-	for _, request := range e.cc.Seen {
-		if request.Method == "POST" && strings.Contains(request.Path, "/download") {
-			t.Fatal("controller installer requested node plugin bytes")
+	if len(e.plugins.List()) != 0 || len(e.themes.Installed()) != 0 {
+		t.Fatal("runtime manager entered declarative plugin or theme store")
+	}
+	for _, request := range e.cc.Requests() {
+		if strings.Contains(request.Path, "/artifacts/") || request.Path == "/api/v1/installations" {
+			t.Fatal("manager installation downloaded dependencies or reported Agent installation", request)
 		}
+	}
+	restarted, err := New(Config{URL: e.cc.URL(), Keys: e.cc.Keys(), Dir: e.dir, Probe: "1.6.0", Themes: e.themes, Plugins: e.plugins})
+	if err != nil || len(restarted.Managers()) != 1 || restarted.installed()[result.ID].Version != "0.4.0" {
+		t.Fatal("manager did not survive restart", err)
+	}
+	detail, err := restarted.Package(t.Context(), result.ID)
+	if err != nil || detail.Installed == nil || detail.Installed.Version != "0.4.0" {
+		t.Fatal("manager not reflected in detail", detail, err)
+	}
+	e.cc.Tamper = true
+	if _, err := restarted.Install(t.Context(), result.ID, result.Version); !errors.Is(err, ErrRejected) || len(restarted.Managers()) != 1 {
+		t.Fatal("invalid update replaced existing manager", err)
+	}
+	e.cc.Server.Close()
+	if len(restarted.Managers()) != 1 {
+		t.Fatal("offline manager unavailable")
+	}
+	if err := restarted.RemoveManager(result.ID); err != nil || len(restarted.Managers()) != 0 {
+		t.Fatal("manager removal failed", err)
 	}
 	if _, err := e.client.Catalog(context.Background(), Query{Type: "arbitrary-executable"}); !errors.Is(err, model.ErrInvalid) {
 		t.Fatal("arbitrary executable package type accepted", err)
 	}
 	if _, err := e.client.Catalog(context.Background(), Query{Type: "executor", Kind: "ipsentinel"}); !errors.Is(err, model.ErrInvalid) {
 		t.Fatal("executor used plugin kind filter", err)
+	}
+}
+
+func TestManagerTamperingAndMissingTrust(t *testing.T) {
+	e := newEnv(t)
+	e.client.probe = "1.6.0"
+	e.cc.Add(&markettest.Package{ID: tzapkg.OfficialExecutorID, Type: tzapkg.TypeExecutor, Kind: "ipsentinel", Name: "IPSentinel", Releases: []markettest.Release{{Version: "0.4.0", Archive: executorRuntimeArchive(t)}}})
+	if _, err := e.client.Install(t.Context(), tzapkg.OfficialExecutorID, "0.4.0"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(e.client.managerPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record managerRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*managerRecord){
+		func(record *managerRecord) { record.Archive = append(record.Archive, 'x') },
+		func(record *managerRecord) { record.Signature.Version = "0.4.1" },
+		func(record *managerRecord) { record.Signature.Package = "other-plugin" },
+	} {
+		altered := record
+		mutate(&altered)
+		if _, err := e.client.installManager(altered.Archive, altered.Signature); !errors.Is(err, ErrRejected) {
+			t.Fatal("tampered manager accepted", err)
+		}
+	}
+	corrupted := record
+	corrupted.Signature.SHA256 = strings.Repeat("0", 64)
+	altered, _ := json.Marshal(corrupted)
+	if err := os.WriteFile(e.client.managerPath(), altered, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.client.Managers()) != 0 {
+		t.Fatal("tampered stored manager listed")
+	}
+	if err := os.WriteFile(e.client.managerPath(), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	e.client.keys = nil
+	if len(e.client.Managers()) != 0 {
+		t.Fatal("manager listed after trust revoked")
+	}
+}
+
+func TestManagerAndDeclarativeTypesCannotBeDisguised(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		t.Run(fmt.Sprint(reverse), func(t *testing.T) {
+			e := newEnv(t)
+			e.client.probe = "1.6.0"
+			kind, packageType := "notify", tzapkg.TypePlugin
+			archive := executorRuntimeArchive(t)
+			if reverse {
+				kind, packageType = "ipsentinel", tzapkg.TypeExecutor
+				archive = markettest.Skin(t, tzapkg.OfficialExecutorID, "0.4.0")
+			}
+			e.cc.Add(&markettest.Package{ID: tzapkg.OfficialExecutorID, Type: packageType, Kind: kind, Name: "disguised", Releases: []markettest.Release{{Version: "0.4.0", Archive: archive}}})
+			if _, err := e.client.Install(t.Context(), tzapkg.OfficialExecutorID, "0.4.0"); !errors.Is(err, ErrRejected) {
+				t.Fatal("signed archive type differs from catalog", reverse, err)
+			}
+			if len(e.client.Managers()) != 0 || len(e.plugins.List()) != 0 || len(e.themes.Installed()) != 0 {
+				t.Fatal("disguised package was installed")
+			}
+		})
 	}
 }
 

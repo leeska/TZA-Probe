@@ -26,10 +26,10 @@ let pollTimer = 0;
 let rerender = async () => {};
 
 export const media = (url) => "/api/v1/admin/market/media?url=" + encodeURIComponent(url);
-export const typeName = (t) => ({ addon: "附加包", plugin: "主控插件", executor: "节点插件" })[t] || "主题";
+export const typeName = (t) => ({ addon: "附加包", plugin: "插件", executor: "插件" })[t] || "主题";
 export const kindName = (k) => KINDS[k] || "插件";
 // 插件没有色样和封面：卡片与列表里画一枚写着类型的小牌子。
-export const glyph = (kind) => `<span class="plugin-glyph" aria-hidden="true">${kind === "targets" ? "目标集" : "通知"}</span>`;
+export const glyph = (kind) => `<span class="plugin-glyph" aria-hidden="true">${kind === "agent" ? "防护" : kind === "targets" ? "目标集" : "通知"}</span>`;
 const permList = (perms) => (perms?.length ? `<ul class="plugin-perms">${perms.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
 const day = (value) => {
   const at = new Date(value);
@@ -87,7 +87,7 @@ export function catalogPanel(scope) {
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text market-keys">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
   const plugin = scope === "plugins";
-  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>${plugin ? "发现插件" : "挑选主题"}</h3><span class="muted">${plugin ? "主控插件安装到本面板；节点插件选择目标节点后按需下载。" : "更换公开面板的外观，查看预览和介绍后安装。"}</span></div></div><div class="market-guide"><b>${plugin ? "安装后怎么用" : "主题与附加包"}</b><span>${plugin ? "通知渠道在告警出口选用；目标集在新建任务时选择；节点插件的安装、配置与运行状态在插件详情的「设置」中管理。" : "主题决定整体外观；附加包为特定主题添加装饰，在「已安装 → 对应主题 → 设置」中管理。"}</span></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
+  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>${plugin ? "发现插件" : "挑选主题"}</h3><span class="muted">${plugin ? "先安装插件，需要 Agent 组件时再按需添加。" : "更换公开面板的外观，查看预览和介绍后安装。"}</span></div></div><div class="market-guide"><b>${plugin ? "安装后怎么用" : "主题与附加包"}</b><span>${plugin ? "通知渠道在告警出口选用；目标集在新建任务时选择；IP 地区防护在插件详情中管理功能与 Agent。" : "主题决定整体外观；附加包为特定主题添加装饰，在「已安装 → 对应主题 → 设置」中管理。"}</span></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
 }
 
 // 主题、插件页的两个子页「已安装」「市场」，样子与面板设置的子标签一样。
@@ -124,8 +124,8 @@ async function fetchCatalog(scope) {
 
 function catalogHTML(scope) {
   const view = viewOf(scope);
-  const selectedKind = view.type === "executor" ? "executor" : (view.kind || "");
-  const tabs = scope === "plugins" ? `<div class="segmented" role="group" aria-label="插件用途">${[["", "主控插件"], ["notify", "通知渠道"], ["targets", "探测目标集"], ["executor", "节点插件"]].map(([id, label]) => `<button type="button" data-market-kind="${id}" class="${selectedKind === id ? "active" : ""}" aria-pressed="${selectedKind === id}">${label}</button>`).join("")}</div>` : "";
+  const selectedKind = view.kind || "";
+  const tabs = scope === "plugins" ? `<div class="segmented" role="group" aria-label="插件用途">${[["", "全部插件"], ["notify", "通知渠道"], ["targets", "探测目标集"]].map(([id, label]) => `<button type="button" data-market-kind="${id}" class="${selectedKind === id ? "active" : ""}" aria-pressed="${selectedKind === id}">${label}</button>`).join("")}</div>` : "";
   const cards = view.items.map(card).join("");
   const empty = view.error
     ? `<div class="market-empty" role="alert"><b>暂时无法加载市场</b><p class="warn-text">${esc(view.error)}</p><button type="button" class="quiet" data-market-retry>重新加载</button></div>`
@@ -137,7 +137,7 @@ function catalogHTML(scope) {
 function card(it) {
   if (it.type === "executor") {
     const official = it.id === "ipsentinel-runtime";
-    return `<button type="button" class="market-card is-plugin" data-package="${esc(it.id)}"><span class="plugin-glyph" aria-hidden="true">节点</span><span class="market-card-body"><span class="market-card-kind">节点插件 · 安装到所选节点</span><span class="market-card-title"><b>${esc(official ? "IP 地区防护 · IPSentinel" : it.name)}</b></span><small>${esc(official ? "防送中检测、目标地区拉回尝试与干净复测。默认关闭，按需安装。" : it.summary || "按需下载运行依赖，独立隔离运行")}</small><span class="market-card-meta">${esc(it.latest ? "v" + it.latest : "暂无版本")}</span><span class="market-card-footer"><strong>免费</strong><span>查看详情 →</span></span></span></button>`;
+    return `<button type="button" class="market-card is-plugin" data-package="${esc(it.id)}"><span class="plugin-glyph" aria-hidden="true">防护</span><span class="market-card-body"><span class="market-card-kind">官方插件</span><span class="market-card-title"><b>${esc(official ? "IP 地区防护 · IPSentinel" : it.name)}</b>${it.installed ? '<span class="pill good">已安装</span>' : ""}</span><small>${esc(official ? "防送中检测、目标地区拉回尝试与干净复测。实际组件按 Agent 安装。" : it.summary || "按需下载运行依赖，独立隔离运行")}</small><span class="market-card-meta">${esc(it.latest ? "v" + it.latest : "暂无版本")}</span><span class="market-card-footer"><strong>免费</strong><span>${it.installed ? "管理插件" : "查看详情"} →</span></span></span></button>`;
   }
   // 没有封面或封面取不到（.broken）时露出三格色样，附加包没有色样就写类型。
   const fallback = it.type === "plugin" ? glyph(it.kind) : it.swatch?.length ? swatch(it.swatch) : `<span class="muted">${typeName(it.type)}</span>`;
@@ -226,7 +226,8 @@ export function wireMarket(root = content()) {
       b.disabled = true;
       try {
         const p = await api("/admin/market/packages/" + encodeURIComponent(b.dataset.marketUpdate));
-        if (p.type === "plugin") await confirmMarketPlugin(p, b.dataset.version, `确认更新到 v${b.dataset.version}`);
+        if (p.type === "executor") await openNodePluginDetail(p, { trusted: Boolean(status.trusted_keys), back: rerender });
+        else if (p.type === "plugin") await confirmMarketPlugin(p, b.dataset.version, `确认更新到 v${b.dataset.version}`);
         else await install(p.id, b.dataset.version);
       } finally {
         b.disabled = false;
@@ -253,8 +254,8 @@ function wireCatalog(box) {
   };
   body.querySelectorAll("[data-market-kind]").forEach((b) =>
     (b.onclick = guard(async () => {
-      view.type = b.dataset.marketKind === "executor" ? "executor" : "plugin";
-      view.kind = b.dataset.marketKind === "executor" ? "" : b.dataset.marketKind;
+      view.type = "plugin";
+      view.kind = b.dataset.marketKind;
       view.page = 1;
       await reload();
     })),

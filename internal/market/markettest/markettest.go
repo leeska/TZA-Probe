@@ -210,7 +210,7 @@ func (cc *CC) serve(w http.ResponseWriter, r *http.Request) {
 		typ, q, kind := r.URL.Query().Get("type"), r.URL.Query().Get("q"), r.URL.Query().Get("kind")
 		items := []any{}
 		for _, p := range cc.Packages {
-			if (typ == "" || p.Type == typ) && (kind == "" || p.Kind == kind) && strings.Contains(p.ID+p.Name, q) {
+			if (typ == "" || p.Type == typ || typ == "plugin" && kind == "" && p.Type == "executor") && (kind == "" || p.Kind == kind) && strings.Contains(p.ID+p.Name, q) {
 				items = append(items, cc.item(p))
 			}
 		}

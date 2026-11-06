@@ -177,7 +177,11 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 
 	// ---- plugins：声明式插件（通知渠道 / 探测目标集，见 docs/PLUGINS.md）
 	route("GET /api/v1/admin/plugins", func(w http.ResponseWriter, r *http.Request) {
-		write(w, 200, a.svc.PluginList())
+		plugins := a.svc.PluginList()
+		for _, manager := range a.Market.Managers() {
+			plugins = append(plugins, service.PluginView{ID: manager.ID, Kind: manager.Kind, Name: manager.Name, Version: manager.Version, Source: manager.Source, Permissions: manager.Permissions, Hint: "主控管理部分；实际组件按 Agent 单独安装"})
+		}
+		write(w, 200, plugins)
 	})
 	// 上传前先看一眼：只校验、列出它能做的事，不落盘；面板据此请管理员确认。
 	route("POST /api/v1/admin/plugins/inspect", func(w http.ResponseWriter, r *http.Request) {
@@ -190,11 +194,20 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			write(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
+		if p.ID == tzapkg.OfficialExecutorID {
+			write(w, 400, map[string]string{"error": "此插件 ID 只用于官方签名管理部分，请从市场安装"})
+			return
+		}
 		write(w, 200, service.ViewPlugin(p))
 	})
 	route("POST /api/v1/admin/plugins", func(w http.ResponseWriter, r *http.Request) {
 		body, ok := zipBody(w, r)
 		if !ok {
+			return
+		}
+		preview, err := tzapkg.OpenPlugin(body)
+		if err != nil || preview.ID == tzapkg.OfficialExecutorID {
+			write(w, 400, map[string]string{"error": "请上传有效的通知或目标集插件；官方管理部分须从市场验签安装"})
 			return
 		}
 		p, err := a.Plugins.Install(body)
@@ -205,6 +218,12 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		write(w, 200, service.ViewPlugin(p))
 	})
 	route("DELETE /api/v1/admin/plugins/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("id") == tzapkg.OfficialExecutorID {
+			if err := a.Market.RemoveManager(r.PathValue("id")); !errors.Is(err, model.ErrNotFound) {
+				respond(w, err)
+				return
+			}
+		}
 		respond(w, a.svc.RemovePlugin(r.Context(), r.PathValue("id")))
 	})
 

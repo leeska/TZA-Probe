@@ -46,7 +46,7 @@ func TestNodePluginMarketBrowserFixture(t *testing.T) {
 		}
 	}
 	cc := markettest.New(t)
-	cc.Add(&markettest.Package{ID: "ipsentinel-runtime", Type: "executor", Kind: "ipsentinel", Name: "IPSentinel", Releases: []markettest.Release{{Version: "0.4.0", Probe: ">=1.6.0"}}})
+	cc.Add(&markettest.Package{ID: "ipsentinel-runtime", Type: "executor", Kind: "ipsentinel", Name: "IPSentinel", Releases: []markettest.Release{{Version: "0.4.0", Probe: ">=1.6.0", Archive: officialManagerArchive(t)}}})
 	client, err := market.New(market.Config{URL: cc.URL(), Keys: cc.Keys(), Dir: t.TempDir(), Probe: "1.10.0"})
 	if err != nil {
 		t.Fatal(err)
@@ -86,5 +86,5 @@ func TestNodePluginMarketBrowserFixture(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 	}
-	t.Log("browser fixture used isolated SQLite and catalog metadata; no runtime downloaded or executed")
+	t.Log("browser fixture used isolated SQLite and a test-signed manager declaration; no runtime dependencies downloaded or executed")
 }
