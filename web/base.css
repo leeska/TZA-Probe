@@ -1608,3 +1608,11 @@ html[data-theme="dark"] {
 .runtime-create { margin-top: 1rem; }
 .runtime-panel { overflow-wrap: anywhere; }
 .runtime-json { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+.node-plugin-targets { display: grid; gap: 12px; max-height: 48vh; overflow-y: auto; }
+.node-plugin-target { display: flex; flex-direction: row; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.node-plugin-target:has(> input:disabled) { opacity: 1; }
+.node-plugin-target input { width: auto; flex: 0 0 auto; margin-top: 4px; }
+.node-plugin-target span { min-width: 0; overflow-wrap: anywhere; }
+.node-plugin-target b, .node-plugin-target small { display: block; }
+.node-plugin-target small { margin-top: 4px; }
+dialog .node-plugin-actions { flex-wrap: wrap; }

@@ -9,7 +9,7 @@ export async function renderPlugins(nodesReady) {
   const [, plugins] = await Promise.all([nodesReady, api("/admin/plugins").catch(() => [])]);
   const updates = await loadMarket(() => renderPlugins(), plugins, view === "market" ? "plugins" : "");
   const body = view === "market" ? catalogPanel("plugins") : installedPanel(plugins, updates);
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PLUGINS</div><h1>插件</h1><p>扩展告警通知渠道，或为探测任务添加目标。到市场挑选插件，在已安装中管理。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "插件分类")}${body}`;
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PLUGINS</div><h1>插件</h1><p>通知与目标集安装到主控；IPSentinel 等节点插件选择节点后按需下载，运行状态在「节点执行器」管理。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "插件分类")}${body}`;
   content().querySelectorAll("[data-subview]").forEach((b) =>
     (b.onclick = guard(async () => {
       state.pluginsView = b.dataset.subview;

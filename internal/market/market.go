@@ -399,8 +399,8 @@ func (c *Client) Catalog(ctx context.Context, q Query) (Catalog, error) {
 	}
 	q.Q = strings.TrimSpace(q.Q)
 	switch {
-	case q.Type != "" && !installable(q.Type):
-		return Catalog{}, model.Invalid(`type 须为 "skin"（主题）、"addon"（附加包）或 "plugin"（插件）`)
+	case q.Type != "" && !installable(q.Type) && q.Type != tzapkg.TypeExecutor:
+		return Catalog{}, model.Invalid(`type 须为 skin、addon、plugin 或 executor（节点插件）`)
 	case q.Kind != "" && (q.Type != tzapkg.TypePlugin || (q.Kind != "notify" && q.Kind != "targets")):
 		return Catalog{}, model.Invalid("kind 须为 notify 或 targets，且 type 须为 plugin")
 	case q.For != "" && !tzapkg.ValidID(q.For):
@@ -433,7 +433,7 @@ func (c *Client) Catalog(ctx context.Context, q Query) (Catalog, error) {
 	installed := c.installed()
 	items := make([]Item, 0, len(out.Items))
 	for _, it := range out.Items {
-		if c.cleanItem(&it, installed) {
+		if (q.Type == "" || it.Type == q.Type) && (it.Type != tzapkg.TypeExecutor || q.Type == tzapkg.TypeExecutor) && c.cleanItem(&it, installed) {
 			items = append(items, it)
 		}
 	}
@@ -518,7 +518,7 @@ func (c *Client) Package(ctx context.Context, id string) (Package, error) {
 // cleanItem normalizes one entry from CC and marks what is installed; false
 // drops it (a malformed id, or a type this Server cannot install yet).
 func (c *Client) cleanItem(it *Item, installed map[string]Installed) bool {
-	if !tzapkg.ValidID(it.ID) || !installable(it.Type) || theme.IsBuiltin(it.ID) {
+	if !tzapkg.ValidID(it.ID) || (!installable(it.Type) && it.Type != tzapkg.TypeExecutor) || theme.IsBuiltin(it.ID) {
 		return false // theme.IsBuiltin: an old package of a look this Server now compiles in
 	}
 	if it.Type == tzapkg.TypePlugin {
@@ -533,7 +533,7 @@ func (c *Client) cleanItem(it *Item, installed map[string]Installed) bool {
 		}
 		it.Permissions = perms
 	} else if it.Type == tzapkg.TypeExecutor {
-		if it.ID != tzapkg.OfficialExecutorID || it.Kind != "ipsentinel" || len(it.Permissions) == 0 {
+		if it.ID != tzapkg.OfficialExecutorID || it.Kind != "ipsentinel" || len(it.Permissions) == 0 || it.Price != 0 {
 			return false
 		}
 		perms := []string{}
@@ -566,7 +566,7 @@ func (c *Client) cleanItem(it *Item, installed map[string]Installed) bool {
 	it.Cover = c.mediaURL(it.Cover)
 	it.URL = c.mediaURL(it.URL) // same rule: a link on CC's own origin only
 	it.Installed = nil
-	if have, ok := installed[it.ID]; ok {
+	if have, ok := installed[it.ID]; ok && it.Type != tzapkg.TypeExecutor {
 		it.Installed = &have
 	}
 	return true

@@ -43,6 +43,9 @@ func (c *Client) Install(ctx context.Context, id, version string) (Result, error
 	if err != nil {
 		return Result{}, err
 	}
+	if detail.Type == tzapkg.TypeExecutor {
+		return Result{}, rejected("节点插件须选择目标节点并批准安装计划，不能安装到主控")
+	}
 	if version, err = c.pick(detail, version); err != nil {
 		return Result{}, err
 	}

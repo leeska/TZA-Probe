@@ -170,6 +170,17 @@ func (s *Store) RuntimeChannels(ctx context.Context) ([]runtimepkg.ChannelView, 
 }
 
 func (s *Store) CreateRuntimeRequest(ctx context.Context, node string, input runtimepkg.ChannelInput) (runtimepkg.ChannelRequest, error) {
+	return s.createRuntimeRequest(ctx, node, input, "")
+}
+
+func (s *Store) CreateMarketRuntimeRequest(ctx context.Context, node, version, scope string) (runtimepkg.ChannelRequest, error) {
+	if len(scope) != 64 {
+		return runtimepkg.ChannelRequest{}, model.Invalid("请重新选择节点安装身份")
+	}
+	return s.createRuntimeRequest(ctx, node, runtimepkg.ChannelInput{Action: "stage", Version: version}, scope)
+}
+
+func (s *Store) createRuntimeRequest(ctx context.Context, node string, input runtimepkg.ChannelInput, scope string) (runtimepkg.ChannelRequest, error) {
 	if input.Validate() != nil {
 		return runtimepkg.ChannelRequest{}, model.Invalid("请指定 stage/install/select/drain/activate、精确版本及对应暂存请求")
 	}
@@ -183,6 +194,9 @@ func (s *Store) CreateRuntimeRequest(ctx context.Context, node string, input run
 	enrollment, seen, err := runtimeChannelTx(ctx, tx, node)
 	if err != nil {
 		return runtimepkg.ChannelRequest{}, err
+	}
+	if scope != "" && enrollment.ScopeSHA256 != scope {
+		return runtimepkg.ChannelRequest{}, model.Conflict("节点安装配置已变化，请刷新后重新选择")
 	}
 	now := time.Now().Unix()
 	if now-seen > 45 {

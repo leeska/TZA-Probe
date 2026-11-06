@@ -1,6 +1,7 @@
 import { api, send, toast, guard, modal, esc } from "./api.js";
 import { bytes } from "./format.js";
 import { state, content, confirmAction } from "./admin-state.js";
+import { choosePluginNodes } from "./admin-node-plugins.js";
 // TZA-CC 市场的共用部分：「主题」页（主题包）和「插件」页各带一块市场；附加包依附某一套主题，
 // 它的市场挂在那套主题的设置菜单里（addonMarket），不是主题市场的一个分类，TZA-CC 账号在
 // 「面板设置 → 账号与安全」。浏览器只请求本服务器的 /admin/market/*，目录、预览图与安装包都由服务器
@@ -25,7 +26,7 @@ let pollTimer = 0;
 let rerender = async () => {};
 
 export const media = (url) => "/api/v1/admin/market/media?url=" + encodeURIComponent(url);
-export const typeName = (t) => ({ addon: "附加包", plugin: "插件" })[t] || "主题";
+export const typeName = (t) => ({ addon: "附加包", plugin: "主控插件", executor: "节点插件" })[t] || "主题";
 export const kindName = (k) => KINDS[k] || "插件";
 // 插件没有色样和封面：卡片与列表里画一枚写着类型的小牌子。
 export const glyph = (kind) => `<span class="plugin-glyph" aria-hidden="true">${kind === "targets" ? "目标集" : "通知"}</span>`;
@@ -86,7 +87,7 @@ export function catalogPanel(scope) {
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text market-keys">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
   const plugin = scope === "plugins";
-  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>${plugin ? "发现插件" : "挑选主题"}</h3><span class="muted">${plugin ? "按用途选择扩展，查看详情后安装。" : "更换公开面板的外观，查看预览和介绍后安装。"}</span></div></div><div class="market-guide"><b>${plugin ? "安装后怎么用" : "主题与附加包"}</b><span>${plugin ? "通知渠道：到「告警与通知 → 配置出口」选用。探测目标集：新建任务时从目标目录选择。" : "主题决定整体外观；附加包为特定主题添加装饰，在「已安装 → 对应主题 → 设置」中管理。"}</span></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
+  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>${plugin ? "发现插件" : "挑选主题"}</h3><span class="muted">${plugin ? "主控插件安装到本面板；节点插件选择目标节点后按需下载。" : "更换公开面板的外观，查看预览和介绍后安装。"}</span></div></div><div class="market-guide"><b>${plugin ? "安装后怎么用" : "主题与附加包"}</b><span>${plugin ? "通知渠道在告警出口选用；目标集在新建任务时选择；节点插件的计划与运行状态在「节点执行器」管理。" : "主题决定整体外观；附加包为特定主题添加装饰，在「已安装 → 对应主题 → 设置」中管理。"}</span></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
 }
 
 // 主题、插件页的两个子页「已安装」「市场」，样子与面板设置的子标签一样。
@@ -123,7 +124,8 @@ async function fetchCatalog(scope) {
 
 function catalogHTML(scope) {
   const view = viewOf(scope);
-  const tabs = scope === "plugins" ? `<div class="segmented" role="group" aria-label="插件用途">${[["", "全部插件"], ["notify", "通知渠道"], ["targets", "探测目标集"]].map(([id, label]) => `<button type="button" data-market-kind="${id}" class="${(view.kind || "") === id ? "active" : ""}" aria-pressed="${(view.kind || "") === id}">${label}</button>`).join("")}</div>` : "";
+  const selectedKind = view.type === "executor" ? "executor" : (view.kind || "");
+  const tabs = scope === "plugins" ? `<div class="segmented" role="group" aria-label="插件用途">${[["", "主控插件"], ["notify", "通知渠道"], ["targets", "探测目标集"], ["executor", "节点插件"]].map(([id, label]) => `<button type="button" data-market-kind="${id}" class="${selectedKind === id ? "active" : ""}" aria-pressed="${selectedKind === id}">${label}</button>`).join("")}</div>` : "";
   const cards = view.items.map(card).join("");
   const empty = view.error
     ? `<div class="market-empty" role="alert"><b>暂时无法加载市场</b><p class="warn-text">${esc(view.error)}</p><button type="button" class="quiet" data-market-retry>重新加载</button></div>`
@@ -133,6 +135,9 @@ function catalogHTML(scope) {
 }
 
 function card(it) {
+  if (it.type === "executor") {
+    return `<button type="button" class="market-card is-plugin" data-package="${esc(it.id)}"><span class="plugin-glyph" aria-hidden="true">节点</span><span class="market-card-body"><span class="market-card-kind">节点插件 · 安装到所选节点</span><span class="market-card-title"><b>${esc(it.name)}</b></span><small>${esc(it.summary || "按需下载运行依赖，独立隔离运行")}</small><span class="market-card-meta">${esc(it.latest ? "v" + it.latest : "暂无版本")}</span><span class="market-card-footer"><strong>免费</strong><span>查看详情 →</span></span></span></button>`;
+  }
   // 没有封面或封面取不到（.broken）时露出三格色样，附加包没有色样就写类型。
   const fallback = it.type === "plugin" ? glyph(it.kind) : it.swatch?.length ? swatch(it.swatch) : `<span class="muted">${typeName(it.type)}</span>`;
   const plugin = it.type === "plugin";
@@ -247,7 +252,8 @@ function wireCatalog(box) {
   };
   body.querySelectorAll("[data-market-kind]").forEach((b) =>
     (b.onclick = guard(async () => {
-      view.kind = b.dataset.marketKind;
+      view.type = b.dataset.marketKind === "executor" ? "executor" : "plugin";
+      view.kind = b.dataset.marketKind === "executor" ? "" : b.dataset.marketKind;
       view.page = 1;
       await reload();
     })),
@@ -278,6 +284,21 @@ function wireCatalog(box) {
 // 详情弹窗：说明、截图（经代理）、版本列表与更新说明；主按钮装当前 Probe 能用的最新版。
 async function detail(id) {
   const p = await api("/admin/market/packages/" + encodeURIComponent(id));
+  if (p.type === "executor") {
+    const versions = p.versions.filter(version => version.compatible);
+    const dialog = modal(p.name, `<div class="market-detail"><span class="pill">节点插件 · 安装到所选节点</span><p class="market-desc">${esc(p.description || p.summary || "")}</p><p>默认不下载运行依赖、不启动执行器。Python、Chromium 和运行时只在节点计划批准后下载，不安装到 Probe 主控。</p><h3>声明权限</h3>${permList(p.permissions)}<p class="hint">此处兼容性仅针对 Probe；节点还需独立核对 Agent、操作系统、资源隔离及宿主依赖。声明 ZIP 大小不是完整依赖下载量。</p><div class="market-versions">${versions.map(version => `<div class="market-version"><div><b>v${esc(version.version)}</b><small>${esc(version.probe ? "需要 Probe " + version.probe : "")}</small>${version.changelog ? `<p>${esc(version.changelog)}</p>` : ""}</div><button class="primary" data-node-plugin-version="${esc(version.version)}" ${status.trusted_keys ? "" : "disabled"}>选择节点</button></div>`).join("") || "<p>暂无兼容当前 Probe 的版本。</p>"}</div>${status.trusted_keys ? "" : '<p class="warn-text">缺少可信签名公钥，仅可浏览。</p>'}<p class="hint">当前需先配置节点本机安装通道。选择节点只申请计划；下载、安装、启动和托管授权仍分别确认。</p></div>`);
+    dialog.querySelectorAll("[data-node-plugin-version]").forEach(button => {
+      button.onclick = guard(async () => {
+        button.disabled = true;
+        try {
+          await choosePluginNodes(p, button.dataset.nodePluginVersion);
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+    return;
+  }
   const best = p.versions.find((v) => v.compatible);
   const have = p.installed;
   // 附加包要先有它依附的主题；已经装着的附加包照常能更新（主题被删后它们只是暂不生效）。

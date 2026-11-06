@@ -26,6 +26,7 @@ type ExecutorStore interface {
 
 type RuntimeStore interface {
 	RuntimeChannels(context.Context) ([]runtimepkg.ChannelView, error)
+	CreateMarketRuntimeRequest(context.Context, string, string, string) (runtimepkg.ChannelRequest, error)
 	CreateRuntimeRequest(context.Context, string, runtimepkg.ChannelInput) (runtimepkg.ChannelRequest, error)
 	ApproveRuntimeRequest(context.Context, string, string, runtimepkg.ChannelApproval) error
 	CancelRuntimeRequest(context.Context, string, string) error

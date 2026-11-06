@@ -57,8 +57,28 @@ func TestExecutorRuntimeIsHiddenFromGenericInstallCatalog(t *testing.T) {
 	e := newEnv(t)
 	e.client.probe = "1.6.0"
 	e.cc.Add(&markettest.Package{ID: tzapkg.OfficialExecutorID, Type: tzapkg.TypeExecutor, Kind: "ipsentinel", Name: "IPSentinel runtime", Releases: []markettest.Release{{Version: "0.4.0", Probe: ">=1.6.0", Archive: executorRuntimeArchive(t)}}})
-	if _, err := e.client.Catalog(context.Background(), Query{Type: tzapkg.TypeExecutor}); !errors.Is(err, model.ErrInvalid) {
-		t.Fatal("runtime entered generic theme/plugin installation UI", err)
+	catalog, err := e.client.Catalog(context.Background(), Query{Type: tzapkg.TypeExecutor})
+	if err != nil || len(catalog.Items) != 1 || catalog.Items[0].ID != tzapkg.OfficialExecutorID || catalog.Items[0].Installed != nil {
+		t.Fatal("node plugin discovery failed", catalog, err)
+	}
+	for _, kind := range []string{"", "plugin", "skin"} {
+		page, err := e.client.Catalog(context.Background(), Query{Type: kind})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range page.Items {
+			if item.Type == tzapkg.TypeExecutor {
+				t.Fatal("node plugin entered a controller installation catalog", kind)
+			}
+		}
+	}
+	if _, err := e.client.Install(context.Background(), tzapkg.OfficialExecutorID, "0.4.0"); !errors.Is(err, ErrRejected) {
+		t.Fatal("node plugin entered the controller installer", err)
+	}
+	for _, request := range e.cc.Seen {
+		if request.Method == "POST" && strings.Contains(request.Path, "/download") {
+			t.Fatal("controller installer requested node plugin bytes")
+		}
 	}
 	if _, err := e.client.Catalog(context.Background(), Query{Type: "arbitrary-executable"}); !errors.Is(err, model.ErrInvalid) {
 		t.Fatal("arbitrary executable package type accepted", err)
