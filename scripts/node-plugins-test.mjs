@@ -160,6 +160,8 @@ assert.equal(ui.pluginAgentState({ ...ready, requests: [staged] }, null, "0.4.0"
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, enrollment: { scope_sha256: "different" } }] }, null, "0.4.0").action, "stage");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "installed" }] }, null, "0.4.0").label, "已安装，待启用");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "unknown" }] }, null, "0.4.0").action, undefined);
+assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "unknown", action: "install" }, { ...staged, state: "installed" }] }, null, "0.4.0").label, "正在核对");
+assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "unknown", enrollment: { scope_sha256: "old" } }] }, null, "0.4.0").action, undefined);
 assert.equal(ui.pluginAgentState(ready, { received_at: now }, "0.4.0").label, "已接入");
 assert.equal(ui.pluginAgentState(ready, { received_at: now - 60 }, "0.4.0").label, "已接入，状态待刷新");
 dom.window.close();

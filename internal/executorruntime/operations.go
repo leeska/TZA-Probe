@@ -142,6 +142,32 @@ func ApplyOperation(ctx context.Context, store Store, stageDigest string, keys m
 	return applyOperation(ctx, store, stageDigest, keys, host, target, options, approval, runReferenceOperation)
 }
 
+func InspectInstallation(ctx context.Context, plan OperationPlan) (*OperationReceipt, error) {
+	if plan.Options.Action != "install" || !absoluteClean(plan.Options.InstallRoot) || !validDigest(plan.ArchiveSHA256) {
+		return nil, errors.New("installation inspection requires an exact installation plan")
+	}
+	if err := trustedFile(filepath.Join(plan.Options.InstallRoot, ".install.lock")); err != nil {
+		return nil, err
+	}
+	check := plan
+	check.Options.Action = "inspect-install"
+	result, err := runReferenceOperation(ctx, referenceRequest{Plan: check})
+	if err != nil {
+		return nil, err
+	}
+	if result.State == "not_applied" && result.Release == "" {
+		return nil, nil
+	}
+	if result.State != "installed" || result.Selected == nil || *result.Selected || result.Release != filepath.Join(plan.Options.InstallRoot, "releases", plan.ArchiveSHA256) {
+		return nil, errors.New("installation inspection did not confirm the approved release")
+	}
+	digest, err := ipsentinel.CanonicalSHA256(plan)
+	if err != nil {
+		return nil, err
+	}
+	return &OperationReceipt{FormatVersion: 1, State: "installed", PlanSHA256: digest, Plan: plan, Release: result.Release}, nil
+}
+
 type referenceRequest struct {
 	Plan      OperationPlan `json:"plan"`
 	StagePath string        `json:"stage_path"`

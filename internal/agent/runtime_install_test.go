@@ -38,6 +38,62 @@ type runtimeWorkerStub struct {
 	duringPlan  func()
 }
 
+type runtimeRecoveryWorker struct {
+	*runtimeWorkerStub
+	result runtimepkg.ChannelResult
+	checks int
+}
+
+func (worker *runtimeRecoveryWorker) Reconcile(_ context.Context, _ runtimepkg.ChannelRequest) (runtimepkg.ChannelResult, error) {
+	worker.checks++
+	return worker.result, nil
+}
+
+func TestRuntimeInstallerReconcilesUnknownWithoutExecuting(t *testing.T) {
+	for _, outcome := range []string{"staged", "failed"} {
+		t.Run(outcome, func(t *testing.T) {
+			installer, worker, transport := runtimeInstallerFixture(t)
+			request := approveRuntimeFixture(t, installer, transport)
+			transport.dropState = "running"
+			if err := installer.Sync(t.Context()); err == nil {
+				t.Fatal("expected a lost start acknowledgement")
+			}
+			if err := installer.Sync(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := transport.store.CreateRuntimeRequest(t.Context(), transport.node, runtimepkg.ChannelInput{Action: "stage", Version: "0.4.0"}); err == nil {
+				t.Fatal("unknown outcome allowed another installation")
+			}
+			request = runtimeRequestState(t, transport)
+			result := runtimepkg.ChannelResult{RequestID: request.ID, State: outcome, PlanSHA256: request.PlanSHA256}
+			if outcome == "failed" {
+				result.ErrorCode = "operation_not_applied"
+			} else {
+				result.Receipt = &runtimepkg.Receipt{FormatVersion: 1, State: "staged", PlanSHA256: request.PlanSHA256, Plan: request.Review.Plan, StagedAt: time.Now().UTC()}
+			}
+			recovery := &runtimeRecoveryWorker{runtimeWorkerStub: worker, result: result}
+			installer.Worker = recovery
+			installer.Enrollment.Host.AgentVersion = "1.10.6"
+			transport.dropState = outcome
+			if err := installer.Sync(t.Context()); err == nil {
+				t.Fatal("expected a lost recovery acknowledgement")
+			}
+			if err := installer.Sync(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if current := runtimeRequestState(t, transport); current.State != outcome || current.ErrorCode == "operation_interrupted" {
+				t.Fatal("reconciliation did not replace the unknown result", current)
+			}
+			if worker.executions != 0 || recovery.checks != 1 {
+				t.Fatal("reconciliation executed the operation or repeated inspection", worker.executions, recovery.checks)
+			}
+			if pending, err := installer.Journal.Load(); err != nil || pending != nil {
+				t.Fatal("recovery journal was not acknowledged", pending, err)
+			}
+		})
+	}
+}
+
 func (worker *runtimeWorkerStub) Run(_ context.Context, request runtimepkg.ChannelRequest) (runtimepkg.ChannelResult, error) {
 	result := runtimepkg.ChannelResult{RequestID: request.ID}
 	plan := runtimepkg.Plan{

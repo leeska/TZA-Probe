@@ -15,6 +15,11 @@ type Enrollment struct {
 	Host        Host              `json:"host"`
 }
 
+func (enrollment Enrollment) SameScope(other Enrollment) bool {
+	return enrollment.ScopeSHA256 == other.ScopeSHA256 && enrollment.Target == other.Target &&
+		enrollment.Host.Platform == other.Host.Platform && enrollment.Host.ProbeVersion == other.Host.ProbeVersion
+}
+
 type ChannelInput struct {
 	Action         string `json:"action"`
 	Version        string `json:"version"`
@@ -56,10 +61,12 @@ type ChannelResult struct {
 type ChannelReport struct {
 	Enrollment Enrollment     `json:"enrollment"`
 	Result     *ChannelResult `json:"result,omitempty"`
+	Reconcile  bool           `json:"reconcile,omitempty"`
 }
 
 type ChannelReply struct {
 	Request *ChannelRequest `json:"request,omitempty"`
+	Check   *ChannelRequest `json:"check,omitempty"`
 }
 
 type ChannelView struct {

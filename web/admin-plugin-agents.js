@@ -6,6 +6,7 @@ const stateNames = { requested: "准备中", awaiting_approval: "等待确认", 
 
 export function pluginAgentState(channel, binding, version) {
   const requests = (channel?.requests || []).filter(request => request.enrollment?.scope_sha256 === channel.enrollment.scope_sha256);
+  const unresolved = channel?.requests?.find(request => request.state === "unknown");
   const current = requests.find(request => activeStates.has(request.state));
   const installed = requests.find(request => request.state === "installed" && request.version === version);
   const stage = requests.find(request => request.state === "staged" && request.version === version);
@@ -14,12 +15,15 @@ export function pluginAgentState(channel, binding, version) {
     const fresh = Number.isFinite(binding.received_at) && binding.received_at > 0 && Math.abs(Date.now() / 1000 - binding.received_at) < 45;
     return { label: fresh ? "已接入" : "已接入，状态待刷新", hint: "检测与拉回状态见功能页；安装记录不代表功能已启用。" };
   }
+  if (unresolved) {
+    const automatic = ["stage", "install"].includes(unresolved.action) && unresolved.enrollment?.scope_sha256 === channel.enrollment.scope_sha256;
+    return { label: automatic ? "正在核对" : "结果待核对", hint: automatic ? "Agent 正在自动核对上次操作，期间不会重复安装。请稍后刷新；长时间未恢复可查看安装记录。" : "上次维护操作或安装身份已改变，需要管理员核对；期间不会重复安装。" };
+  }
   if (installed || requests.some(request => ["selected", "started_paused"].includes(request.state))) return { label: "已安装，待启用", hint: "组件已安装；首次启用仍需管理员在 Agent 本机完成接入配置，暂不支持自动启用。" };
   const reason = nodePluginEligibility(channel);
   if (reason) return { label: "暂不可安装", hint: reason };
   if (channel.maintenance) return { label: "维护暂停", hint: "需要管理员完成本机维护并核对服务状态；不会自动恢复。" };
   if (!version) return { label: "版本不可用", hint: "请先更新或重新安装主控管理部分。" };
-  if (requests.some(request => request.state === "unknown")) return { label: "结果待核对", hint: "之前操作的结果未知，请管理员先在 Agent 本机核对，避免重复安装。" };
   return stage ? { label: "等待安装", action: "install", stage } : { label: "未安装", action: "stage" };
 }
 

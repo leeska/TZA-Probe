@@ -39,6 +39,10 @@ type RuntimeWorker interface {
 	Run(context.Context, runtimepkg.ChannelRequest) (runtimepkg.ChannelResult, error)
 }
 
+type RuntimeReconciler interface {
+	Reconcile(context.Context, runtimepkg.ChannelRequest) (runtimepkg.ChannelResult, error)
+}
+
 type RuntimePending struct {
 	Enrollment runtimepkg.Enrollment    `json:"enrollment"`
 	Result     runtimepkg.ChannelResult `json:"result"`
@@ -78,7 +82,8 @@ func (installer RuntimeInstaller) Sync(ctx context.Context) error {
 			return err
 		}
 	}
-	report := runtimepkg.ChannelReport{Enrollment: installer.Enrollment}
+	reconciler, canReconcile := installer.Worker.(RuntimeReconciler)
+	report := runtimepkg.ChannelReport{Enrollment: installer.Enrollment, Reconcile: canReconcile}
 	if pending != nil && pending.Enrollment == installer.Enrollment {
 		report.Result = &pending.Result
 	}
@@ -98,6 +103,22 @@ func (installer RuntimeInstaller) Sync(ctx context.Context) error {
 	}
 	request := reply.Request
 	if request == nil {
+		if reply.Check != nil && canReconcile {
+			check := *reply.Check
+			if !check.Enrollment.SameScope(installer.Enrollment) || !ipsentinel.ValidUUID(check.ID) || check.State != "unknown" {
+				return errors.New("runtime reconciliation differs from the local node")
+			}
+			result, err := reconciler.Reconcile(ctx, check)
+			if err != nil {
+				return err
+			}
+			if result.RequestID != check.ID || result.PlanSHA256 != check.PlanSHA256 ||
+				(result.State != "failed" && runtimepkg.ValidateChannelReceipt(check, result) != nil) ||
+				(result.State == "failed" && result.ErrorCode != "operation_not_applied") {
+				return errors.New("runtime reconciliation returned an invalid receipt")
+			}
+			return installer.publish(ctx, result)
+		}
 		return nil
 	}
 	if request.Enrollment != installer.Enrollment || !ipsentinel.ValidUUID(request.ID) || request.ChannelInput.Validate() != nil {
@@ -156,7 +177,8 @@ func (installer RuntimeInstaller) publish(ctx context.Context, result runtimepkg
 	if err := installer.Journal.Save(RuntimePending{Enrollment: installer.Enrollment, Result: result}); err != nil {
 		return err
 	}
-	reply, err := installer.Transport.RuntimeExchange(ctx, runtimepkg.ChannelReport{Enrollment: installer.Enrollment, Result: &result})
+	_, canReconcile := installer.Worker.(RuntimeReconciler)
+	reply, err := installer.Transport.RuntimeExchange(ctx, runtimepkg.ChannelReport{Enrollment: installer.Enrollment, Result: &result, Reconcile: canReconcile})
 	if err != nil {
 		return err
 	}

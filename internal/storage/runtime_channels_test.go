@@ -238,3 +238,49 @@ func TestRuntimeChannelVersion21UpgradePreservesNodes(t *testing.T) {
 		t.Fatal("schema upgrade authorized an installation", views, err)
 	}
 }
+
+func TestRuntimeReconciliationCannotResolveOtherScopeOrUnstartedRequest(t *testing.T) {
+	store := openTest(t)
+	node, _ := makeNode(t, store)
+	enrollment := runtimeEnrollment()
+	if _, err := store.RuntimeExchange(t.Context(), node, runtimepkg.ChannelReport{Enrollment: enrollment}); err != nil {
+		t.Fatal(err)
+	}
+	request, err := store.CreateRuntimeRequest(t.Context(), node, runtimepkg.ChannelInput{Action: "stage", Version: "0.4.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := stageResult(t, request, false)
+	if _, err := store.RuntimeExchange(t.Context(), node, runtimepkg.ChannelReport{Enrollment: enrollment, Result: &planned}); err != nil {
+		t.Fatal(err)
+	}
+	request.PlanSHA256 = planned.PlanSHA256
+	failed := runtimepkg.ChannelResult{RequestID: request.ID, State: "failed", PlanSHA256: planned.PlanSHA256, ErrorCode: "operation_not_applied"}
+	if _, err := store.RuntimeExchange(t.Context(), node, runtimepkg.ChannelReport{Enrollment: enrollment, Result: &failed}); err == nil {
+		t.Fatal("inspection result bypassed execution approval")
+	}
+	if err := store.ApproveRuntimeRequest(t.Context(), node, request.ID, runtimepkg.ChannelApproval{Approved: true, PlanSHA256: planned.PlanSHA256}); err != nil {
+		t.Fatal(err)
+	}
+	running := runtimepkg.ChannelResult{RequestID: request.ID, State: "running", PlanSHA256: planned.PlanSHA256}
+	if _, err := store.RuntimeExchange(t.Context(), node, runtimepkg.ChannelReport{Enrollment: enrollment, Result: &running}); err != nil {
+		t.Fatal(err)
+	}
+	unknown := running
+	unknown.State, unknown.ErrorCode = "unknown", "operation_interrupted"
+	if _, err := store.RuntimeExchange(t.Context(), node, runtimepkg.ChannelReport{Enrollment: enrollment, Result: &unknown}); err != nil {
+		t.Fatal(err)
+	}
+	changed := enrollment
+	changed.ScopeSHA256 = strings.Repeat("b", 64)
+	reply, err := store.RuntimeExchange(t.Context(), node, runtimepkg.ChannelReport{Enrollment: changed, Reconcile: true})
+	if err != nil || reply.Check != nil || reply.Request != nil {
+		t.Fatal("changed scope received an old operation", reply, err)
+	}
+	if _, err := store.RuntimeExchange(t.Context(), node, runtimepkg.ChannelReport{Enrollment: changed, Result: &failed, Reconcile: true}); err == nil {
+		t.Fatal("another local identity resolved the old request")
+	}
+	if _, err := store.CreateRuntimeRequest(t.Context(), node, runtimepkg.ChannelInput{Action: "stage", Version: "0.4.0"}); err == nil {
+		t.Fatal("scope change hid an unresolved operation")
+	}
+}

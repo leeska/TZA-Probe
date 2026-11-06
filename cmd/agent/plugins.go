@@ -121,7 +121,7 @@ func prepareAgentPlugins(path string) error {
 				return err
 			}
 		}
-		dropIn = "[Service]\nCapabilityBoundingSet=CAP_NET_RAW CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID CAP_KILL\nReadWritePaths=" + strings.Join(directories, " ") + "\nTimeoutStopSec=25\nKillMode=control-group\n"
+		dropIn = "[Service]\nPrivateTmp=true\nCapabilityBoundingSet=CAP_NET_RAW CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID CAP_KILL\nReadWritePaths=" + strings.Join(directories, " ") + "\nTimeoutStopSec=25\nKillMode=control-group\n"
 	}
 	old, err := os.ReadFile(pluginDropIn)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

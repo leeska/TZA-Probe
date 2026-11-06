@@ -221,6 +221,13 @@ func (s *Store) createRuntimeRequest(ctx context.Context, node string, input run
 	if active != 0 {
 		return runtimepkg.ChannelRequest{}, model.Conflict("节点已有未完成的安装请求")
 	}
+	var uncertain int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM runtime_requests WHERE node_id=? AND state='unknown'", node).Scan(&uncertain); err != nil {
+		return runtimepkg.ChannelRequest{}, err
+	}
+	if uncertain != 0 {
+		return runtimepkg.ChannelRequest{}, model.Conflict("Agent 正在核对上次操作结果，完成前不能重复安装")
+	}
 	request := runtimepkg.ChannelRequest{ID: ipsentinel.NewUUID(), ChannelInput: input, Enrollment: enrollment, State: "requested", CreatedAt: now, UpdatedAt: now}
 	if input.Action != "stage" {
 		source, err := runtimeRequestTx(ctx, tx, node, input.StageRequestID)
@@ -368,7 +375,9 @@ func (s *Store) RuntimeExchange(ctx context.Context, node string, report runtime
 		if err != nil {
 			return reply, err
 		}
-		if request.Enrollment != report.Enrollment {
+		recoverable := request.State == "unknown" || request.State == "staged" || request.State == "installed" ||
+			request.State == "failed" && request.ErrorCode == "operation_not_applied"
+		if request.Enrollment != report.Enrollment && !(report.Reconcile && recoverable && request.Enrollment.SameScope(report.Enrollment)) {
 			return reply, model.Conflict("安装回执的节点配置范围已改变")
 		}
 		if err := applyRuntimeResult(&request, *report.Result, now); err != nil {
@@ -402,6 +411,21 @@ func (s *Store) RuntimeExchange(ctx context.Context, node string, report runtime
 			}
 		} else {
 			reply.Request = &request
+		}
+	}
+	if reply.Request == nil && report.Reconcile {
+		err := tx.QueryRowContext(ctx, `SELECT payload FROM runtime_requests WHERE node_id=? AND state='unknown'
+ AND json_extract(payload,'$.enrollment.scope_sha256')=? AND json_extract(payload,'$.action') IN ('stage','install')
+ ORDER BY created_at,rowid LIMIT 1`, node, report.Enrollment.ScopeSHA256).Scan(&raw)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return reply, err
+		}
+		if err == nil {
+			var check runtimepkg.ChannelRequest
+			if err := json.Unmarshal([]byte(raw), &check); err != nil {
+				return reply, err
+			}
+			reply.Check = &check
 		}
 	}
 	return reply, tx.Commit()
@@ -443,7 +467,7 @@ func applyRuntimeResult(request *runtimepkg.ChannelRequest, result runtimepkg.Ch
 			}
 			return model.Conflict("已保存的安装回执不能被改写")
 		}
-		if request.State != "running" {
+		if request.State != "running" && !(request.State == "unknown" && (request.Action == "stage" || request.Action == "install")) {
 			return model.Conflict("安装请求尚未执行，或已经结束")
 		}
 		request.Receipt, request.OperationReceipt = result.Receipt, result.OperationReceipt
@@ -451,18 +475,25 @@ func applyRuntimeResult(request *runtimepkg.ChannelRequest, result runtimepkg.Ch
 	case "failed", "unknown":
 		if result.Review != nil || result.Operation != nil || result.Lifecycle != nil || result.LifecycleReceipt != nil || result.Receipt != nil || result.OperationReceipt != nil ||
 			result.PlanSHA256 != request.PlanSHA256 ||
-			(result.ErrorCode != "plan_unavailable" && result.ErrorCode != "plan_changed" && result.ErrorCode != "operation_interrupted") {
+			(result.ErrorCode != "plan_unavailable" && result.ErrorCode != "plan_changed" && result.ErrorCode != "operation_interrupted" && result.ErrorCode != "operation_not_applied") {
 			return model.Invalid("安装失败回执无效")
 		}
 		if request.State == result.State && request.ErrorCode == result.ErrorCode {
 			return nil
 		}
-		if result.State == "unknown" && request.State != "running" || result.State == "failed" && request.State != "requested" && request.State != "approved" {
+		reconciled := result.State == "failed" && result.ErrorCode == "operation_not_applied" && request.State == "unknown" && (request.Action == "stage" || request.Action == "install")
+		if result.ErrorCode == "operation_not_applied" && !reconciled {
+			return model.Conflict("仅允许 Agent 核对未完成的下载或安装")
+		}
+		if !reconciled && (result.State == "unknown" && request.State != "running" || result.State == "failed" && request.State != "requested" && request.State != "approved") {
 			return model.Conflict("安装请求状态已改变")
 		}
 		request.ErrorCode = result.ErrorCode
 	default:
 		return model.Invalid("安装回执状态无效")
+	}
+	if result.State != "unknown" {
+		request.ErrorCode = result.ErrorCode
 	}
 	request.State, request.UpdatedAt = result.State, now
 	return nil
