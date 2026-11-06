@@ -10,7 +10,7 @@ export function nodePluginEligibility(channel, now = Date.now() / 1000) {
   return "";
 }
 
-export async function choosePluginNodes(pkg, version) {
+export async function choosePluginNodes(pkg, version, onManage) {
   const [nodes, channels] = await Promise.all([api("/admin/nodes"), api("/admin/runtime")]);
   const byNode = new Map(channels.map(channel => [channel.node_id, channel]));
   const dialog = modal(`安装到节点 · ${pkg.name}`, `<p>IPSentinel v${esc(version)} · 先生成计划，再批准下载。未授权的节点不会下载依赖或启动进程。</p><p class="hint">当前入口需要节点已配置本机安装通道；不自动授予系统权限。平台、Agent 版本、下载总量和权限由节点验签后列出。</p><form data-node-plugin-form><div class="node-plugin-targets">${nodes.map((node, index) => {
@@ -18,7 +18,7 @@ export async function choosePluginNodes(pkg, version) {
     const reason = nodePluginEligibility(channel);
     const host = channel?.enrollment?.host;
     return `<label class="node-plugin-target"><input type="checkbox" name="node" value="${index}" ${reason ? "disabled" : ""}><span><b>${esc(node.name || node.id)}</b><small>${esc(host ? `${host.platform} · Agent ${host.agent_version}` : "未配置安装通道")}</small><small data-node-plugin-result="${index}" role="status">${esc(reason || "可生成计划；不是已安装或已启用")}</small></span></label>`;
-  }).join("") || '<p>还没有节点，请先接入 Agent。</p>'}</div><p class="hint">生成计划不会下载 Python 或 Chromium。到「节点执行器 → Runtime 安装通道」核对实际大小、权限和精确摘要后再批准下载；安装、启动和托管授权仍需分别确认。</p><p data-node-plugin-summary role="status"></p><div class="form-footer node-plugin-actions"><button type="button" class="quiet" data-node-plugin-manage>查看安装状态</button><button type="submit" class="primary" disabled>为所选节点生成计划</button></div></form>`);
+  }).join("") || '<p>还没有节点，请先接入 Agent。</p>'}</div><p class="hint">生成计划不会下载 Python 或 Chromium。在本插件「设置 → 节点安装与更新」核对实际大小、权限和精确摘要后再批准下载；安装、启动和托管授权仍需分别确认。</p><p data-node-plugin-summary role="status"></p><div class="form-footer node-plugin-actions"><button type="button" class="quiet" data-node-plugin-manage>查看插件设置</button><button type="submit" class="primary" disabled>为所选节点生成计划</button></div></form>`);
   const form = dialog.querySelector("[data-node-plugin-form]");
   const submit = form.querySelector("[type=submit]");
   const choices = [...form.querySelectorAll('input[name="node"]')];
@@ -45,10 +45,11 @@ export async function choosePluginNodes(pkg, version) {
     refresh();
   }, 1000);
   dialog.addEventListener("close", () => clearInterval(timer), { once: true });
-  dialog.querySelector("[data-node-plugin-manage]").onclick = () => {
+  dialog.querySelector("[data-node-plugin-manage]").onclick = guard(async () => {
     dialog.close();
-    document.querySelector('[data-tab="executors"]')?.click();
-  };
+    if (onManage) await onManage();
+    else await (await import("./admin-node-plugin-detail.js")).openNodePluginDetail(pkg, { settings: true });
+  });
   form.onsubmit = guard(async event => {
     event.preventDefault();
     if (busy) return;

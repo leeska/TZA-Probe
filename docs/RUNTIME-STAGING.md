@@ -209,7 +209,7 @@ Agent 使用本机 CC 公钥和固定平台/版本生成暂存计划，后台才
 
 批准 15 分钟过期；执行前再次生成计划并取得中控 running 确认，随后在本机 fsync 执行标记，再调用安装器。完成回执先持久保存，HTTP 确认丢失只重发回执；同节点安装进程由文件锁串行处理。若进程在执行标记与完成回执之间终止，重启只上报“结果未知”，不再次执行或自动恢复旧数据库；管理员先核对本机 `current`、`selection.json` 和 journal，再生成新计划。已确认的计划及回执保留在 `agent-pending/receipts/`。损坏或权限异常的 journal 会拒绝工作，不能删除日志来假装操作未发生。
 
-API 为 `POST /api/v1/agent/runtime`、`GET /api/v1/admin/runtime` 和 `/api/v1/admin/nodes/{id}/runtime/requests[/{request}]`。后台“节点执行器 → Runtime 安装通道”展示分阶段状态与完整批准计划。管理接口沿用管理员会话、CSRF/same-origin 保护；Agent token 不能创建或批准自己的请求。SQLite schema 23 保存节点配置范围、安装请求和维护暂停。安装/选择回执不等于服务健康、adopt 或托管执行授权；启动验收也不等于可派发或恢复。
+API 为 `POST /api/v1/agent/runtime`、`GET /api/v1/admin/runtime` 和 `/api/v1/admin/nodes/{id}/runtime/requests[/{request}]`。后台“插件 → IPSentinel → 设置 → 节点安装与更新”展示分阶段状态与完整批准计划。管理接口沿用管理员会话、CSRF/same-origin 保护；Agent token 不能创建或批准自己的请求。SQLite schema 23 保存节点配置范围、安装请求和维护暂停。安装/选择回执不等于服务健康、adopt 或托管执行授权；启动验收也不等于可派发或恢复。
 
 2026-11-06 已使用真实 IPSentinel 候选在测试 CC 上验证 Agent 的计划生成、批准后下载及暂存复核，不经生产 CC。管理员认证、跨站写入拒绝、完整计划校验、重复回执与配置范围变化均有集成测试；浏览器在本地临时管理员账户中检查空状态、计划展开、批准操作和 390px 无横向溢出，展开完整 JSON 时弹窗 client/scroll 均为 356px。`scripts/runtime-ui-test.mjs` 覆盖批准目标索引、转义、状态过期、未知历史和关联暂存，并纳入流水线。
 

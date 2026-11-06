@@ -1,5 +1,6 @@
 import { api, send, toast, guard, esc } from "./api.js";
 import { state, content, confirmAction } from "./admin-state.js";
+import { openNodePluginDetail } from "./admin-node-plugin-detail.js";
 import { catalogPanel, confirmPlugin, glyph, kindName, loadMarket, marketPill, pager, pluginToast, sourceBits, subTabs, wireMarket } from "./admin-market.js";
 const PLUGIN_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/PLUGINS.md";
 // 插件：声明式的通知渠道与探测目标集。分两个子页：已安装（本地上传、删除、市场装的有更新时提示）
@@ -8,8 +9,9 @@ export async function renderPlugins(nodesReady) {
   const view = state.pluginsView === "market" ? "market" : "installed";
   const [, plugins] = await Promise.all([nodesReady, api("/admin/plugins").catch(() => [])]);
   const updates = await loadMarket(() => renderPlugins(), plugins, view === "market" ? "plugins" : "");
-  const body = view === "market" ? catalogPanel("plugins") : installedPanel(plugins, updates);
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PLUGINS</div><h1>插件</h1><p>通知与目标集安装到主控；IPSentinel 等节点插件选择节点后按需下载，运行状态在「节点执行器」管理。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "插件分类")}${body}`;
+  const nodePanel = view === "installed" ? await nodePluginsPanel() : "";
+  const body = view === "market" ? catalogPanel("plugins") : nodePanel + installedPanel(plugins, updates);
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PLUGINS</div><h1>插件</h1><p>通知与目标集安装到主控；节点插件选择节点后按需下载，安装、配置和运行状态都在插件详情的「设置」中管理。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "插件分类")}${body}`;
   content().querySelectorAll("[data-subview]").forEach((b) =>
     (b.onclick = guard(async () => {
       state.pluginsView = b.dataset.subview;
@@ -18,6 +20,20 @@ export async function renderPlugins(nodesReady) {
   );
   wireMarket();
   if (view === "installed") wireInstalled();
+  content().querySelector("[data-node-plugin-settings]")?.addEventListener("click", guard(() => openNodePluginDetail({
+    id: "ipsentinel-runtime", type: "executor", name: "IPSentinel",
+  }, { settings: true, trusted: false, back: () => renderPlugins() })));
+}
+
+async function nodePluginsPanel() {
+  try {
+    const [bindings, channels] = await Promise.all([api("/admin/executors"), api("/admin/runtime")]);
+    const requests = channels.flatMap(channel => channel.requests || []);
+    if (!bindings.length && !requests.length) return "";
+    return `<section class="panel theme-panel"><div class="panel-head"><h3>节点插件</h3></div><div class="theme-row"><span class="plugin-glyph" aria-hidden="true">节点</span><span class="theme-copy"><b>IPSentinel</b><small>${bindings.length} 个节点接入记录 · ${requests.length} 条安装记录<br>具体安装版本、授权与运行状态请查看设置。</small></span><button data-node-plugin-settings>详情与设置</button></div></section>`;
+  } catch {
+    return '<section class="panel"><p role="status">节点插件记录加载失败，请刷新重试；主控插件仍可管理。</p></section>';
+  }
 }
 
 // 已安装列表每页几个插件。

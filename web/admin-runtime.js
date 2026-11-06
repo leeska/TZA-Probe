@@ -17,7 +17,6 @@ const errors = {
   node_configuration_changed: "节点配置范围已改变，原批准已失效。执行中变更需要本机核对。",
 };
 const activeStates = ["requested", "awaiting_approval", "approved", "running"];
-let authorizeExecutor;
 
 function approvalAttributes(view, request) {
   return `data-runtime-seen="${view.seen_at}" data-runtime-planned="${request.updated_at}"`;
@@ -64,12 +63,13 @@ export function refreshRuntimeValidity() {
   }
 }
 
-export async function renderRuntime(onAuthorize) {
-  if (typeof onAuthorize === "function") authorizeExecutor = onAuthorize;
-  const views = await api("/admin/runtime");
-  const section = document.querySelector("[data-runtime-channels]");
+export async function renderRuntime(onAuthorize, section = document.querySelector("[data-runtime-channels]")) {
+  const authorizeExecutor = typeof onAuthorize === "function" ? onAuthorize : null;
   if (!section) return;
-  section.innerHTML = `<div class="page-heading"><div><h2>Runtime 安装通道</h2><p>逐节点批准暂存、安装、排空、选版与启动验收。安装或启动回执不代表托管授权或恢复执行。</p></div><button id="runtime-refresh">刷新安装状态</button></div>${views.length ? views.map((view, viewIndex) => {
+  const views = await api("/admin/runtime");
+  if (!section.isConnected) return;
+  const refresh = () => renderRuntime(authorizeExecutor, section);
+  section.innerHTML = `<div class="page-heading"><div><h2>节点安装与更新</h2><p>逐节点批准暂存、安装、排空、选版与启动验收。安装或启动回执不代表托管授权或恢复执行。</p></div><button id="runtime-refresh">刷新安装状态</button></div>${views.length ? views.map((view, viewIndex) => {
     const current = view.requests.find(request => activeStates.includes(request.state));
     const history = view.requests.filter(request => request !== current);
     const name = state.nodes.find(node => node.id === view.node_id)?.name || view.node_id;
@@ -113,7 +113,7 @@ export async function renderRuntime(onAuthorize) {
       panel.prepend(button);
     }
   });
-  section.querySelector("#runtime-refresh").onclick = guard(renderRuntime);
+  section.querySelector("#runtime-refresh").onclick = guard(refresh);
   section.querySelectorAll("[data-runtime-approve]").forEach(button => {
     button.onclick = () => {
       const view = views[Number(button.dataset.runtimeApprove)];
@@ -128,7 +128,7 @@ export async function renderRuntime(onAuthorize) {
           await send(`/admin/nodes/${encodeURIComponent(view.node_id)}/runtime/requests/${encodeURIComponent(request.id)}`, "PUT", {approved: true, plan_sha256: request.plan_sha256});
           dialog.close();
           toast("该节点的精确计划已批准");
-          await renderRuntime();
+          await refresh();
         } finally {
           confirm.dataset.runtimeBusy = "false";
           refreshRuntimeValidity();
@@ -144,7 +144,7 @@ export async function renderRuntime(onAuthorize) {
       try {
         await send(`/admin/nodes/${encodeURIComponent(view.node_id)}/runtime/requests/${encodeURIComponent(request.id)}`, "DELETE");
         toast("未执行请求已撤销");
-        await renderRuntime();
+        await refresh();
       } finally { button.disabled = false; }
     });
   });
@@ -174,7 +174,7 @@ export async function renderRuntime(onAuthorize) {
           stage_request_id: actionField.value === "stage" ? "" : stage.id,
         });
         toast("等待节点生成计划，当前尚未批准执行");
-        await renderRuntime();
+        await refresh();
       } finally {
         button.dataset.runtimeBusy = "false";
         refreshRuntimeValidity();

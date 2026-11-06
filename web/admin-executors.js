@@ -1,5 +1,5 @@
 import { api, send, esc, guard, modal, toast } from "./api.js";
-import { content, state, field, loadNodes, confirmAction } from "./admin-state.js";
+import { state, field, loadNodes, confirmAction } from "./admin-state.js";
 import { showSchedule } from "./admin-executor-schedules.js";
 import { renderRuntime, refreshRuntimeValidity } from "./admin-runtime.js";
 
@@ -37,7 +37,7 @@ function refreshValidity() {
 
 function isFresh(view) { return view.received_at && Date.now() - view.received_at * 1000 < 45000; }
 
-setInterval(refreshValidity, 5000);
+let validityTimer;
 
 function bindForm(view) {
   const nodes = state.nodes;
@@ -153,16 +153,18 @@ async function showRecords(nodeID) {
   await load();
 }
 
-export async function renderExecutors(nodesPromise = loadNodes()) {
+export async function renderExecutors(nodesPromise = loadNodes(), root = document.querySelector("[data-executor-settings]")) {
+  if (!root) return;
   const [views] = await Promise.all([api("/admin/executors"), nodesPromise]);
-  content().innerHTML = `<section class="page-heading" data-part="page-heading"><div><div class="eyebrow">IPSentinel / EXECUTOR</div><h1>节点执行器</h1><p>同步证据，并在明确批准后执行单任务托管操作。</p></div><div class="heading-actions"><button id="executor-refresh">刷新状态</button><button class="primary" id="executor-bind">授权节点接入</button></div></section><section class="panel" data-runtime-channels><p>正在读取安装通道…</p></section><div class="executor-list"><section class="panel"><p>只读绑定保留 VPS 本机调度；只有本机切换到 managed、能力和健康检查通过时才开放托管操作。所有命令异步确认，不启动本地浏览器。</p></section>${views.length ? views.map((view, index) => {
+  if (!root.isConnected) return;
+  root.innerHTML = `<section class="page-heading"><div><h2>节点设置与运行状态</h2><p>在此管理 IPSentinel 的安装、接入授权、配置、日程和历史。</p></div><div class="heading-actions"><button id="executor-refresh">刷新状态</button><button class="primary" id="executor-bind">授权节点接入</button></div></section><section class="panel" data-runtime-channels><p>正在读取安装通道…</p></section><div class="executor-list"><section class="panel"><p>只读绑定保留 VPS 本机调度；只有本机切换到 managed、能力和健康检查通过时才开放托管操作。所有命令异步确认，不启动本地浏览器。</p></section>${views.length ? views.map((view, index) => {
     const node = state.nodes.find(node => node.id === view.node_id);
     const snapshot = view.hello?.status;
     return `<section class="panel"><div class="page-heading"><h2>${esc(node?.name || view.node_id)}</h2><span class="pill">${node?.online ? "节点在线" : "节点离线 / 未上报"}</span></div><p data-executor-freshness data-received="${view.received_at}"></p><p>控制面最后健康状态：${esc({ready:"就绪",degraded:"降级",unavailable:"不可用"}[snapshot?.health] || "等待上报")} · 执行能力：${snapshot?.control.mode==="managed"&&view.hello.features.includes("run")?"已上报，等待准入":"未开放"}</p><p>本机模式：${esc(snapshot?.control.mode || "等待上报")} · ${snapshot?.control.paused ? `已暂停（${esc(snapshot.control.pause_reason)}）` : snapshot ? "未暂停" : "暂停状态未知"}</p><p>已持久保存至记录 #${view.through_seq} · 最后同步：${view.received_at ? esc(new Date(view.received_at * 1000).toLocaleString()) : "尚未收到"}</p>${snapshot?.assessments.length ? snapshot.assessments.map(assessment => `<p><strong>${esc(assessment.service_id)}</strong>：<span data-executor-evidence data-state="${esc(assessment.state)}" data-signal="${esc(assessment.signal_kind)}" data-until="${esc(assessment.valid_until || "")}" data-received="${view.received_at}">${esc(evidenceText(assessment, view.received_at))}</span></p>`).join("") : "<p>服务证据未知，等待有效观测。</p>"}<details><summary>安装身份</summary><p>实例：${esc(view.binding.executor_instance_id)}</p><p>epoch：${view.binding.epoch} · 暂停代次：${snapshot?.control.pause_generation ?? "未知"}</p><p>配置修订：${snapshot?.config?.revision ?? "未应用"} · 预算：${snapshot?.budget?`${snapshot.budget.used_runs}/${snapshot.budget.limits.runs} 次`:"未知"}</p></details><div class="heading-actions"><button data-records="${index}">查看历史</button><button data-bind="${index}">核对并重新授权</button></div><div class="heading-actions" data-managed="${index}"></div></section>`;
   }).join("") : '<section class="panel"><h2>还没有授权执行器</h2><p>先在指定 VPS 完成本机只读接入，再授权同步。已有的网络探测继续正常运行。</p></section>'}</div>`;
-  content().querySelector("#executor-refresh").onclick = guard(() => renderExecutors());
-  content().querySelector("#executor-bind").onclick = () => bindForm();
-  content().querySelectorAll("[data-bind]").forEach(button => {
+  root.querySelector("#executor-refresh").onclick = guard(() => renderExecutors(loadNodes(), root));
+  root.querySelector("#executor-bind").onclick = () => bindForm();
+  root.querySelectorAll("[data-bind]").forEach(button => {
     const view = views[Number(button.dataset.bind)];
     button.onclick = () => bindForm(view);
     const revoke = document.createElement("button");
@@ -173,8 +175,8 @@ export async function renderExecutors(nodesPromise = loadNodes()) {
       await renderExecutors();
     });
   });
-  content().querySelectorAll("[data-records]").forEach(button => { button.onclick = guard(() => showRecords(views[Number(button.dataset.records)].node_id)); });
-  content().querySelectorAll("[data-managed]").forEach(container=>{
+  root.querySelectorAll("[data-records]").forEach(button => { button.onclick = guard(() => showRecords(views[Number(button.dataset.records)].node_id)); });
+  root.querySelectorAll("[data-managed]").forEach(container=>{
     const view=views[Number(container.dataset.managed)];const control=managedControls(view);if(control)container.append(control);
     const schedule=document.createElement("button");schedule.textContent="托管日程";schedule.onclick=guard(()=>showSchedule(view.node_id));container.append(schedule);
     if(view.binding.mode!=="managed"||view.hello?.status?.control.mode!=="managed")return;
@@ -190,5 +192,13 @@ export async function renderExecutors(nodesPromise = loadNodes()) {
     container.querySelectorAll("button").forEach(button=>{if(!["托管命令","托管日程"].includes(button.textContent)){button.dataset.executorWrite="";button.dataset.received=String(view.received_at);}});
   });
   refreshValidity();
-  await renderRuntime(bindForm);
+  clearInterval(validityTimer);
+  validityTimer = setInterval(() => {
+    if (!root.isConnected) {
+      clearInterval(validityTimer);
+      return;
+    }
+    refreshValidity();
+  }, 5000);
+  await renderRuntime(bindForm, root.querySelector("[data-runtime-channels]"));
 }

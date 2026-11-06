@@ -1,7 +1,7 @@
 import { api, send, toast, guard, modal, esc } from "./api.js";
 import { bytes } from "./format.js";
 import { state, content, confirmAction } from "./admin-state.js";
-import { choosePluginNodes } from "./admin-node-plugins.js";
+import { openNodePluginDetail } from "./admin-node-plugin-detail.js";
 // TZA-CC 市场的共用部分：「主题」页（主题包）和「插件」页各带一块市场；附加包依附某一套主题，
 // 它的市场挂在那套主题的设置菜单里（addonMarket），不是主题市场的一个分类，TZA-CC 账号在
 // 「面板设置 → 账号与安全」。浏览器只请求本服务器的 /admin/market/*，目录、预览图与安装包都由服务器
@@ -87,7 +87,7 @@ export function catalogPanel(scope) {
   }
   const keys = status.trusted_keys ? "" : '<p class="warn-text market-keys">没有可信的签名公钥：可以浏览，但安装会被拒绝。启动时用 --cc-key 或 TZA_CC_KEYS 添加。</p>';
   const plugin = scope === "plugins";
-  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>${plugin ? "发现插件" : "挑选主题"}</h3><span class="muted">${plugin ? "主控插件安装到本面板；节点插件选择目标节点后按需下载。" : "更换公开面板的外观，查看预览和介绍后安装。"}</span></div></div><div class="market-guide"><b>${plugin ? "安装后怎么用" : "主题与附加包"}</b><span>${plugin ? "通知渠道在告警出口选用；目标集在新建任务时选择；节点插件的计划与运行状态在「节点执行器」管理。" : "主题决定整体外观；附加包为特定主题添加装饰，在「已安装 → 对应主题 → 设置」中管理。"}</span></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
+  return `<section data-part="panel" class="panel market-panel" id="market-catalog" data-scope="${scope}"><div class="panel-head"><div><h3>${plugin ? "发现插件" : "挑选主题"}</h3><span class="muted">${plugin ? "主控插件安装到本面板；节点插件选择目标节点后按需下载。" : "更换公开面板的外观，查看预览和介绍后安装。"}</span></div></div><div class="market-guide"><b>${plugin ? "安装后怎么用" : "主题与附加包"}</b><span>${plugin ? "通知渠道在告警出口选用；目标集在新建任务时选择；节点插件的安装、配置与运行状态在插件详情的「设置」中管理。" : "主题决定整体外观；附加包为特定主题添加装饰，在「已安装 → 对应主题 → 设置」中管理。"}</span></div>${keys}<div class="market-body">${catalogHTML(scope)}</div></section>`;
 }
 
 // 主题、插件页的两个子页「已安装」「市场」，样子与面板设置的子标签一样。
@@ -285,18 +285,7 @@ function wireCatalog(box) {
 async function detail(id) {
   const p = await api("/admin/market/packages/" + encodeURIComponent(id));
   if (p.type === "executor") {
-    const versions = p.versions.filter(version => version.compatible);
-    const dialog = modal(p.name, `<div class="market-detail"><span class="pill">节点插件 · 安装到所选节点</span><p class="market-desc">${esc(p.description || p.summary || "")}</p><p>默认不下载运行依赖、不启动执行器。Python、Chromium 和运行时只在节点计划批准后下载，不安装到 Probe 主控。</p><h3>声明权限</h3>${permList(p.permissions)}<p class="hint">此处兼容性仅针对 Probe；节点还需独立核对 Agent、操作系统、资源隔离及宿主依赖。声明 ZIP 大小不是完整依赖下载量。</p><div class="market-versions">${versions.map(version => `<div class="market-version"><div><b>v${esc(version.version)}</b><small>${esc(version.probe ? "需要 Probe " + version.probe : "")}</small>${version.changelog ? `<p>${esc(version.changelog)}</p>` : ""}</div><button class="primary" data-node-plugin-version="${esc(version.version)}" ${status.trusted_keys ? "" : "disabled"}>选择节点</button></div>`).join("") || "<p>暂无兼容当前 Probe 的版本。</p>"}</div>${status.trusted_keys ? "" : '<p class="warn-text">缺少可信签名公钥，仅可浏览。</p>'}<p class="hint">当前需先配置节点本机安装通道。选择节点只申请计划；下载、安装、启动和托管授权仍分别确认。</p></div>`);
-    dialog.querySelectorAll("[data-node-plugin-version]").forEach(button => {
-      button.onclick = guard(async () => {
-        button.disabled = true;
-        try {
-          await choosePluginNodes(p, button.dataset.nodePluginVersion);
-        } finally {
-          button.disabled = false;
-        }
-      });
-    });
+    await openNodePluginDetail(p, { trusted: Boolean(status.trusted_keys), back: rerender });
     return;
   }
   const best = p.versions.find((v) => v.compatible);

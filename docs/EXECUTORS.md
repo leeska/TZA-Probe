@@ -1,6 +1,6 @@
 # 节点执行器：IPSentinel 只读、托管控制与中控排期
 
-节点执行器在市场中作为「节点插件」展示；「插件 → 市场 → 节点插件」可以为已配置本机安装通道的节点生成精确版本计划。生成计划不下载依赖，不代表安装或启用；审批与运行状态仍在「节点执行器」管理。首次自动配置、按需唤醒和停用卸载的交付边界见 [NODE-PLUGINS.md](NODE-PLUGINS.md)。
+节点执行器在市场中作为「节点插件」展示；「插件 → 市场 → 节点插件 → IPSentinel」可选择节点，并在详情的「设置」中管理安装审批、接入授权、配置、排期和历史。后台不再提供独立的「节点执行器」菜单。已有接入或安装记录也会在「插件 → 已安装」提供详情与设置入口，市场不可用时仍能管理本地记录。生成计划不下载依赖，不代表安装或启用。首次自动配置、按需唤醒和停用卸载的交付边界见 [NODE-PLUGINS.md](NODE-PLUGINS.md)。
 
 当前实现包括 M1 只读同步、M2 单任务托管控制面与 M3 中控日程：内建 TCP、Route、Unlock 注册分发，以及独立 IPSentinel 的状态、历史记录、配置验证/应用、单任务准入、取消、暂停与代次恢复。旧 Agent 的 `Job/Result` 线协议、能力白名单和原有排期保持兼容。IPSentinel 数据使用独立 API 和表，不写入延迟、回程或旧解锁结果。
 
@@ -35,7 +35,7 @@ CC 平台管理员上传原始依赖与 runtime 文件时必须提供清单里�
 1. 使用支持 M1 的 IPSentinel 运行时，在其本机 CLI 初始化身份并执行 `control adopt-readonly`，填写该安装专属的控制器和节点 UUID。TZA 原有节点 ID 仍保持原格式，不需要改成 UUID。
 2. 启动 `control serve`，显式允许 TZA Agent 的运行 UID。默认 Socket 为 `/run/ipsentinel/control.sock`，父目录与 Socket 权限由执行器设置。
 3. **服务启动并完成 UID 授权后**再运行 `control info`，取得实际 `target`、`executor_instance_id`、`descriptor_sha256` 和 `control.epoch`。首次登记 UID 可能改变 epoch，不能使用服务启动前读取的旧代次。
-4. 在 TZA 后台“节点执行器”中选择节点，输入上述身份并授权只读同步。
+4. 在 TZA 后台“插件 → IPSentinel → 设置”中选择节点，输入上述身份并授权只读同步。
 5. 在该节点的本机 `agent.json` 增加 `ipsentinel`，然后按现有服务管理方式重启 Agent：
 
 ```json
