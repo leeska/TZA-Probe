@@ -81,10 +81,13 @@ func TestScriptIsPOSIXAndSecretFree(t *testing.T) {
 			t.Errorf("script missing %q", needle)
 		}
 	}
-	for _, needle := range []string{"--no-plugin", "api/v1/install/identity", "runtime-cc-keys", "ipsentinel-install-runtime.py.sha256", "<<'TZA_RUNTIME_SERVICE'", "tza-runtime-installer.service"} {
+	for _, needle := range []string{"--no-plugin", "plugins.disabled", "--prepare-plugins"} {
 		if !strings.Contains(script, needle) {
 			t.Errorf("script missing plugin provisioning needle %q", needle)
 		}
+	}
+	if strings.Contains(script, "<<'TZA_RUNTIME_SERVICE'") || strings.Contains(script, `install -m 0755 "$BIN" "$RT_HELPER"`) {
+		t.Fatal("install script must not create a second Agent service or binary")
 	}
 	// The script is served without authentication, so it must never carry
 	// anything node- or server-specific.
@@ -117,38 +120,15 @@ func TestReferenceInstallerMatchesPinnedDigest(t *testing.T) {
 	}
 }
 
-func TestPluginIdentityValidationInPOSIXShell(t *testing.T) {
-	var validation string
-	for _, line := range strings.Split(string(Script()), "\n") {
-		if strings.Contains(line, `case "$CONTROLLER$NODE_UUID"`) {
-			validation = line
-		}
-	}
-	if validation == "" {
-		t.Fatal("missing identity validation")
-	}
-	code := "validate() {\nCONTROLLER=$1\nNODE_UUID=$2\n" + validation + "\n}\nvalidate \"$1\" \"$2\"\n"
-	uuid := "6dde5812-2f47-4a40-90ce-755ca38b50c3"
+func TestInstallScriptShellSyntax(t *testing.T) {
 	for _, shell := range []string{"sh", "dash"} {
 		binary, err := exec.LookPath(shell)
 		if err != nil {
 			continue
 		}
 		t.Run(shell, func(t *testing.T) {
-			for _, test := range []struct {
-				name, value string
-				valid       bool
-			}{
-				{"uuid", uuid, true},
-				{"metacharacter", uuid + ";", false},
-				{"whitespace", uuid + " ", false},
-			} {
-				t.Run(test.name, func(t *testing.T) {
-					output, err := exec.Command(binary, "-c", code, "validate", uuid, test.value).CombinedOutput()
-					if (err == nil) != test.valid {
-						t.Fatalf("valid=%v err=%v output=%s", test.valid, err, output)
-					}
-				})
+			if output, err := exec.Command(binary, "-n", "install.sh").CombinedOutput(); err != nil {
+				t.Fatalf("invalid shell syntax: %v %s", err, output)
 			}
 		})
 	}

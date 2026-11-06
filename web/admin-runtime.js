@@ -74,7 +74,7 @@ export async function renderRuntime(onAuthorize, section = document.querySelecto
     const history = view.requests.filter(request => request !== current);
     const name = state.nodes.find(node => node.id === view.node_id)?.name || view.node_id;
     return `<section class="panel runtime-panel"><div class="page-heading"><h3>${esc(name)}</h3><span class="pill" data-runtime-freshness="${view.seen_at}"></span></div><p>${esc(view.enrollment.host.platform)} · Agent ${esc(view.enrollment.host.agent_version)} · Probe ${esc(view.enrollment.host.probe_version)}</p><details><summary>节点安装身份</summary><pre class="runtime-json">${esc(JSON.stringify(view.enrollment, null, 2))}</pre></details>${current ? requestCard(current, view.requests.indexOf(current), viewIndex, view) : createForm(view, viewIndex)}${history.length ? `<details><summary>历史安装请求（${history.length}）</summary>${history.map(request => requestCard(request, view.requests.indexOf(request), viewIndex, view)).join("")}</details>` : ""}</section>`;
-  }).join("") : "<p>尚无节点启用 runtime 安装通道。先在指定节点配置专用安装服务；普通 Agent 与 IPSentinel Socket 接入不会启用安装权限。</p>"}`;
+  }).join("") : "<p>等待 Agent 上报插件状态。插件功能已内置于 Agent；旧版 Agent 请先在节点管理中升级。</p>"}`;
   views.forEach((view, viewIndex) => {
     const panels = [...section.children].filter(element => element.matches("section.runtime-panel"));
     const panel = panels[viewIndex];

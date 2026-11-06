@@ -67,7 +67,7 @@ func TestRuntimeUpgradeRollbackWithRealChromiumLinux(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, executable := range []string{input.AgentBinary, "/usr/local/libexec/tza/tza-runtime-installer"} {
+	for _, executable := range []string{input.AgentBinary, "/usr/local/bin/tza-agent"} {
 		output, err := exec.CommandContext(t.Context(), executable, "--version").CombinedOutput()
 		if err != nil {
 			t.Fatalf("Linux Agent/helper preflight failed for %s: %v: %s", executable, err, output)

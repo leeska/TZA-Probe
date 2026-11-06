@@ -249,7 +249,7 @@ func (local *LocalRuntime) Run(ctx context.Context, request runtimepkg.ChannelRe
 	if local.Config.CCKeysPath != "" {
 		keys, err := loadRuntimeKeys(local.Config.CCKeysPath)
 		if err != nil || !sameRuntimeKeys(keys, local.Keys) {
-			return runtimepkg.ChannelResult{}, errors.New("local runtime trust changed; restart the dedicated installer to invalidate pending approvals")
+			return runtimepkg.ChannelResult{}, errors.New("local runtime trust changed; restart Agent to invalidate pending approvals")
 		}
 	}
 	if request.State != "requested" && request.State != "approved" {

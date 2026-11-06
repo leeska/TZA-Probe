@@ -24,16 +24,17 @@ import (
 )
 
 type config struct {
-	Endpoint       string                      `json:"endpoint"`
-	Token          string                      `json:"token"`
-	Interfaces     []string                    `json:"interfaces"`
-	Mount          string                      `json:"mount"`
-	Nexttrace      string                      `json:"nexttrace"`
-	GeoProvider    string                      `json:"geo_provider"`
-	TraceMethod    string                      `json:"trace_method"`
-	AllowHTTP      bool                        `json:"allow_http"`
-	IPSentinel     *executorConfig             `json:"ipsentinel,omitempty"`
-	RuntimeInstall *agent.RuntimeInstallConfig `json:"runtime_install,omitempty"`
+	Endpoint        string                      `json:"endpoint"`
+	Token           string                      `json:"token"`
+	Interfaces      []string                    `json:"interfaces"`
+	Mount           string                      `json:"mount"`
+	Nexttrace       string                      `json:"nexttrace"`
+	GeoProvider     string                      `json:"geo_provider"`
+	TraceMethod     string                      `json:"trace_method"`
+	AllowHTTP       bool                        `json:"allow_http"`
+	IPSentinel      *executorConfig             `json:"ipsentinel,omitempty"`
+	RuntimeInstall  *agent.RuntimeInstallConfig `json:"runtime_install,omitempty"`
+	PluginsDisabled bool                        `json:"plugins_disabled,omitempty"`
 }
 
 type executorConfig struct {
@@ -60,6 +61,7 @@ func run() error {
 	applyUpdate := flag.Bool("apply-update", false, "install an upgrade staged by --self-update, then exit (run before start, with write access to the binary)")
 	runtimeInstaller := flag.Bool("runtime-installer", false, "run only the explicitly provisioned runtime installation channel in a dedicated privileged service")
 	runtimePeer := flag.Bool("runtime-peer", false, "serve one bounded local runtime inspection or pause request as a non-root peer")
+	preparePlugins := flag.Bool("prepare-plugins", false, "prepare integrated Agent plugins during installation or upgrade")
 	flag.Parse()
 	if *runtimePeer {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -71,6 +73,9 @@ func run() error {
 	if *version {
 		slog.Info(model.Version)
 		return nil
+	}
+	if *preparePlugins {
+		return prepareAgentPlugins(*path)
 	}
 	if *applyUpdate {
 		// 由 systemd 的 ExecStartPre=-+ 或 OpenRC 的 start_pre 调用：没有待装的版本就什么也不做，
@@ -89,21 +94,14 @@ func run() error {
 		if err != nil {
 			slog.Warn("staged agent upgrade not installed", "error", err)
 		}
+		if err := prepareAgentPlugins(*path); err != nil {
+			slog.Warn("Agent plugin preparation failed; ordinary probes continue", "error", err)
+		}
 		return nil
 	}
-	f, err := os.Open(*path)
+	cfg, err := loadConfig(*path)
 	if err != nil {
 		return err
-	}
-	defer f.Close()
-	d := json.NewDecoder(io.LimitReader(f, 64<<10))
-	d.DisallowUnknownFields()
-	var cfg config
-	if err = d.Decode(&cfg); err != nil {
-		return err
-	}
-	if err = d.Decode(&struct{}{}); err != io.EOF {
-		return errors.New("configuration must contain one JSON object")
 	}
 	transport, err := agent.NewTransport(cfg.Endpoint, cfg.Token, cfg.AllowHTTP)
 	if err != nil {
@@ -142,6 +140,16 @@ func run() error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	app := agent.Agent{Collector: &agent.SystemCollector{Interfaces: cfg.Interfaces, Mount: cfg.Mount}, Prober: prober, Transport: transport}
+	pluginsReady, restartPlugins, err := integratedPluginsReady(*path)
+	if err != nil {
+		slog.Warn("Agent plugin setup unavailable; ordinary probes continue", "error", err)
+	}
+	if restartPlugins && *selfUpdate {
+		return errRestart
+	}
+	if !pluginsDisabled(*path, cfg) && runtime.GOOS == "linux" && os.Geteuid() == 0 && (pluginsReady || (!standardAgent(*path) && cfg.RuntimeInstall != nil)) {
+		app.Plugins = agent.Plugins{Transport: transport, Config: cfg.RuntimeInstall, Directory: filepath.Join(agent.DefaultStateDir, "plugins")}
+	}
 	app.Prober = prober.DefaultRegistry()
 	if cfg.IPSentinel != nil {
 		if runtime.GOOS != "linux" {
@@ -182,4 +190,22 @@ func run() error {
 		return errRestart
 	}
 	return nil
+}
+
+func loadConfig(path string) (config, error) {
+	var cfg config
+	file, err := os.Open(path)
+	if err != nil {
+		return cfg, err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(io.LimitReader(file, 64<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&cfg); err != nil {
+		return cfg, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return cfg, errors.New("configuration must contain one JSON object")
+	}
+	return cfg, nil
 }

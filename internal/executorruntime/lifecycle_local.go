@@ -92,9 +92,9 @@ func ServeRuntimePeer(ctx context.Context, source io.Reader, destination io.Writ
 
 func (local LocalLifecycle) call(ctx context.Context, method, id string, fence ipsentinel.Fence, output any) error {
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 || local.Peer.UID == 0 || local.Peer.GID == 0 {
-		return errors.New("runtime service control requires a dedicated root installer with a non-root peer")
+		return errors.New("runtime service control requires a root Agent with a non-root peer")
 	}
-	executable := "/usr/local/libexec/tza/tza-runtime-installer"
+	executable := "/usr/local/bin/tza-agent"
 	if err := trustedFile(executable); err != nil {
 		return err
 	}

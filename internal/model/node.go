@@ -26,15 +26,12 @@ type Node struct {
 	// from the current skin or one of its add-ons. Empty picks automatically
 	// (node name, then region, then the default); a choice the current skin
 	// does not offer falls back to automatic too.
-	Decoration string      `json:"decoration,omitempty"`
-	Order      int         `json:"order"`
-	Public     bool        `json:"public"`
-	Display    NodeDisplay `json:"display"`
-	Billing    Billing     `json:"billing"`
-	Line       Line        `json:"line"`
-	// Runtime components install on the node through a privileged helper the
-	// install command provisions. Allowed by default; the panel can switch a
-	// node off, and --no-plugin on the node keeps the helper away entirely.
+	Decoration             string        `json:"decoration,omitempty"`
+	Order                  int           `json:"order"`
+	Public                 bool          `json:"public"`
+	Display                NodeDisplay   `json:"display"`
+	Billing                Billing       `json:"billing"`
+	Line                   Line          `json:"line"`
 	RuntimeInstallDisabled bool          `json:"runtime_install_disabled,omitempty"`
 	RuntimeTarget          RuntimeTarget `json:"runtime_target,omitempty"`
 }

@@ -226,7 +226,7 @@ func (journal FileRuntimePending) Clear(id string) error {
 
 func validateRuntimePaths(config RuntimeInstallConfig) error {
 	if os.Geteuid() != 0 {
-		return errors.New("runtime installation requires a dedicated privileged Agent")
+		return errors.New("runtime installation requires a privileged Agent")
 	}
 	for _, name := range []string{config.CCKeysPath, config.StagingDir, config.InstallRoot, config.TrustedInstaller, config.StateDir, config.ConfigPath, config.PolicyPath} {
 		if !filepath.IsAbs(name) || filepath.Clean(name) != name || name == "/" || strings.ContainsRune(name, 0) {

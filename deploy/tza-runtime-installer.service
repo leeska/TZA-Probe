@@ -1,11 +1,11 @@
 [Unit]
-Description=TZA node-approved runtime installer
+Description=TZA legacy standalone runtime installer (not used by standard Agent installs)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 User=root
-ExecStart=/usr/local/libexec/tza/tza-runtime-installer --runtime-installer --config /etc/tza-probe/runtime-installer.json
+ExecStart=/usr/local/bin/tza-agent --runtime-installer --config /etc/tza-probe/runtime-installer.json
 StateDirectory=tza-agent-runtime
 StateDirectoryMode=0700
 WorkingDirectory=/var/lib/tza-agent-runtime

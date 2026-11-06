@@ -1,5 +1,8 @@
 # 所选节点的 runtime 审核、暂存与本机安装
 
+> 当前插件安装通道已合入 Agent，见 [普通插件管理](PLUGIN-MANAGEMENT.md)。
+> 下述早期独立服务的验收记录保留作为历史证据，不表示当前还需补装助手。
+
 `cmd/executor-runtime` 实现 M4 在节点侧的第一步：验证 CC 签名、生成节点专属计划、取得精确批准、暂存并复核制品。它是独立的本机运维工具，不进入普通 Agent 的心跳或旧 Job/Result 协议。
 
 `plan`、`stage` 和 `verify` 的回执固定为 `state: "staged"`、`activated: false`。这表示声明及依赖字节已经核验，不表示已经安装 Python/Chromium、启动服务、通过资源预检、完成 managed adopt，或获得托管任务执行权。暂存阶段不解压、不执行制品，也不修改 Agent、IPSentinel 配置、数据库、timer 或 systemd。独立的 `install-plan/install` 和 `select-plan/select` 负责本机安装与版本选择，分别要求新的精确批准。
@@ -176,9 +179,15 @@ Free2 在与最终专用安装服务一致的 NNP、capability bounding/ambient�
 
 ### Agent 安装通道配置
 
-`runtime_install` 仅由 `tza-agent --runtime-installer` 显式启用；普通 Agent 即使读取到该配置，也不启动安装通道。安装进程不采集指标、不运行 TCP/Route/Unlock、不处理 Agent 自更新；只在批准 drain/activate 后通过受限普通用户子进程访问本机 Socket，或调用固定的参考验证器及 systemctl。使用独立 `deploy/tza-runtime-installer.service`，沿用该节点的 Agent token；普通 `tza-agent.service` 的沙箱和行为保持原样。
+`runtime_install` 由普通 Agent 的独立后台任务处理，与指标、心跳和探测并行，停机时一起取消并等待退出。
+标准 systemd 安装无需填写此字段，Agent 会自动配置；已有专用安装服务会在升级时停用，配置与日志原地保留。
+`--runtime-installer` 仅保留为旧运维入口，不再由安装脚本创建第二个服务。
 
-专用服务以 root 运行，保留 `ProtectSystem=strict`、`ProtectHome=true`、`PrivateTmp=true` 和 `NoNewPrivileges=true`，仅开放声明的暂存、安装及 IPSentinel 状态目录写入，能力限制为 CHOWN/DAC_OVERRIDE/FOWNER/SETUID/SETGID/KILL；SETUID/SETGID 用于启动降权子进程，KILL 用于清理自己创建的降权子进程，按前述 ambient 规则配置。管理员须事先准备配置、公钥、固定 helper、root 所有的安装根和专用普通用户拥有的状态目录，并用 `systemd-analyze verify` 核对单元。自定义安装路径需要相应调整这份专用单元的 `ReadWritePaths`，不能通过放宽普通 Agent 的沙箱完成安装。
+Agent 原本由安装脚本以 root 启动（之前不是无 root 用户，只是能力受限）。内置插件通过 systemd drop-in
+在 NET_RAW 之外添加 CHOWN/DAC_OVERRIDE/FOWNER/SETUID/SETGID/KILL，并开放固定安装、暂存和状态目录。
+保留 `ProtectSystem=strict`、`ProtectHome=true` 和 `NoNewPrivileges=true`；不把插件权限加入 ambient 集合。
+降权 peer 直接使用 `/usr/local/bin/tza-agent --runtime-peer`，不再复制第二份程序。
+本机关闭插件后移除该 drop-in；浏览器仍必须以非 root 和受限 cgroup 运行，签名与精确计划批准继续有效。
 
 本机配置示例中的路径均为运维者提前审核的配置，不接受后台指定任意安装路径、脚本或 unit：
 
