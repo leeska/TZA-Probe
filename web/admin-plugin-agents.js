@@ -9,7 +9,7 @@ export function pluginAgentState(channel, binding, version) {
   const unresolved = channel?.requests?.find(request => request.state === "unknown");
   const current = requests.find(request => activeStates.has(request.state));
   const installed = requests.find(request => request.state === "installed" && request.version === version);
-  const stage = requests.find(request => request.state === "staged" && request.version === version);
+  const stage = requests.find(request => request.state === "staged" && request.version === version && request.enrollment?.host?.agent_version === channel.enrollment.host.agent_version);
   if (current) return { label: stateNames[current.state], current };
   if (binding) {
     const fresh = Number.isFinite(binding.received_at) && binding.received_at > 0 && Math.abs(Date.now() / 1000 - binding.received_at) < 45;

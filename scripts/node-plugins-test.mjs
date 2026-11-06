@@ -157,6 +157,7 @@ assert.equal(ui.pluginAgentState(channels[1], null, "0.4.0").action, undefined);
 assert.equal(ui.pluginAgentState(null, null, "0.4.0").action, undefined);
 const staged = { id: "stage", version: "0.4.0", state: "staged", enrollment };
 assert.equal(ui.pluginAgentState({ ...ready, requests: [staged] }, null, "0.4.0").action, "install");
+assert.equal(ui.pluginAgentState({ ...ready, enrollment: { ...enrollment, host: { ...enrollment.host, agent_version: "1.10.6" } }, requests: [staged] }, null, "0.4.0").action, "stage");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, enrollment: { scope_sha256: "different" } }] }, null, "0.4.0").action, "stage");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "installed" }] }, null, "0.4.0").label, "已安装，待启用");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "unknown" }] }, null, "0.4.0").action, undefined);
