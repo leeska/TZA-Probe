@@ -11,6 +11,7 @@
 #                            （NextTrace-API 的 v3 通道靠 NextTrace CLI 自建 WebSocket，本进程内查询必然失败）
 #   --trace-method NAME      内置回程的探测方式：icmp（默认，与 NextTrace CLI 一致）、tcp 或 udp
 #   --allow-http             允许明文 HTTP 的 endpoint（仅限可信私网；endpoint 为 http:// 时自动开启）
+#   --no-plugin              不安装插件组件安装器；主控将无法在此节点安装/更新 IPSentinel 等组件
 #   --uninstall              停止服务并删除程序、配置与服务单元（systemd / OpenRC 均可）
 #
 # 不带 --token 再次执行时保留现有 /etc/tza-probe/agent.json，只更新二进制并重启，即升级。
@@ -27,12 +28,19 @@ NEXTTRACE=""
 GEO_PROVIDER=""
 TRACE_METHOD=""
 ALLOW_HTTP=""
+NO_PLUGIN=""
 UNINSTALL=""
 CONFIG=/etc/tza-probe/agent.json
 KEYFILE=/etc/tza-probe/upgrade-key.pub
 BIN=/usr/local/bin/tza-agent
 UNIT=/etc/systemd/system/tza-agent.service
 INITD=/etc/init.d/tza-agent
+RT_UNIT=/etc/systemd/system/tza-runtime-installer.service
+RT_HELPER=/usr/local/libexec/tza/tza-runtime-installer
+RT_KEYS=/etc/tza-probe/runtime-cc-keys
+RT_PY=/usr/local/libexec/tza/ipsentinel-install-runtime.py
+RT_CONFIG=/etc/tza-probe/runtime-installer.json
+RT_STATE=/var/lib/tza-agent-runtime
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +51,7 @@ while [ $# -gt 0 ]; do
     --geo-provider) GEO_PROVIDER="$2"; shift 2 ;;
     --trace-method) TRACE_METHOD="$2"; shift 2 ;;
     --allow-http) ALLOW_HTTP=true; shift ;;
+    --no-plugin) NO_PLUGIN=true; shift ;;
     --uninstall) UNINSTALL=true; shift ;;
     -h|--help) sed -n '2,16p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
@@ -70,6 +79,7 @@ if [ "$(id -u)" -ne 0 ]; then
   [ -n "$GEO_PROVIDER" ] && quoted="$quoted --geo-provider $(q "$GEO_PROVIDER")"
   [ -n "$TRACE_METHOD" ] && quoted="$quoted --trace-method $(q "$TRACE_METHOD")"
   [ -n "$ALLOW_HTTP" ] && quoted="$quoted --allow-http"
+  [ -n "$NO_PLUGIN" ] && quoted="$quoted --no-plugin"
   [ -n "$UNINSTALL" ] && quoted="$quoted --uninstall"
   if command -v curl >/dev/null 2>&1; then
     get="curl -fsSL '$ENDPOINT/install.sh'"
@@ -102,6 +112,10 @@ if [ -n "$UNINSTALL" ]; then
     rc-update del tza-agent default >/dev/null 2>&1 || true
   fi
   rm -f "$UNIT" "$INITD" "$BIN" "$BIN.previous"
+  if [ "$INIT" = systemd ]; then
+    systemctl disable --now tza-runtime-installer 2>/dev/null || true
+    rm -f "$RT_UNIT" "$RT_HELPER" "$RT_PY" "$RT_KEYS" "$RT_CONFIG"
+  fi
   rm -rf /etc/tza-probe /var/lib/tza-agent
   [ "$INIT" = systemd ] && systemctl daemon-reload
   echo "已卸载 TZA Probe Agent"
@@ -126,6 +140,7 @@ else
   # 升级：endpoint 从现有配置读取。旧版安装脚本写的是单行 JSON，这里不能只认
   # 缩进过的多行格式，否则不带参数的升级会在这些节点上报“缺少 --endpoint”。
   [ -n "$ENDPOINT" ] || ENDPOINT=$(sed -n 's/.*"endpoint"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -n 1)
+  [ -n "$TOKEN" ] || TOKEN=$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -n 1)
 fi
 [ -n "$ENDPOINT" ] || fail "缺少 --endpoint（Agent 主机能访问的 Server 地址）"
 ENDPOINT=${ENDPOINT%/}
@@ -143,6 +158,102 @@ elif command -v wget >/dev/null 2>&1; then
 else
   fail "需要 curl 或 wget"
 fi
+
+json_str() { printf '%s' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"; }
+
+post() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS --retry 2 -H 'Content-Type: application/json' -d "$2" -o "$3" "$1"
+  else
+    wget -q --post-data="$2" -O "$3" "$1"
+  fi
+}
+
+disable_plugin() {
+  systemctl disable --now tza-runtime-installer 2>/dev/null || true
+  rm -f "$RT_UNIT" "$RT_HELPER" "$RT_PY" "$RT_KEYS" "$RT_CONFIG"
+  systemctl daemon-reload 2>/dev/null || true
+  echo "已按 --no-plugin 关闭插件组件：本机安装器已移除，主控不能在此节点安装组件"
+}
+
+provision_plugin() {
+  fetch "$ENDPOINT/dl/runtime-cc-keys" "$TMP/rt-keys" || { echo "主控未提供运行组件签名公钥，插件组件未启用" >&2; return 1; }
+  RT_HAS_KEY=""
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ""|"#"*) continue ;; esac
+    printf '%s\n' "$line" | grep -Eq '^[a-z0-9][a-z0-9.-]{0,31}:[A-Za-z0-9+/]{43}=$' || { echo "主控提供的运行组件公钥格式不正确" >&2; return 1; }
+    RT_HAS_KEY=true
+  done < "$TMP/rt-keys"
+  [ -n "$RT_HAS_KEY" ] || { echo "主控尚未配置运行组件签名公钥，插件组件未启用" >&2; return 1; }
+  fetch "$ENDPOINT/dl/ipsentinel-install-runtime.py" "$TMP/rt.py" || { echo "无法下载参考安装器，插件组件未启用" >&2; return 1; }
+  fetch "$ENDPOINT/dl/ipsentinel-install-runtime.py.sha256" "$TMP/rt.py.sum" || { echo "无法获取参考安装器校验和，插件组件未启用" >&2; return 1; }
+  PY_EXPECTED=$(cut -d' ' -f1 "$TMP/rt.py.sum")
+  if command -v sha256sum >/dev/null 2>&1; then
+    PY_ACTUAL=$(sha256sum "$TMP/rt.py" | cut -d' ' -f1)
+  else
+    PY_ACTUAL=$(shasum -a 256 "$TMP/rt.py" | cut -d' ' -f1)
+  fi
+  [ "$PY_ACTUAL" = "$PY_EXPECTED" ] || { echo "参考安装器摘要不符，插件组件未启用" >&2; return 1; }
+  post "$ENDPOINT/api/v1/install/identity" "{\"token\":\"$TOKEN\"}" "$TMP/identity" || { echo "主控不接受本节点身份请求（可能是主控版本过旧），插件组件未启用" >&2; return 1; }
+  CONTROLLER=$(json_str "$(cat "$TMP/identity")" controller_id)
+  NODE_UUID=$(json_str "$(cat "$TMP/identity")" node_id)
+  CC_URL=$(json_str "$(cat "$TMP/identity")" cc_url)
+  PROBE_VERSION=$(json_str "$(cat "$TMP/identity")" probe_version)
+  case "$CONTROLLER$NODE_UUID" in *[^0-9a-zA-Z-]*) echo "节点握手身份格式不正确" >&2; return 1 ;; esac
+  [ ${#CONTROLLER} -ge 32 ] && [ ${#NODE_UUID} -ge 32 ] || { echo "节点握手身份不完整" >&2; return 1; }
+  case "$CC_URL" in https://*|http://127.0.0.1*|http://localhost*) ;; *) echo "主控提供的 CC 地址不可用，插件组件未启用" >&2; return 1 ;; esac
+  case "$CC_URL" in *[!A-Za-z0-9.:/_~%\[\]-]*) echo "主控提供的 CC 地址格式不正确" >&2; return 1 ;; esac
+  case "$PROBE_VERSION" in *[!0-9A-Za-z.+-]*) echo "主控提供的版本号格式不正确" >&2; return 1 ;; esac
+  [ -n "$PROBE_VERSION" ] || { echo "主控未提供版本号，插件组件未启用" >&2; return 1; }
+  install -m 0600 "$TMP/rt-keys" "$RT_KEYS"
+  install -d -m 0755 /usr/local/libexec/tza /opt/ipsentinel-runtime /var/lib/ipsentinel/state/managed /etc/ipsentinel
+  install -m 0755 "$TMP/rt.py" "$RT_PY"
+  install -d -m 0755 "$(dirname "$RT_HELPER")"
+  systemctl stop tza-runtime-installer 2>/dev/null || true
+  install -m 0755 "$BIN" "$RT_HELPER"
+  umask 077
+  printf '{\n  "endpoint": "%s",\n  "token": "%s",\n  "allow_http": %s,\n  "runtime_install": {\n    "cc_url": "%s",\n    "cc_keys_path": "%s",\n    "probe_version": "%s",\n    "staging_dir": "%s/staging",\n    "install_root": "/opt/ipsentinel-runtime",\n    "trusted_installer": "%s",\n    "state_dir": "/var/lib/ipsentinel/state/managed",\n    "config_path": "/etc/ipsentinel/runtime.toml",\n    "policy_path": "/etc/ipsentinel/runtime-policy.toml",\n    "unit": "ipsentinel-runtime.service",\n    "target": { "controller_id": "%s", "node_id": "%s" }\n  }\n}\n' \
+    "$ENDPOINT" "$TOKEN" "${ALLOW_HTTP:-false}" "$CC_URL" "$RT_KEYS" "$PROBE_VERSION" "$RT_STATE" "$RT_PY" "$CONTROLLER" "$NODE_UUID" > "$RT_CONFIG"
+  chmod 0600 "$RT_CONFIG"
+  cat > "$RT_UNIT" <<'TZA_RUNTIME_SERVICE'
+[Unit]
+Description=TZA node-approved runtime installer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/libexec/tza/tza-runtime-installer --runtime-installer --config /etc/tza-probe/runtime-installer.json
+StateDirectory=tza-agent-runtime
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/tza-agent-runtime
+UMask=0077
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+KillMode=control-group
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID CAP_KILL
+AmbientCapabilities=CAP_SETUID CAP_SETGID CAP_KILL
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/tza-agent-runtime /opt/ipsentinel-runtime /var/lib/ipsentinel/state/managed
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target
+TZA_RUNTIME_SERVICE
+  chmod 0644 "$RT_UNIT"
+  systemctl daemon-reload
+  systemctl enable --now tza-runtime-installer >/dev/null 2>&1
+  systemctl restart tza-runtime-installer
+  sleep 1
+  systemctl is-active --quiet tza-runtime-installer || { journalctl -u tza-runtime-installer -n 10 --no-pager >&2; echo "插件安装器未能启动，插件组件未启用" >&2; return 1; }
+  echo "插件组件安装器已启用；主控可在插件 Agent 页安装组件（安装、启动分别批准）"
+}
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -282,4 +393,18 @@ else
   echo "Agent 未能启动，最近日志：" >&2
   service_logs >&2 || true
   exit 1
+fi
+
+# 插件组件（IPSentinel 等）：默认随安装一起启用；需要 root 写入安装根与专用服务，
+# 因此只在 systemd 节点配置。OpenRC 节点与显式 --no-plugin 的节点跳过。
+if [ "$INIT" != systemd ]; then
+  echo "提示: 当前系统不是 systemd，插件组件暂不支持；普通探测功能不受影响"
+elif [ -n "$NO_PLUGIN" ]; then
+  disable_plugin
+elif [ -z "$TOKEN" ]; then
+  echo "提示: 未提供节点密钥，跳过插件组件配置"
+else
+  if ! provision_plugin; then
+    echo "提示: 修复上述问题后重新运行本命令即可启用插件组件" >&2
+  fi
 fi

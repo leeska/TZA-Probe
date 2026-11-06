@@ -32,6 +32,18 @@ type Node struct {
 	Display    NodeDisplay `json:"display"`
 	Billing    Billing     `json:"billing"`
 	Line       Line        `json:"line"`
+	// Runtime components install on the node through a privileged helper the
+	// install command provisions. Allowed by default; the panel can switch a
+	// node off, and --no-plugin on the node keeps the helper away entirely.
+	RuntimeInstallDisabled bool          `json:"runtime_install_disabled,omitempty"`
+	RuntimeTarget          RuntimeTarget `json:"runtime_target,omitempty"`
+}
+
+// RuntimeTarget is the controller-assigned IPSentinel handshake identity the
+// node pins in its local installer configuration.
+type RuntimeTarget struct {
+	ControllerID string `json:"controller_id"`
+	NodeID       string `json:"node_id"`
 }
 
 // NodeDisplay picks which probe results the public card shows. Both regions

@@ -46,6 +46,15 @@ window.fetch = async (url, options = {}) => {
       managers = [];
       return new Response("{}");
     }
+    if (url === "/api/v1/admin/nodes/batch") {
+      for (const node of nodes.filter(item => body.ids.includes(item.id))) node.runtime_install_disabled = body.patch.runtime_install_disabled;
+      return new Response(JSON.stringify({ updated: body.ids.length }));
+    }
+    if (url.startsWith("/api/v1/admin/nodes/")) {
+      const node = nodes.find(item => url.endsWith(item.id));
+      node.runtime_install_disabled = body.runtime_install_disabled;
+      return new Response(JSON.stringify(node));
+    }
     if (url.includes("/runtime/requests/request")) return new Response("{}");
     throw new Error("Unexpected write " + url);
   }
@@ -92,6 +101,7 @@ assert(content.textContent.includes("Agent 组件"));
 assert(!content.querySelector("input, textarea, [data-executor-settings]"));
 assert(!content.querySelector("img"), "Agent names must be escaped");
 assert.equal(content.querySelectorAll("[data-agent-action]").length, 1);
+assert(content.querySelector("[data-agent-toggle]"), "controller execution opt-out is available");
 assert(!writes.some(write => write.url.includes("node-plans")), "controller install must not provision an Agent");
 await content.querySelector("[data-agent-action]").onclick();
 assert.equal(writes.filter(write => write.url.endsWith("node-plans")).length, 1);
@@ -114,6 +124,14 @@ await dialog.querySelector("[data-agent-confirm]").onclick();
 assert.equal(writes.at(-1).method, "PUT");
 assert.equal(writes.at(-1).body.plan_sha256, "c".repeat(64));
 assert(!writes.some(write => ["select", "activate", "run.submit"].includes(write.body?.action)), "no implicit activation");
+await content.querySelector("[data-agent-toggle]").onclick();
+assert(writes.some(write => write.url.includes("/admin/nodes/ready") && write.body.runtime_install_disabled === true), "controller execution opt-out is available");
+assert(content.textContent.includes("主控执行已关闭"));
+assert(!content.querySelector("[data-agent-review]"), "disabled nodes cannot approve queued operations");
+await content.querySelector("[data-agents-allow-all]").onclick();
+assert(nodes.every(node => node.runtime_install_disabled === false), "one click enables all nodes");
+assert.equal(writes.at(-1).url, "/api/v1/admin/nodes/batch");
+assert(content.querySelector("[data-agent-review]"), "re-enabled pending operations remain reviewable");
 await content.querySelector('[data-plugin-section="overview"]').onclick();
 assert(content.textContent.includes("先添加一个防护节点"));
 assert.equal(content.querySelector("textarea"), null);
@@ -145,4 +163,4 @@ assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "unk
 assert.equal(ui.pluginAgentState(ready, { received_at: now }, "0.4.0").label, "已接入");
 assert.equal(ui.pluginAgentState(ready, { received_at: now - 60 }, "0.4.0").label, "已接入，状态待刷新");
 dom.window.close();
-console.log("PASS: unified plugin catalog, signed manager installation boundary, Agent status, explicit approvals, changed-plan rejection, offline management and safe removal.");
+console.log("PASS: unified plugin catalog, Agent status, per-node opt-out and bulk enable, explicit approvals, changed-plan rejection, offline management and safe removal.");

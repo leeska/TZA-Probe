@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -595,6 +596,33 @@ func (c *Client) installed() map[string]Installed {
 		out[p.ID] = have
 	}
 	return out
+}
+
+// Base is the configured CC origin, for nodes that fetch runtime artifacts
+// from the same CC. Empty when the market is not configured.
+func (c *Client) Base() string {
+	if c == nil || c.base == nil {
+		return ""
+	}
+	return c.base.String()
+}
+
+// PublicKeysFile renders the trusted CC signing keys in the "<id>:<base64>"
+// form the node pins as its runtime repository trust. Public keys only.
+func (c *Client) PublicKeysFile() string {
+	if c == nil || len(c.keys) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(c.keys))
+	for id := range c.keys {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	lines := make([]string, 0, len(ids))
+	for _, id := range ids {
+		lines = append(lines, tzapkg.FormatPublicKey(id, c.keys[id]))
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // Updates asks CC which packages installed from the market have a newer

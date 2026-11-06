@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/leeska/TZA-Probe/internal/agentdist"
 	runtimepkg "github.com/leeska/TZA-Probe/internal/executorruntime"
 	"github.com/leeska/TZA-Probe/internal/ipsentinel"
 	"github.com/leeska/TZA-Probe/internal/market"
@@ -116,6 +117,114 @@ func TestPluginManagerRoutesAndAgentIsolation(t *testing.T) {
 		if response := call("GET", path, admin, "", nil, ""); response.Body.String() != previous {
 			t.Fatal("manager removal changed Agent state", path, response.Body.String())
 		}
+	}
+}
+
+func TestInstallIdentityAndDisabledNodes(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "server.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	node, token, err := store.SaveNode(t.Context(), model.Node{Name: "installer", Billing: model.Billing{ResetAt: "2026-11-01T00:00:00Z", TrafficMode: "sum"}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.InstallIdentity(t.Context(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := store.InstallIdentity(t.Context(), token)
+	if err != nil || again != first {
+		t.Fatal("identity is not stable", first, again, err)
+	}
+	controller := first.ControllerID
+	_, otherToken, err := store.SaveNode(t.Context(), model.Node{Name: "second", Billing: model.Billing{ResetAt: "2026-11-01T00:00:00Z", TrafficMode: "sum"}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherTarget, err := store.InstallIdentity(t.Context(), otherToken)
+	if err != nil || otherTarget.ControllerID != controller || otherTarget.NodeID == first.NodeID {
+		t.Fatal("node identities must share controller and have distinct node IDs", otherTarget, err)
+	}
+	if _, err := store.InstallIdentity(t.Context(), model.Secret()); err == nil {
+		t.Fatal("unknown token received an identity")
+	}
+	if _, _, err := store.SaveNode(t.Context(), model.Node{ID: node, Name: "installer", RuntimeInstallDisabled: true, Billing: model.Billing{ResetAt: "2026-11-01T00:00:00Z", TrafficMode: "sum"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	enrollment := runtimepkg.Enrollment{ScopeSHA256: strings.Repeat("a", 64), Target: ipsentinel.Target{ControllerID: first.ControllerID, NodeID: first.NodeID}, Host: runtimepkg.Host{Platform: "linux-amd64", ProbeVersion: "1.10.0", AgentVersion: "1.10.0"}}
+	if _, err := store.RuntimeExchange(t.Context(), node, runtimepkg.ChannelReport{Enrollment: enrollment}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateMarketRuntimeRequest(t.Context(), node, "0.4.0", enrollment.ScopeSHA256); err == nil || !strings.Contains(err.Error(), "已关闭") {
+		t.Fatal("disabled node accepted a plan", err)
+	}
+	if _, _, err := store.SaveNode(t.Context(), model.Node{ID: node, Name: "installer", RuntimeTarget: first, Billing: model.Billing{ResetAt: "2026-11-01T00:00:00Z", TrafficMode: "sum"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateMarketRuntimeRequest(t.Context(), node, "0.4.0", enrollment.ScopeSHA256); err != nil {
+		t.Fatal("re-enabled node rejected", err)
+	}
+}
+
+func TestInstallEndpoints(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "server.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	_, token, err := store.SaveNode(t.Context(), model.Node{Name: "installer", Billing: model.Billing{ResetAt: "2026-11-01T00:00:00Z", TrafficMode: "sum"}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cc := markettest.New(t)
+	client, err := market.New(market.Config{URL: cc.URL() + "/", Keys: cc.Keys(), Dir: t.TempDir(), Probe: "1.10.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := (&API{Store: store, AdminToken: model.Secret(), Market: client, Agents: &agentdist.Dist{}, Assets: web.Handler()}).Handler()
+	post := func(path, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "https://probe.example"+path, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	if response := post("/api/v1/install/identity", `{"token":"`+model.Secret()+`"}`); response.Code != http.StatusNotFound {
+		t.Fatal("unknown token received an identity", response.Code)
+	}
+	response := post("/api/v1/install/identity", `{"token":"`+token+`"}`)
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	var identity struct {
+		ControllerID string `json:"controller_id"`
+		NodeID       string `json:"node_id"`
+		CCURL        string `json:"cc_url"`
+		ProbeVersion string `json:"probe_version"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &identity); err != nil {
+		t.Fatal(err)
+	}
+	if !ipsentinel.ValidUUID(identity.ControllerID) || !ipsentinel.ValidUUID(identity.NodeID) || identity.CCURL != cc.URL() || identity.ProbeVersion == "" {
+		t.Fatal("identity reply incomplete", identity)
+	}
+	repeat := post("/api/v1/install/identity", `{"token":"`+token+`"}`)
+	if repeat.Body.String() != response.Body.String() {
+		t.Fatal("identity is not stable", response.Body.String(), repeat.Body.String())
+	}
+	get := func(path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, "https://probe.example"+path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	if response := get("/dl/ipsentinel-install-runtime.py"); response.Code != http.StatusOK {
+		t.Fatal("reference installer not served", response.Code)
+	}
+	if response := get("/dl/runtime-cc-keys"); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), ":") {
+		t.Fatal("runtime keys not served", response.Code, response.Body.String())
 	}
 }
 

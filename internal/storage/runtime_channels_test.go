@@ -227,7 +227,7 @@ func TestRuntimeChannelVersion21UpgradePreservesNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var version, nodes int
-	if err := store.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 23 {
+	if err := store.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 24 {
 		t.Fatal(version, err)
 	}
 	if err := store.db.QueryRow("SELECT count(*) FROM nodes WHERE id=?", node).Scan(&nodes); err != nil || nodes != 1 {

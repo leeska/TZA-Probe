@@ -36,9 +36,42 @@ export async function renderPluginAgents(pkg, root) {
   const refresh = () => renderPluginAgents(pkg, root);
   const byNode = new Map(channels.map(channel => [channel.node_id, channel]));
   const byBinding = new Map(bindings.map(binding => [binding.node_id, binding]));
-  const rows = nodes.map(node => ({ node, channel: byNode.get(node.id), ...pluginAgentState(byNode.get(node.id), byBinding.get(node.id), version) }));
-  root.innerHTML = `<section class="panel theme-panel"><div class="panel-head"><div><h2>Agent 组件</h2><p>选择需要防护的 Agent，按需下载、安装。主控不运行检测。</p></div><button data-agents-refresh>刷新</button></div><div class="theme-list">${rows.map((row, index) => `<div class="theme-row"><span class="theme-copy"><b>${esc(row.node.name || row.node.id)}</b><small>${esc(row.hint || row.channel?.enrollment.host.platform || "")}</small></span><span class="pill">${esc(row.label)}</span>${row.action ? `<button data-agent-action="${index}">${row.action === "stage" ? "安装组件" : "继续安装"}</button>` : ""}${row.current?.state === "awaiting_approval" ? `<button class="primary" data-agent-review="${index}">查看并确认</button>` : ""}${row.current && ["requested", "awaiting_approval", "approved"].includes(row.current.state) ? `<button class="quiet" data-agent-cancel="${index}">取消</button>` : ""}</div>`).join("") || '<p>还没有 Agent，请先添加节点。</p>'}</div></section><p class="hint">首次安装需要管理员配置 Agent 的本机安装许可。未开放系统权限的 Agent 不会下载依赖；普通心跳与探测不受影响。</p><details class="panel"><summary>安装记录与诊断</summary>${rows.filter(row => row.channel?.requests?.length).map(row => `<h3>${esc(row.node.name || row.node.id)}</h3>${row.channel.requests.map(request => `<p>v${esc(request.version)} · ${esc(stateNames[request.state] || request.state)}${request.error_code ? ` · ${esc(request.error_code)}` : ""}</p>`).join("")}`).join("") || "<p>暂无安装记录。</p>"}</details>`;
+  const rows = nodes.map(node => {
+    const state = { node, channel: byNode.get(node.id), ...pluginAgentState(byNode.get(node.id), byBinding.get(node.id), version) };
+    if (node.runtime_install_disabled) {
+      state.label = "主控执行已关闭";
+      state.hint = "已停止下发插件操作；已开始的操作会继续完成并上报结果";
+      state.action = undefined;
+      state.stage = undefined;
+      state.canReview = false;
+    } else {
+      state.canReview = state.current?.state === "awaiting_approval";
+    }
+    return state;
+  });
+  root.innerHTML = `<section class="panel theme-panel">
+    <div class="panel-head"><div><h2>Agent 组件</h2><p>选择需要防护的 Agent，按需下载、安装。主控不运行检测。</p></div>
+      <div class="form-actions"><button data-agents-allow-all ${nodes.length ? "" : "disabled"}>全部允许</button><button data-agents-refresh>刷新</button></div>
+    </div><div class="theme-list">${rows.map((row, index) => `<div class="theme-row">
+      <span class="theme-copy"><b>${esc(row.node.name || row.node.id)}</b><small>${esc(row.hint || row.channel?.enrollment.host.platform || "")}</small></span>
+      <span class="pill">${esc(row.label)}</span>
+      ${row.action ? `<button data-agent-action="${index}">${row.action === "stage" ? "安装组件" : "继续安装"}</button>` : ""}
+      ${row.canReview ? `<button class="primary" data-agent-review="${index}">查看并确认</button>` : ""}
+      ${row.current && ["requested", "awaiting_approval", "approved"].includes(row.current.state) ? `<button class="quiet" data-agent-cancel="${index}">取消</button>` : ""}
+      <button class="quiet" data-agent-toggle="${index}">${row.node.runtime_install_disabled ? "允许主控执行" : "不允许主控执行"}</button>
+    </div>`).join("") || '<p>还没有 Agent，请先添加节点。</p>'}</div></section>
+    <p class="hint">默认允许主控安装和运行插件，可单独关闭。允许后仅在安装插件时下载运行依赖。关闭会停止下发新操作，已开始的操作继续完成；重新允许后待处理操作可继续。</p>
+    <details class="panel"><summary>安装记录与诊断</summary>${rows.filter(row => row.channel?.requests?.length).map(row => `<h3>${esc(row.node.name || row.node.id)}</h3>${row.channel.requests.map(request => `<p>v${esc(request.version)} · ${esc(stateNames[request.state] || request.state)}${request.error_code ? ` · ${esc(request.error_code)}` : ""}</p>`).join("")}`).join("") || "<p>暂无安装记录。</p>"}</details>`;
   root.querySelector("[data-agents-refresh]").onclick = guard(refresh);
+  root.querySelector("[data-agents-allow-all]").onclick = guard(async () => {
+    const button = root.querySelector("[data-agents-allow-all]");
+    button.disabled = true;
+    try {
+      await send("/admin/nodes/batch", "POST", { ids: nodes.map(node => node.id), patch: { runtime_install_disabled: false } });
+      toast("已允许全部 Agent 通过主控使用插件");
+      await refresh();
+    } finally { button.disabled = false; }
+  });
   const channelFresh = async row => {
     const fresh = (await api("/admin/runtime")).find(channel => channel.node_id === row.node.id);
     if (!fresh || fresh.enrollment.scope_sha256 !== row.channel?.enrollment.scope_sha256 || !Number.isFinite(fresh.seen_at) || Math.abs(Date.now() / 1000 - fresh.seen_at) >= 45) throw new Error("Agent 状态或安装许可已变化，请刷新后重试");
@@ -85,6 +118,16 @@ export async function renderPluginAgents(pkg, root) {
       button.disabled = true;
       try {
         await send(`/admin/nodes/${encodeURIComponent(row.node.id)}/runtime/requests/${encodeURIComponent(row.current.id)}`, "DELETE");
+        await refresh();
+      } finally { button.disabled = false; }
+    });
+  });
+  root.querySelectorAll("[data-agent-toggle]").forEach(button => {
+    button.onclick = guard(async () => {
+      const row = rows[Number(button.dataset.agentToggle)];
+      button.disabled = true;
+      try {
+        await send(`/admin/nodes/${encodeURIComponent(row.node.id)}`, "PATCH", { runtime_install_disabled: !row.node.runtime_install_disabled });
         await refresh();
       } finally { button.disabled = false; }
     });

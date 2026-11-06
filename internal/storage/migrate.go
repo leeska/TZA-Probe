@@ -20,7 +20,7 @@ func migrate(db *sql.DB) (err error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 23 {
+	if version > 24 {
 		return errors.New("database version is newer than this binary")
 	}
 	if version == 0 {
@@ -176,6 +176,12 @@ func migrate(db *sql.DB) (err error) {
 	}
 	if version < 23 {
 		if _, err = db.Exec("BEGIN;" + runtimeMaintenanceSchema + "PRAGMA user_version=23; COMMIT;"); err != nil {
+			return err
+		}
+	}
+	if version < 24 {
+		// 插件组件安装的服务器级设置（当前只有主控握手 UUID）。节点自己的开关在节点配置里。
+		if _, err = db.Exec(`BEGIN; CREATE TABLE IF NOT EXISTS server_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL); PRAGMA user_version=24; COMMIT;`); err != nil {
 			return err
 		}
 	}

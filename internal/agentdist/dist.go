@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/agentsig"
+	"github.com/leeska/TZA-Probe/internal/executorruntime"
 )
 
 //go:embed bin install.sh
@@ -110,6 +111,34 @@ func (d *Dist) UpgradeKey() ([]byte, error) {
 // ErrUnsigned means the binary for an architecture has no usable signature, so
 // it cannot be offered as a one-click upgrade.
 var ErrUnsigned = errors.New("agent binary not signed")
+
+// ReferenceInstallerName is the pinned IPSentinel reference installer served
+// at /dl/ so the install command can provision it without a manual copy.
+const ReferenceInstallerName = "ipsentinel-install-runtime.py"
+
+// ReferenceInstaller returns the embedded reference installer after checking
+// it still matches the digest the executor runtime channel enforces, so a
+// drifted copy fails here instead of on every node.
+func ReferenceInstaller() ([]byte, error) {
+	data, err := files.ReadFile("bin/" + ReferenceInstallerName)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != executorruntime.ReferenceInstallerSHA256 {
+		return nil, fmt.Errorf("%s does not match the pinned reference installer digest", ReferenceInstallerName)
+	}
+	return data, nil
+}
+
+// ReferenceInstallerSum is the digest served beside the installer so nodes
+// can verify the download without the script embedding a digest.
+func ReferenceInstallerSum() (string, error) {
+	if _, err := ReferenceInstaller(); err != nil {
+		return "", err
+	}
+	return executorruntime.ReferenceInstallerSHA256, nil
+}
 
 // Signature returns the operator's signature of the binary for arch, checked
 // against the binary actually served and against the published key, so a

@@ -80,6 +80,11 @@ func TestScriptIsPOSIXAndSecretFree(t *testing.T) {
 			t.Errorf("script missing %q", needle)
 		}
 	}
+	for _, needle := range []string{"--no-plugin", "api/v1/install/identity", "runtime-cc-keys", "ipsentinel-install-runtime.py.sha256", "<<'TZA_RUNTIME_SERVICE'", "tza-runtime-installer.service"} {
+		if !strings.Contains(script, needle) {
+			t.Errorf("script missing plugin provisioning needle %q", needle)
+		}
+	}
 	// The script is served without authentication, so it must never carry
 	// anything node- or server-specific.
 	if regexp.MustCompile(`[0-9a-f]{64}`).MatchString(script) {
@@ -93,6 +98,21 @@ func TestScriptIsPOSIXAndSecretFree(t *testing.T) {
 	}
 	if string(repo) != script {
 		t.Fatal("served script differs from repository copy")
+	}
+}
+
+func TestReferenceInstallerMatchesPinnedDigest(t *testing.T) {
+	sum, err := ReferenceInstallerSum()
+	if err != nil || len(sum) != 64 {
+		t.Fatalf("reference installer sum %q err %v", sum, err)
+	}
+	data, err := ReferenceInstaller()
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	if hex.EncodeToString(digest[:]) != sum {
+		t.Fatal("embedded reference installer drifted from the pinned digest")
 	}
 }
 

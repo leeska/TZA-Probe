@@ -113,6 +113,15 @@ func saveRuntimeRequest(ctx context.Context, tx *sql.Tx, node string, request ru
 	return err
 }
 
+func nodeConfigTx(ctx context.Context, tx *sql.Tx, node string) (model.Node, error) {
+	var config string
+	if err := tx.QueryRowContext(ctx, "SELECT config FROM nodes WHERE id=?", node).Scan(&config); err != nil {
+		return model.Node{}, err
+	}
+	var n model.Node
+	return n, json.Unmarshal([]byte(config), &n)
+}
+
 func (s *Store) RuntimeChannels(ctx context.Context) ([]runtimepkg.ChannelView, error) {
 	rows, err := s.query(ctx, "SELECT node_id,enrollment,seen_at FROM runtime_channels ORDER BY node_id")
 	if err != nil {
@@ -195,6 +204,9 @@ func (s *Store) createRuntimeRequest(ctx context.Context, node string, input run
 	if err != nil {
 		return runtimepkg.ChannelRequest{}, err
 	}
+	if err := requireRuntimeAllowedTx(ctx, tx, node); err != nil {
+		return runtimepkg.ChannelRequest{}, err
+	}
 	if scope != "" && enrollment.ScopeSHA256 != scope {
 		return runtimepkg.ChannelRequest{}, model.Conflict("节点安装配置已变化，请刷新后重新选择")
 	}
@@ -264,6 +276,9 @@ func (s *Store) ApproveRuntimeRequest(ctx context.Context, node, id string, appr
 		return err
 	}
 	defer tx.Rollback()
+	if err := requireRuntimeAllowedTx(ctx, tx, node); err != nil {
+		return err
+	}
 	request, err := runtimeRequestTx(ctx, tx, node, id)
 	if err != nil {
 		return err
@@ -362,6 +377,13 @@ func (s *Store) RuntimeExchange(ctx context.Context, node string, report runtime
 		if err := saveRuntimeRequest(ctx, tx, node, request); err != nil {
 			return reply, err
 		}
+	}
+	config, err := nodeConfigTx(ctx, tx, node)
+	if err != nil {
+		return reply, err
+	}
+	if config.RuntimeInstallDisabled {
+		return reply, tx.Commit()
 	}
 	var raw string
 	err = tx.QueryRowContext(ctx, `SELECT payload FROM runtime_requests WHERE node_id=? AND state IN ('requested','approved','running')`, node).Scan(&raw)

@@ -76,6 +76,9 @@ func (s *Store) CreateExecutorAction(ctx context.Context, node string, action ip
 }
 
 func createExecutorActionTx(ctx context.Context, tx *sql.Tx, node string, action ipsentinel.ExecutorAction, now time.Time) error {
+	if err := requireRuntimeAllowedTx(ctx, tx, node); err != nil {
+		return err
+	}
 	held, err := runtimeMaintenanceTx(ctx, tx, node)
 	if err != nil {
 		return err
@@ -247,6 +250,13 @@ func (s *Store) LeaseExecutorAction(ctx context.Context, node string, hello ipse
 		return ipsentinel.ExecutorAction{}, err
 	}
 	defer tx.Rollback()
+	config, err := nodeConfigTx(ctx, tx, node)
+	if err != nil {
+		return ipsentinel.ExecutorAction{}, err
+	}
+	if config.RuntimeInstallDisabled {
+		return ipsentinel.ExecutorAction{}, nil
+	}
 	binding, persisted, paused, err := executorBindingTx(ctx, tx, node)
 	if err != nil {
 		return ipsentinel.ExecutorAction{}, err

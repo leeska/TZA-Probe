@@ -216,6 +216,8 @@ func (a *API) Handler() http.Handler {
 		}
 		w.WriteHeader(204)
 	}))
+	// 接入命令的本机配置步骤：用节点 token 换一次握手身份与 CC 地址（见 install.go）。
+	mux.HandleFunc("POST /api/v1/install/identity", a.installIdentity)
 	mux.HandleFunc("POST /api/v1/agent/heartbeat", a.agent(func(w http.ResponseWriter, r *http.Request, id string) {
 		var body model.Heartbeat
 		if !decode(w, r, &body) {
@@ -330,6 +332,40 @@ func (a *API) Handler() http.Handler {
 		} else if err != nil {
 			slog.Warn("agent download failed", "arch", arch, "error", err)
 		}
+	})
+	// IPSentinel 参考安装器：内容固定、摘要与 executorruntime 的常量一致，
+	// 安装脚本下载后核对摘要再钉到固定路径。
+	mux.HandleFunc("GET /dl/ipsentinel-install-runtime.py", func(w http.ResponseWriter, r *http.Request) {
+		data, err := agentdist.ReferenceInstaller()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/x-python; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(data)
+	})
+	mux.HandleFunc("GET /dl/ipsentinel-install-runtime.py.sha256", func(w http.ResponseWriter, r *http.Request) {
+		sum, err := agentdist.ReferenceInstallerSum()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		io.WriteString(w, sum+"  "+agentdist.ReferenceInstallerName+"\n")
+	})
+	// CC 运行制品签名公钥：安装脚本钉在节点上，节点只信任它验过签名的运行组件。
+	// 公钥不是秘密；没有配置 CC 时 404，安装脚本跳过插件组件并提示。
+	mux.HandleFunc("GET /dl/runtime-cc-keys", func(w http.ResponseWriter, r *http.Request) {
+		keys := a.Market.PublicKeysFile()
+		if keys == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write([]byte(keys))
 	})
 	// 已安装主题包的静态文件（样式表、图片、字体）；类型白名单与 nosniff 见 theme.Store.ServeHTTP。
 	mux.Handle("GET /themes/{id}/{file...}", a.Themes)
