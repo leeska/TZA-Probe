@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -113,6 +114,43 @@ func TestReferenceInstallerMatchesPinnedDigest(t *testing.T) {
 	digest := sha256.Sum256(data)
 	if hex.EncodeToString(digest[:]) != sum {
 		t.Fatal("embedded reference installer drifted from the pinned digest")
+	}
+}
+
+func TestPluginIdentityValidationInPOSIXShell(t *testing.T) {
+	var validation string
+	for _, line := range strings.Split(string(Script()), "\n") {
+		if strings.Contains(line, `case "$CONTROLLER$NODE_UUID"`) {
+			validation = line
+		}
+	}
+	if validation == "" {
+		t.Fatal("missing identity validation")
+	}
+	code := "validate() {\nCONTROLLER=$1\nNODE_UUID=$2\n" + validation + "\n}\nvalidate \"$1\" \"$2\"\n"
+	uuid := "6dde5812-2f47-4a40-90ce-755ca38b50c3"
+	for _, shell := range []string{"sh", "dash"} {
+		binary, err := exec.LookPath(shell)
+		if err != nil {
+			continue
+		}
+		t.Run(shell, func(t *testing.T) {
+			for _, test := range []struct {
+				name, value string
+				valid       bool
+			}{
+				{"uuid", uuid, true},
+				{"metacharacter", uuid + ";", false},
+				{"whitespace", uuid + " ", false},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					output, err := exec.Command(binary, "-c", code, "validate", uuid, test.value).CombinedOutput()
+					if (err == nil) != test.valid {
+						t.Fatalf("valid=%v err=%v output=%s", test.valid, err, output)
+					}
+				})
+			}
+		})
 	}
 }
 

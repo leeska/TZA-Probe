@@ -199,7 +199,7 @@ provision_plugin() {
   NODE_UUID=$(json_str "$(cat "$TMP/identity")" node_id)
   CC_URL=$(json_str "$(cat "$TMP/identity")" cc_url)
   PROBE_VERSION=$(json_str "$(cat "$TMP/identity")" probe_version)
-  case "$CONTROLLER$NODE_UUID" in *[^0-9a-zA-Z-]*) echo "节点握手身份格式不正确" >&2; return 1 ;; esac
+  case "$CONTROLLER$NODE_UUID" in *[!0-9a-zA-Z-]*) echo "节点握手身份格式不正确" >&2; return 1 ;; esac
   [ ${#CONTROLLER} -ge 32 ] && [ ${#NODE_UUID} -ge 32 ] || { echo "节点握手身份不完整" >&2; return 1; }
   case "$CC_URL" in https://*|http://127.0.0.1*|http://localhost*) ;; *) echo "主控提供的 CC 地址不可用，插件组件未启用" >&2; return 1 ;; esac
   case "$CC_URL" in *[!A-Za-z0-9.:/_~%\[\]-]*) echo "主控提供的 CC 地址格式不正确" >&2; return 1 ;; esac
