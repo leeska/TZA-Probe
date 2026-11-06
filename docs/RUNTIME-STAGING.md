@@ -133,25 +133,52 @@ HTTP 仅为 literal loopback 测试地址开放；任意非 loopback CC 必须�
 
 UID/GID 必须是本机实际授权的普通 Agent 身份，并有 Socket 路径访问权限；不能直接照抄示例数值。安装程序固定在 root 所有且其他用户不可写的 `/usr/local/libexec/tza/tza-runtime-installer`。root 安装器以这个身份启动该受限可执行文件的 `--runtime-peer` 子进程，清除附加组，只允许 hello 与 fenced pause。子进程不读取中控凭据、安装配置或签名密钥。为此专用安装 unit 需要 `CAP_SETUID` / `CAP_SETGID`；普通 Agent 不增加 root 能力。不配置 peer 时原有 stage/install/select 仍可用，drain/activate 会拒绝生成计划。
 
-保留 `PrivateDevices`、`RestrictAddressFamilies`、`RestrictSUIDSGID` 和 `RestrictRealtime`。Free2 的实际 systemd 沙箱中，仅配置 capability bounding set 时 `CAP_SETUID` 会从有效集合消失；为专用 root 安装器增加 `AmbientCapabilities=CAP_SETUID CAP_SETGID`，使启动受限 peer 前可以降权。切换到非 root UID 后这两项能力必须清空，peer 入口会拒绝有效/许可/ambient capability 非零或仍持有附加组的进程。普通 Agent 和浏览器 worker 不增加这些能力。安装二进制和父目录需 root 所有、普通 peer 可遍历执行（目录/二进制 0755），不能将父目录设为 0700。
+保留 `PrivateDevices`、`RestrictAddressFamilies`、`RestrictSUIDSGID` 和 `RestrictRealtime`。Free2 的实际 systemd 沙箱中，仅配置 capability bounding set 时 `CAP_SETUID` 会从有效集合消失；为专用 root 安装器增加 `AmbientCapabilities=CAP_SETUID CAP_SETGID CAP_KILL`，使启动受限 peer 前可以降权，并能在超时或退出时终止自己创建的降权子进程。`CAP_KILL` 不用于通用进程控制；它是 Linux capability，并不由内核限制为只能向自己的子进程发信号。切换到非 root UID 后上述能力必须清空，peer 入口会拒绝有效/许可/ambient capability 非零或仍持有附加组的进程。普通 Agent 和浏览器 worker 不增加这些能力。安装二进制和父目录需 root 所有、普通 peer 可遍历执行（目录/二进制 0755），不能将父目录设为 0700。
 
 进程中断后仍复用持久执行标记与回执：没有已提交的终态回执就报告 `unknown`，不会再启动/停止一次服务。管理员应核对服务、`current`、`selection.json`、本机 journal 和数据库，再决定新的显式请求；不要删除执行标记来让旧请求重新执行。
 
 #### 2026-11-06 升级编排验证
 
-本轮本地 Go 全量 **697 项 / 26 包**、竞态测试和 `go vet ./...` 通过，完整 `pipeline.sh check` 通过，含 runtime UI 回归；流水线 SHA `2fdc830` 是运行时 HEAD，不代表本轮后续改动已包含在该提交。测试覆盖持久维护暂停、撤销后仍暂停、配置/身份变化、活动任务或未 ACK journal 阻止停止、启动失败、旧 epoch、实例更换、journal 回退、缺少隔离能力、启动后意外恢复及检查点篡改。HTTP/存储通道验证完整计划、幂等回执、明确新 epoch 授权以及绑定后仍暂停；新的运行时操作不能复用更早的启动验收来解除维护。Agent 补充启动终态回执丢失只重传、重启执行标记转 unknown 而不再次启动服务的测试。`stage/install/select` 旧通道回归保留。
+前一阶段本地 Go 全量、竞态测试和 `go vet ./...` 通过，完整 `pipeline.sh check` 通过，含 runtime UI 回归；该阶段流水线 SHA `2fdc830` 是运行时 HEAD，不代表后续改动已包含在该提交。测试覆盖持久维护暂停、撤销后仍暂停、配置/身份变化、活动任务或未 ACK journal 阻止停止、启动失败、旧 epoch、实例更换、journal 回退、缺少隔离能力、启动后意外恢复及检查点篡改。HTTP/存储通道验证完整计划、幂等回执、明确新 epoch 授权以及绑定后仍暂停；新的运行时操作不能复用更早的启动验收来解除维护。Agent 补充启动终态回执丢失只重传、重启执行标记转 unknown 而不再次启动服务的测试。`stage/install/select` 旧通道回归保留。
 
-Free2 在与最终专用安装服务一致的 NNP、capability bounding/ambient、只读系统、私有 tmp/设备、受限地址族、SUID/实时限制与有限写路径中通过目标测试。真实编译 Agent 子进程以 UID/GID 65534 且无附加组连接本机测试 UDS；内核 SO_PEERCRED 确认 UID，root peer 被拒绝，入口检查有效/许可/ambient capability 为零。临时 IPSentinel 名称的 sleep 服务实际完成定义核对、启动/active、停止/inactive；`systemd-analyze verify` 通过。状态机的发行、hello 与执行能力仍是受控 fixture，不是 Free2 上真实 Chromium 或候选升级验收；当前候选宿主库不匹配的结论未改变。
+Free2 在与最终专用安装服务一致的 NNP、capability bounding/ambient、只读系统、私有 tmp/设备、受限地址族、SUID/实时限制与有限写路径中通过目标测试。真实编译 Agent 子进程以 UID/GID 65534 且无附加组连接本机测试 UDS；内核 SO_PEERCRED 确认 UID，root peer 被拒绝，入口检查有效/许可/ambient capability 为零。临时 IPSentinel 名称的 sleep 服务实际完成定义核对、启动/active、停止/inactive；`systemd-analyze verify` 通过。状态机的发行、hello 与执行能力仍是受控 fixture，不是 Free2 上真实 Chromium 或候选升级验收；该机与当前候选宿主库不匹配，真实候选改在兼容的 Debian 13 Free 上验证。
 
 本地真实后台使用上述测试创建的一致 SQLite 快照核对维护提示、通道过期禁用、启动回执预填新 epoch/descriptor、保存重新授权后清除维护提示但等待新的 Agent 同步。390px 页面无横向溢出，授权弹窗截图已核对。为检查成功提交，本机 QA 数据库只刷新通道/回执时间，不改变已通过测试的计划与回执；没有调用生产 API。证据在 `/tmp/tza-lifecycle-20261106/`，Free2 的 `evidence/free2/` 包含最终测试与 unit 校验日志；远端临时 unit、专用 helper 和测试目录清理后，原 Agent 状态保持 inactive。
 
-本轮不修改 IPSentinel 权威协议，不部署 bero/netcup，不发布 fixture 或测试签名。下一验收是匹配宿主库的真实候选在兼容测试 VPS 上完整走通排空、选版、Chromium 启动检查、新 epoch 授权、重新同步、单独恢复和兼容回退，再决定 CC 正式发布。
+#### 2026-11-06 Debian 13 真实升级与回退验收
+
+`TestRuntimeUpgradeRollbackWithRealChromiumLinux` 在兼容的 Debian 13 Free 测试 VPS 上完整通过，用时 **471.95 秒**，测试进程正常退出 `0/SUCCESS`。它使用一次性真实 HTTP 主控、实际普通 Agent、真实 IPSentinel systemd 服务、非 root UDS peer 和实际 Chromium；不是生产 CC 发布或生产节点部署。测试只在显式设置 `TZA_RUNTIME_UPGRADE_LINUX_INPUT` 时运行，并要求独立的 QA unit、安装根和状态目录。
+
+验收中的三次外网 Cloudflare trace 导航均为 HTTP 200、`outcome=normal`，前后出口 IP 匹配：
+
+| 阶段 | Runtime | epoch | Chromium run_id |
+| --- | --- | --- | --- |
+| 基线 | 0.4.0 | 4 | `5c143fae-c5cf-4cde-acb4-1e858fbf5044` |
+| 升级后 | 0.4.1 | 5 | `dd656b7b-f481-43ba-993f-d0e16dd42e00` |
+| 回退后 | 0.4.0 | 6 | `dc1917f6-2eba-493a-ade2-48966032aad2` |
+
+三次结果均为 `hard_limits_verified=true`、`cleanup=complete`、`oom_kill_count=0`。网络计量仍是 `host_interface`，`network_isolation_verified=false`；这不能声称通过了独立网络命名空间隔离验收。普通 Agent 的实际 UID/GID 均为 65534、无附加组，有效/许可/ambient capability 均为零。专用安装服务定义的 `systemd-analyze verify` 通过。
+
+升级和回退都完整经过排空、选版、启动为暂停态、新 epoch 显式重授权、普通 Agent 重新同步和单独恢复。旧 epoch 重绑被拒绝，不能复用旧启动回执解除维护。配置指纹不变，预算连续累计为 3 次运行、9 次导航，journal 的最新序号和 ACK 均为 25，三条浏览器终态记录都保留；停服后保存的原生 SQLite 副本通过 `integrity_check`。测试阶段固定执行 7 次批准的 helper 操作，每次故意丢失已提交的终态 HTTP 回执，重传均没有重复执行 helper。
+
+首轮虽完成上述功能断言，但因缺少 `CAP_KILL` 无法终止自身创建的降权 Agent，未正常退出，不计作完整通过；本轮补齐专用安装服务的该能力，并让测试在退出前明确等待 Agent 清理。排查时还发现一次误用 macOS Agent 构建导致的 hello 超时，因此增加 Agent/helper 可执行预检、QA harness 的 Linux amd64 ELF 预检，以及 hello 失败时保存最后观测和错误。最终通过的是显式 `GOOS=linux GOARCH=amd64` 构建后的完整重跑。
+
+两个候选均由 **测试密钥 `tza-upgrade-qa-only`** 签名。`0.4.1` 仅为升级测试 fixture，不是正式发布版；验收的 Probe/Agent 构建注入 `1.9.2` 仅用于测试兼容边界，不代表该正式版本已经发布，不能照搬为生产版本声明。候选归档 SHA-256：
+
+- `0.4.0`：`3b2baac8e43dcf120972f9880f6af7f959e7c694f1db5c88f4f0fc8696978795`
+- `0.4.1`：`01e4c29d105871a9506559a85717ee8fc6b72820becc22ee0c277aec8719b100`
+
+最新本地 Go 回归为 **663 项通过、43 项按平台或显式开关跳过，26 包**；`go test -race ./...`、`go vet ./...` 和完整 `pipeline.sh check` 均通过，含 runtime UI 与一次性主控 DOM 回归。可选 character-pack selftest 因本机缺少 Pillow/numpy 跳过，不计作通过。流水线 SHA `2b9fd10` 仅为当时 HEAD，本轮验收修正尚未提交。
+
+完整证据保留在本机 `/tmp/tza-upgrade-live-20261106/final/`，含 `verified-summary.json`、三次运行与操作回执、原生数据库副本、进程身份、unit 校验、构建摘要、前后服务状态和清理结果。远端证据归档下载后已核对 SHA-256。远端 QA unit、harness、helper、Socket、cgroup、进程、安装根和状态目录均已清理；原有 `tza-agent.service` 与 `ipsentinel-observe@free-v4.timer` 前后状态均为 active，未对它们执行停启操作。
+
+本轮不修改 IPSentinel 权威协议，不部署 bero/netcup，不发布 fixture 或测试签名。正式上线前仍需固定 CC 对 Probe 的可复现版本依赖、核对正式版本与签名制品，并单独完成资产、备份和回滚检查。
 
 ### Agent 安装通道配置
 
 `runtime_install` 仅由 `tza-agent --runtime-installer` 显式启用；普通 Agent 即使读取到该配置，也不启动安装通道。安装进程不采集指标、不运行 TCP/Route/Unlock、不处理 Agent 自更新；只在批准 drain/activate 后通过受限普通用户子进程访问本机 Socket，或调用固定的参考验证器及 systemctl。使用独立 `deploy/tza-runtime-installer.service`，沿用该节点的 Agent token；普通 `tza-agent.service` 的沙箱和行为保持原样。
 
-专用服务以 root 运行，保留 `ProtectSystem=strict`、`ProtectHome=true`、`PrivateTmp=true` 和 `NoNewPrivileges=true`，仅开放声明的暂存、安装及 IPSentinel 状态目录写入，能力限制为 CHOWN/DAC_OVERRIDE/FOWNER。管理员须事先准备配置、公钥、固定 helper、root 所有的安装根和专用普通用户拥有的状态目录，并用 `systemd-analyze verify` 核对单元。自定义安装路径需要相应调整这份专用单元的 `ReadWritePaths`，不能通过放宽普通 Agent 的沙箱完成安装。
+专用服务以 root 运行，保留 `ProtectSystem=strict`、`ProtectHome=true`、`PrivateTmp=true` 和 `NoNewPrivileges=true`，仅开放声明的暂存、安装及 IPSentinel 状态目录写入，能力限制为 CHOWN/DAC_OVERRIDE/FOWNER/SETUID/SETGID/KILL；SETUID/SETGID 用于启动降权子进程，KILL 用于清理自己创建的降权子进程，按前述 ambient 规则配置。管理员须事先准备配置、公钥、固定 helper、root 所有的安装根和专用普通用户拥有的状态目录，并用 `systemd-analyze verify` 核对单元。自定义安装路径需要相应调整这份专用单元的 `ReadWritePaths`，不能通过放宽普通 Agent 的沙箱完成安装。
 
 本机配置示例中的路径均为运维者提前审核的配置，不接受后台指定任意安装路径、脚本或 unit：
 
