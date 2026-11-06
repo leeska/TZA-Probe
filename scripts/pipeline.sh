@@ -163,6 +163,7 @@ check_ui_smoke() {
   fi
   TZA_UI_DEPS="$deps" "$JS" scripts/market-permissions-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/node-plugins-test.mjs || { FAILED=1; return; }
+  TZA_UI_DEPS="$deps" "$JS" scripts/ip-guard-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/home-network-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/node-identity-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/remaining-value-test.mjs || { FAILED=1; return; }

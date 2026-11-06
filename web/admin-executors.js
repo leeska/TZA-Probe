@@ -128,7 +128,7 @@ async function showActions(view) {
   });
 }
 
-async function showRecords(nodeID) {
+export async function showRecords(nodeID) {
   const dialog = modal("执行器历史记录", '<p aria-live="polite">正在读取持久记录…</p>');
   let after = 0;
   const load = async () => {
@@ -157,7 +157,7 @@ export async function renderExecutors(nodesPromise = loadNodes(), root = documen
   if (!root) return;
   const [views] = await Promise.all([api("/admin/executors"), nodesPromise]);
   if (!root.isConnected) return;
-  root.innerHTML = `<section class="page-heading"><div><h2>节点设置与运行状态</h2><p>在此管理 IPSentinel 的安装、接入授权、配置、日程和历史。</p></div><div class="heading-actions"><button id="executor-refresh">刷新状态</button><button class="primary" id="executor-bind">授权节点接入</button></div></section><section class="panel" data-runtime-channels><p>正在读取安装通道…</p></section><div class="executor-list"><section class="panel"><p>只读绑定保留 VPS 本机调度；只有本机切换到 managed、能力和健康检查通过时才开放托管操作。所有命令异步确认，不启动本地浏览器。</p></section>${views.length ? views.map((view, index) => {
+  root.innerHTML = `<section class="page-heading"><div><h2>节点设置与运行状态</h2><p>初次接入、权限核对和维护使用此页；日常检测与拉回请回到防护页面。</p></div><div class="heading-actions"><button id="executor-refresh">刷新状态</button><button id="executor-bind">授权节点接入</button></div></section><details class="panel" data-guard-installation><summary>节点安装与更新</summary><section data-runtime-channels><p>正在读取安装通道…</p></section></details><details class="panel"><summary>接入模式说明</summary><p>只读绑定保留 VPS 本机调度；只有本机切换到 managed、能力和健康检查通过时才开放托管操作。所有命令异步确认，不启动本地浏览器。</p></details><div class="executor-list">${views.length ? views.map((view, index) => {
     const node = state.nodes.find(node => node.id === view.node_id);
     const snapshot = view.hello?.status;
     return `<section class="panel"><div class="page-heading"><h2>${esc(node?.name || view.node_id)}</h2><span class="pill">${node?.online ? "节点在线" : "节点离线 / 未上报"}</span></div><p data-executor-freshness data-received="${view.received_at}"></p><p>控制面最后健康状态：${esc({ready:"就绪",degraded:"降级",unavailable:"不可用"}[snapshot?.health] || "等待上报")} · 执行能力：${snapshot?.control.mode==="managed"&&view.hello.features.includes("run")?"已上报，等待准入":"未开放"}</p><p>本机模式：${esc(snapshot?.control.mode || "等待上报")} · ${snapshot?.control.paused ? `已暂停（${esc(snapshot.control.pause_reason)}）` : snapshot ? "未暂停" : "暂停状态未知"}</p><p>已持久保存至记录 #${view.through_seq} · 最后同步：${view.received_at ? esc(new Date(view.received_at * 1000).toLocaleString()) : "尚未收到"}</p>${snapshot?.assessments.length ? snapshot.assessments.map(assessment => `<p><strong>${esc(assessment.service_id)}</strong>：<span data-executor-evidence data-state="${esc(assessment.state)}" data-signal="${esc(assessment.signal_kind)}" data-until="${esc(assessment.valid_until || "")}" data-received="${view.received_at}">${esc(evidenceText(assessment, view.received_at))}</span></p>`).join("") : "<p>服务证据未知，等待有效观测。</p>"}<details><summary>安装身份</summary><p>实例：${esc(view.binding.executor_instance_id)}</p><p>epoch：${view.binding.epoch} · 暂停代次：${snapshot?.control.pause_generation ?? "未知"}</p><p>配置修订：${snapshot?.config?.revision ?? "未应用"} · 预算：${snapshot?.budget?`${snapshot.budget.used_runs}/${snapshot.budget.limits.runs} 次`:"未知"}</p></details><div class="heading-actions"><button data-records="${index}">查看历史</button><button data-bind="${index}">核对并重新授权</button></div><div class="heading-actions" data-managed="${index}"></div></section>`;

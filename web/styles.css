@@ -5535,7 +5535,90 @@ dialog.theme-settings-dialog { width: min(920px, calc(100vw - 32px)); max-width:
   min-width: 0;
 }
 
+[data-node-plugin-detail] h1 small {
+  display: inline-block;
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+.ip-guard-intro {
+  padding: 8px 0 12px;
+  max-width: 860px;
+}
+
+.ip-guard-intro h2 {
+  font-size: 21px;
+  line-height: 1.4;
+  margin: 0 0 10px;
+}
+
+.ip-guard-intro p {
+  color: var(--muted);
+  line-height: 1.8;
+  max-width: 65ch;
+}
+
+.ip-guard-workspace {
+  max-width: 980px;
+}
+
+.ip-guard-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.ip-guard-picker label,
+.ip-guard-picker select {
+  min-width: 0;
+  width: 100%;
+}
+
+.ip-guard-reading {
+  border-left: 3px solid var(--line);
+  padding: 8px 0 8px 18px;
+  margin: 24px 0;
+  overflow-wrap: anywhere;
+}
+
+.ip-guard-reading span,
+.ip-guard-reading p {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.ip-guard-reading strong {
+  display: block;
+  font-size: 22px;
+  line-height: 1.5;
+  margin: 6px 0;
+}
+
+.ip-guard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ip-guard-versions {
+  margin-bottom: 20px;
+}
+
+.ip-guard-versions summary {
+  cursor: pointer;
+}
+
 @media (max-width: 540px) {
+  .ip-guard-picker {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .ip-guard-actions button {
+    flex: 1 1 100%;
+  }
+  .ip-guard-intro h2 {
+    font-size: 21px;
+  }
   .executor-slot-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;

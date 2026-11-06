@@ -136,7 +136,8 @@ function catalogHTML(scope) {
 
 function card(it) {
   if (it.type === "executor") {
-    return `<button type="button" class="market-card is-plugin" data-package="${esc(it.id)}"><span class="plugin-glyph" aria-hidden="true">节点</span><span class="market-card-body"><span class="market-card-kind">节点插件 · 安装到所选节点</span><span class="market-card-title"><b>${esc(it.name)}</b></span><small>${esc(it.summary || "按需下载运行依赖，独立隔离运行")}</small><span class="market-card-meta">${esc(it.latest ? "v" + it.latest : "暂无版本")}</span><span class="market-card-footer"><strong>免费</strong><span>查看详情 →</span></span></span></button>`;
+    const official = it.id === "ipsentinel-runtime";
+    return `<button type="button" class="market-card is-plugin" data-package="${esc(it.id)}"><span class="plugin-glyph" aria-hidden="true">节点</span><span class="market-card-body"><span class="market-card-kind">节点插件 · 安装到所选节点</span><span class="market-card-title"><b>${esc(official ? "IP 地区防护 · IPSentinel" : it.name)}</b></span><small>${esc(official ? "防送中检测、目标地区拉回尝试与干净复测。默认关闭，按需安装。" : it.summary || "按需下载运行依赖，独立隔离运行")}</small><span class="market-card-meta">${esc(it.latest ? "v" + it.latest : "暂无版本")}</span><span class="market-card-footer"><strong>免费</strong><span>查看详情 →</span></span></span></button>`;
   }
   // 没有封面或封面取不到（.broken）时露出三格色样，附加包没有色样就写类型。
   const fallback = it.type === "plugin" ? glyph(it.kind) : it.swatch?.length ? swatch(it.swatch) : `<span class="muted">${typeName(it.type)}</span>`;

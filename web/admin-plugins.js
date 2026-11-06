@@ -24,7 +24,7 @@ export async function renderPlugins(nodesReady) {
     const pkg = await api("/admin/market/packages/ipsentinel-runtime").catch(() => ({
       id: "ipsentinel-runtime", type: "executor", name: "IPSentinel",
     }));
-    await openNodePluginDetail(pkg, { settings: true, trusted: Boolean(marketStatus().trusted_keys), back: () => renderPlugins() });
+    await openNodePluginDetail(pkg, { trusted: Boolean(marketStatus().trusted_keys), back: () => renderPlugins() });
   }));
 }
 
@@ -33,7 +33,7 @@ async function nodePluginsPanel() {
     const [bindings, channels] = await Promise.all([api("/admin/executors"), api("/admin/runtime")]);
     const requests = channels.flatMap(channel => channel.requests || []);
     if (!bindings.length && !requests.length) return "";
-    return `<section class="panel theme-panel"><div class="panel-head"><h3>节点插件</h3></div><div class="theme-row"><span class="plugin-glyph" aria-hidden="true">节点</span><span class="theme-copy"><b>IPSentinel</b><small>${bindings.length} 个节点接入记录 · ${requests.length} 条安装记录<br>具体安装版本、授权与运行状态请查看设置。</small></span><button data-node-plugin-settings>详情与设置</button></div></section>`;
+    return `<section class="panel theme-panel"><div class="panel-head"><h3>节点插件</h3></div><div class="theme-row"><span class="plugin-glyph" aria-hidden="true">节点</span><span class="theme-copy"><b>IP 地区防护 · IPSentinel</b><small>防送中检测、拉回尝试与干净复测<br>${bindings.length} 个节点接入记录 · ${requests.length} 条安装记录</small></span><button data-node-plugin-settings>查看防护</button></div></section>`;
   } catch {
     return '<section class="panel"><p role="status">节点插件记录加载失败，请刷新重试；主控插件仍可管理。</p></section>';
   }
