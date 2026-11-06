@@ -1,7 +1,7 @@
 import { api, send, toast, guard, esc } from "./api.js";
 import { state, content, confirmAction } from "./admin-state.js";
 import { openNodePluginDetail } from "./admin-node-plugin-detail.js";
-import { catalogPanel, confirmPlugin, glyph, kindName, loadMarket, marketPill, pager, pluginToast, sourceBits, subTabs, wireMarket } from "./admin-market.js";
+import { catalogPanel, confirmPlugin, glyph, kindName, loadMarket, marketPill, marketStatus, pager, pluginToast, sourceBits, subTabs, wireMarket } from "./admin-market.js";
 const PLUGIN_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/PLUGINS.md";
 // 插件：声明式的通知渠道与探测目标集。分两个子页：已安装（本地上传、删除、市场装的有更新时提示）
 // 与市场。插件只含配置与模板，由 Probe 解释执行，装之前先列出它能做的事请管理员确认。
@@ -20,9 +20,12 @@ export async function renderPlugins(nodesReady) {
   );
   wireMarket();
   if (view === "installed") wireInstalled();
-  content().querySelector("[data-node-plugin-settings]")?.addEventListener("click", guard(() => openNodePluginDetail({
-    id: "ipsentinel-runtime", type: "executor", name: "IPSentinel",
-  }, { settings: true, trusted: false, back: () => renderPlugins() })));
+  content().querySelector("[data-node-plugin-settings]")?.addEventListener("click", guard(async () => {
+    const pkg = await api("/admin/market/packages/ipsentinel-runtime").catch(() => ({
+      id: "ipsentinel-runtime", type: "executor", name: "IPSentinel",
+    }));
+    await openNodePluginDetail(pkg, { settings: true, trusted: Boolean(marketStatus().trusted_keys), back: () => renderPlugins() });
+  }));
 }
 
 async function nodePluginsPanel() {

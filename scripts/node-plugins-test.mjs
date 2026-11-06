@@ -8,7 +8,7 @@ const { JSDOM } = require("jsdom");
 const { build } = require("esbuild");
 const root = fileURLToPath(new URL("../", import.meta.url));
 const bundle = await build({
-  stdin: { contents: 'export * from "./web/admin-market.js"; export * from "./web/admin-node-plugins.js"; export { state } from "./web/admin-state.js";', resolveDir: root },
+  stdin: { contents: 'export * from "./web/admin-market.js"; export * from "./web/admin-node-plugins.js"; export { renderPlugins } from "./web/admin-plugins.js"; export { state } from "./web/admin-state.js";', resolveDir: root },
   bundle: true, format: "iife", globalName: "nodeUI", write: false,
 });
 const dom = new JSDOM('<main id="admin-content"></main><dialog id="dialog"></dialog><div id="toast"></div>', { url: "http://127.0.0.1/admin", runScripts: "outside-only" });
@@ -28,6 +28,7 @@ const pkg = { id: "ipsentinel-runtime", type: "executor", kind: "ipsentinel", na
 const reads = [];
 const writes = [];
 let failSecond = true;
+let marketOffline = false;
 window.fetch = async (url, options = {}) => {
   if (options.method) {
     assert.equal(url, "/api/v1/admin/market/node-plans");
@@ -37,8 +38,10 @@ window.fetch = async (url, options = {}) => {
     return new Response(JSON.stringify({ id: "request-" + body.node_id }), { status: 202 });
   }
   reads.push(url);
+  if (marketOffline && url.startsWith("/api/v1/admin/market/")) return new Response("{}", { status: 503 });
   let body;
   if (url === "/api/v1/admin/nodes") body = nodes;
+  else if (url === "/api/v1/admin/plugins") body = [];
   else if (url === "/api/v1/admin/runtime") body = channels;
   else if (url === "/api/v1/admin/executors") body = [];
   else if (url === "/api/v1/admin/market/status") body = { configured: true, trusted_keys: 1 };
@@ -101,5 +104,18 @@ const staleForm = window.document.querySelector("[data-node-plugin-form]");
 staleForm.querySelector('input[value="0"]').checked = true;
 await staleForm.onsubmit({ preventDefault() {} });
 assert.equal(writes.length, 3, "submit must recheck freshness after the dialog opens");
+marketOffline = true;
+await ui.renderPlugins();
+assert(content.querySelector("[data-node-plugin-settings]"), "local records must remain accessible when CC is offline");
+content.querySelector("[data-node-plugin-settings]").click();
+await new Promise(resolve => setTimeout(resolve, 20));
+assert(content.querySelector("[data-executor-settings]"));
+marketOffline = false;
+await ui.renderPlugins();
+content.querySelector("[data-node-plugin-settings]").click();
+await new Promise(resolve => setTimeout(resolve, 20));
+await content.querySelector('[data-plugin-section="overview"]').onclick();
+assert(content.querySelector("[data-node-plugin-version]"), "installed entry must also show available market versions");
+assert.equal(writes.length, 3);
 dom.window.close();
 console.log("PASS: node catalog, scoped plans, escaped names, ineligible nodes, approval boundary and partial-failure retry.");
