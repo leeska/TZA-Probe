@@ -22,15 +22,16 @@ import (
 )
 
 type config struct {
-	Endpoint    string          `json:"endpoint"`
-	Token       string          `json:"token"`
-	Interfaces  []string        `json:"interfaces"`
-	Mount       string          `json:"mount"`
-	Nexttrace   string          `json:"nexttrace"`
-	GeoProvider string          `json:"geo_provider"`
-	TraceMethod string          `json:"trace_method"`
-	AllowHTTP   bool            `json:"allow_http"`
-	IPSentinel  *executorConfig `json:"ipsentinel,omitempty"`
+	Endpoint       string                      `json:"endpoint"`
+	Token          string                      `json:"token"`
+	Interfaces     []string                    `json:"interfaces"`
+	Mount          string                      `json:"mount"`
+	Nexttrace      string                      `json:"nexttrace"`
+	GeoProvider    string                      `json:"geo_provider"`
+	TraceMethod    string                      `json:"trace_method"`
+	AllowHTTP      bool                        `json:"allow_http"`
+	IPSentinel     *executorConfig             `json:"ipsentinel,omitempty"`
+	RuntimeInstall *agent.RuntimeInstallConfig `json:"runtime_install,omitempty"`
 }
 
 type executorConfig struct {
@@ -55,6 +56,7 @@ func run() error {
 	version := flag.Bool("version", false, "print version")
 	selfUpdate := flag.Bool("self-update", false, "accept upgrades offered by the Server (needs a service manager that restarts the Agent)")
 	applyUpdate := flag.Bool("apply-update", false, "install an upgrade staged by --self-update, then exit (run before start, with write access to the binary)")
+	runtimeInstaller := flag.Bool("runtime-installer", false, "run only the explicitly provisioned runtime installation channel in a dedicated privileged service")
 	flag.Parse()
 	// 升级公钥由安装脚本放在配置文件旁边；没有它就不接受任何升级。
 	keyPath := filepath.Join(filepath.Dir(*path), agent.KeyFile)
@@ -98,6 +100,21 @@ func run() error {
 	transport, err := agent.NewTransport(cfg.Endpoint, cfg.Token, cfg.AllowHTTP)
 	if err != nil {
 		return err
+	}
+	if *runtimeInstaller {
+		if cfg.RuntimeInstall == nil || *selfUpdate {
+			return errors.New("dedicated runtime installer requires runtime_install config and cannot enable Agent self-updates")
+		}
+		journal := agent.FileRuntimePending{Directory: filepath.Join(cfg.RuntimeInstall.StagingDir, "agent-pending")}
+		local, err := agent.ProvisionRuntime(*cfg.RuntimeInstall, journal)
+		if err != nil {
+			return err
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		installer := agent.RuntimeInstaller{Transport: transport, Worker: local, Enrollment: local.Enrollment, Journal: journal}
+		installer.Run(ctx)
+		return nil
 	}
 	prober := probe.Runner{}
 	if cfg.Nexttrace != "" {

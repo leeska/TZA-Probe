@@ -20,7 +20,7 @@ func migrate(db *sql.DB) (err error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 21 {
+	if version > 22 {
 		return errors.New("database version is newer than this binary")
 	}
 	if version == 0 {
@@ -165,6 +165,12 @@ func migrate(db *sql.DB) (err error) {
 	}
 	if version < 21 {
 		if _, err = db.Exec("BEGIN;" + executorScheduleSchema + "PRAGMA user_version=21; COMMIT;"); err != nil {
+			return err
+		}
+		version = 21
+	}
+	if version < 22 {
+		if _, err = db.Exec("BEGIN;" + runtimeChannelSchema + "PRAGMA user_version=22; COMMIT;"); err != nil {
 			return err
 		}
 	}

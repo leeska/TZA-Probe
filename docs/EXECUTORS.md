@@ -9,7 +9,8 @@
 - Agent 根据中控确认游标调用 `records.ack`；HTTP 失败或确认丢失时不 ACK，下一轮从中控游标重读。
 - 只读模式保留 IPSentinel 本机排期；managed 模式完成本机交接后，仅中控负责周期排期。IPSentinel 负责浏览器、证据资格和服务判读。TZA 不重复实现恢复归约器。
 - 本机模式交接由管理员执行。TZA 不远程 adopt、不下发 Shell、不选择 Socket 路径，也不替本机放宽资源或 Profile 权限。
-- M3 的排期控制面已实现，本机交接与 Linux 端到端运维仍待实机验收。M4 清单审核和签名制品分发接口已实现；真实官方 runtime 上传发布、所选节点安装/升级/回滚尚未完成。托管控制面的本机测试不等于真实 Linux worker、浏览器或生产验收。
+- M3 的排期控制面已实现。M4 清单审核、签名制品分发、节点暂存、独立本机安装/版本选择、Agent 安装通道与后台计划审核已实现，详见 [RUNTIME-STAGING.md](RUNTIME-STAGING.md)。IPSentinel 已交付 `0.4.0` Debian 13 amd64 真实候选；正式 CC 发布与生产安装验收仍需完成。托管控制面的本机测试不等于真实 Linux worker、浏览器或生产验收。
+- 暂存、安装、选择版本、服务启动/启用、本机 adopt 和任务创建分别处理。install/select 只调用管理员独立部署且摘要固定的参考安装器，分别需要节点及操作专属批准；不执行发行包内脚本、不远程 adopt。升级或回退需要停止派发、drain、停止服务和一致性备份；不兼容数据库拒绝直接回退，不覆盖未 ACK journal。
 
 基线为 IPSentinel Executor Contract **1.0.0** / `ipsentinel.executor/1`。权威源为 IPSentinel 仓库 `docs/integration/` 和 `contracts/ipsentinel-executor-v1/`。固定副本位于 `internal/ipsentinel/testdata/contracts/ipsentinel-executor-v1/`，Go 校验器直接嵌入这份 Schema（摘要 `4fc05e95eefa5abd295a7c6d7f1fc7c4e844f9144ca7dd192d5ed5f28c9b9075`）。共享的 Schema、示例、向量共 41 个契约文件都与 `SHA256SUMS` 对照；其中列出的 IPSentinel 文档和 Python 脚本未复制进 TZA。更新协议须先协调权威版本和校验向量。
 
@@ -21,9 +22,9 @@ TZA-CC 新增独立的 `executor` 包类型，既不改变 `plugin.json` 含义�
 
 CC 平台管理员上传原始依赖与 runtime 文件时必须提供清单里的 SHA-256 路径和精确 `Content-Length`。HTTP 端限管理员 session、CSRF、same-origin、每人每小时 30 件以及每件 1 GiB；服务流式写入临时 blob 后逐字节复核 SHA-256/大小，不接受 URL 或脚本。PostgreSQL 中按摘要与大小登记不可变 blob；发布审核会重新读取所有依赖、计算摘要并验证官方管理员持有免费 `ipsentinel-runtime` 包，任一依赖缺失或改写即阻止发布。下载端核对已发布归档的签名记录与归档摘要，并验证每个对象的摘要/大小；清单通过 CC Ed25519 签名，节点侧在安装前仍须独立用固定信任密钥验签。仅对已发布、未隐藏版本中清单列出的摘要提供字节；撤回后停止访问。市场目录只展示 `ipsentinel-runtime`，Probe 的普通主题/插件安装器会拒绝运行时包。
 
-当前制品 API 是官方运行文件分发，不是节点安装协议。独立本机工具 `cmd/executor-runtime` 已增加所选节点的签名审核、精确批准、制品暂存和回执复核，详见 [runtime 暂存流程](RUNTIME-STAGING.md)。暂存状态明确为 `staged`、`activated: false`，不代表已安装或可执行。
+当前制品 API 是官方运行文件分发，不是节点安装协议。独立本机工具 `cmd/executor-runtime` 已增加所选节点的签名审核、精确批准、制品暂存、安装和版本选择，详见 [runtime 本机流程](RUNTIME-STAGING.md)。暂存状态为 `staged`，安装为 `installed`，选择为 `selected`；这些回执均保持 `activated: false`，不代表已经启动服务或可执行任务。
 
-它不执行安装、不授予 executor 权限、不把浏览器放进普通 Agent，也不做运行时升级 drain、数据库迁移、epoch 切换或失败回滚。Probe 会隐藏此包，不会让管理员误把它当作主题/插件安装。节点自动安装、中控安装授权通道、升级/回滚安装器、后台制品上传 UI、安装状态与视觉审核属于尚未完成部分；不要在未验收前用通用 `curl` 或通用包安装入口安装生产节点。
+本机安装不授予中控 executor 权限，也不把浏览器放进普通 Agent。版本选择要求已停止服务并排空任务，备份后才切换；兼容旧版本可使用同一选择流程回退，不自动恢复旧数据库或在失败后重启旧版。运行时启动负责 fingerprint/epoch 更新；改变 epoch 后仍需重新授权。Probe 的普通市场会隐藏此包。升级 drain 的跨组件编排、服务启动/健康后自动交接及后台制品上传 UI 仍未完成；不要在未验收前用通用 `curl` 或通用包安装入口安装生产节点。
 
 ## 接入顺序
 
@@ -77,7 +78,7 @@ CC 平台管理员上传原始依赖与 runtime 文件时必须提供清单里�
 
 这些数据不进入公开面板 API，也不透传给主题桥接。管理员写接口沿用同源检查；Agent 不能用自己的 key 授权绑定。
 
-SQLite schema **21** 包含同步表、`executor_actions`、不可变配置快照、`executor_schedules` 和 `executor_slots`。19→20 会取消旧实现中没有身份及租约令牌的待处理命令，管理员需重新核对并创建；旧记录保留。20→21 只增加排期表，不自动创建或启用日程。按节点、实例、seq 去重，同时约束 record_id；同序号不同内容、同 ID 不同序号、断号、身份不符均拒绝并回滚。当前不自动清理记录、命令、时段与配置表；大规模部署前还需补充中央归档与磁盘配额策略，当前阶段应单节点验收。
+SQLite schema **22** 包含同步表、`executor_actions`、不可变配置快照、`executor_schedules`、`executor_slots` 和 runtime 安装通道。19→20 会取消旧实现中没有身份及租约令牌的待处理命令，管理员需重新核对并创建；旧记录保留。20→21 只增加排期表，不自动创建或启用日程；21→22 增加节点专属安装请求，不自动授权或安装。按节点、实例、seq 去重，同时约束 record_id；同序号不同内容、同 ID 不同序号、断号、身份不符均拒绝并回滚。当前不自动清理记录、命令、时段、安装请求与配置表；大规模部署前还需补充中央归档与磁盘配额策略，当前阶段应单节点验收。
 
 ## 单任务控制流程
 

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	runtimepkg "github.com/leeska/TZA-Probe/internal/executorruntime"
 	"github.com/leeska/TZA-Probe/internal/ipsentinel"
 	"github.com/leeska/TZA-Probe/internal/service"
 )
@@ -27,6 +28,9 @@ func decodeExecutor(w http.ResponseWriter, r *http.Request, destination any) boo
 }
 
 func (a *API) executorRoutes(mux *http.ServeMux) {
+	if runtimeStore, supported := a.Store.(service.RuntimeStore); supported {
+		a.runtimeRoutes(mux, runtimeStore)
+	}
 	repository, supported := a.Store.(service.ExecutorStore)
 	if !supported {
 		return
@@ -148,5 +152,50 @@ func (a *API) executorRoutes(mux *http.ServeMux) {
 			return
 		}
 		respond(w, repository.DisableExecutorSchedule(r.Context(), r.PathValue("id"), input.ExpectedRevision))
+	}))
+}
+
+func (a *API) runtimeRoutes(mux *http.ServeMux, store service.RuntimeStore) {
+	mux.HandleFunc("POST /api/v1/agent/runtime", a.agent(func(w http.ResponseWriter, r *http.Request, node string) {
+		var report runtimepkg.ChannelReport
+		if !decodeExecutor(w, r, &report) {
+			return
+		}
+		reply, err := store.RuntimeExchange(r.Context(), node, report)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, reply)
+	}))
+	mux.HandleFunc("GET /api/v1/admin/runtime", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		views, err := store.RuntimeChannels(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, views)
+	}))
+	mux.HandleFunc("POST /api/v1/admin/nodes/{id}/runtime/requests", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		var input runtimepkg.ChannelInput
+		if !decodeExecutor(w, r, &input) {
+			return
+		}
+		request, err := store.CreateRuntimeRequest(r.Context(), r.PathValue("id"), input)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusAccepted, request)
+	}))
+	mux.HandleFunc("PUT /api/v1/admin/nodes/{id}/runtime/requests/{request}", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		var approval runtimepkg.ChannelApproval
+		if !decodeExecutor(w, r, &approval) {
+			return
+		}
+		respond(w, store.ApproveRuntimeRequest(r.Context(), r.PathValue("id"), r.PathValue("request"), approval))
+	}))
+	mux.HandleFunc("DELETE /api/v1/admin/nodes/{id}/runtime/requests/{request}", a.admin(func(w http.ResponseWriter, r *http.Request) {
+		respond(w, store.CancelRuntimeRequest(r.Context(), r.PathValue("id"), r.PathValue("request")))
 	}))
 }

@@ -34,8 +34,11 @@ func run(ctx context.Context, arguments []string, output, diagnostics io.Writer)
 }
 
 func runOnHost(ctx context.Context, arguments []string, output, diagnostics io.Writer, platform string) error {
+	if len(arguments) > 0 && (arguments[0] == "install-plan" || arguments[0] == "install" || arguments[0] == "select-plan" || arguments[0] == "select") {
+		return runOperationCommand(ctx, arguments, output, diagnostics, platform)
+	}
 	if len(arguments) == 0 || (arguments[0] != "plan" && arguments[0] != "stage" && arguments[0] != "verify") {
-		return errors.New("usage: executor-runtime plan|stage|verify [flags]; staging never activates or executes a runtime")
+		return errors.New("usage: executor-runtime plan|stage|verify|install-plan|install|select-plan|select [flags]; service start and adopt are separate local operations")
 	}
 	command := arguments[0]
 	flags := flag.NewFlagSet("executor-runtime "+command, flag.ContinueOnError)
