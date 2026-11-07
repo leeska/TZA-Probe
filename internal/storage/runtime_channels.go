@@ -335,7 +335,7 @@ func (s *Store) CancelRuntimeRequest(ctx context.Context, node, id string) error
 	if err != nil {
 		return err
 	}
-	if !runtimepkg.ActiveChannelState(request.State) || request.State == "running" {
+	if request.State == "running" || (request.State != "unknown" && !runtimepkg.ActiveChannelState(request.State)) {
 		return model.Conflict("执行中的安装操作不能远程取消；先确认本机结果")
 	}
 	request.State, request.UpdatedAt = "cancelled", time.Now().Unix()

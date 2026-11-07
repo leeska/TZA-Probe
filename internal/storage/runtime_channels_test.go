@@ -284,3 +284,45 @@ func TestRuntimeReconciliationCannotResolveOtherScopeOrUnstartedRequest(t *testi
 		t.Fatal("scope change hid an unresolved operation")
 	}
 }
+
+func TestRuntimeUnknownLifecycleCancel(t *testing.T) {
+	store := openTest(t)
+	node, _ := makeNode(t, store)
+	ctx := context.Background()
+	enrollment := runtimeEnrollment()
+	if _, err := store.RuntimeExchange(ctx, node, runtimepkg.ChannelReport{Enrollment: enrollment}); err != nil {
+		t.Fatal(err)
+	}
+	request, err := store.CreateRuntimeRequest(ctx, node, runtimepkg.ChannelInput{Action: "stage", Version: "0.4.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := stageResult(t, request, false)
+	if _, err := store.RuntimeExchange(ctx, node, runtimepkg.ChannelReport{Enrollment: enrollment, Result: &planned}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApproveRuntimeRequest(ctx, node, request.ID, runtimepkg.ChannelApproval{Approved: true, PlanSHA256: planned.PlanSHA256}); err != nil {
+		t.Fatal(err)
+	}
+	running := runtimepkg.ChannelResult{RequestID: request.ID, State: "running", PlanSHA256: planned.PlanSHA256}
+	if _, err := store.RuntimeExchange(ctx, node, runtimepkg.ChannelReport{Enrollment: enrollment, Result: &running}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CancelRuntimeRequest(ctx, node, request.ID); err == nil {
+		t.Fatal("running operation was remotely cancelled")
+	}
+	unknown := running
+	unknown.State, unknown.ErrorCode = "unknown", "operation_interrupted"
+	if _, err := store.RuntimeExchange(ctx, node, runtimepkg.ChannelReport{Enrollment: enrollment, Result: &unknown}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateRuntimeRequest(ctx, node, runtimepkg.ChannelInput{Action: "stage", Version: "0.4.0"}); err == nil {
+		t.Fatal("unknown operation allowed a new request")
+	}
+	if err := store.CancelRuntimeRequest(ctx, node, request.ID); err != nil {
+		t.Fatal("confirmed unknown operation could not be cancelled", err)
+	}
+	if _, err := store.CreateRuntimeRequest(ctx, node, runtimepkg.ChannelInput{Action: "stage", Version: "0.4.0"}); err != nil {
+		t.Fatal("cancelled unknown still blocked new requests", err)
+	}
+}
