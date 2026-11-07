@@ -246,6 +246,13 @@ func ProvisionRuntime(config RuntimeInstallConfig, journal FileRuntimePending) (
 	if err != nil {
 		return nil, err
 	}
+	return runtimeForIdentity(config, keys, identity)
+}
+
+func runtimeForIdentity(config RuntimeInstallConfig, keys map[string]ed25519.PublicKey, identity string) (*LocalRuntime, error) {
+	if !ipsentinel.ValidUUID(identity) {
+		return nil, errors.New("invalid local plugin identity")
+	}
 	scope, err := ipsentinel.CanonicalSHA256(struct {
 		Config   RuntimeInstallConfig         `json:"config"`
 		Keys     map[string]ed25519.PublicKey `json:"keys"`
@@ -287,6 +294,9 @@ func (local *LocalRuntime) Run(ctx context.Context, request runtimepkg.ChannelRe
 		}
 	}
 	result := runtimepkg.ChannelResult{RequestID: request.ID}
+	if request.Action == "enable" {
+		return local.enablePlugin(ctx, request)
+	}
 	if request.Action == "stage" {
 		repository, err := runtimepkg.NewRepository(local.Config.CCURL, local.Keys)
 		if err != nil {

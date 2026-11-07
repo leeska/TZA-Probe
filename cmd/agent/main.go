@@ -62,7 +62,13 @@ func run() error {
 	runtimeInstaller := flag.Bool("runtime-installer", false, "run only the explicitly provisioned runtime installation channel in a dedicated privileged service")
 	runtimePeer := flag.Bool("runtime-peer", false, "serve one bounded local runtime inspection or pause request as a non-root peer")
 	preparePlugins := flag.Bool("prepare-plugins", false, "prepare integrated Agent plugins during installation or upgrade")
+	pluginEnable := flag.String("plugin-enable", "", "complete one approved first-use plugin initialization from the private local journal")
 	flag.Parse()
+	if *pluginEnable != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 170*time.Second)
+		defer cancel()
+		return agent.ExecutePluginEnable(ctx, *pluginEnable)
+	}
 	if *runtimePeer {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

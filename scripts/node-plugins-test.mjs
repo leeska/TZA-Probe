@@ -160,6 +160,13 @@ assert.equal(ui.pluginAgentState({ ...ready, requests: [staged] }, null, "0.4.0"
 assert.equal(ui.pluginAgentState({ ...ready, enrollment: { ...enrollment, host: { ...enrollment.host, agent_version: "1.10.6" } }, requests: [staged] }, null, "0.4.0").action, "stage");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, enrollment: { scope_sha256: "different" } }] }, null, "0.4.0").action, "stage");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "installed" }] }, null, "0.4.0").label, "已安装，待启用");
+const enableEnrollment = { ...enrollment, host: { ...enrollment.host, agent_version: "1.10.7" } };
+const enableStage = { ...staged, enrollment: enableEnrollment };
+const enableChannel = { ...ready, enrollment: enableEnrollment, requests: [{ ...enableStage, state: "installed" }, enableStage] };
+assert.equal(ui.pluginAgentState(enableChannel, null, "0.4.0").action, "enable", "installed current Agent can enable from plugin details");
+assert.equal(ui.pluginAgentState({ ...enableChannel, seen_at: now - 60 }, null, "0.4.0").action, undefined, "stale state cannot enable");
+assert.equal(ui.pluginAgentState({ ...enableChannel, maintenance: true }, null, "0.4.0").action, undefined, "maintenance cannot enable");
+assert.equal(ui.pluginAgentState({ ...enableChannel, requests: [{ ...staged, state: "installed" }] }, null, "0.4.0").action, "stage", "Agent upgrade requires a current reviewed plan");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "unknown" }] }, null, "0.4.0").action, undefined);
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "unknown", action: "install" }, { ...staged, state: "installed" }] }, null, "0.4.0").label, "正在核对");
 assert.equal(ui.pluginAgentState({ ...ready, requests: [{ ...staged, state: "unknown", enrollment: { scope_sha256: "old" } }] }, null, "0.4.0").action, undefined);

@@ -47,6 +47,7 @@ type OperationPlan struct {
 	SelectionSHA256  string            `json:"selection_sha256"`
 	ConfigSHA256     string            `json:"config_sha256,omitempty"`
 	PolicySHA256     string            `json:"policy_sha256,omitempty"`
+	Enable           *EnableSettings   `json:"enable,omitempty"`
 }
 
 type OperationApproval struct {
@@ -63,14 +64,15 @@ type OperationReview struct {
 }
 
 type OperationReceipt struct {
-	FormatVersion int           `json:"format_version"`
-	State         string        `json:"state"`
-	Selected      bool          `json:"selected"`
-	Activated     bool          `json:"activated"`
-	PlanSHA256    string        `json:"plan_sha256"`
-	Plan          OperationPlan `json:"plan"`
-	Release       string        `json:"release"`
-	Backup        string        `json:"backup,omitempty"`
+	FormatVersion int               `json:"format_version"`
+	State         string            `json:"state"`
+	Selected      bool              `json:"selected"`
+	Activated     bool              `json:"activated"`
+	PlanSHA256    string            `json:"plan_sha256"`
+	Plan          OperationPlan     `json:"plan"`
+	Release       string            `json:"release"`
+	Backup        string            `json:"backup,omitempty"`
+	Hello         *ipsentinel.Hello `json:"hello,omitempty"`
 }
 
 func PrepareOperation(ctx context.Context, store Store, stageDigest string, keys map[string]ed25519.PublicKey, host Host, target ipsentinel.Target, options OperationOptions) (OperationReview, error) {

@@ -3,8 +3,10 @@ package agent
 import (
 	"context"
 	"errors"
+	"path/filepath"
 
 	runtimepkg "github.com/leeska/TZA-Probe/internal/executorruntime"
+	"github.com/leeska/TZA-Probe/internal/ipsentinel"
 )
 
 func (local *LocalRuntime) Reconcile(ctx context.Context, request runtimepkg.ChannelRequest) (runtimepkg.ChannelResult, error) {
@@ -19,6 +21,24 @@ func (local *LocalRuntime) Reconcile(ctx context.Context, request runtimepkg.Cha
 	original := *local
 	original.Enrollment = request.Enrollment
 	local = &original
+	if request.Action == "enable" {
+		root, err := (FileRuntimePending{Directory: filepath.Join(local.Config.StagingDir, "agent-pending")}).open()
+		if err != nil {
+			return result, err
+		}
+		defer root.Close()
+		raw, err := readRuntimeJournal(root, "enabled.json")
+		if err != nil {
+			return result, errors.New("plugin initialization has no completed startup receipt; local inspection required")
+		}
+		if err := ipsentinel.DecodeStrict(raw, &result); err != nil {
+			return result, err
+		}
+		if err := runtimepkg.ValidateChannelReceipt(request, result); err != nil {
+			return result, err
+		}
+		return result, nil
+	}
 	if request.Action == "stage" {
 		receipt, err := (runtimepkg.Store{Dir: local.Config.StagingDir}).Verify(ctx, request.PlanSHA256, local.Keys, local.Enrollment.Host, local.Enrollment.Target)
 		if err != nil {

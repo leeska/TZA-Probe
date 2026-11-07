@@ -21,9 +21,10 @@ func (enrollment Enrollment) SameScope(other Enrollment) bool {
 }
 
 type ChannelInput struct {
-	Action         string `json:"action"`
-	Version        string `json:"version"`
-	StageRequestID string `json:"stage_request_id,omitempty"`
+	Action         string          `json:"action"`
+	Version        string          `json:"version"`
+	StageRequestID string          `json:"stage_request_id,omitempty"`
+	Enable         *EnableSettings `json:"enable,omitempty"`
 }
 
 type ChannelRequest struct {
@@ -86,6 +87,12 @@ func (input ChannelInput) Validate() error {
 	if !tzapkg.ValidVersion(input.Version) {
 		return errors.New("an exact runtime version is required")
 	}
+	if input.Action == "enable" && ipsentinel.ValidUUID(input.StageRequestID) && input.Enable != nil {
+		return input.Enable.Validate()
+	}
+	if input.Enable != nil {
+		return errors.New("plugin settings are only accepted for first enablement")
+	}
 	if input.Action == "stage" && input.StageRequestID == "" {
 		return nil
 	}
@@ -130,6 +137,9 @@ func ValidateChannelPlan(request ChannelRequest, result ChannelResult) error {
 	}
 	if result.Lifecycle != nil {
 		return errors.New("unexpected lifecycle review")
+	}
+	if request.Action == "enable" {
+		return validateEnableReview(request, result)
 	}
 	if request.Action == "stage" {
 		if result.Review == nil || result.Operation != nil {
@@ -229,6 +239,9 @@ func ValidateChannelReceipt(request ChannelRequest, result ChannelResult) error 
 	}
 	if result.LifecycleReceipt != nil {
 		return errors.New("unexpected lifecycle receipt")
+	}
+	if request.Action == "enable" {
+		return validateEnableReceipt(request, result)
 	}
 	if request.Action == "stage" {
 		if result.State != "staged" || result.Receipt == nil || result.OperationReceipt != nil || request.Review == nil {

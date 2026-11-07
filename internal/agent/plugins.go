@@ -36,8 +36,16 @@ func (plugins Plugins) Run(ctx context.Context) {
 			local, provisionErr := ProvisionRuntime(*config, journal)
 			err = provisionErr
 			if err == nil {
+				syncContext, cancelSync := context.WithCancel(ctx)
+				syncDone := make(chan struct{})
+				go func() {
+					defer close(syncDone)
+					plugins.syncEnabled(syncContext, *config, journal)
+				}()
 				installer := RuntimeInstaller{Transport: plugins.Transport, Worker: local, Enrollment: local.Enrollment, Journal: journal}
 				installer.Run(ctx)
+				cancelSync()
+				<-syncDone
 				return
 			}
 		}
@@ -51,6 +59,35 @@ func (plugins Plugins) Run(ctx context.Context) {
 			timer.Stop()
 			return
 		case <-timer.C:
+		}
+	}
+}
+
+func (plugins Plugins) syncEnabled(ctx context.Context, config RuntimeInstallConfig, journal FileRuntimePending) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	client := ipsentinel.NewClient(ipsentinel.DefaultSocketPath, config.Target)
+	defer client.Close()
+	for ctx.Err() == nil {
+		root, err := journal.open()
+		if err == nil {
+			raw, readErr := readRuntimeJournal(root, "enabled.json")
+			root.Close()
+			var result runtimepkg.ChannelResult
+			if readErr == nil && ipsentinel.DecodeStrict(raw, &result) == nil && result.State == "enabled" &&
+				result.OperationReceipt != nil && result.OperationReceipt.Plan.Target == config.Target {
+				call, cancel := context.WithTimeout(ctx, 20*time.Second)
+				err = (ipsentinel.Synchronizer{Reader: client, Transport: plugins.Transport, Target: config.Target}).Sync(call)
+				cancel()
+				if err != nil && ctx.Err() == nil {
+					slog.Warn("plugin state synchronization unavailable; durable records retained")
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 		}
 	}
 }

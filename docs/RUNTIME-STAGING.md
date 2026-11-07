@@ -177,6 +177,14 @@ Free2 在与最终专用安装服务一致的 NNP、capability bounding/ambient�
 
 本轮不修改 IPSentinel 权威协议，不部署 bero/netcup，不发布 fixture 或测试签名。正式上线前仍需固定 CC 对 Probe 的可复现版本依赖、核对正式版本与签名制品，并单独完成资产、备份和回滚检查。
 
+#### 2026-11-07 真实首次启用验收
+
+`TestPluginEnableLinuxIntegration` 在 Free2（Debian 13 amd64）的隔离 systemd 单元中通过，用时约 96 秒，测试进程正常退出。流程为：下载并验证 `0.4.0` 候选（测试密钥 `tza-upgrade-qa-only` 签名）、安装、首次启用计划与批准、Agent 写入 `/etc/ipsentinel/runtime.toml` 和专用服务、启动 IPSentinel、读取 UDS `hello`/`status`/`journal` 确认托管模式与配置指纹，然后停服并保留状态与配置证据。没有启动 Chromium，不是生产 CC 发布或生产节点部署。
+
+排查期间修复三处：`systemctl list-unit-files` 在没有匹配单元时退出码为 1，不再误判为旧排期存在；首次启用子进程把 `prepareEnable` 失败原因落入 `enable-error` journal，不再只报“inputs changed”；测试清理改为对已存在的证据目录使用唯一后缀。`deploy/tza-runtime-installer.service` 的 `CAP_KILL` 仅用于终止安装器自己创建的降权子进程。本地回归为 `go vet ./...`、全量 Go 测试 689 项通过（26 包）与核心包竞态测试通过；完整 `pipeline.sh check` 在上一轮通过。
+
+证据保留在本机 `/tmp/tza-enable-qa-20261107-evidence/`（远端归档 SHA-256 `729e7ebb5d77716199d9055284bd2c18155ae6f36390019efb56ddb5413b6db0`）。远端临时 unit、helper、候选、staging、状态目录和 QA 目录已清理；free2 上没有运行中的 `tza-agent.service`，测试后保持该状态。
+
 ### Agent 安装通道配置
 
 `runtime_install` 由普通 Agent 的独立后台任务处理，与指标、心跳和探测并行，停机时一起取消并等待退出。

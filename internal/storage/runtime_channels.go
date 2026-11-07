@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/leeska/TZA-Probe/internal/agentsig"
 	runtimepkg "github.com/leeska/TZA-Probe/internal/executorruntime"
 	"github.com/leeska/TZA-Probe/internal/ipsentinel"
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -191,7 +192,7 @@ func (s *Store) CreateMarketRuntimeRequest(ctx context.Context, node, version, s
 
 func (s *Store) createRuntimeRequest(ctx context.Context, node string, input runtimepkg.ChannelInput, scope string) (runtimepkg.ChannelRequest, error) {
 	if input.Validate() != nil {
-		return runtimepkg.ChannelRequest{}, model.Invalid("请指定 stage/install/select/drain/activate、精确版本及对应暂存请求")
+		return runtimepkg.ChannelRequest{}, model.Invalid("请指定有效组件操作、精确版本及对应暂存请求")
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -238,6 +239,22 @@ func (s *Store) createRuntimeRequest(ctx context.Context, node string, input run
 			return request, model.Conflict("选择当前节点与配置范围下已完成的同版本暂存请求")
 		}
 		request.StagePlanSHA256 = source.PlanSHA256
+		if input.Action == "enable" {
+			if agentsig.Newer("1.10.7", enrollment.Host.AgentVersion) {
+				return request, model.Conflict("请先升级 Agent，再启用插件")
+			}
+			var bound int
+			if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM executor_bindings WHERE node_id=?", node).Scan(&bound); err != nil {
+				return request, err
+			}
+			held, err := runtimeMaintenanceTx(ctx, tx, node)
+			if err != nil {
+				return request, err
+			}
+			if bound != 0 || held {
+				return request, model.Conflict("已有插件接入或维护记录，不能重复首次启用")
+			}
+		}
 	}
 	if input.Action == "activate" {
 		held, err := runtimeMaintenanceTx(ctx, tx, node)
@@ -383,6 +400,11 @@ func (s *Store) RuntimeExchange(ctx context.Context, node string, report runtime
 		if err := applyRuntimeResult(&request, *report.Result, now); err != nil {
 			return reply, err
 		}
+		if request.State == "enabled" {
+			if err := bindEnabledPluginTx(ctx, tx, node, request); err != nil {
+				return reply, err
+			}
+		}
 		if err := saveRuntimeRequest(ctx, tx, node, request); err != nil {
 			return reply, err
 		}
@@ -415,7 +437,7 @@ func (s *Store) RuntimeExchange(ctx context.Context, node string, report runtime
 	}
 	if reply.Request == nil && report.Reconcile {
 		err := tx.QueryRowContext(ctx, `SELECT payload FROM runtime_requests WHERE node_id=? AND state='unknown'
- AND json_extract(payload,'$.enrollment.scope_sha256')=? AND json_extract(payload,'$.action') IN ('stage','install')
+ AND json_extract(payload,'$.enrollment.scope_sha256')=? AND json_extract(payload,'$.action') IN ('stage','install','enable')
  ORDER BY created_at,rowid LIMIT 1`, node, report.Enrollment.ScopeSHA256).Scan(&raw)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return reply, err
@@ -457,7 +479,7 @@ func applyRuntimeResult(request *runtimepkg.ChannelRequest, result runtimepkg.Ch
 		if request.State != "approved" || now-request.ApprovedAt > 900 {
 			return model.Conflict("安装批准已过期或已撤销")
 		}
-	case "staged", "installed", "selected", "drained", "started_paused":
+	case "staged", "installed", "selected", "drained", "started_paused", "enabled":
 		if runtimepkg.ValidateChannelReceipt(*request, result) != nil {
 			return model.Invalid("安装回执与批准不符，或试图越过激活边界")
 		}
@@ -467,7 +489,7 @@ func applyRuntimeResult(request *runtimepkg.ChannelRequest, result runtimepkg.Ch
 			}
 			return model.Conflict("已保存的安装回执不能被改写")
 		}
-		if request.State != "running" && !(request.State == "unknown" && (request.Action == "stage" || request.Action == "install")) {
+		if request.State != "running" && !(request.State == "unknown" && (request.Action == "stage" || request.Action == "install" || request.Action == "enable")) {
 			return model.Conflict("安装请求尚未执行，或已经结束")
 		}
 		request.Receipt, request.OperationReceipt = result.Receipt, result.OperationReceipt
@@ -497,4 +519,33 @@ func applyRuntimeResult(request *runtimepkg.ChannelRequest, result runtimepkg.Ch
 	}
 	request.State, request.UpdatedAt = result.State, now
 	return nil
+}
+
+func bindEnabledPluginTx(ctx context.Context, tx *sql.Tx, node string, request runtimepkg.ChannelRequest) error {
+	hello := request.OperationReceipt.Hello
+	binding := ipsentinel.Binding{
+		Target: request.Enrollment.Target, ExecutorInstanceID: hello.Status.ExecutorInstanceID,
+		Epoch: hello.Status.Control.Epoch, DescriptorSHA256: hello.DescriptorSHA256, Mode: ipsentinel.ModeManaged,
+	}
+	if err := binding.Validate(); err != nil {
+		return err
+	}
+	var existing string
+	err := tx.QueryRowContext(ctx, "SELECT binding FROM executor_bindings WHERE node_id=?", node).Scan(&existing)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		if existing != encode(binding) {
+			return model.Conflict("启用期间插件接入身份已变化，保留当前授权")
+		}
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO executor_bindings(node_id,binding,instance_id) VALUES(?,?,?)", node, encode(binding), binding.ExecutorInstanceID); err != nil {
+		return err
+	}
+	config := runtimepkg.EnableConfig(*request.Enable)
+	_, err = tx.ExecContext(ctx, "INSERT INTO executor_configs(node_id,instance_id,revision,digest,config,binding) VALUES(?,?,?,?,?,?)",
+		node, binding.ExecutorInstanceID, hello.Status.Config.Revision, hello.Status.Config.SHA256, encode(config), encode(binding))
+	return err
 }

@@ -2,7 +2,7 @@ import { api, send, esc, guard, modal, toast } from "./api.js";
 import { nodePluginEligibility } from "./admin-node-plugins.js";
 
 const activeStates = new Set(["requested", "awaiting_approval", "approved", "running"]);
-const stateNames = { requested: "准备中", awaiting_approval: "等待确认", approved: "等待 Agent", running: "处理中", staged: "资源已下载", installed: "已安装，待启用", selected: "待启用", started_paused: "已启动，待授权", drained: "维护暂停", failed: "未完成", expired: "确认已过期", unknown: "结果待核对", cancelled: "已取消" };
+const stateNames = { requested: "准备中", awaiting_approval: "等待确认", approved: "等待 Agent", running: "处理中", staged: "资源已下载", installed: "已安装，待启用", enabled: "启用完成", selected: "待启用", started_paused: "已启动，待授权", drained: "维护暂停", failed: "未完成", expired: "确认已过期", unknown: "结果待核对", cancelled: "已取消" };
 
 export function pluginAgentState(channel, binding, version) {
   const requests = (channel?.requests || []).filter(request => request.enrollment?.scope_sha256 === channel.enrollment.scope_sha256);
@@ -16,21 +16,27 @@ export function pluginAgentState(channel, binding, version) {
     return { label: fresh ? "已接入" : "已接入，状态待刷新", hint: "检测与拉回状态见功能页；安装记录不代表功能已启用。" };
   }
   if (unresolved) {
-    const automatic = ["stage", "install"].includes(unresolved.action) && unresolved.enrollment?.scope_sha256 === channel.enrollment.scope_sha256;
-    return { label: automatic ? "正在核对" : "结果待核对", hint: automatic ? "Agent 正在自动核对上次操作，期间不会重复安装。请稍后刷新；长时间未恢复可查看安装记录。" : "上次维护操作或安装身份已改变，需要管理员核对；期间不会重复安装。" };
+    const automatic = ["stage", "install", "enable"].includes(unresolved.action) && unresolved.enrollment?.scope_sha256 === channel.enrollment.scope_sha256;
+    return { label: automatic ? "正在核对" : "结果待核对", hint: automatic ? "Agent 正在自动核对上次操作，期间不会重复执行。请稍后刷新；长时间未恢复可查看安装记录。" : "上次维护操作或安装身份已改变，需要管理员核对；期间不会重复安装。" };
   }
-  if (installed || requests.some(request => ["selected", "started_paused"].includes(request.state))) return { label: "已安装，待启用", hint: "组件已安装；首次启用仍需管理员在 Agent 本机完成接入配置，暂不支持自动启用。" };
   const reason = nodePluginEligibility(channel);
   if (reason) return { label: "暂不可安装", hint: reason };
   if (channel.maintenance) return { label: "维护暂停", hint: "需要管理员完成本机维护并核对服务状态；不会自动恢复。" };
   if (!version) return { label: "版本不可用", hint: "请先更新或重新安装主控管理部分。" };
+  if (requests.some(request => ["selected", "started_paused"].includes(request.state))) return { label: "已安装，待启用", hint: "已有本机配置，请先完成接入；首次启用不会覆盖现有配置。" };
+  if (installed) {
+    const parts = /^(?:v)?(\d+)\.(\d+)\.(\d+)$/.exec(channel.enrollment.host.agent_version || "");
+    const supported = parts && (Number(parts[1]) > 1 || Number(parts[1]) === 1 && (Number(parts[2]) > 10 || Number(parts[2]) === 10 && Number(parts[3]) >= 7));
+    if (!supported) return { label: "已安装，待启用", hint: "请先在节点管理升级 Agent，升级后可直接在这里启用。" };
+    return stage ? { label: "已安装，待启用", action: "enable", stage, hint: "确认出口 IP 和目标地区后，由 Agent 自动配置并接入。" } : { label: "已安装，待启用", action: "stage", hint: "Agent 已升级，请先刷新组件计划；已有资源会复用。" };
+  }
   return stage ? { label: "等待安装", action: "install", stage } : { label: "未安装", action: "stage" };
 }
 
 function planSummary(request) {
   const plan = request.review?.plan || request.operation?.plan || request.lifecycle?.plan.operation;
   if (!plan) return '<p role="alert">计划不完整，请刷新或取消请求。</p>';
-  return `<p>组件版本：v${esc(request.version)}</p>${plan.artifacts ? `<p>下载量：${(plan.total_bytes / 1048576).toFixed(1)} MiB · ${plan.artifacts.length} 件</p><p>权限：${esc((plan.permissions || []).join("、"))}</p>` : "<p>安装之前已核验并下载的组件；不会自动启动或启用任务。</p>"}<details><summary>技术详情</summary><pre class="runtime-json">${esc(JSON.stringify({ enrollment: request.enrollment, plan, plan_sha256: request.plan_sha256 }, null, 2))}</pre></details>`;
+  return `<p>组件版本：v${esc(request.version)}</p>${request.action === "enable" ? `<p>出口 IP：${esc(request.enable?.expected_ip)} · 目标地区：${esc(request.enable?.country)}</p><p>自动完成首次配置、启动服务和主控接入。检测与拉回由功能页主动启动。</p>` : plan.artifacts ? `<p>下载量：${(plan.total_bytes / 1048576).toFixed(1)} MiB · ${plan.artifacts.length} 件</p><p>权限：${esc((plan.permissions || []).join("、"))}</p>` : "<p>安装之前已核验并下载的组件；不会自动启动或启用任务。</p>"}<details><summary>技术详情</summary><pre class="runtime-json">${esc(JSON.stringify({ enrollment: request.enrollment, plan, plan_sha256: request.plan_sha256 }, null, 2))}</pre></details>`;
 }
 
 export async function renderPluginAgents(pkg, root) {
@@ -59,7 +65,7 @@ export async function renderPluginAgents(pkg, root) {
     </div><div class="theme-list">${rows.map((row, index) => `<div class="theme-row">
       <span class="theme-copy"><b>${esc(row.node.name || row.node.id)}</b><small>${esc(row.hint || row.channel?.enrollment.host.platform || "")}</small></span>
       <span class="pill">${esc(row.label)}</span>
-      ${row.action ? `<button data-agent-action="${index}">${row.action === "stage" ? "安装组件" : "继续安装"}</button>` : ""}
+      ${row.action ? `<button data-agent-action="${index}">${row.action === "enable" ? "启用防护" : row.action === "stage" ? "准备组件" : "继续安装"}</button>` : ""}
       ${row.canReview ? `<button class="primary" data-agent-review="${index}">查看并确认</button>` : ""}
       ${row.current && ["requested", "awaiting_approval", "approved"].includes(row.current.state) ? `<button class="quiet" data-agent-cancel="${index}">取消</button>` : ""}
       <button class="quiet" data-agent-toggle="${index}">${row.node.runtime_install_disabled ? "允许主控执行" : "不允许主控执行"}</button>
@@ -89,6 +95,27 @@ export async function renderPluginAgents(pkg, root) {
         const fresh = await channelFresh(row);
         const next = pluginAgentState(fresh, byBinding.get(row.node.id), version);
         if (next.action !== row.action || next.stage?.id !== row.stage?.id) throw new Error("安装状态已变化，请刷新后重试");
+        if (row.action === "enable") {
+          const countries = "US CA GB DE FR NL SE NO FI CH AT IT ES PT IE PL CZ AU NZ JP KR SG HK TW IN BR MX ZA AE".split(" ");
+          const names = new Intl.DisplayNames(["zh-CN"], { type: "region" });
+          const dialog = modal("启用防护", `<form data-enable-form><p>确认此 Agent 的公网出口和希望保持的地区，Agent 会自动配置并接入。</p><div class="form-grid"><label>公网出口 IP<input name="expected_ip" required autocomplete="off" placeholder="填写此节点的实际公网出口"></label><label>目标地区<select name="country" required><option value="">请选择</option>${countries.map(country => `<option value="${country}">${esc(names.of(country))}（${country}）</option>`).join("")}</select></label></div><p class="hint">启用不会开始浏览器检测或拉回。之后可在功能页手动检测、拉回或设置日程。</p><div class="form-footer"><button class="primary" type="submit">准备启用</button></div></form>`);
+          dialog.querySelector("form").onsubmit = event => {
+            event.preventDefault();
+            guard(async () => {
+              const form = event.currentTarget;
+              const submit = form.querySelector("button");
+              submit.disabled = true;
+              try {
+                await channelFresh(row);
+                await send(`/admin/nodes/${encodeURIComponent(row.node.id)}/runtime/requests`, "POST", { action: "enable", version, stage_request_id: row.stage.id, enable: { expected_ip: form.elements.expected_ip.value.trim(), country: form.elements.country.value } });
+                dialog.close();
+                toast("等待 Agent 检查启用条件，请稍后查看并确认");
+                await refresh();
+              } finally { submit.disabled = false; }
+            })();
+          };
+          return;
+        }
         if (row.action === "stage") await send("/admin/market/node-plans", "POST", { id: pkg.id, version, node_id: row.node.id, scope_sha256: fresh.enrollment.scope_sha256 });
         else await send(`/admin/nodes/${encodeURIComponent(row.node.id)}/runtime/requests`, "POST", { action: "install", version, stage_request_id: row.stage.id });
         toast("等待 Agent 准备计划；确认后才执行");
@@ -100,8 +127,8 @@ export async function renderPluginAgents(pkg, root) {
     button.onclick = () => {
       const row = rows[Number(button.dataset.agentReview)];
       const request = row.current;
-      const supported = ["stage", "install"].includes(request.action);
-      const dialog = modal("确认 Agent 组件操作", `<p>${esc(row.node.name || row.node.id)} · ${esc(request.action === "stage" ? "下载组件" : request.action === "install" ? "安装组件" : "维护操作")}</p>${planSummary(request)}<p>此操作不会自动启用检测或拉回任务。</p>${supported ? '<div class="form-footer"><button class="primary" data-agent-confirm>确认</button></div>' : '<p>维护操作需管理员在本机核对，本页不提供自动批准。</p>'}`);
+      const supported = ["stage", "install", "enable"].includes(request.action);
+      const dialog = modal("确认 Agent 组件操作", `<p>${esc(row.node.name || row.node.id)} · ${esc(request.action === "enable" ? "启用防护" : request.action === "stage" ? "下载组件" : request.action === "install" ? "安装组件" : "维护操作")}</p>${planSummary(request)}<p>此操作不会自动启用检测或拉回任务。</p>${supported ? '<div class="form-footer"><button class="primary" data-agent-confirm>确认</button></div>' : '<p>维护操作需管理员在本机核对，本页不提供自动批准。</p>'}`);
       const confirm = dialog.querySelector("[data-agent-confirm]");
       if (confirm) confirm.onclick = guard(async () => {
         confirm.disabled = true;
