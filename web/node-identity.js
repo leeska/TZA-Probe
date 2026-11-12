@@ -62,7 +62,9 @@ export function regionFlag(region) {
   return `<span class="node-flag" role="img" aria-label="${esc(label)}" title="${esc(label)}">${flag}</span>`;
 }
 
+// 等待接入：从没连上过、此刻也不在线。与「离线」（连上过又断开）分开着色。
+export const isPending = (n) => !n.online && !n.last_seen;
 export const offlineTitle = (n) => n.last_seen ? `最近连接 ${date(n.last_seen)}` : "尚未接入";
 export function offlineBadge(n) {
-  return `<span class="node-state" role="status" title="${esc(offlineTitle(n))}"${n.online ? " hidden" : ""}>${n.online ? "离线" : esc(statusLabel(n))}</span>`;
+  return `<span class="node-state${isPending(n) ? " is-pending" : ""}" role="status" title="${esc(offlineTitle(n))}"${n.online ? " hidden" : ""}>${n.online ? "离线" : esc(statusLabel(n))}</span>`;
 }

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
@@ -190,3 +191,22 @@ func mustTaskID(t *testing.T, svc *Service) string {
 type knownSkins []string
 
 func (k knownSkins) Known(id string) bool { return slices.Contains(k, id) }
+
+// 只给名字的新建（MCP / 脚本常见）按面板表单的默认计费周期补齐，而不是报「重置时间须为 RFC3339」。
+func TestCreateNodeFillsBillingDefaults(t *testing.T) {
+	svc := open(t)
+	ctx := context.Background()
+	id, _, err := svc.CreateNode(ctx, model.Node{Name: "bare"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := svc.Node(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	want := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	if n.Billing.ResetAt != want || n.Billing.TrafficMode != "sum" {
+		t.Fatalf("billing = %+v, want reset_at %s and traffic_mode sum", n.Billing, want)
+	}
+}

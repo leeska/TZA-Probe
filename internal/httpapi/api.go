@@ -492,7 +492,9 @@ func (a *API) startSession(w http.ResponseWriter, r *http.Request, now time.Time
 }
 
 // visibleNodes is the node list the caller may see, in panel order: every node
-// for the administrator, the public ones (redacted) for everyone else.
+// for the administrator, the public ones (redacted) for everyone else. A public
+// node that has never reported (等待接入) stays hidden from visitors until its
+// Agent connects — same rule as Store.IsPublic for the per-node endpoints.
 func (a *API) visibleNodes(r *http.Request) ([]model.NodeView, error) {
 	admin := a.isAdmin(r)
 	nodes, err := a.panelNodes(r, admin)
@@ -501,7 +503,7 @@ func (a *API) visibleNodes(r *http.Request) ([]model.NodeView, error) {
 	}
 	out := []model.NodeView{}
 	for _, n := range nodes {
-		if n.Public || admin {
+		if admin || (n.Public && n.LastSeen > 0) {
 			if !admin {
 				n = n.Redact()
 			}
@@ -619,7 +621,7 @@ func (a *API) allObservations(w http.ResponseWriter, r *http.Request) {
 		}
 		out := map[string][]model.Observation{}
 		for _, n := range nodes {
-			if !n.Public && !admin {
+			if !admin && !(n.Public && n.LastSeen > 0) { // 与 visibleNodes 同一条：等待接入的不给访客
 				continue
 			}
 			list, err := a.svc.Observations(ctx, n.ID)
@@ -669,7 +671,7 @@ func (a *API) latencySamples(w http.ResponseWriter, r *http.Request) {
 		}
 		ids := []string{}
 		for _, n := range nodes {
-			if n.Public || admin {
+			if admin || (n.Public && n.LastSeen > 0) { // 与 visibleNodes 同一条：等待接入的不给访客
 				ids = append(ids, n.ID)
 			}
 		}

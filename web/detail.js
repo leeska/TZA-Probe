@@ -147,7 +147,7 @@ export async function detail(id, focus = null) {
     !focused && n.unlock?.total
       ? `<div class="unlock-block">${unlockPanel(n.unlock, catalog, { tested: true })}</div>`
       : "";
-  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><span>最近连接 ${date(n.last_seen)}</span>${n.metrics_stale ? `<span class="warn-text">${esc(diagnosticHint(n))}</span>` : ""}</div>${focused ? "" : `<div data-part="detail-stats" class="detail-stats"><div><span>本周期用量</span><strong>${bytes(n.traffic_used)}</strong><small>${date(n.cycle_start)} — ${date(n.cycle_end)}（本地时间）</small></div><div><span>本次开机网卡累计</span><strong>${n.metrics ? `↑ ${bytes(n.metrics.net_out)} / ↓ ${bytes(n.metrics.net_in)}` : "指标不可用"}</strong><small>${n.metrics ? `运行 ${Math.floor(n.metrics.uptime / 86400)} 天 · ` : ""} ${esc(osLabel(n, "—"))} ${esc(n.metrics?.arch || n.agent_status?.arch || "")}</small></div><div class="detail-remaining-value"><span>剩余价值</span><strong>${esc(remainingValueLabel(n))}</strong><small>${esc(remainingValueHint)}</small></div>${throttleTile}${bandwidthTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24, n)}</div>${unlockSection}`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}${routeHint}`;
+  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><span>最近连接 ${date(n.last_seen)}</span>${n.metrics_stale ? `<span class="warn-text">${esc(diagnosticHint(n))}</span>` : ""}</div>${focused ? "" : `<div data-part="detail-stats" class="detail-stats"><div><span>本周期用量</span><strong>${bytes(n.traffic_used)}</strong><small>按计费方式统计 · ${date(n.cycle_start)} — ${date(n.cycle_end)}（本地时间）</small></div><div><span>本次开机网卡累计</span><strong>${n.metrics ? `↑ ${bytes(n.metrics.net_out)} / ↓ ${bytes(n.metrics.net_in)}` : "指标不可用"}</strong><small>${n.metrics ? `开机以来网卡收发总量，不按计费周期 · 运行 ${Math.floor(n.metrics.uptime / 86400)} 天 · ` : ""} ${esc(osLabel(n, "—"))} ${esc(n.metrics?.arch || n.agent_status?.arch || "")}</small></div><div class="detail-remaining-value"><span>剩余价值</span><strong>${esc(remainingValueLabel(n))}</strong><small>${esc(remainingValueHint)}</small></div>${throttleTile}${bandwidthTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24, n)}</div>${unlockSection}`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}${routeHint}`;
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
@@ -288,6 +288,12 @@ export async function detail(id, focus = null) {
       }
     }
   }));
+  // 刚接入的在线节点：24 小时的聚合格（6 分钟一格）还没攒够两格，1 小时的（分钟级）通常已经有了。
+  // 直接替用户切到 1 小时，而不是摆一句「可先切到最近 1 小时」让人自己去点。
+  if (!focused && n.online && rangeSelect && (history?.length ?? 0) < 2) {
+    rangeSelect.value = "1";
+    rangeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  }
 }
 
 function targetLabel(series) {
@@ -314,7 +320,7 @@ function hostCharts(samples, hours, n) {
   // 聚合格（24 小时一格 6 分钟）还没攒够两格，不能再说「Agent 上报后显示」。
   if (samples.length < 2) {
     const text = n?.online
-      ? "正在采样，攒够两个数据点后显示曲线；可先切到「最近 1 小时」查看"
+      ? "正在采样，攒够两个数据点后显示曲线"
       : n?.last_seen
         ? "这段时间没有主机历史（节点离线）"
         : "节点还没接入，Agent 上报后自动显示 CPU、内存与网速曲线";

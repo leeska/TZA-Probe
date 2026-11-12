@@ -96,7 +96,7 @@ HTTP 401：未授权；403：跨源写入；404：不存在或不可见；409：
 - `region`（节点所在地区）只做展示，不参与匹配，不做这项检查。
 - `decoration`：这台节点卡片上的主题装饰，可省略（按节点名、地区、默认项自动选）。写成「包 id/装饰项 id」，取当前外观或依附它的附加包在 `theme.json` 里声明的 `decorations`（见 [THEMES.md](THEMES.md#按节点挑装饰)）；当前外观不提供这一项时按自动处理。
 - `vendor`：商家（如 netcup / Hytron），可省略。公开卡片上显示为名牌，公开接口照常返回，前台搜索也按它匹配；最多 60 字节，首尾不能有空格。
-- `billing`：`reset_at` 是周期锚点；`free` 见下文。
+- `billing`：`reset_at` 是周期锚点；`free` 见下文。新建（POST）时 `reset_at` 留空取本月 1 日 00:00 UTC，`traffic_mode` 留空取 `sum`；编辑（PUT）是整份替换，仍要写全。
 - `line`：线路带宽 `mbps` 与商家降速规则。
 - 节点视图另带运行状态：`online`、`last_seen`、`metrics`、`cycle_start` / `cycle_end`、`traffic_used`、`avg_bps`、`covered_hours`、`window_hours`、`throttled`、`probe_targets`、`unlock`。
 - 创建时间与用量校正是服务端自记的状态，存在单独的列里，不在节点配置与任何响应中。

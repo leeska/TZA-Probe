@@ -116,6 +116,15 @@ func (s *Service) Node(ctx context.Context, id string) (model.NodeView, error) {
 // CreateNode stores a new node and returns its id and one-time Agent key.
 func (s *Service) CreateNode(ctx context.Context, n model.Node) (string, string, error) {
 	n.ID = ""
+	// 没填计费周期时按面板表单的默认值补上（本月 1 日 UTC 零点、双向合计），
+	// MCP 与脚本只给名字也能建出节点；编辑（整份替换）仍要求写全。
+	if n.Billing.ResetAt == "" {
+		now := time.Now().UTC()
+		n.Billing.ResetAt = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	}
+	if n.Billing.TrafficMode == "" {
+		n.Billing.TrafficMode = "sum"
+	}
 	n = n.Normalized()
 	if err := n.Validate(); err != nil {
 		return "", "", model.Invalid(err.Error())

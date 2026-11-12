@@ -229,7 +229,7 @@ func nodeSchema(withID bool) map[string]any {
 				"description": "卡片展示哪些运营商的回程（只有三网），留空显示全部",
 			},
 		}),
-		"billing": object("价格与流量周期；新建时 reset_at 与 traffic_mode 必填", map[string]any{
+		"billing": object("价格与流量周期；新建时 reset_at 留空取本月 1 日 00:00 UTC，traffic_mode 留空取 sum", map[string]any{
 			"reset_at":      map[string]any{"type": "string", "description": "计费周期锚点，RFC3339 精确到秒，如 2026-09-01T00:00:00Z；其日与时分秒逐月顺延"},
 			"traffic_limit": map[string]any{"type": "integer", "description": "周期流量额度（十进制字节），0 表示不限"},
 			"traffic_mode":  map[string]any{"type": "string", "enum": []string{"sum", "max", "in", "out"}, "description": "流量统计方式：双向合计 / 取较大方向 / 仅下载 / 仅上传"},

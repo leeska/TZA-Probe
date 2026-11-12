@@ -257,10 +257,13 @@ func (s *Store) Rotate(ctx context.Context, id string) (string, error) {
 	return token, nil
 }
 
-// IsPublic is a keyed lookup; detail requests must not reload all nodes and billing ledgers.
+// IsPublic reports whether visitors may see the node: it is marked public and
+// its Agent has reported at least once. A node still waiting for its first
+// report is an unfinished setup, not something to show on the public page.
+// It is a keyed lookup; detail requests must not reload all nodes and billing ledgers.
 func (s *Store) IsPublic(ctx context.Context, id string) (bool, error) {
 	var public bool
-	err := s.queryRow(ctx, "SELECT json_extract(config,'$.public') FROM nodes WHERE id=?", id).Scan(&public)
+	err := s.queryRow(ctx, "SELECT coalesce(json_extract(config,'$.public'),0) AND last_seen>0 FROM nodes WHERE id=?", id).Scan(&public)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, ErrNotFound
 	}

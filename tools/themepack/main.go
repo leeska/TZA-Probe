@@ -1,8 +1,7 @@
 // Command themepack zips the official theme packages under themes/ into
 // installable archives and checks each with the same validation the Server
-// and TZA-CC use. scripts/pipeline.sh uses it for the ui-smoke run (which
-// installs them on its disposable Server) and the release build; TZA-CC can
-// import the folders directly (cc import --approve ../TZA-Probe/themes/*).
+// uses on upload. scripts/pipeline.sh uses it for the ui-smoke run (which
+// installs them on its disposable Server) and the release build.
 //
 //	go run ./tools/themepack -out dist/themes themes/*
 package main
@@ -61,7 +60,7 @@ func pack(dir, out string) error {
 }
 
 // zipDir packs a folder's regular files with theme.json at the root, skipping
-// dot files the way the Server and TZA-CC do, and the folder's README.md (the
+// dot files the way the Server does, and the folder's README.md (the
 // package's documentation lives in the repository, not in the zip).
 func zipDir(dir string) ([]byte, error) {
 	var buf bytes.Buffer

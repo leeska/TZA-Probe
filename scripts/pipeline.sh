@@ -236,7 +236,7 @@ run_build() {
     fi
   done
   note "server amd64+arm64 与打包: $(dur $t1)"
-  # 官方主题包（复古印刷 / 二次元）随发行一起出 zip：发到 TZA-CC 市场用，离线部署也能在后台「主题」里上传。
+  # 官方主题包（复古印刷 / 二次元）随发行一起出 zip，在后台「主题」里上传安装。
   rm -rf "$OUT/themes"
   "$GO" run ./tools/themepack -out "$OUT/themes" themes/* | sed 's/^/   /' || { FAILED=1; return; }
 

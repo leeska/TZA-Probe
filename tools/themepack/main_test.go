@@ -9,8 +9,8 @@ import (
 	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
 
-// 仓库里的官方主题包（复古印刷 / 二次元；现代极简已编进二进制）是发到 TZA-CC 的源码：每个都要能被
-// Server 与 CC 共用的校验收下，装进 Store 后皮肤 id 与样式表都对得上。
+// 仓库里的官方主题包（复古印刷 / 二次元；现代极简已编进二进制）是随发行包发布的源码：每个都要能被
+// Server 的上传校验收下，装进 Store 后皮肤 id 与样式表都对得上。
 func TestOfficialThemesInstall(t *testing.T) {
 	dirs, err := filepath.Glob("../../themes/*")
 	if err != nil || len(dirs) == 0 {

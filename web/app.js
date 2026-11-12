@@ -5,7 +5,7 @@ import { applyTheme, themeButton } from "./theme.js";
 import { applySkin, skinButton, skinLayout } from "./skins.js";
 import { searchMatch } from "./search.js";
 import { carrierMark } from "./carrier-logos.js";
-import { distroBadge, regionFlag, offlineBadge, offlineTitle } from "./node-identity.js";
+import { distroBadge, regionFlag, offlineBadge, offlineTitle, isPending } from "./node-identity.js";
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
 import { decorationVars, pickDecoration } from "./decorations.js";
 import { brandHTML } from "./brand.js";
@@ -248,7 +248,7 @@ function overviewInner() {
       valueCount++;
     }
   }
-  const valueTile = `<div data-part="overview-tile" class="overview-tile" title="已估算 ${valueCount} 台 · 价格 × 剩余时间 ÷ 价格周期，到期后为 0；${esc(fxHint)}"><div class="tile-header"><span>剩余价值汇总</span><span class="tile-badge green-badge">${esc(priceUnit)}</span></div><strong>${valueCount ? money(value) : "—"}</strong></div>`;
+  const valueTile = `<div data-part="overview-tile" class="overview-tile" title="已估算 ${valueCount} 台 · 价格 × 剩余时间 ÷ 价格周期，到期后为 0；${esc(fxHint)}"><div class="tile-header"><span>剩余价值<span class="tile-label-extra">汇总</span></span><span class="tile-badge green-badge">${esc(priceUnit)}</span></div><strong>${valueCount ? money(value) : "—"}</strong></div>`;
   const costTile = `<div data-part="overview-tile" class="overview-tile" title="已计价 ${costCount} 台 · 价格按周期折算为每月（月按 30 天），免费机器为 0；${esc(fxHint)}"><div class="tile-header"><span>每月成本</span><span class="tile-badge green-badge">${esc(priceUnit)}</span></div><strong>${costCount ? money(cost) + '<small> / 月</small>' : "—"}</strong></div>`;
   return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${hasLiveMetrics ? bytes(rateOut) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${hasLiveMetrics ? bytes(rateIn) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>${valueTile}${costTile}`;
 }
@@ -279,11 +279,13 @@ function metricsInner(n) {
     // 离线时早就是「—」）。磁盘是存量，离线时仍按最后一次上报显示。
     live = hasMetrics && n.online;
   // CPU 那格的副标给核心数（Agent 报的 runtime.NumCPU），老 Agent 没报就退回原来的说明文字。
-  const cpuSub = !hasMetrics ? (n.metrics_stale ? "指标不可用" : "等待采集") : !n.online ? "离线" : m.cpu_cores ? `${m.cpu_cores} 核` : "系统计算负载";
+  // 从没接入过的机器三格统一写「等待首次上报」，不再一格「等待采集」、两格「未报告」。
+  const waiting = isPending(n) ? "等待首次上报" : null;
+  const cpuSub = !hasMetrics ? (n.metrics_stale ? "指标不可用" : waiting || "等待采集") : !n.online ? "离线" : m.cpu_cores ? `${m.cpu_cores} 核` : "系统计算负载";
   // 内存与磁盘按 1024 换算（gib）：这两个量商家按 GiB 卖、`df -h` / `free -h` 也给 GiB；
   // 速率与流量仍按十进制（bytes），与商家的流量口径一致。
-  const memSub = !hasMetrics ? (n.metrics_stale ? "指标不可用" : "未报告") : !n.online ? "离线" : `${gib(m.memory_used)} / ${gib(m.memory_total)}`;
-  const diskSub = hasMetrics ? `${gib(m.disk_used)} / ${gib(m.disk_total)}` : n.metrics_stale ? "指标不可用" : "未报告";
+  const memSub = !hasMetrics ? (n.metrics_stale ? "指标不可用" : waiting || "未报告") : !n.online ? "离线" : `${gib(m.memory_used)} / ${gib(m.memory_total)}`;
+  const diskSub = hasMetrics ? `${gib(m.disk_used)} / ${gib(m.disk_total)}` : n.metrics_stale ? "指标不可用" : waiting || "未报告";
   const mode = { sum: "双向", max: "取峰值", in: "仅下载", out: "仅上传" }[n.billing.traffic_mode];
   const trafficSub = n.billing.traffic_limit ? [bytes(n.billing.traffic_limit), mode].filter(Boolean).join(" · ") : "不限";
   return `${meter("CPU", live ? m.cpu : null, cpuSub)}${meter("内存", live ? percent(m.memory_used, m.memory_total) : null, memSub)}${meter("磁盘", hasMetrics ? percent(m.disk_used, m.disk_total) : null, diskSub)}<div data-part="metric" class="metric"><div><span>周期用量</span><strong>${bytes(n.traffic_used)}</strong></div><progress max="100" value="${percent(n.traffic_used, n.billing.traffic_limit)}" aria-label="周期流量额度"></progress><div class="traffic-meta"><small class="traffic-quota"><span>额度</span> <span class="traffic-value">${esc(trafficSub)}</span></small>${bandwidthLine(n)}${throttleNoteHTML(n)}</div></div>`;
@@ -344,6 +346,7 @@ async function liveTick() {
       if (!n) continue;
       el.classList.toggle("is-online", !!n.online);
       el.classList.toggle("is-offline", !n.online);
+      el.classList.toggle("is-pending", isPending(n));
       el.querySelector(".node-dot")?.classList.toggle("offline", !n.online);
       setHTML(el.querySelector(".os-box"), osTagsContent(n));
       const state = el.querySelector(".node-state");
@@ -351,6 +354,7 @@ async function liveTick() {
         state.hidden = !!n.online;
         setText(state, n.online ? "离线" : statusLabel(n));
         state.title = offlineTitle(n);
+        state.classList.toggle("is-pending", isPending(n));
       }
       const badge = el.querySelector(".collection-state");
       if (badge) { badge.hidden = !n.metrics_stale; badge.title = diagnosticHint(n); }
@@ -595,7 +599,7 @@ function renderCards() {
   } else {
     list.innerHTML = wanted.length
       ? filtered.map(card).join("")
-      : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点，并开启公开展示。"}</p></div>`;
+      : `<div class="empty"><span class="empty-symbol">◎</span><h2>${nodes.length ? "没有匹配的节点" : "尚无公开节点"}</h2><p>${nodes.length ? "换一个关键词或分组试试。" : "在管理控制台添加节点并开启公开展示；节点的 Agent 首次上报后出现在这里。"}</p></div>`;
     [...list.querySelectorAll(".node-card")].forEach((el, i) => renderedHTML.set(el, wanted[i]));
   }
   alignCardRows();
@@ -770,7 +774,8 @@ const cardShell = (n, inner) => {
     .filter(([, v]) => v)
     .map(([k, v]) => ` ${k}="${esc(v)}"`)
     .join("");
-  return `<article data-part="node-card" class="node-card ${n.online ? "is-online" : "is-offline"}" data-node="${n.id}"${attrs}>${inner}</article>`;
+  // 从没上报过的机器（等待接入）另挂 is-pending：它不是故障，不该和掉线的机器一样标红。
+  return `<article data-part="node-card" class="node-card ${n.online ? "is-online" : "is-offline"}${isPending(n) ? " is-pending" : ""}" data-node="${n.id}"${attrs}>${inner}</article>`;
 };
 
 // 卡壳上随节点设置变的那几个属性。10 秒一轮只按内容补丁（patchInto 不碰卡壳本身），

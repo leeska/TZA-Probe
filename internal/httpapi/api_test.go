@@ -117,6 +117,10 @@ func TestObservationsSlimDropsHopTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
+	// 访客只看得到上报过的公开节点（等待接入的不上公开页），所以先上报：下面主机历史 slim 查的也是这一次。
+	if err = s.Report(ctx, id, model.Metrics{CPU: 12.5, MemoryUsed: 1, MemoryTotal: 4, RateIn: 3, RateOut: 4, OS: "linux", Arch: "amd64", Distro: "Debian 13", Version: "1.0.0", IPFamilies: []string{"ipv4"}}, now); err != nil {
+		t.Fatal(err)
+	}
 	jobs, err := s.Lease(ctx, id, now)
 	if err != nil || len(jobs) != 1 {
 		t.Fatalf("lease: %v %+v", err, jobs)
@@ -164,10 +168,7 @@ func TestObservationsSlimDropsHopTables(t *testing.T) {
 		t.Fatalf("批量观测应只含公开节点且等于 slim: %s", batch)
 	}
 
-	// 主机历史 slim 只留图表要的五个字段。
-	if err = s.Report(ctx, id, model.Metrics{CPU: 12.5, MemoryUsed: 1, MemoryTotal: 4, RateIn: 3, RateOut: 4, OS: "linux", Arch: "amd64", Distro: "Debian 13", Version: "1.0.0", IPFamilies: []string{"ipv4"}}, now); err != nil {
-		t.Fatal(err)
-	}
+	// 主机历史 slim 只留图表要的五个字段（样本是开头那次上报）。
 	code, history := get("/api/v1/nodes/" + id + "/history?slim=1")
 	var samples []struct {
 		At      int64          `json:"at"`
@@ -730,7 +731,12 @@ func TestAnonymousPanelSharesProbeSnapshot(t *testing.T) {
 	}
 	defer s.Close()
 	for _, name := range []string{"a", "b"} {
-		if _, _, err = s.SaveNode(context.Background(), model.Node{Name: name, Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true); err != nil {
+		id, _, err := s.SaveNode(context.Background(), model.Node{Name: name, Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 访客只看得到上报过的公开节点。
+		if err = s.Report(context.Background(), id, model.Metrics{CPU: 1, MemoryUsed: 1, MemoryTotal: 2, DiskTotal: 1}, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -821,5 +827,55 @@ func TestAPIResponsesAreGzipped(t *testing.T) {
 	handler.ServeHTTP(w, r)
 	if w.Code != 204 || w.Header().Get("Content-Encoding") != "" || w.Body.Len() != 0 {
 		t.Fatalf("204: %d %v %d", w.Code, w.Header(), w.Body.Len())
+	}
+}
+
+// 公开但还没接入（Agent 从没上报过）的节点不上公开页：列表、实时与单台详情都对访客隐藏，
+// 管理员照常可见；Agent 第一次上报后自动出现。
+func TestPendingNodesHiddenFromVisitors(t *testing.T) {
+	ctx := context.Background()
+	s, err := storage.Open(filepath.Join(t.TempDir(), "pending.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	admin := model.Secret()
+	server := httptest.NewServer((&API{Store: s, AdminToken: admin, Assets: web.Handler()}).Handler())
+	defer server.Close()
+	get := func(path string, asAdmin bool) (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", server.URL+path, nil)
+		if asAdmin {
+			req.Header.Set("Authorization", "Bearer "+admin)
+		}
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+	id, _, err := s.SaveNode(ctx, model.Node{Name: "pending-node", Public: true, Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/v1/nodes", "/api/v1/nodes/live"} {
+		if code, body := get(path, false); code != 200 || strings.Contains(body, id) {
+			t.Fatalf("visitor %s shows the pending node: %d %s", path, code, body)
+		}
+	}
+	if code, _ := get("/api/v1/nodes/"+id+"/history?hours=1", false); code != 404 {
+		t.Fatalf("visitor history of pending node = %d, want 404", code)
+	}
+	if code, body := get("/api/v1/nodes", true); code != 200 || !strings.Contains(body, id) {
+		t.Fatalf("admin list misses the pending node: %d %s", code, body)
+	}
+	if err = s.Report(ctx, id, model.Metrics{CPU: 1, MemoryUsed: 1, MemoryTotal: 2, DiskTotal: 1}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// 访客列表是几秒一份的快照，下一份就带上它；单台详情不走快照，立刻可见。
+	if code, _ := get("/api/v1/nodes/"+id+"/history?hours=1", false); code != 200 {
+		t.Fatalf("visitor history after first report = %d, want 200", code)
 	}
 }

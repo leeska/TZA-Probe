@@ -416,6 +416,22 @@ html .node-grid .node-card.is-offline .node-dot.offline {
   background: var(--red);
   box-shadow: 0 0 0 3px rgba(var(--red-rgb, 220, 38, 38), 0.15);
 }
+/* 等待接入不是故障：虚线边框 + 灰点 + 灰标签，与掉线（红）区分开，文字仍写「等待接入」。 */
+html .node-grid .node-card.is-pending {
+  border-color: var(--line);
+  border-style: dashed;
+  border-inline-start: 1px dashed var(--line);
+}
+html .node-grid .node-card.is-pending .node-dot.offline {
+  background: var(--subtle);
+  box-shadow: none;
+}
+html .node-state.is-pending {
+  border-color: var(--line);
+  color: var(--muted);
+  background: transparent;
+}
+html[data-theme="dark"] .node-card .node-state.is-pending { color: var(--muted); background: transparent; }
 html .node-card .os-tag[role="img"] {
   display: inline-flex;
   flex: 0 0 auto;
@@ -873,6 +889,16 @@ button.node-name {
   height: 26px;
   padding: 0 var(--space-2-5);
   font-size: var(--text-xs);
+}
+/* 单栈机器只有一段：没有可切的另一边，选中态的浮起阴影会让它像一颗能按的按钮。
+   保留同样的外框尺寸（与双栈行对齐），只去掉浮起与指针。 */
+/* 选择器比各皮肤的 `.segmented button.active` 更具体（例如 shadcn 的 html[data-skin] 那条），不靠 !important。 */
+html .segmented.card-family button.active:only-child,
+html .segmented.card-family button:only-child:hover {
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  cursor: default;
 }
 
 .family-slot {
@@ -3223,12 +3249,57 @@ pre,
     gap: var(--space-2-5);
     padding: 9px var(--space-4);
   }
-  .hero-meta strong {
-    font-size: var(--text-lg);
+  .hero {
+    padding: var(--space-2-5) 0;
   }
+  .hero-meta {
+    padding: 6px var(--space-4);
+  }
+  .hero-meta strong {
+    font-size: var(--text-md);
+  }
+  /* 手机上六格排成 3 × 2 的紧凑磁贴：两列时要排三行，第一屏看不到任何节点。
+     右上角的符号徽标在这里只占地方，标题与数值已经说清是什么。 */
   .overview {
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-3);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+  .overview-tile {
+    min-height: 0;
+    padding: var(--tile-pad-compact, 10px 11px);
+    border-radius: calc(14px * var(--radius-scale));
+  }
+  .overview .tile-header {
+    margin-bottom: var(--space-1-5, 6px);
+  }
+  .overview .tile-header span:not(.tile-badge) {
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 只藏纯符号的徽标（↑ ↓ ⚡）；币种徽标（CNY / USD）是数值的单位，必须留着。 */
+  .overview .tile-badge:is(.orange-badge, .teal-badge, .purple-badge) {
+    display: none;
+  }
+  .overview .tile-badge.green-badge {
+    flex: 0 0 auto;
+    font-size: var(--text-2xs);
+    padding: 2px 4px;
+  }
+  .overview .tile-header {
+    gap: 4px;
+  }
+  /* 三列时「剩余价值汇总」放不下会被截成「剩余价…」，窄屏只写「剩余价值」。 */
+  .overview .tile-label-extra {
+    display: none;
+  }
+  .overview-tile strong {
+    font-size: clamp(15px, 4.6vw, 20px);
+  }
+  .overview-tile strong small {
+    font-size: 11px;
   }
   /* 手机上：搜索框独占第一行，分组下拉与「卡片 / 列表」并排在第二行（左右两端）。
      以前切换按钮单独一行靠右、左边空一大块。filter-controls 用 display: contents 让搜索框与
