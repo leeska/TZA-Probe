@@ -1,9 +1,12 @@
 package storage
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -79,5 +82,42 @@ func TestFreshDatabaseHasNoLegacyRuntimeTables(t *testing.T) {
 	var count int
 	if err := store.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND (name LIKE 'executor_%' OR name LIKE 'runtime_%' OR name LIKE 'component_%')").Scan(&count); err != nil || count != 0 {
 		t.Fatal("legacy tables retained", count, err)
+	}
+}
+
+func TestCheckDataDir(t *testing.T) {
+	fresh := t.TempDir()
+	if err := CheckDataDir(fresh); err != nil {
+		t.Fatalf("empty directory: %v", err)
+	}
+	current := t.TempDir()
+	s, err := Open(filepath.Join(current, "tza-probe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if err := CheckDataDir(current); err != nil {
+		t.Fatalf("current schema: %v", err)
+	}
+	legacy := t.TempDir()
+	os.WriteFile(filepath.Join(legacy, "tza-v2.db"), []byte("x"), 0600)
+	if err := CheckDataDir(legacy); err == nil {
+		t.Fatal("tza-v2.db accepted")
+	}
+	old := t.TempDir()
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(old, "tza-probe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Exec("CREATE TABLE nodes(id TEXT)")
+	db.Exec("PRAGMA user_version=17")
+	db.Close()
+	before, _ := os.ReadFile(filepath.Join(old, "tza-probe.db"))
+	if err := CheckDataDir(old); err == nil || !strings.Contains(err.Error(), "schema 17") {
+		t.Fatalf("schema 17: %v", err)
+	}
+	after, _ := os.ReadFile(filepath.Join(old, "tza-probe.db"))
+	if !bytes.Equal(before, after) {
+		t.Fatal("the check changed the old database")
 	}
 }

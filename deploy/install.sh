@@ -176,6 +176,17 @@ else
   echo "已构建 Agent：tza-agent-linux-amd64、tza-agent-linux-arm64"
 fi
 
+# 升级前先用新版本核对数据目录：数据库版本不兼容时（例如 2.0 起不再升级旧库）在这里停下，
+# 旧二进制与正在运行的服务原样保留。旧版本的 tza-server 没有这条子命令，跳过。
+if [ -d "$DATA" ] && grep -q 'check-data' "${WORK}/tza-server" 2>/dev/null; then
+  if ! "${WORK}/tza-server" check-data --data "$DATA"; then
+    echo "!! 版本 ${VERSION} 不能使用现有数据目录 ${DATA}，已中止，现有安装与服务未做任何改动。" >&2
+    echo "   全新部署请换一个数据目录：--data /var/lib/tza-probe-v2（旧目录保留，可随时回到旧版本）；" >&2
+    echo "   继续使用旧数据请安装旧版本，例如 --release v1.9.1。" >&2
+    exit 1
+  fi
+fi
+
 if [ -f "$BIN" ]; then
   cp -p "$BIN" "${BIN}.previous"
   echo "已保留旧二进制：${BIN}.previous"

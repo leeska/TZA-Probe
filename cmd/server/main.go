@@ -50,6 +50,8 @@ func run() error {
 			return browserWorkerCommand(os.Args[2:])
 		case "browser-install":
 			return browserInstallCommand(os.Args[2:])
+		case "check-data":
+			return checkDataCommand(os.Args[2:])
 		}
 	}
 	addr := flag.String("listen", "127.0.0.1:25774", "HTTP listen address; put TLS reverse proxy in front")
@@ -250,6 +252,21 @@ func dataDir(name string, args []string, extra func(*flag.FlagSet)) (string, err
 		return "", fmt.Errorf("%s 不是目录", *dir)
 	}
 	return *dir, nil
+}
+
+// checkDataCommand exits 0 when this binary can run on --data (missing or
+// empty directory, or a database at this schema). It never writes: the
+// installer calls it with the new binary before replacing the old one.
+func checkDataCommand(args []string) error {
+	fs := flag.NewFlagSet("tza-server check-data", flag.ContinueOnError)
+	dir := fs.String("data", "./data", "private data directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if _, err := os.Stat(*dir); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return storage.CheckDataDir(*dir)
 }
 
 // initCommand prepares a data directory before the first start: it makes

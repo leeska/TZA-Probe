@@ -5,6 +5,8 @@
 #   GITHUB_TOKEN=... bash scripts/release.sh <tag> <dist 目录> [目标 sha]
 #   例：GITHUB_TOKEN=ghp_... bash scripts/release.sh v1.0.0 dist
 #   没设 GITHUB_TOKEN 时用 gh 的登录凭据（gh auth token）。
+#   PRERELEASE=1 发成预发布：不会成为 Latest，install.sh 默认仍装上一个正式版，只有
+#   --release <tag> 会装它（不兼容的大版本先这样发）。
 #
 # Linux 与 macOS 都能跑：只用 bash 3.2 语法（macOS 自带），sha256 校验在没有
 # sha256sum 时改用 shasum -a 256，计时不用 GNU date 的 %N。
@@ -24,6 +26,8 @@ TOKEN=${GITHUB_TOKEN:-}
 if [ -z "$TOKEN" ] && command -v gh >/dev/null; then TOKEN=$(gh auth token 2>/dev/null || true); fi
 [ -n "$TOKEN" ] || { echo "!! 需要 GITHUB_TOKEN（或先 gh auth login）" >&2; exit 1; }
 SHA=${3:-$(git rev-parse HEAD)}
+PRERELEASE_JSON=false
+[ "${PRERELEASE:-0}" = 1 ] && PRERELEASE_JSON=true
 # 两个地址可覆盖，只为了对着本地假服务测试这个脚本。
 API=${GITHUB_API:-https://api.github.com}/repos/$REPO
 UPLOADS=${GITHUB_UPLOADS:-https://uploads.github.com}/repos/$REPO
@@ -71,7 +75,7 @@ if [ -n "$rid" ]; then
   echo "   release 已存在（id $rid），复用"
 else
   rid=$(gh_json -X POST "$API/releases" \
-    -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"target_commitish\":\"$SHA\",\"generate_release_notes\":true,\"draft\":false,\"prerelease\":false}" \
+    -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"target_commitish\":\"$SHA\",\"generate_release_notes\":true,\"draft\":false,\"prerelease\":$PRERELEASE_JSON}" \
     | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or "")')
   [ -n "$rid" ] || { echo "!! 建 release 失败" >&2; exit 1; }
   echo "   新 release id=$rid"
