@@ -145,6 +145,16 @@ func (s *Store) SaveNode(ctx context.Context, n model.Node, create bool) (string
 	defer s.writes.Unlock()
 	if create {
 		n.ID = model.Secret()[:16]
+		// 新节点一律排在最后，由这里在写锁内算出：面板、MCP 与脚本走的都是这条路，
+		// 交给调用方填的话，没填的（默认 0）会插到所有排好的节点前面。
+		var last sql.NullInt64
+		if err := s.queryRow(ctx, "SELECT max(coalesce(json_extract(config,'$.order'),0)) FROM nodes").Scan(&last); err != nil {
+			return "", "", err
+		}
+		n.Order = 0
+		if last.Valid {
+			n.Order = int(last.Int64) + 1
+		}
 		token := model.Secret()
 		_, err := s.db.ExecContext(ctx, "INSERT INTO nodes(id,config,token_hash,created_at) VALUES(?,?,?,?)", n.ID, encode(n), model.Hash(token), time.Now().Unix())
 		return n.ID, token, err

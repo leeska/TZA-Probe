@@ -577,7 +577,8 @@ function renderCards() {
   const list = document.querySelector("#nodes");
   const wanted = filtered.map(cardInner);
   const shown = [...list.querySelectorAll(".node-card")];
-  const sameSet = shown.length === filtered.length && shown.every((el, i) => el.dataset.node === filtered[i].id);
+  // 空列表也要走下面的兜底分支写空状态：空数组的 every() 恒为 true，不加 length 判断会永远停在「沿用现有卡片」。
+  const sameSet = filtered.length > 0 && shown.length === filtered.length && shown.every((el, i) => el.dataset.node === filtered[i].id);
   if (sameSet) {
     shown.forEach((el, i) => {
       for (const [name, value] of Object.entries(shellAttrs(filtered[i]))) {

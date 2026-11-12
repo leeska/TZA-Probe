@@ -64,12 +64,33 @@ export function modal(title, body) {
   if (!d.open) d.showModal();
   return d;
 }
+// 正在提交的表单：请求没回来之前再点「保存」或回车都忽略，免得一次操作建出两个节点 / 任务。
+const submitting = new WeakSet();
 export function guard(fn) {
   return async (...args) => {
+    const e = args[0];
+    const form = e?.type === "submit" && e.target instanceof HTMLFormElement ? e.target : null;
+    if (form && submitting.has(form)) {
+      e.preventDefault();
+      return;
+    }
+    // 只禁用当时可用的提交按钮，结束后原样恢复；本来就禁用的按钮不动。
+    const buttons = form ? [...form.querySelectorAll('button[type="submit"], button:not([type])')].filter((b) => !b.disabled) : [];
+    if (form) {
+      submitting.add(form);
+      form.setAttribute("aria-busy", "true");
+      buttons.forEach((b) => (b.disabled = true));
+    }
     try {
       await fn(...args);
     } catch (e) {
       toast(e.message);
+    } finally {
+      if (form) {
+        submitting.delete(form);
+        form.removeAttribute("aria-busy");
+        buttons.forEach((b) => (b.disabled = false));
+      }
     }
   };
 }

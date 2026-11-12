@@ -579,3 +579,40 @@ func TestFreeNodeSaveClearsPrice(t *testing.T) {
 		}
 	}
 }
+
+// 新节点排在最后，不管调用方填了什么 order：MCP / 脚本创建时不带 order（默认 0），
+// 以前会插到所有排好的节点前面。
+func TestCreatedNodeGoesLast(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	base := model.Node{Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}
+	var ids []string
+	for i, order := range []int{0, 0, 7, 0} {
+		n := base
+		n.Name, n.Order = fmt.Sprintf("n%d", i), order
+		id, _, err := s.SaveNode(ctx, n, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := s.SaveNodeOrder(ctx, []string{ids[3], ids[2], ids[1], ids[0]}); err != nil {
+		t.Fatal(err)
+	}
+	n := base
+	n.Name = "late"
+	late, _, err := s.SaveNode(ctx, n, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := s.Nodes(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{ids[0]: 3, ids[1]: 2, ids[2]: 1, ids[3]: 0, late: 4}
+	for _, n := range nodes {
+		if n.Order != want[n.ID] {
+			t.Errorf("%s order = %d, want %d", n.Name, n.Order, want[n.ID])
+		}
+	}
+}
