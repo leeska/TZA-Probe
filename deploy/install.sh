@@ -366,6 +366,14 @@ UNIT
 }
 
 setup_browser() {
+  # 旧版本的 tza-server 没有 browser-install / browser-worker：它会把不认识的子命令当成
+  # 普通启动，以 root 起一个 Server 卡住脚本。先确认这个二进制带着浏览器。
+  if ! grep -q 'browser-install' "$BIN" 2>/dev/null; then
+    echo "!! 版本 ${VERSION} 的 tza-server 不含隔离浏览器，跳过 --with-browser（Server 照常安装）。" >&2
+    echo "   请安装包含浏览器的发布版本，或用 --source 从源码构建。" >&2
+    BROWSER="failed"
+    return
+  fi
   echo "安装地区偏移检测的隔离浏览器"
   getent group "$BROWSER_USER" >/dev/null 2>&1 || groupadd --system "$BROWSER_USER"
   id -u "$BROWSER_USER" >/dev/null 2>&1 || useradd --system --gid "$BROWSER_USER" --home-dir "$BROWSER_STATE" --shell /usr/sbin/nologin "$BROWSER_USER"
