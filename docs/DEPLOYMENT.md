@@ -1,5 +1,8 @@
 # 部署、更新、备份
 
+> 当前开发基线仅支持 [全新部署](FRESH-DEPLOYMENT.md)：Server 使用新数据目录和 schema 30，
+> Agent 重新接入，不再自动升级旧库或接管独立安装器。下文既往功能升级记录不适用于旧库原地升级。
+
 ## 0. 一键安装（推荐）
 
 Linux 主机（amd64 / arm64），一条命令装成 systemd 服务。按来源分两种方式，二选一：
@@ -160,7 +163,7 @@ systemd 部署可在 `tza-server.service` 的 `[Service]` 里加 `Environment=TZ
 - 日志：`sudo journalctl -u tza-server -n 100 --no-pager` / `sudo journalctl -u tza-agent -n 100 --no-pager`。
 - 配置修改后：`sudo systemctl restart tza-agent`；服务不会自动重载配置。
 - 后台节点列表显示 Agent 版本、最近连接、有效指标时间和采集异常分类；在线但指标异常时，检查 Agent 的 `mount`、`interfaces` 和本机日志，修改后重启 Agent。网络任务的“执行记录”显示最近执行及失败原因。
-- 本次心跳功能应先升级 Server（SQLite 自动迁移到 schema 16），再升级 Agent。旧 Agent 的指标仍可证明在线；新 Agent 遇到旧 Server 的 404/405 会停用心跳，因此旧 Server 仍无法区分采集失败和断连。回滚至不支持 schema 16 的 Server 前应恢复升级前的数据备份。
+- 心跳功能仍要求先准备 Server 再接入 Agent。当前部署直接使用 schema 30；历史原地升级路径已移除。
 - 忘记后台密码：`sudo tza-server reset-password --data /var/lib/tza-probe` 生成新密码并打印（加 `--username 名字` 同时改用户名），不用停服，新密码即刻生效；旧浏览器会话随即失效，无需重启服务。账号保存在数据目录的 `admin-account`（密码只存 PBKDF2 摘要）。
 - 管理密钥丢失时停服，重新生成 `admin-token` 并维持服务账户所有权和 0600 权限后启动。Server 重启会使浏览器会话失效。
 
@@ -179,6 +182,9 @@ sudo systemctl start tza-server
 先升 Server，再升 Agent。Agent 升级使用相同的 stop → 保留旧二进制 → install → start 顺序（或不带 `--token` 重新执行安装命令），不需要重置密钥。
 
 **一键升级**只下发运维者签过名的 Agent。签名私钥只放在你自己的电脑上，Server 手里只有签好的安装包、`.sig` 与公钥；节点安装时钉住公钥，之后只接受这把密钥签过、且比自己新的版本。所以 Server 或后台账号即使被人接管，也推不了自己的程序，也不能把节点退回旧版本——最多让一键升级停摆。
+
+历史升级密钥已失密，整改版本拒绝其公钥，旧 ID 改名同样无效。正式升级前须完成
+[Agent 升级信任迁移](AGENT-UPGRADE-TRUST-MIGRATION.md)，通过独立可信渠道更新节点信任。
 
 1. 在自己电脑上生成一次密钥（私钥另行备份，丢了就要换钥）：
 

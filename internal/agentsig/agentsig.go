@@ -13,6 +13,7 @@ package agentsig
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -57,6 +58,9 @@ func (s Signature) Verify(keys map[string]ed25519.PublicKey) error {
 	if !ok {
 		return fmt.Errorf("signing key %q is not trusted on this node", s.KeyID)
 	}
+	if revokedUpgradeKey(pub) {
+		return errors.New("Agent upgrade signing key is revoked; independent trust migration required")
+	}
 	sig, err := base64.StdEncoding.DecodeString(s.Sig)
 	if err != nil || !ed25519.Verify(pub, message(s.Arch, s.Version, s.SHA256), sig) {
 		return errors.New("agent signature is invalid")
@@ -76,6 +80,9 @@ func ParseKeys(text string) (map[string]ed25519.PublicKey, error) {
 		id, pub, err := tzapkg.ParsePublicKey(line)
 		if err != nil {
 			return nil, err
+		}
+		if revokedUpgradeKey(pub) {
+			return nil, errors.New("Agent upgrade signing key is revoked; remove it through independent trust migration")
 		}
 		keys[id] = pub
 	}
@@ -107,7 +114,14 @@ func ParsePrivateKey(text string) (string, ed25519.PrivateKey, error) {
 	if err != nil || len(raw) != ed25519.PrivateKeySize {
 		return "", nil, errors.New("private key is not a base64 Ed25519 private key")
 	}
+	if revokedUpgradeKey(ed25519.PrivateKey(raw).Public().(ed25519.PublicKey)) {
+		return "", nil, errors.New("Agent upgrade signing private key is revoked")
+	}
 	return id, ed25519.PrivateKey(raw), nil
+}
+
+func revokedUpgradeKey(public ed25519.PublicKey) bool {
+	return fmt.Sprintf("%x", sha256.Sum256(public)) == "d7138a63f6f0f74a48e1857e78041795a269b7cb2fdb01a32bde835c5d878d8d"
 }
 
 var versionPattern = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)

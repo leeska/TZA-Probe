@@ -26,21 +26,12 @@ type Node struct {
 	// from the current skin or one of its add-ons. Empty picks automatically
 	// (node name, then region, then the default); a choice the current skin
 	// does not offer falls back to automatic too.
-	Decoration             string        `json:"decoration,omitempty"`
-	Order                  int           `json:"order"`
-	Public                 bool          `json:"public"`
-	Display                NodeDisplay   `json:"display"`
-	Billing                Billing       `json:"billing"`
-	Line                   Line          `json:"line"`
-	RuntimeInstallDisabled bool          `json:"runtime_install_disabled,omitempty"`
-	RuntimeTarget          RuntimeTarget `json:"runtime_target,omitempty"`
-}
-
-// RuntimeTarget is the controller-assigned IPSentinel handshake identity the
-// node pins in its local installer configuration.
-type RuntimeTarget struct {
-	ControllerID string `json:"controller_id"`
-	NodeID       string `json:"node_id"`
+	Decoration string      `json:"decoration,omitempty"`
+	Order      int         `json:"order"`
+	Public     bool        `json:"public"`
+	Display    NodeDisplay `json:"display"`
+	Billing    Billing     `json:"billing"`
+	Line       Line        `json:"line"`
 }
 
 // NodeDisplay picks which probe results the public card shows. Both regions

@@ -283,9 +283,7 @@ func TestNetworkHistoryMatchesThePerRowGrouping(t *testing.T) {
 	}
 }
 
-// 24 小时以上从 6 分钟格子再聚合（见 tcp_buckets.go）。格子要能从旧结果回填出来：
-// 升级上来的库清空格子、退回「待回填」状态，回填完的结果必须与逐行聚合一致。
-func TestNetworkHistoryBucketsBackfill(t *testing.T) {
+func TestNetworkHistoryBucketsSurviveReopen(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
 	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
@@ -294,36 +292,30 @@ func TestNetworkHistoryBucketsBackfill(t *testing.T) {
 	if err := s.db.QueryRow("SELECT count(*) FROM tcp_buckets").Scan(&built); err != nil || built == 0 {
 		t.Fatalf("triggers built no buckets (%d, %v)", built, err)
 	}
-	// 种子数据完成时刻最晚到 now+90 秒，起点放在那之后，回填要覆盖全部结果。
-	liveFrom := now.Add(time.Hour).Unix()
-	if _, err := s.db.Exec("DELETE FROM tcp_buckets; UPDATE tcp_buckets_state SET next=?,live_from=?", liveFrom-int64(JobsRetention/time.Second), liveFrom); err != nil {
+	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s.tcpBucketsFrom.Store(liveFrom)
-	// 回填完成前，起点之前的时间段走逐行查询，结果照样正确。
-	for _, node := range nodes {
-		got, _ := s.NetworkHistory(ctx, node, 24, now)
-		want, _ := oldNetworkHistory(ctx, s, node, 24, now)
-		if !sameSeries(got, want) {
-			t.Fatalf("before backfill: node %s differs", node)
-		}
-	}
-	if err := s.backfillTCPBuckets(ctx); err != nil {
+	reopened, err := Open(s.path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if s.tcpBucketsFrom.Load() != 0 {
-		t.Fatal("backfill did not mark the buckets complete")
-	}
-	var rebuilt int
-	if err := s.db.QueryRow("SELECT count(*) FROM tcp_buckets").Scan(&rebuilt); err != nil || rebuilt != built {
-		t.Fatalf("backfill built %d buckets, triggers built %d (%v)", rebuilt, built, err)
+	defer reopened.Close()
+	var retained int
+	if err := reopened.db.QueryRow("SELECT count(*) FROM tcp_buckets").Scan(&retained); err != nil || retained != built {
+		t.Fatalf("reopen retained %d buckets, want %d (%v)", retained, built, err)
 	}
 	for _, node := range nodes {
 		for _, hours := range []int{24, 168} {
-			got, _ := s.NetworkHistory(ctx, node, hours, now)
-			want, _ := oldNetworkHistory(ctx, s, node, hours, now)
+			got, err := reopened.NetworkHistory(ctx, node, hours, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := oldNetworkHistory(ctx, reopened, node, hours, now)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !sameSeries(got, want) {
-				t.Fatalf("after backfill: node %s %dh differs\ngot  %+v\nwant %+v", node, hours, got, want)
+				t.Fatalf("after reopen: node %s %dh differs\ngot  %+v\nwant %+v", node, hours, got, want)
 			}
 		}
 	}

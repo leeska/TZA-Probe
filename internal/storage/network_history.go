@@ -23,7 +23,10 @@ import (
 //
 // task_id IN tasks：删掉的任务，它的探测历史由后台分批删（见 purge.go），删完之前这里
 // 就不再画它。
-const tcpFinishSlack = 120
+const (
+	tcpFinishSlack   = 120
+	tcpBucketSeconds = 360
+)
 
 func (s *Store) NetworkHistory(ctx context.Context, id string, hours int, now time.Time) ([]model.NetworkSeries, error) {
 	hours = min(max(hours, 1), 168)
@@ -37,8 +40,8 @@ func (s *Store) NetworkHistory(ctx context.Context, id string, hours int, now ti
 	// 这条查询的大头（24 小时 0.5s、168 小时 3.2s）。目标字段每组只在 Go 里解析一次。
 	var rows *sql.Rows
 	var err error
-	if from := s.tcpBucketsFrom.Load(); step%tcpBucketSeconds == 0 && (from == 0 || since-since%tcpBucketSeconds >= from) {
-		// 步长是格子的整数倍：在 6 分钟格子上再聚合（见 tcp_buckets.go）。起点向下取整到
+	if step%tcpBucketSeconds == 0 {
+		// 步长是格子的整数倍：在 6 分钟格子上再聚合。起点向下取整到
 		// 格子边界，最左一格最多多算几分钟，对 24 小时以上的曲线看不出差别。
 		rows, err = s.query(ctx, `SELECT probe_key,max(finished),CASE WHEN sum(lat_n)>0 THEN sum(lat_sum)/sum(lat_n) END,sum(sent),sum(received),task
 			FROM tcp_buckets WHERE node_id=? AND bucket>=? AND task_id IN (SELECT id FROM tasks)

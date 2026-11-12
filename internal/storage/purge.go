@@ -46,10 +46,6 @@ func (s *Store) startPurger() {
 	s.wakePurger()
 	go func() {
 		defer close(s.purgeDone)
-		// 升级上来的库先把网络历史格子补齐（每批持锁几十毫秒），再处理删除队列。
-		if err := s.backfillTCPBuckets(ctx); err != nil && ctx.Err() == nil {
-			slog.Error("network history backfill failed; older ranges keep the slow path until the next start", "error", err)
-		}
 		for {
 			select {
 			case <-ctx.Done():
@@ -133,16 +129,15 @@ func (s *Store) runPurge(ctx context.Context, kind, target string, cutoff int64)
 		jobs, err := s.deleteChunks(ctx, "jobs", "task_id=? AND rowid<=?", target, cutoff)
 		return buckets + jobs, err
 	case purgeNodeRows:
-		jobs, err := s.deleteChunks(ctx, "jobs", "node_id=?", target)
-		if err != nil {
-			return jobs, err
+		var total int64
+		for _, table := range []string{"jobs", "tcp_buckets", "samples"} {
+			removed, err := s.deleteChunks(ctx, table, "node_id=?", target)
+			total += removed
+			if err != nil {
+				return total, err
+			}
 		}
-		buckets, err := s.deleteChunks(ctx, "tcp_buckets", "node_id=?", target)
-		if err != nil {
-			return jobs + buckets, err
-		}
-		samples, err := s.deleteChunks(ctx, "samples", "node_id=?", target)
-		return jobs + buckets + samples, err
+		return total, nil
 	default:
 		slog.Warn("unknown purge kind dropped", "kind", kind)
 		return 0, nil

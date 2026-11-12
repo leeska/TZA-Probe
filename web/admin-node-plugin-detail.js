@@ -1,60 +1,60 @@
-import { esc, guard, send, toast } from "./api.js";
-import { content, state, confirmAction } from "./admin-state.js";
-import { renderPluginAgents } from "./admin-plugin-agents.js";
+import { api, esc, guard, send, toast } from "./api.js";
+import { content, state, confirmAction, go } from "./admin-state.js";
 import { renderIPGuard } from "./admin-ip-guard.js";
 
-export async function openNodePluginDetail(pkg, { settings = false, trusted = true, back } = {}) {
+export async function renderRegionPage(nodesReady) {
+  const [, plugins] = await Promise.all([nodesReady, api("/admin/plugins")]);
+  const installed = plugins.find(plugin => plugin.id === "ipsentinel-runtime" && plugin.kind === "agent");
+  if (!installed) {
+    content().innerHTML = '<section class="page-heading"><h1>地区偏移检测</h1></section><section class="panel"><h2>尚未安装 IPSentinel</h2><p>安装插件后，在这里直接管理 Google、Meta 地区检测。</p><button class="primary" data-region-install>前往插件市场</button></section>';
+    content().querySelector("[data-region-install]").onclick = guard(async () => {
+      state.pluginsView = "market";
+      await go("plugins");
+    });
+    return;
+  }
+  await openNodePluginDetail({ ...installed, type: "executor", installed, versions: [] }, { standalone: true });
+}
+
+export async function openNodePluginDetail(pkg, { trusted = true, back, standalone = false } = {}) {
   if (pkg.id !== "ipsentinel-runtime" || pkg.type !== "executor") throw new Error("不支持此插件");
   document.querySelector("#dialog")?.close();
-  state.tab = "plugins";
+  state.tab = standalone ? "ipguard" : "plugins";
   const root = content();
-  root.innerHTML = `<section data-node-plugin-detail><div class="page-heading"><div><button class="quiet" data-plugin-back>← 返回插件</button><h1>IP 地区防护 <small class="muted">IPSentinel</small></h1><p>TZA-CC 官方插件 · 防送中检测与拉回尝试</p></div></div><div data-plugin-install></div><div class="segmented settings-tabs" role="tablist" aria-label="插件详情"><button type="button" role="tab" data-plugin-section="overview">功能</button><button type="button" role="tab" data-plugin-section="settings">Agent</button></div><div data-plugin-body></div></section>`;
+  root.innerHTML = `<section data-node-plugin-detail><div class="page-heading"><div>${standalone ? "" : '<button class="quiet" data-plugin-back>← 返回插件</button>'}<h1>地区偏移检测 <small class="muted">IPSentinel</small></h1><p>查看 Google、Meta 地区状态，按目标定位尝试校正并独立复测。</p></div></div><div data-plugin-install></div><div data-plugin-workspace></div></section>`;
   const page = root.querySelector("[data-node-plugin-detail]");
-  page.querySelector("[data-plugin-back]").onclick = guard(async () => {
+  const backButton = page.querySelector("[data-plugin-back]");
+  if (backButton) backButton.onclick = guard(async () => {
     if (back) await back();
     else await (await import("./admin-plugins.js")).renderPlugins();
   });
-  const show = async section => {
-    page.querySelectorAll("[data-plugin-section]").forEach(button => {
-      const selected = button.dataset.pluginSection === section;
-      button.classList.toggle("active", selected);
-      button.setAttribute("aria-selected", String(selected));
-    });
-    const installArea = page.querySelector("[data-plugin-install]");
-    const body = page.querySelector("[data-plugin-body]");
+  const show = async () => {
+    const area = page.querySelector("[data-plugin-install]");
+    const workspace = page.querySelector("[data-plugin-workspace]");
     const version = (pkg.versions || []).find(release => release.compatible);
     const update = version && pkg.installed && version.version !== pkg.installed.version;
-    installArea.innerHTML = pkg.installed
-      ? `<p class="hint">主控管理部分 v${esc(pkg.installed.version)} · Agent 组件独立安装与启用</p>${update ? `<button data-install-manager ${trusted ? "" : "disabled"}>更新管理部分至 v${esc(version.version)}</button>` : ""}`
-      : `<section class="panel"><h2>先安装插件</h2><p>主控安装汇总管理部分，不运行浏览器。之后在 Agent 页添加实际组件，未启用时不启动检测任务。</p><button class="primary" data-install-manager ${trusted && version ? "" : "disabled"}>安装插件${version ? ` v${esc(version.version)}` : ""}</button>${trusted ? version ? "" : "<p>暂无兼容版本。</p>" : '<p class="warn-text">缺少可信签名公钥，仅可浏览。</p>'}</section>`;
-    const install = installArea.querySelector("[data-install-manager]");
-    if (install && version) install.onclick = () => confirmAction(update ? "更新 IP 地区防护" : "安装 IP 地区防护", `在主控安装 v${version.version} 的签名管理部分；不下载或更新 Agent 运行依赖，不启用任务。`, async () => {
+    area.innerHTML = pkg.installed
+      ? `${update ? `<button data-install-manager ${trusted ? "" : "disabled"}>更新至 v${esc(version.version)}</button>` : ""}`
+      : `<section class="panel"><h2>安装地区偏移检测</h2><p>主控保存设置与任务，并通过独立隔离浏览器执行检测；Agent 只需本机出口许可，不再安装 Chromium。</p><button class="primary" data-install-manager ${trusted && version ? "" : "disabled"}>安装管理部分${version ? ` v${esc(version.version)}` : ""}</button>${!trusted ? '<p class="warn-text">缺少可信签名公钥，仅可浏览。</p>' : !version ? '<p>暂无兼容版本。</p>' : ""}</section>`;
+    const install = area.querySelector("[data-install-manager]");
+    if (install && version) install.onclick = () => confirmAction(update ? "更新地区偏移检测" : "安装地区偏移检测", `安装 v${version.version} 的签名管理部分，不启动检测、不安装 Agent 本机浏览器。隔离浏览器服务需由主控运维单独部署。`, async () => {
       install.disabled = true;
       try {
         const installed = await send("/admin/market/install", "POST", { id: pkg.id, version: version.version });
         pkg.installed = { version: installed.version, source: installed.source };
-        toast("管理部分已安装，可管理 Agent 组件");
-        if (page.isConnected) await show("settings");
+        toast("管理部分已安装");
+        if (page.isConnected) await show();
       } finally { install.disabled = false; }
-    }, { label: update ? "更新管理部分" : "安装插件", danger: false });
-    if (!pkg.installed) {
-      body.innerHTML = '<section class="panel"><h2>防送中与拉回</h2><p>检测服务的地区异常，尝试拉回，再用干净会话独立复测。不保证改变服务商的地区判定。</p></section>';
-      return;
-    }
-    body.innerHTML = '<div data-plugin-workspace><p role="status">正在读取…</p></div>';
-    const workspace = body.querySelector("[data-plugin-workspace]");
-    try {
-      if (section === "settings") await renderPluginAgents(pkg, workspace);
-      else await renderIPGuard(workspace, () => show("settings"));
-    } catch (error) {
+    }, { label: update ? "更新管理部分" : "安装管理部分", danger: false });
+    if (!pkg.installed) { workspace.innerHTML = ""; return; }
+    workspace.innerHTML = '<p role="status">正在读取出口与任务…</p>';
+    try { await renderIPGuard(workspace); }
+    catch (error) {
       if (workspace.isConnected) {
         workspace.innerHTML = `<section class="panel"><p role="alert">加载失败：${esc(error.message)}</p><button>重新加载</button></section>`;
-        workspace.querySelector("button").onclick = guard(() => show(section));
+        workspace.querySelector("button").onclick = guard(show);
       }
     }
   };
-  page.querySelectorAll("[data-plugin-section]").forEach(button => {
-    button.onclick = guard(() => show(button.dataset.pluginSection));
-  });
-  await show(settings ? "settings" : "overview");
+  await show();
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/brand"
+	"github.com/leeska/TZA-Probe/internal/ipguard"
 	"github.com/leeska/TZA-Probe/internal/market"
 	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -48,6 +49,7 @@ type browserSession struct {
 }
 
 type API struct {
+	IPGuard       *ipguard.Broker
 	Store         Repository
 	Notifier      notify.Sender
 	AdminToken    string
@@ -158,7 +160,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
 	mux.HandleFunc("GET /api/v1/unlock-catalog", a.unlockCatalog)
 	a.adminRoutes(mux)
-	a.executorRoutes(mux)
+	a.ipguardRoutes(mux)
 	// 前台默认外观必须在样式表之前定下来，否则首屏会先按内置默认闪一下再跳到设置里的皮肤。
 	// CSP 是 script-src 'self'，index.html 里写不了内联脚本，所以这里发一份几十字节的
 	// 动态脚本，由 index.html 在 theme-boot.js 之前引用。
@@ -217,7 +219,6 @@ func (a *API) Handler() http.Handler {
 		w.WriteHeader(204)
 	}))
 	// 接入命令的本机配置步骤：用节点 token 换一次握手身份与 CC 地址（见 install.go）。
-	mux.HandleFunc("POST /api/v1/install/identity", a.installIdentity)
 	mux.HandleFunc("POST /api/v1/agent/heartbeat", a.agent(func(w http.ResponseWriter, r *http.Request, id string) {
 		var body model.Heartbeat
 		if !decode(w, r, &body) {
@@ -333,40 +334,6 @@ func (a *API) Handler() http.Handler {
 			slog.Warn("agent download failed", "arch", arch, "error", err)
 		}
 	})
-	// IPSentinel 参考安装器：内容固定、摘要与 executorruntime 的常量一致，
-	// 安装脚本下载后核对摘要再钉到固定路径。
-	mux.HandleFunc("GET /dl/ipsentinel-install-runtime.py", func(w http.ResponseWriter, r *http.Request) {
-		data, err := agentdist.ReferenceInstaller()
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/x-python; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Write(data)
-	})
-	mux.HandleFunc("GET /dl/ipsentinel-install-runtime.py.sha256", func(w http.ResponseWriter, r *http.Request) {
-		sum, err := agentdist.ReferenceInstallerSum()
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		io.WriteString(w, sum+"  "+agentdist.ReferenceInstallerName+"\n")
-	})
-	// CC 运行制品签名公钥：安装脚本钉在节点上，节点只信任它验过签名的运行组件。
-	// 公钥不是秘密；没有配置 CC 时 404，安装脚本跳过插件组件并提示。
-	mux.HandleFunc("GET /dl/runtime-cc-keys", func(w http.ResponseWriter, r *http.Request) {
-		keys := a.Market.PublicKeysFile()
-		if keys == "" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Write([]byte(keys))
-	})
 	// 已安装主题包的静态文件（样式表、图片、字体）；类型白名单与 nosniff 见 theme.Store.ServeHTTP。
 	mux.Handle("GET /themes/{id}/{file...}", a.Themes)
 	mux.Handle("/", a.Assets)
@@ -374,7 +341,7 @@ func (a *API) Handler() http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-store")
 			gzipAPI(w, r, mux)

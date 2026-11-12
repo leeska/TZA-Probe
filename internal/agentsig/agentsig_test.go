@@ -1,9 +1,30 @@
 package agentsig
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"strings"
 	"testing"
 )
+
+func TestExposedUpgradeKeyIsRejectedEvenWhenRenamed(t *testing.T) {
+	public, err := base64.StdEncoding.DecodeString("bW02fE6lYAtQbKhUZTzbyTEakbjOnZo1QKqBOv91ei4=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseKeys("renamed:" + base64.StdEncoding.EncodeToString(public)); err == nil || !strings.Contains(err.Error(), "revoked") {
+		t.Fatal("renamed exposed key was accepted", err)
+	}
+	signature := Signature{KeyID: "renamed"}
+	if err := signature.Verify(map[string]ed25519.PublicKey{"renamed": public}); err == nil || !strings.Contains(err.Error(), "revoked") {
+		t.Fatal("signature verification did not enforce revocation", err)
+	}
+	synthetic := make([]byte, ed25519.PrivateKeySize)
+	copy(synthetic[32:], public)
+	if _, _, err := ParsePrivateKey("renamed:" + base64.StdEncoding.EncodeToString(synthetic)); err == nil || !strings.Contains(err.Error(), "revoked") {
+		t.Fatal("private-key loading did not enforce revocation", err)
+	}
+}
 
 func TestSignVerifyAndKeyFiles(t *testing.T) {
 	private, public, err := GenerateKey("ops-2026")

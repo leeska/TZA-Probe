@@ -2,7 +2,11 @@
 
 一个主机与网络探针：**一个仓库、Server / Agent 两个程序、一个 SQLite 数据库**。后台与公开页随 Server 嵌入发布，没有 Node 构建依赖。
 
-当前版本 `v1.0.0`，首个公开版本。
+当前源码版本见 `internal/model/model.go`，发布版本以对应 tag 和二进制输出为准。
+
+当前开发基线仅支持全新部署：SQLite schema 30 直接初始化，不再升级历史 schema，
+也不自动接管旧独立安装器。请使用新的 Server 数据目录并重新接入 Agent；
+旧数据和服务不会被自动删除。详见 [新部署基线](docs/FRESH-DEPLOYMENT.md)。
 
 ## 功能
 
@@ -165,7 +169,7 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 - [插件](docs/PLUGINS.md)：声明式通知渠道与探测目标集的格式、模板变量与安全边界。
 - [主题包与附加包](docs/THEMES.md)：自己做一套外观风格，或用附加包给某套主题添按节点 / 地区匹配的装饰（zip 上传，只含样式表与图片），格式、颜色变量与示例。
 - [组件边界](docs/ARCHITECTURE.md)、[HTTP 协议](docs/API.md)、[项目范围](docs/SCOPE.md)。
-- [IPSentinel 节点执行器](docs/EXECUTORS.md)：只读接入、托管控制、中控日程、官方签名运行声明分发与验收边界。
+- [IPSentinel 集中浏览器](docs/IPSENTINEL-CENTRAL-BROWSER.md)：主控隔离浏览器、Agent 受限出口、干净检测、拉回与独立复测。
 - [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为只能在真实环境验证。
 
 检查与构建用自带的流水线（不依赖 GitHub Actions），Linux 与 macOS 都能跑。需要 Go 1.27；`check` 的前端部分另需 Node ≥ 20.19 或 Bun（没有 Node 时自动用 Bun）：

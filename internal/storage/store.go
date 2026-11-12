@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
+	"time"
 
 	"github.com/leeska/TZA-Probe/internal/model"
 	_ "modernc.org/sqlite"
@@ -17,6 +17,8 @@ import (
 var ErrNotFound = model.ErrNotFound
 
 var ErrConflict = model.ErrConflict
+
+var nowFunc = time.Now
 
 type Store struct {
 	path   string // the database file; Backup writes its snapshot next to it
@@ -27,9 +29,6 @@ type Store struct {
 	purgeWake chan struct{}
 	purgeStop context.CancelFunc
 	purgeDone chan struct{}
-	// tcpBucketsFrom 是网络历史格子（见 tcp_buckets.go）开始完整的时刻：0 表示全部回填完，
-	// 否则只有不早于它的时间段能从格子里读。
-	tcpBucketsFrom atomic.Int64
 }
 
 // readConns is how many connections serve read-only queries. One writer
@@ -91,7 +90,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err = migrate(db); err != nil {
+	if err = initializeDatabase(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -101,14 +100,6 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	s.read = read
-	var next, liveFrom int64
-	if err = db.QueryRow("SELECT next,live_from FROM tcp_buckets_state WHERE id=1").Scan(&next, &liveFrom); err != nil {
-		s.Close()
-		return nil, err
-	}
-	if next < liveFrom {
-		s.tcpBucketsFrom.Store(liveFrom)
-	}
 	s.startPurger()
 	return s, nil
 }

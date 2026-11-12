@@ -1,97 +1,158 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const require = createRequire(path.join(process.env.TZA_UI_DEPS, "package.json"));
+const require = createRequire(path.join(process.env.TZA_UI_DEPS || "/tmp/tza-ui-deps", "package.json"));
 const { JSDOM } = require("jsdom");
 const { build } = require("esbuild");
 const root = fileURLToPath(new URL("../", import.meta.url));
 const bundle = await build({ stdin: { contents: 'export * from "./web/admin-ip-guard.js";', resolveDir: root }, bundle: true, format: "iife", globalName: "guardUI", write: false });
 const dom = new JSDOM('<main></main><dialog id="dialog"></dialog><div id="toast"></div>', { url: "http://127.0.0.1", runScripts: "outside-only" });
-const window = dom.window;
+const { window } = dom;
+window.AbortController = AbortController;
 window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 window.HTMLDialogElement.prototype.close = function () { this.open = false; };
-const config = JSON.parse(await readFile(new URL("../internal/ipsentinel/testdata/contracts/ipsentinel-executor-v1/examples/config.json", import.meta.url)));
-const hello = JSON.parse(await readFile(new URL("../internal/ipsentinel/testdata/contracts/ipsentinel-executor-v1/examples/hello.response.json", import.meta.url))).result;
-const now = Date.now();
-hello.status.budget.day_utc = new Date(now).toISOString().slice(0, 10);
-hello.status.assessments[0].valid_until = new Date(now + 86400000).toISOString();
-const view = { node_id: "ready", binding: { mode: "managed", epoch: 1 }, received_at: Math.floor(now / 1000), config, hello };
-let views = [view];
+const timers = new Map();
+let nextTimer = 1;
+window.setTimeout = (callback, delay) => { const id = nextTimer++; timers.set(id, { callback, delay }); return id; };
+window.clearTimeout = id => timers.delete(id);
+const tick = async () => {
+  const timer = [...timers].find(([, value]) => value.callback.name === "poll");
+  assert(timer, "poll scheduled");
+  timers.delete(timer[0]);
+  await timer[1].callback();
+};
+const now = Math.floor(Date.now() / 1000);
+const policy = { revision: 1, enabled: true, auto_recover: false, expected_ip: "8.8.8.8", country: "US", locale: "en-US", timezone: "UTC", services: ["google", "meta"] };
+const node = { id: "node", name: '<img src=x onerror="alert(1)">', policy, egress: { enabled: true, received_at: now, allowed_ips: ["8.8.8.8"] } };
+const environments = { US: { locale: "en-US", timezone: "America/New_York" }, SG: { locale: "en-SG", timezone: "Asia/Singapore" } };
+const data = { worker_seen: now, environments, nodes: [node, { ...node, id: "second", name: "Second" }], jobs: [] };
 const writes = [];
+let deferredRead, reads = 0;
 window.fetch = async (url, options = {}) => {
   if (options.method) {
-    assert.equal(url, "/api/v1/admin/nodes/ready/executors/ipsentinel/actions");
-    writes.push(JSON.parse(options.body));
-    return new Response(JSON.stringify({ id: "accepted" }));
+    const body = JSON.parse(options.body || "null");
+    writes.push({ url, body, method: options.method });
+    if (options.method === "PUT") {
+      node.policy = { ...policy, ...body, ...environments[body.country], revision: body.revision + 1 };
+      return new Response(JSON.stringify(node.policy));
+    }
+    return new Response(null, { status: 204 });
   }
-  if (url === "/api/v1/admin/nodes") return new Response(JSON.stringify([{ id: "ready", name: '<img src=x onerror="alert(1)">' }]));
-  if (url === "/api/v1/admin/executors") return new Response(JSON.stringify(views));
-  throw new Error("Unexpected request: " + url);
+  reads++;
+  if (deferredRead) return deferredRead;
+  return new Response(JSON.stringify(data));
 };
 window.eval(bundle.outputFiles[0].text);
 const ui = window.guardUI;
-const service = config.services[0];
-assert.equal(ui.guardRunReason(view, service, "baseline", now), "");
-assert.equal(ui.guardRunReason(view, service, "experiment", now), "");
-for (const mutate of [
-  changed => { changed.received_at -= 60; },
-  changed => { changed.binding.mode = "managed_readonly"; },
-  changed => { changed.hello.status.control.paused = true; },
-  changed => { changed.hello.status.control.draining = true; },
-  changed => { changed.hello.status.control.active_run_id = "running"; },
-  changed => { changed.hello.status.health = "unavailable"; },
-  changed => { changed.hello.status.budget = null; },
-  changed => { changed.hello.status.budget.day_utc = "2000-01-01"; },
-  changed => { changed.hello.status.budget.used_runs = 8; },
-  changed => { changed.hello.status.budget.limits.network_bytes = 1; },
-]) {
-  const changed = structuredClone(view);
-  mutate(changed);
-  assert(ui.guardRunReason(changed, service, "baseline", now));
+const workspace = window.document.querySelector("main");
+await ui.renderIPGuard(workspace);
+assert.equal(workspace.querySelector("img"), null);
+assert.equal(workspace.querySelectorAll("[data-check]").length, 2);
+assert.equal(workspace.querySelectorAll("[data-central-run]").length, 0);
+const picker = workspace.querySelector("select");
+picker.focus();
+await tick();
+assert.equal(workspace.querySelector("select"), picker);
+assert.equal(window.document.activeElement, picker);
+assert.equal(workspace.querySelector("[data-region-settings]"), null);
+assert.equal(workspace.querySelector('[name="expected_ip"]'), null);
+assert.equal(workspace.querySelector('[name="locale"]'), null);
+assert.equal(workspace.querySelector('[name="timezone"]'), null);
+assert.deepEqual([...workspace.querySelector('[name="family"]').options].map(option => option.value), ["ipv4", "ipv6"]);
+const country = workspace.querySelector('[name="country"]');
+country.focus();
+country.value = "新加坡";
+country.dispatchEvent(new window.Event("input", { bubbles: true }));
+assert.equal(country.getAttribute("aria-expanded"), "true");
+await tick();
+assert.equal(workspace.querySelector('[name="country"]'), country);
+assert.equal(country.value, "新加坡");
+assert.equal(country.getAttribute("aria-expanded"), "true");
+assert.equal(window.document.activeElement, country);
+assert.equal(writes.length, 0, "editing must not write or run");
+country.value = "SG";
+country.dispatchEvent(new window.Event("input", { bubbles: true }));
+assert.match(workspace.querySelector("[data-environment]").textContent, /Asia\/Singapore/);
+workspace.querySelector("form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+await new Promise(resolve => setTimeout(resolve, 20));
+assert.equal(writes[0].method, "PUT");
+assert.equal(writes[0].body.country, "SG");
+assert.equal(writes[0].body.family, "ipv4");
+assert(!("timezone" in writes[0].body));
+assert(!("locale" in writes[0].body));
+assert(!("expected_ip" in writes[0].body));
+assert(!("timeout_seconds" in writes[0].body));
+assert(!("daily_runs" in writes[0].body));
+assert.equal(workspace.querySelector('[type="submit"]').disabled, true);
+const job = { node_id: "node", service: "google", phase: "baseline", state: "completed", finished_at: now, policy: node.policy, result: { assessment: "target_observed", page: { signal: "google_page_country", value: node.policy.country } } };
+assert.equal(ui.serviceReading(node, "google", [job]).label, "正常");
+const challengedWithTerms = { ...job, state: "failed", result: { reason: "challenge_detected", assessment: "unknown", page: { outcome: "unknown" }, google_terms: { assessment: "target_observed", page: { signal: "google_terms_country", value: node.policy.country } } } };
+assert.equal(ui.serviceReading(node, "google", [challengedWithTerms]).label, "未知");
+assert.equal(ui.serviceReading(node, "google_terms", [challengedWithTerms]).label, "正常");
+assert.equal(ui.serviceReading(node, "google_terms", [job]).label, "待检测");
+assert.ok(workspace.querySelector("[data-terms-reading]"));
+assert.equal(ui.serviceReading(node, "google", [{ ...job, state: "failed", result: { assessment: "unknown", reason: "http_denied" } }, job]).label, "访问受限");
+assert.equal(ui.serviceReading(node, "meta", [{ ...job, service: "meta", state: "failed", result: { assessment: "unknown", reason: "http_forbidden" } }]).label, "访问受限");
+assert.equal(ui.serviceReading(node, "google", [{ ...job, result: { assessment: "other_region", page: { signal: "google_page_country", value: "JP" } } }]).label, "地区偏移");
+assert.match(ui.serviceReading(node, "google", [job]).note, /实际：.*SG.*目标：.*SG/);
+assert.equal(ui.serviceReading(node, "google", [{ ...job, result: { assessment: "target_observed", page: { signal: "homepage_hkredirect", value: "NO_HKREDIRECT" } } }]).label, "未知", "old redirect checks cannot confirm selected target");
+for (const target of ["CN", "JP", "US", "DE"]) {
+  const selected = { ...node, policy: { ...node.policy, country: target } };
+  for (const actual of ["CN", "JP", "US", "DE"]) {
+    const observation = { ...job, policy: selected.policy, result: { assessment: actual === target ? "target_observed" : "other_region", page: { signal: "google_page_country", value: actual } } };
+    assert.equal(ui.serviceReading(selected, "google", [observation]).label, actual === target ? "正常" : "地区偏移");
+  }
 }
-const noExperiment = structuredClone(service);
-delete noExperiment.experiment;
-assert(ui.guardRunReason(view, noExperiment, "experiment", now));
-const assessment = hello.status.assessments[0];
-assert.equal(ui.guardEvidence(assessment, view, now), "检测到送中跳转");
-assert.equal(ui.guardEvidence({ ...assessment, state: "change_confirmed" }, view, now), "送中跳转消失，连续复测通过");
-assert.equal(ui.guardEvidence({ ...assessment, valid_until: "not-a-date" }, view, now), "暂无有效证据");
-assert.equal(ui.guardEvidence(assessment, { ...view, received_at: 1 }, now), "状态已过期，请刷新");
-const content = window.document.querySelector("main");
-let setup = 0;
-await ui.renderIPGuard(content, () => { setup++; });
-assert.equal(writes.length, 0);
-assert.equal(content.querySelector("img"), null);
-assert.equal(content.querySelector("textarea"), null);
-assert.equal(content.querySelectorAll("[data-guard-run]").length, 3);
-for (const phase of ["baseline", "experiment", "followup"]) {
-  content.querySelector(`[data-guard-run="${phase}"]`).onclick();
-  assert.equal(writes.length, ["baseline", "experiment", "followup"].indexOf(phase));
-  if (phase === "experiment") assert(window.document.querySelector("#dialog").textContent.includes("不能保证"));
-  await window.document.querySelector("#confirm").onclick();
-  const request = writes.at(-1);
-  assert.equal(request.kind, "run.submit");
-  assert.equal(request.phase, phase);
-  assert.equal(request.purpose, phase === "experiment" ? "experiment" : "observe");
-  assert.equal(request.service_id, "google");
-  assert.equal(request.config_revision, hello.status.config.revision);
-}
-assert.equal(new Set(writes.map(item => item.job_id)).size, 3);
-content.querySelector('[data-guard-run="experiment"]').onclick();
-views = [{ ...view, config: { ...config, daily_budget: { ...config.daily_budget, runs: 7 } } }];
-await window.document.querySelector("#confirm").onclick();
-assert.equal(writes.length, 3, "configuration changed during confirmation must never submit");
-assert(window.document.querySelector("#toast").textContent.includes("配置已变化"));
-views = [{ ...view, hello: { ...hello, status: { ...hello.status, control: { ...hello.status.control, paused: true } } } }];
-await ui.renderIPGuard(content, () => { setup++; });
-assert([...content.querySelectorAll("[data-guard-run]")].every(button => button.disabled));
-views = [];
-await ui.renderIPGuard(content, () => { setup++; });
-assert(content.textContent.includes("先添加一个防护节点"));
-await content.querySelector("[data-guard-setup]").onclick();
-assert.equal(setup, 1);
+assert.equal(ui.serviceReading(node, "google", [{ ...job, policy: { ...node.policy, country: "JP" } }]).label, "待检测");
+assert.equal(ui.serviceReading(node, "google", [{ ...job, finished_at: now - 90000 }]).label, "已过期");
+assert.equal(ui.serviceReading(node, "google", [{ ...job, phase: "experiment" }]).label, "待复测");
+let finishRead;
+deferredRead = new Promise(resolve => { finishRead = resolve; });
+const waiting = tick();
+const auto = workspace.querySelector('[name="auto_recover"]');
+auto.checked = true;
+auto.dispatchEvent(new window.Event("change", { bubbles: true }));
+assert.equal(writes.length, 1);
+workspace.querySelector("form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+await new Promise(resolve => setTimeout(resolve, 20));
+finishRead(new Response(JSON.stringify({ ...data, nodes: [{ ...node, policy: { ...node.policy, auto_recover: false } }] })));
+await waiting;
+assert.equal(auto.checked, true, "old response must not undo saved switch");
+const family = workspace.querySelector('[name="family"]');
+assert.equal(family.querySelector('[value="ipv6"]').disabled, true);
+family.value = "ipv6";
+family.dispatchEvent(new window.Event("change", { bubbles: true }));
+assert.match(workspace.querySelector("[data-exit]").textContent, /尚未开通/);
+assert.equal(workspace.querySelector('[type="submit"]').disabled, true);
+const beforeUnavailable = writes.length;
+workspace.querySelector("form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(writes.length, beforeUnavailable, "unavailable exit must not send a failing save request");
+node.egress.allowed_ips.push("2606:4700:4700::1111");
+deferredRead = null;
+await tick();
+assert.equal(family.querySelector('[value="ipv6"]').disabled, false);
+assert.equal(workspace.querySelector('[type="submit"]').disabled, false);
+assert.equal(workspace.querySelector('[name="family"]'), family, "availability update must preserve dropdown");
+picker.value = "second";
+picker.dispatchEvent(new window.Event("change", { bubbles: true }));
+picker.value = "node";
+picker.dispatchEvent(new window.Event("change", { bubbles: true }));
+assert.equal(workspace.querySelector('[name="family"]').value, "ipv6", "per-node drafts preserved");
+const offlineFamily = workspace.querySelector('[name="family"]');
+offlineFamily.value = "ipv4";
+node.egress.received_at = 0;
+offlineFamily.dispatchEvent(new window.Event("change", { bubbles: true }));
+const enabled = workspace.querySelector('[name="enabled"]');
+enabled.checked = false;
+enabled.dispatchEvent(new window.Event("change", { bubbles: true }));
+assert.equal(workspace.querySelector('[type="submit"]').disabled, false, "offline detection must still be disableable");
+workspace.innerHTML = "other page";
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal([...timers.values()].filter(timer => timer.callback.name === "poll").length, 0);
+assert.equal(writes.filter(write => write.method === "POST").length, 0);
+assert(reads >= 4);
 dom.window.close();
-console.log("PASS: IP guard detection, recovery attempts, clean followups, evidence expiry, confirmation fences, budgets and empty states.");
+console.log("PASS: stable dropdown/focus/search draft across polling, compact controls, stale read discarded, honest status, no automatic writes, disposal.");

@@ -8,8 +8,6 @@ import (
 
 	"github.com/leeska/TZA-Probe/internal/market"
 	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/service"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
 
 // installDeadline outlasts the server's 30-second WriteTimeout: an install
@@ -20,51 +18,6 @@ const installDeadline = 3 * time.Minute
 // routes; the Server fetches the catalog, preview images and packages itself,
 // so the page CSP stays 'self' and CC never sees the visitor.
 func (a *API) marketRoutes(route func(string, http.HandlerFunc)) {
-	route("POST /api/v1/admin/market/node-plans", func(w http.ResponseWriter, r *http.Request) {
-		var input struct {
-			ID          string `json:"id"`
-			Version     string `json:"version"`
-			NodeID      string `json:"node_id"`
-			ScopeSHA256 string `json:"scope_sha256"`
-		}
-		if !decodeExecutor(w, r, &input) {
-			return
-		}
-		if input.ID != tzapkg.OfficialExecutorID || !tzapkg.ValidVersion(input.Version) || input.NodeID == "" || len(input.ScopeSHA256) != 64 {
-			fail(w, model.Invalid("请选择官方节点插件、精确版本和目标节点安装身份"))
-			return
-		}
-		store, ok := a.Store.(service.RuntimeStore)
-		if !ok {
-			fail(w, model.Conflict("当前主控不支持节点插件安装通道"))
-			return
-		}
-		if !a.Market.Status().Configured || a.Market.Status().TrustedKeys == 0 {
-			marketFail(w, market.ErrNoTrustedKeys)
-			return
-		}
-		detail, err := a.Market.Package(r.Context(), input.ID)
-		if err != nil {
-			marketFail(w, err)
-			return
-		}
-		compatible := false
-		for _, release := range detail.Versions {
-			if release.Version == input.Version && release.Compatible {
-				compatible = true
-			}
-		}
-		if detail.Type != tzapkg.TypeExecutor || !compatible {
-			fail(w, model.Invalid("该节点插件版本未发布或不兼容当前 Probe"))
-			return
-		}
-		request, err := store.CreateMarketRuntimeRequest(r.Context(), input.NodeID, input.Version, input.ScopeSHA256)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, http.StatusAccepted, request)
-	})
 	route("GET /api/v1/admin/market/status", func(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, a.Market.Status())
 	})

@@ -1,6 +1,7 @@
 import { api, send, toast, guard, esc } from "./api.js";
 import { state, content, confirmAction } from "./admin-state.js";
 import { openNodePluginDetail } from "./admin-node-plugin-detail.js";
+import { openDeclarativePlugin } from "./admin-declarative-plugin.js";
 import { catalogPanel, confirmPlugin, glyph, kindName, loadMarket, marketPill, marketStatus, pager, pluginToast, sourceBits, subTabs, wireMarket } from "./admin-market.js";
 const PLUGIN_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/PLUGINS.md";
 // 插件：声明式的通知渠道与探测目标集。分两个子页：已安装（本地上传、删除、市场装的有更新时提示）
@@ -29,9 +30,10 @@ function installedPanel(list, updates) {
   const pages = Math.max(1, Math.ceil(list.length / PER_PAGE));
   installedPage = Math.min(Math.max(1, installedPage), pages);
   const rows = list.slice((installedPage - 1) * PER_PAGE, installedPage * PER_PAGE).map((p) => {
+    if (p.id === "ipsentinel-runtime") p = { ...p, name: "地区偏移检测 · IPSentinel", hint: "Google、Meta 地区状态、目标定位与校正尝试" };
     const bits = sourceBits(p, updates);
     const meta = [p.id, p.version && "v" + p.version, p.author, kindName(p.kind)].filter(Boolean).join(" · ");
-    const actions = p.kind === "agent" ? `<button data-plugin-manage="${esc(p.id)}">管理</button>` : bits.actions;
+    const actions = `<button data-plugin-manage="${esc(p.id)}">管理</button>${p.kind === "agent" ? "" : bits.actions}`;
     return `<div class="theme-row">${glyph(p.kind)}<span class="theme-copy"><b>${esc(p.name)}</b><small>${esc(p.hint || "")}${p.hint ? "<br>" : ""}${esc(meta)}</small></span>${bits.pills}${actions}<button type="button" class="danger" data-remove-plugin="${esc(p.id)}">删除</button></div>`;
   }).join("");
   return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">管理本机插件，市场安装的插件有新版时会在这里提示。</span></div><div class="panel-actions"><label class="button theme-upload">上传插件<input id="plugin-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${rows || '<div class="market-empty"><b>还没有安装插件</b><p>添加通知渠道，或为任务添加探测目标。</p><button type="button" class="primary" data-subview="market">浏览插件市场</button></div>'}</div>${pager(installedPage, installedPage < pages, "installed-page", pages)}<details class="market-upload-help"><summary>手动上传与开发文档</summary><p class="hint">插件格式见 <a href="${PLUGIN_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/PLUGINS.md</a>。本地上传同一个 id 会替换市场装的插件（之后按本地包对待，不再提示更新）；正被用作通知渠道的插件要先在「告警与通知」换掉渠道才能删除。</p></details></section>`;
@@ -42,6 +44,10 @@ function wireInstalled() {
     button.onclick = guard(async () => {
       const installed = (await api("/admin/plugins")).find(plugin => plugin.id === button.dataset.pluginManage);
       if (!installed) throw new Error("插件管理部分已移除，请刷新列表");
+      if (installed.kind !== "agent") {
+        await openDeclarativePlugin(installed.id, { back: () => renderPlugins() });
+        return;
+      }
       const pkg = await api("/admin/market/packages/" + encodeURIComponent(installed.id)).catch(() => ({
         ...installed, type: "executor", versions: [],
       }));
@@ -71,7 +77,7 @@ function wireInstalled() {
   });
   content().querySelectorAll("[data-remove-plugin]").forEach((b) =>
     (b.onclick = () =>
-      confirmAction(`删除插件 · ${b.dataset.removePlugin}`, b.dataset.removePlugin === "ipsentinel-runtime" ? "只移除主控管理入口，不会卸载 Agent 组件、停止本机任务或删除历史。重新从市场安装插件即可接回管理。" : "删除后通知插件不再出现在渠道列表里，目标集的目标从任务目录里消失（已经建好的任务照常运行）。", async () => {
+      confirmAction(`删除插件 · ${b.dataset.removePlugin}`, b.dataset.removePlugin === "ipsentinel-runtime" ? "暂停所有地区检测出口、取消活动任务并移除管理入口；历史与独立浏览器服务保留。重新安装后需手动启用出口。" : "删除后通知插件不再出现在渠道列表里，目标集的目标从任务目录里消失（已经建好的任务照常运行）。", async () => {
         await send("/admin/plugins/" + encodeURIComponent(b.dataset.removePlugin), "DELETE");
         state.catalog = null;
         await renderPlugins();

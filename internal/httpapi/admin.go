@@ -219,6 +219,22 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 	})
 	route("DELETE /api/v1/admin/plugins/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if r.PathValue("id") == tzapkg.OfficialExecutorID {
+			if a.IPGuard != nil {
+				policies, err := a.IPGuard.Store.Policies(r.Context())
+				if err != nil {
+					fail(w, err)
+					return
+				}
+				for node, policy := range policies {
+					if policy.Enabled {
+						policy.Enabled = false
+						if _, err := a.IPGuard.Store.SavePolicy(r.Context(), node, policy); err != nil {
+							fail(w, err)
+							return
+						}
+					}
+				}
+			}
 			if err := a.Market.RemoveManager(r.PathValue("id")); !errors.Is(err, model.ErrNotFound) {
 				respond(w, err)
 				return

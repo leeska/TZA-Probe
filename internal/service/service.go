@@ -128,6 +128,10 @@ func (s *Service) CreateNode(ctx context.Context, n model.Node) (string, string,
 
 // ReplaceNode stores the whole submitted configuration (the panel form).
 func (s *Service) ReplaceNode(ctx context.Context, id string, n model.Node) error {
+	return s.replaceNode(ctx, id, n)
+}
+
+func (s *Service) replaceNode(ctx context.Context, id string, n model.Node) error {
 	n.ID = id
 	n = n.Normalized()
 	if err := n.Validate(); err != nil {
@@ -229,7 +233,11 @@ func (s *Service) PatchNode(ctx context.Context, id string, patch json.RawMessag
 	if err != nil {
 		return model.Node{}, model.Invalid("参数无法合并到当前节点：" + err.Error())
 	}
-	return merged, s.ReplaceNode(ctx, current.ID, merged)
+	if err := s.replaceNode(ctx, current.ID, merged); err != nil {
+		return model.Node{}, err
+	}
+	saved, err := s.Node(ctx, id)
+	return saved.Node, err
 }
 
 // BatchPatchNodes overlays the same partial edit onto every listed node — the

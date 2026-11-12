@@ -1,4 +1,5 @@
 import { api, send, esc, toast, modal, guard } from "./api.js";
+import { pluginFields, pluginSettings } from "./notification-fields.js";
 import { date, kindName } from "./format.js";
 import { state, content, loadNodes, field, select, withCurrent, nodeName, confirmAction } from "./admin-state.js";
 // 提醒规则：每条规则一种类型、自己的参数与重复间隔，外加作用范围（全部节点 / 分组 / 指定节点）。
@@ -288,34 +289,6 @@ function wireEvents(events, configured) {
 // 已安装的通知插件（/admin/plugins 里 kind 为 notify 的），配置出口的渠道下拉与插件表单用。
 let notifyPlugins = [];
 
-// 通知插件的设置表单：按插件声明的 settings 逐项画。密钥从不回显，已保存的写「已保存，留空沿用」；
-// 非密钥项填当前值，没有就用插件给的默认值。
-function pluginFields(plugin, current) {
-  const values = current?.plugin_settings || {};
-  const stored = current?.plugin_secrets || {};
-  const fields = (plugin.settings || []).map((item) => {
-    const name = "ps_" + item.key;
-    const secret = item.secret || item.type === "secret";
-    const kept = secret && stored[item.key];
-    const required = item.required && !kept ? " required" : "";
-    const label = `<span>${esc(item.label)}${item.required ? "" : '<span class="muted">（选填）</span>'}</span>`;
-    const help = item.help ? `<small class="field-help">${esc(item.help)}</small>` : "";
-    let control;
-    if (item.type === "select") {
-      const now = values[item.key] ?? item.default ?? "";
-      control = `<select name="${name}"${required}>${item.required ? "" : '<option value="">不设置</option>'}${(item.options || []).map((o) => `<option value="${esc(o.value)}"${o.value === now ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select>`;
-    } else if (secret) {
-      control = `<input name="${name}" type="password" autocomplete="new-password" placeholder="${esc(kept ? "已保存，留空沿用" : item.placeholder || "")}"${required}>`;
-    } else {
-      const value = values[item.key] ?? item.default ?? "";
-      control = `<input name="${name}" type="${item.type === "url" ? "url" : "text"}" value="${esc(value)}" placeholder="${esc(item.placeholder || "")}" autocomplete="off" spellcheck="false"${required}>`;
-    }
-    return `<label>${label}${control}${help}</label>`;
-  }).join("");
-  const perms = (plugin.permissions || []).map((x) => `<li>${esc(x)}</li>`).join("");
-  return `${fields || '<p class="hint">这个插件不需要设置。</p>'}<p class="hint">${esc(plugin.hint || plugin.name)}${plugin.version ? ` · v${esc(plugin.version)}` : ""}${plugin.source === "market" ? " · 市场" : " · 本地上传"}</p>${perms ? `<ul class="plugin-perms">${perms}</ul>` : ""}`;
-}
-
 function wireRules(settings, configured, rules) {
   wireRulesPanel(rules);
   content().querySelector("#test-webhook").onclick = guard(async () => {
@@ -366,9 +339,7 @@ function wireRules(settings, configured, rules) {
       const f = new FormData(form);
       const plugin = notifyPlugins.find((p) => "plugin:" + p.id === f.get("channel"));
       if (plugin) {
-        const values = {};
-        for (const item of plugin.settings || []) values[item.key] = String(f.get("ps_" + item.key) ?? "").trim();
-        await send("/admin/notification", "PUT", { channel: "plugin", plugin: plugin.id, plugin_settings: values });
+        await send("/admin/notification", "PUT", { channel: "plugin", plugin: plugin.id, plugin_settings: pluginSettings(form, plugin) });
         d.close();
         await renderAlerts();
         toast(`通知配置已保存：${plugin.name}`);

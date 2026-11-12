@@ -71,7 +71,7 @@ func ParseExecutor(raw []byte) (ExecutorManifest, error) {
 	if versionLess(compat.ProbeMin, ExecutorMinProbe) || versionLess(compat.AgentMin, ExecutorMinProbe) {
 		return manifest, errors.New("runtime 要求 Server 与 Agent 至少为 " + ExecutorMinProbe)
 	}
-	if err := ipsentinel.ValidateDefinition("runtime_descriptor", manifest.Descriptor, nil); err != nil {
+	if err := ipsentinel.ValidateDescriptor(manifest.Descriptor); err != nil {
 		return manifest, errors.New("runtime descriptor 不符合 IPSentinel 权威契约")
 	}
 	var descriptor ipsentinel.RuntimeDescriptor

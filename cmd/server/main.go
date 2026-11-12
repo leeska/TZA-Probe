@@ -20,6 +20,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/brand"
 	"github.com/leeska/TZA-Probe/internal/httpapi"
+	"github.com/leeska/TZA-Probe/internal/ipguard"
 	"github.com/leeska/TZA-Probe/internal/market"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
@@ -54,6 +55,7 @@ func run() error {
 	dir := flag.String("data", "./data", "private data directory")
 	version := flag.Bool("version", false, "print version")
 	ccURL := flag.String("cc-url", "", "TZA-CC market address (default $TZA_CC_URL, else the official https://tza.cc; \"off\" disables the market)")
+	workerSocket := flag.String("browser-socket", "", "private Unix socket for the isolated browser worker")
 	var ccKeys []string
 	flag.Func("cc-key", `extra trusted TZA-CC signing key "<key id>:<base64>" (repeatable; also $TZA_CC_KEYS, comma-separated)`, func(v string) error {
 		ccKeys = append(ccKeys, v)
@@ -118,27 +120,30 @@ func run() error {
 	}
 	// 同一个发送器给后台的「发送测试」和告警引擎用：通知插件渠道经它查已安装的插件。
 	sender := notify.Transport{Plugins: plugins}
-	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Market: cc, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}}
+	guardStore, err := ipguard.Open(filepath.Join(*dir, "ipguard.db"))
+	if err != nil {
+		return err
+	}
+	defer guardStore.Close()
+	if err = guardStore.Recover(ctx); err != nil {
+		return err
+	}
+	guardBroker := ipguard.NewBroker(guardStore)
+	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Market: cc, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}, IPGuard: guardBroker}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() {
-		defer wg.Done()
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case now := <-ticker.C:
-				cycle, cancel := context.WithTimeout(ctx, 5*time.Second)
-				if err := store.TickExecutorSchedules(cycle, now); err != nil && ctx.Err() == nil {
-					slog.Error("executor schedule failed", "error", err)
-				}
-				cancel()
+	wg.Add(2)
+	if *workerSocket != "" {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := guardBroker.ServeWorker(ctx, *workerSocket); err != nil && ctx.Err() == nil {
+				slog.Error("browser worker listener failed", "error", err)
+				stop()
 			}
-		}
-	}()
+		}()
+		go func() { defer wg.Done(); guardBroker.Schedule(ctx) }()
+	}
 	go func() {
 		defer wg.Done()
 		channels := &service.Service{Store: store, Plugins: plugins}
@@ -234,24 +239,8 @@ func marketClient(flagURL string, flagKeys []string, getenv func(string) string,
 	return c, nil
 }
 
-// databasePath is the database file in dir. A data directory created before the
-// file was named tza-probe.db still holds tza-v2.db; that file keeps being used
-// in place rather than renamed, so rolling back to an older binary still finds
-// its data.
 func databasePath(dir string) string {
-	current := filepath.Join(dir, "tza-probe.db")
-	if fileExists(current) {
-		return current
-	}
-	if legacy := filepath.Join(dir, "tza-v2.db"); fileExists(legacy) {
-		return legacy
-	}
-	return current
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	return filepath.Join(dir, "tza-probe.db")
 }
 
 // adminToken is the administrator key: TZA_ADMIN_TOKEN, or the admin-token

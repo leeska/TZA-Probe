@@ -444,9 +444,10 @@ function refreshAgentLines() {
     // 操作列的「升级」跟着进度显隐：排上了就收起，升级失败 / 仍落后再出现。
     const actions = el.closest("tr")?.querySelector(".row-actions");
     if (!actions) continue;
-    actions.querySelector("[data-upgrade-one]")?.remove();
     const btn = upgradeButton(n);
-    if (btn) actions.querySelector("[data-delete]")?.insertAdjacentHTML("beforebegin", btn);
+    const current = actions.querySelector("[data-upgrade-one]");
+    if (!btn) current?.remove();
+    else if (!current) actions.querySelector("[data-delete]")?.insertAdjacentHTML("beforebegin", btn);
   }
   const all = content()?.querySelector("#upgrade-all");
   if (all) {

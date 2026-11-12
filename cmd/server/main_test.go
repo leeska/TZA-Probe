@@ -20,7 +20,7 @@ func TestDatabasePath(t *testing.T) {
 	if err := os.WriteFile(legacy, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if got := databasePath(dir); got != legacy {
+	if got := databasePath(dir); got != current {
 		t.Fatalf("only the older file: %s", got)
 	}
 	// A restored backup under the current name wins over a leftover older file.

@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -273,26 +272,6 @@ func TestQuietTransitionWritesNothing(t *testing.T) {
 	}
 	if changes() != started {
 		t.Fatal("a condition still inside its hold time wrote again")
-	}
-}
-
-func TestUpgradeVersionOne(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "upgrade.db")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec("ALTER TABLE events DROP COLUMN last_error; DROP INDEX events_rule_time; DROP TABLE latest; DROP TRIGGER jobs_latest_insert; DROP TRIGGER jobs_latest_update; DROP TRIGGER jobs_latest_delete; DROP TRIGGER jobs_tcp_bucket_insert; DROP TRIGGER jobs_tcp_bucket_finish; DROP TABLE tcp_buckets; DROP TABLE tcp_buckets_state; ALTER TABLE jobs DROP COLUMN probe_key; PRAGMA user_version=1;"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	s, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	if _, err = s.Events(context.Background(), model.EventQuery{}); err != nil {
-		t.Fatal(err)
 	}
 }
 

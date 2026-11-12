@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -535,15 +534,13 @@ func TestEventsPageAndFilter(t *testing.T) {
 	}
 }
 
-// A fresh database runs the version 1 baseline and then every migration, so it
-// must end at the newest version with every later table, index and column.
-func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
+func TestFreshDatabaseHasCurrentSchema(t *testing.T) {
 	s := openTest(t)
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 24 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != schemaVersion {
 		t.Fatalf("user_version=%d %v", version, err)
 	}
-	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "alert_rules", "events_rule_time", "jobs_latest_insert", "tcp_buckets", "tcp_buckets_state", "jobs_tcp_bucket_insert", "jobs_tcp_bucket_finish", "node_agent_sessions", "node_agent_session_active"} {
+	for _, name := range []string{"latest", "traffic_hour", "unlocks", "retries", "alert_rules", "events_rule_time", "jobs_latest_insert", "tcp_buckets", "jobs_tcp_bucket_insert", "jobs_tcp_bucket_finish", "node_agent_sessions", "node_agent_session_active"} {
 		var n int
 		if err := s.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name=?", name).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("%s missing (%d, %v)", name, n, err)
@@ -557,46 +554,13 @@ func TestFreshDatabaseRunsEveryMigration(t *testing.T) {
 	}
 }
 
-// Version 10 moves 免费 out of the price period into the free flag: an old free
-// machine comes back free with no price or period, paid machines are untouched,
-// and the period no longer accepts 免费 at all.
-func TestFreeFlagMigrationAndSave(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "free.db")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestFreeNodeSaveClearsPrice(t *testing.T) {
+	s := openTest(t)
 	ctx := context.Background()
-	for id, period := range map[string]string{"free": "免费", "paid": "月"} {
-		config := `{"name":"` + id + `","billing_at":"2026-09-01T00:00:00Z","traffic_mode":"sum","currency":"CNY","price_period":"` + period + `"}`
-		if _, err = s.db.ExecContext(ctx, "INSERT INTO nodes(id,config,token_hash) VALUES(?,?,?)", id, config, model.Hash(id)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err = s.db.Exec("PRAGMA user_version=9"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	if s, err = Open(path); err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	nodes, err := s.Nodes(ctx, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, n := range nodes {
-		if n.ID == "free" && (!n.Billing.Free || n.Billing.PricePeriod != "" || n.Billing.Currency != "CNY") {
-			t.Fatalf("free node after migration: %+v", n.Node)
-		}
-		if n.ID == "paid" && (n.Billing.Free || n.Billing.PricePeriod != "月") {
-			t.Fatalf("paid node touched: %+v", n.Node)
-		}
-	}
 	base := model.Node{Name: "x", Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficMode: "sum"}}
-	legacy := base
-	legacy.Billing.PricePeriod = "免费"
-	if _, _, err = s.SaveNode(ctx, legacy, true); err == nil {
+	invalid := base
+	invalid.Billing.PricePeriod = "免费"
+	if _, _, err := s.SaveNode(ctx, invalid, true); err == nil {
 		t.Fatal("price period 免费 accepted")
 	}
 	free := base
@@ -605,311 +569,13 @@ func TestFreeFlagMigrationAndSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, _ = s.Nodes(ctx, time.Now())
+	nodes, err := s.Nodes(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, n := range nodes {
 		if n.ID == id && (!n.Billing.Free || n.Billing.Price != 0 || n.Billing.PricePeriod != "") {
 			t.Fatalf("free save kept a price: %+v", n.Node)
 		}
-	}
-}
-
-// Version 11 turns every legacy task config (combined, single probe, unlock)
-// into the tagged union, keeping each probe's key exactly as it was so results,
-// history and schedules stay attached.
-func TestTaskShapeMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tasks.db")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	legacy := map[string]string{
-		"combined": `{"id":"combined","name":"三网","enabled":true,"node_ids":[],"checks":["tcp","route"],"targets":[{"host":"1.1.1.1","port":443,"family":"ipv4","region":"上海","carrier":"电信"}],"interval":60,"route_interval":1800}`,
-		"tcp":      `{"id":"tcp","name":"单项延迟","enabled":true,"node_ids":[],"kind":"tcp","host":"example.com","port":443,"family":"ipv4","region":"","carrier":"","interval":30}`,
-		"route":    `{"id":"route","name":"单项回程","enabled":false,"node_ids":[],"kind":"route","host":"2.2.2.2","port":80,"family":"ipv4","region":"北京","carrier":"联通","interval":900}`,
-		"unlock":   `{"id":"unlock","name":"解锁","enabled":true,"node_ids":[],"kind":"unlock","family":"ipv6","interval":7200}`,
-	}
-	wantKeys := map[string][]string{
-		"combined": {"combined|tcp|ipv4|1.1.1.1|443|上海|电信", "combined|route|ipv4|1.1.1.1|443|上海|电信"},
-		"tcp":      {"tcp|tcp|ipv4|example.com|443||"},
-		"route":    {"route|route|ipv4|2.2.2.2|80|北京|联通"},
-		"unlock":   {"unlock|unlock|ipv6||0||"},
-	}
-	for id, config := range legacy {
-		if _, err = s.db.Exec("INSERT INTO tasks VALUES(?,?)", id, config); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err = s.db.Exec("PRAGMA user_version=10"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	if s, err = Open(path); err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	tasks, err := s.Tasks(ctx)
-	if err != nil || len(tasks) != 4 {
-		t.Fatalf("tasks: %d %v", len(tasks), err)
-	}
-	for _, task := range tasks {
-		if err := task.Validate(); err != nil {
-			t.Fatalf("%s did not migrate into a valid task: %v (%+v)", task.ID, err, task)
-		}
-		keys := task.ProbeKeys()
-		if len(keys) != len(wantKeys[task.ID]) {
-			t.Fatalf("%s keys %v", task.ID, keys)
-		}
-		for _, k := range wantKeys[task.ID] {
-			if !keys[k] {
-				t.Fatalf("%s lost probe key %q (has %v)", task.ID, k, keys)
-			}
-		}
-	}
-	byID := map[string]model.Task{}
-	for _, task := range tasks {
-		byID[task.ID] = task
-	}
-	if c := byID["combined"]; c.Type != model.TaskProbe || c.Probe.Interval != 60 || c.Probe.RouteInterval != 1800 {
-		t.Fatalf("combined: %+v %+v", c, c.Probe)
-	}
-	if r := byID["route"]; r.Enabled || r.Probe.RouteInterval != 900 || r.Probe.Interval != 0 {
-		t.Fatalf("single route: %+v %+v", r, r.Probe)
-	}
-	if u := byID["unlock"]; u.Type != model.TaskUnlock || u.Unlock.Interval != 7200 || u.Unlock.Family != "ipv6" || u.Probe != nil {
-		t.Fatalf("unlock: %+v", u)
-	}
-}
-
-// Version 12 groups the node config (display / billing / line) and moves the
-// server-kept creation time and cycle correction into their own columns; every
-// value survives and the correction still applies to its cycle.
-func TestNodeShapeMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nodes.db")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC()
-	cycle, _ := model.Cycle(now, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
-	flat := fmt.Sprintf(`{"id":"n","name":"东京","group":"JP","region":"日本","order":3,"public":true,
-		"representative":"上海","latency_region":"北京","latency_carriers":["电信"],
-		"traffic_limit":2000,"traffic_mode":"max","billing_at":"2026-09-01T00:00:00Z","free":false,"price":9.9,"currency":"USD","price_period":"月","expires_at":"2027-01-01T00:00:00Z",
-		"line_mbps":1000,"throttle_mbps":100,"throttle_hours":12,"throttle_on":"bandwidth",
-		"alerts":{"offline":true,"offline_seconds":60},
-		"created_at":1700000000,"traffic_adjustment":700,"adjustment_cycle":%d}`, cycle.Unix())
-	if _, err = s.db.Exec("ALTER TABLE nodes DROP COLUMN created_at; ALTER TABLE nodes DROP COLUMN traffic_adjustment; ALTER TABLE nodes DROP COLUMN adjustment_cycle"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec("INSERT INTO nodes(id,config,token_hash) VALUES('n',?,'h')", flat); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec("PRAGMA user_version=11"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	if s, err = Open(path); err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	views, err := s.Nodes(context.Background(), now)
-	if err != nil || len(views) != 1 {
-		t.Fatalf("nodes: %d %v", len(views), err)
-	}
-	v := views[0]
-	want := model.Node{ID: "n", Name: "东京", Group: "JP", Region: "日本", Order: 3, Public: true,
-		Display: model.NodeDisplay{RouteRegion: "上海", LatencyRegion: "北京", LatencyCarriers: []string{"电信"}},
-		Billing: model.Billing{ResetAt: "2026-09-01T00:00:00Z", TrafficLimit: 2000, TrafficMode: "max", Price: 9.9, Currency: "USD", PricePeriod: "月", ExpiresAt: "2027-01-01T00:00:00Z"},
-		Line:    model.Line{Mbps: 1000, ThrottleMbps: 100, ThrottleHours: 12, ThrottleOn: "bandwidth"}}
-	if encode(v.Node) != encode(want) {
-		t.Fatalf("node after migration:\n got %s\nwant %s", encode(v.Node), encode(want))
-	}
-	if got, want := ruleParams(v.Alerts), ruleParams(model.Alerts{{Kind: model.AlertOffline, HoldSeconds: 60}}); got != want {
-		t.Fatalf("alerts after migration: got %s want %s", got, want)
-	}
-	if v.CreatedAt != 1700000000 || v.TrafficUsed != 700 {
-		t.Fatalf("server-kept state lost: created=%d used=%d", v.CreatedAt, v.TrafficUsed)
-	}
-	var raw string
-	if err = s.db.QueryRow("SELECT config FROM nodes WHERE id='n'").Scan(&raw); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(raw, "traffic_adjustment") || strings.Contains(raw, "created_at") || strings.Contains(raw, "representative") {
-		t.Fatalf("config still carries the old fields: %s", raw)
-	}
-}
-
-// Version 13 turns the flat alert object into the rule list: rules that were on
-// keep their thresholds, the shared repeat goes onto each, the load rule splits
-// into CPU and memory, and the retired load debounce state is dropped.
-func TestAlertRulesMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "alerts.db")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config := `{"id":"n","name":"甲","group":"","region":"","order":0,"public":false,"display":{"route_region":"","latency_region":""},
-		"billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_limit":0,"traffic_mode":"sum","price":0,"currency":"","price_period":"","expires_at":""},
-		"line":{"mbps":0,"throttle_mbps":0,"throttle_hours":0,"throttle_on":""},
-		"alerts":{"offline":true,"offline_seconds":90,"repeat_seconds":600,"renewal":false,"renewal_days":7,"traffic":true,"traffic_percent":80,
-		          "throttle":false,"load":true,"cpu_percent":95,"memory_percent":85,"hold_seconds":120}}`
-	if _, err = s.db.Exec("INSERT INTO nodes(id,config,token_hash) VALUES('n',?,'h')", config); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec("INSERT INTO alert_state VALUES('n','load',1,1),('n','offline',1,0)"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec("PRAGMA user_version=12"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	if s, err = Open(path); err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	views, err := s.Nodes(context.Background(), time.Now())
-	if err != nil || len(views) != 1 {
-		t.Fatalf("nodes: %v", err)
-	}
-	want := model.Alerts{
-		{Kind: model.AlertOffline, HoldSeconds: 90, RepeatSeconds: 600},
-		{Kind: model.AlertTraffic, Threshold: 80, RepeatSeconds: 600},
-		{Kind: model.AlertCPU, Threshold: 95, HoldSeconds: 120, RepeatSeconds: 600},
-		{Kind: model.AlertMemory, Threshold: 85, HoldSeconds: 120, RepeatSeconds: 600},
-	}
-	if ruleParams(views[0].Alerts) != ruleParams(want) {
-		t.Fatalf("rules after migration:\n got %s\nwant %s", ruleParams(views[0].Alerts), ruleParams(want))
-	}
-	if err = views[0].Node.Validate(); err != nil {
-		t.Fatalf("migrated node invalid: %v", err)
-	}
-	var kinds string
-	if err = s.db.QueryRow("SELECT group_concat(kind) FROM alert_state WHERE node_id='n'").Scan(&kinds); err != nil || kinds != "offline" {
-		t.Fatalf("alert_state kinds = %q %v", kinds, err)
-	}
-}
-
-// ruleParams is the rules as kind and parameters only: what a node is alerted
-// on, whatever ids and scopes the rules got.
-func ruleParams(rules model.Alerts) string {
-	out := model.Alerts{}
-	for _, r := range rules {
-		out = append(out, model.AlertRule{Kind: r.Kind, Threshold: r.Threshold, HoldSeconds: r.HoldSeconds, RepeatSeconds: r.RepeatSeconds})
-	}
-	return encode(out)
-}
-
-// Version 14 moves each node's own rules into the rule table. Nodes that had
-// the very same rule share one node-scoped rule; a different threshold is a
-// rule of its own; nothing widens to every node, and the node configs no
-// longer carry alerts.
-func TestAlertScopesMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "scopes.db")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	node := func(id, alerts string) string {
-		return `{"id":"` + id + `","name":"` + id + `","group":"","region":"","order":0,"public":false,"display":{"route_region":"","latency_region":""},
-		"billing":{"reset_at":"2026-09-01T00:00:00Z","traffic_limit":0,"traffic_mode":"sum","price":0,"currency":"","price_period":"","expires_at":""},
-		"line":{"mbps":0,"throttle_mbps":0,"throttle_hours":0,"throttle_on":""},"alerts":` + alerts + `}`
-	}
-	configs := map[string]string{
-		"a": node("a", `[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":90,"hold_seconds":300}]`),
-		"b": node("b", `[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":80,"hold_seconds":300}]`),
-		"c": node("c", `[]`),
-	}
-	for _, id := range []string{"a", "b", "c"} {
-		if _, err = s.db.Exec("INSERT INTO nodes(id,config,token_hash) VALUES(?,?,?)", id, configs[id], "h"+id); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err = s.db.Exec("DROP TABLE alert_rules; PRAGMA user_version=13"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	if s, err = Open(path); err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	ctx := context.Background()
-	rules, err := s.AlertRules(ctx)
-	if err != nil || len(rules) != 3 {
-		t.Fatalf("rules: %+v %v", rules, err)
-	}
-	for _, r := range rules {
-		if r.Scope != model.ScopeNodes || r.ID == "" || r.Validate() != nil {
-			t.Fatalf("migrated rule: %+v", r)
-		}
-	}
-	if fmt.Sprint(rules[0].NodeIDs) != "[a b]" || rules[0].Kind != model.AlertOffline {
-		t.Fatalf("shared offline rule: %+v", rules[0])
-	}
-	views, _ := s.Nodes(ctx, time.Now())
-	byID := map[string]model.NodeView{}
-	for _, v := range views {
-		byID[v.ID] = v
-	}
-	if cpu, _ := byID["b"].Alerts.Rule(model.AlertCPU); cpu.Threshold != 80 || len(byID["a"].Alerts) != 2 || len(byID["c"].Alerts) != 0 {
-		t.Fatalf("effective: a=%+v b=%+v c=%+v", byID["a"].Alerts, byID["b"].Alerts, byID["c"].Alerts)
-	}
-	var left int
-	if err = s.db.QueryRow("SELECT count(*) FROM nodes WHERE json_extract(config,'$.alerts') IS NOT NULL").Scan(&left); err != nil || left != 0 {
-		t.Fatalf("configs still carry alerts: %d %v", left, err)
-	}
-}
-
-// 迁移出来的规则都要能在面板里原样存回去：共用一条规则的节点超过 MaxRuleList 台时拆成
-// 几条，版本 13 允许的 0–1% 阈值抬到 1%。
-func TestAlertScopesMigrationKeepsRulesSavable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "savable.db")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	total := model.MaxRuleList + 1
-	for i := range total {
-		id := fmt.Sprintf("n%04d", i)
-		alerts := `[{"kind":"offline","hold_seconds":60}]`
-		if i == 0 {
-			alerts = `[{"kind":"offline","hold_seconds":60},{"kind":"cpu","threshold":0.5,"hold_seconds":300}]`
-		}
-		config := `{"id":"` + id + `","name":"` + id + `","group":"","billing":{"reset_at":"2026-09-01T00:00:00Z"},"alerts":` + alerts + `}`
-		if _, err = s.db.Exec("INSERT INTO nodes(id,config,token_hash) VALUES(?,?,?)", id, config, "h"+id); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err = s.db.Exec("DROP TABLE alert_rules; PRAGMA user_version=13"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	if s, err = Open(path); err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	ctx := context.Background()
-	rules, err := s.AlertRules(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	offline := 0
-	for _, r := range rules {
-		if err = r.Validate(); err != nil {
-			t.Fatalf("migrated %s rule (%d nodes, threshold %g) cannot be saved again: %v", r.Kind, len(r.NodeIDs), r.Threshold, err)
-		}
-		if _, err = s.SaveAlertRule(ctx, r, false); err != nil {
-			t.Fatalf("resave %s: %v", r.Kind, err)
-		}
-		switch r.Kind {
-		case model.AlertOffline:
-			offline += len(r.NodeIDs)
-		case model.AlertCPU:
-			if r.Threshold != 1 {
-				t.Fatalf("cpu threshold: %+v", r)
-			}
-		}
-	}
-	if len(rules) != 3 || offline != total {
-		t.Fatalf("rules=%d offline nodes=%d", len(rules), offline)
 	}
 }

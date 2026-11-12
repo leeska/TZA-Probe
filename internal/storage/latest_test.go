@@ -118,7 +118,25 @@ func millis(v float64) *float64 { return &v }
 
 // taskRow is the management task a single probe belongs to, as a tasks.config.
 func taskRow(p model.Probe) string {
-	return encode(legacyTask{ID: p.ID, Name: p.Name, Kind: p.Kind, Host: p.Host, Port: p.Port, Family: p.Family, Region: p.Region, Carrier: p.Carrier, Interval: p.Interval}.upgrade())
+	task := model.Task{ID: p.ID, Name: p.Name, Enabled: true}
+	if p.Kind == "unlock" {
+		task.Type = model.TaskUnlock
+		task.Unlock = &model.UnlockSpec{Interval: p.Interval, Family: p.Family}
+	} else {
+		task.Type = model.TaskProbe
+		task.Probe = &model.ProbeSpec{
+			Checks: []string{p.Kind},
+			Targets: []model.Target{{
+				Host: p.Host, Port: p.Port, Family: p.Family, Region: p.Region, Carrier: p.Carrier,
+			}},
+		}
+		if p.Kind == "route" {
+			task.Probe.RouteInterval = p.Interval
+		} else {
+			task.Probe.Interval = p.Interval
+		}
+	}
+	return encode(task)
 }
 
 // TestObservationsSelectionMatchesWindowFunction 是本改动的核心等价性测试：
@@ -235,47 +253,4 @@ func TestLatestFollowsWritesAndDeletes(t *testing.T) {
 		t.Fatalf("清理后物化表 = %v", sel)
 	}
 	assertSameSelection(t, s, node, now.Add(time.Second))
-}
-
-// TestLatestMigrationBackfillsExistingJobs 造一个「上一版形状」的库（无 latest、
-// 无触发器、jobs 无 probe_key），重新打开后要求：版本升到 4、物化表回填完整、
-// 与旧查询的选择一致。
-func TestLatestMigrationBackfillsExistingJobs(t *testing.T) {
-	path := t.TempDir() + "/upgrade.db"
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	node, _ := makeNode(t, s)
-	now := time.Now().Truncate(time.Second)
-	if _, err = s.db.Exec(`DROP TABLE latest; DROP TRIGGER jobs_latest_insert; DROP TRIGGER jobs_latest_update; DROP TRIGGER jobs_latest_delete; DROP TRIGGER jobs_tcp_bucket_insert; DROP TRIGGER jobs_tcp_bucket_finish; DROP TABLE tcp_buckets; DROP TABLE tcp_buckets_state; ALTER TABLE jobs DROP COLUMN probe_key; PRAGMA user_version=3;`); err != nil {
-		t.Fatal(err)
-	}
-	for i, host := range []string{"one.example.com", "two.example.com"} {
-		task := model.Probe{Name: "n", ID: fmt.Sprintf("task-%d", i), Kind: "tcp", Family: "ipv4", Host: host, Port: 443, Region: "上海", Carrier: "电信", Interval: 60}
-		for n := 0; n < 3; n++ {
-			issued := now.Add(time.Duration(-3*n) * time.Minute).Unix()
-			insertJobRow(t, s, node, jobArgs{id: fmt.Sprintf("j%d%d", i, n), task: task, issued: issued, finished: ptr(issued), result: &model.Result{JobID: "x", Status: "ok", Sent: 1, Received: 1, Latency: millis(float64(n))}})
-		}
-	}
-	s.Close()
-
-	s, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	var version int
-	if err = s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 24 {
-		t.Fatalf("user_version = %d (%v)", version, err)
-	}
-	assertSameSelection(t, s, node, now)
-	if sel := latestSelection(t, s, node, now); len(sel) != 2 {
-		t.Fatalf("回填后物化表 = %v，想要 2 组", sel)
-	}
-	obs, err := s.Observations(ctx, node, now)
-	if err != nil || len(obs) != 2 {
-		t.Fatalf("观测 = %d 条 (%v)", len(obs), err)
-	}
 }

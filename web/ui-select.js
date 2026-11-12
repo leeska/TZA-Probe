@@ -55,6 +55,7 @@ function enhance(select) {
   // 白底 inline-flex 按钮**横排成一行**，弹层只剩一行高、后面的选项溢出被面板裁掉
   // （后台「面板设置 → 默认外观」实测三个选项 x=1008/1271/1534）。换成 div 就不吃那套基样式。
   const pick = (b) => {
+    if (select.disabled || select.options[Number(b.dataset.i)]?.disabled) return;
     select.selectedIndex = Number(b.dataset.i);
     select.dispatchEvent(new Event("change", { bubbles: true }));
     sync();
@@ -65,7 +66,7 @@ function enhance(select) {
     pop.innerHTML = [...select.options]
       .map(
         (o, i) =>
-          `<div class="select-opt${o.selected ? " selected" : ""}" role="option" aria-selected="${o.selected}" data-i="${i}" tabindex="0">${esc(o.textContent)}${CHECK}</div>`,
+          `<div class="select-opt${o.selected ? " selected" : ""}" role="option" aria-selected="${o.selected}" aria-disabled="${o.disabled}" data-i="${i}" tabindex="${o.disabled ? "-1" : "0"}">${esc(o.textContent)}${CHECK}</div>`,
       )
       .join("");
     pop.scrollTop = 0;
@@ -114,6 +115,7 @@ function enhance(select) {
     if (select.disabled) close();
   };
   sync();
+  select.addEventListener("change", sync);
   syncDisabled();
   // 选项列表被外部重建时同步触发器文字，disabled 变化时同步可用状态
   new MutationObserver(sync).observe(select, { childList: true });

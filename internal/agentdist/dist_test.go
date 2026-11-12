@@ -82,8 +82,8 @@ func TestScriptIsPOSIXAndSecretFree(t *testing.T) {
 		}
 	}
 	for _, needle := range []string{"--no-plugin", "plugins.disabled", "--prepare-plugins"} {
-		if !strings.Contains(script, needle) {
-			t.Errorf("script missing plugin provisioning needle %q", needle)
+		if strings.Contains(script, needle) {
+			t.Errorf("script retains removed plugin provisioning %q", needle)
 		}
 	}
 	if strings.Contains(script, "<<'TZA_RUNTIME_SERVICE'") || strings.Contains(script, `install -m 0755 "$BIN" "$RT_HELPER"`) {
@@ -102,21 +102,6 @@ func TestScriptIsPOSIXAndSecretFree(t *testing.T) {
 	}
 	if string(repo) != script {
 		t.Fatal("served script differs from repository copy")
-	}
-}
-
-func TestReferenceInstallerMatchesPinnedDigest(t *testing.T) {
-	sum, err := ReferenceInstallerSum()
-	if err != nil || len(sum) != 64 {
-		t.Fatalf("reference installer sum %q err %v", sum, err)
-	}
-	data, err := ReferenceInstaller()
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(data)
-	if hex.EncodeToString(digest[:]) != sum {
-		t.Fatal("embedded reference installer drifted from the pinned digest")
 	}
 }
 

@@ -19,7 +19,7 @@ var gzipWriters = sync.Pool{New: func() any {
 // made at WriteHeader, so a body-less status (204, 304) goes out untouched.
 func gzipAPI(w http.ResponseWriter, r *http.Request, next http.Handler) {
 	w.Header().Add("Vary", "Accept-Encoding")
-	if !acceptsGzip(r) {
+	if !acceptsGzip(r) || strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		next.ServeHTTP(w, r)
 		return
 	}

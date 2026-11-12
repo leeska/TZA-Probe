@@ -80,6 +80,15 @@ async function shot(page, name, fullPage = true) {
     await page.waitForSelector("#dialog[open]");
     await page.waitForTimeout(600);
     await shot(page, name, false);
+    await page.evaluate(() => {
+      const dialog = document.querySelector("#dialog");
+      dialog.scrollTop = dialog.scrollHeight;
+      const close = dialog.querySelector(".close");
+      const bounds = dialog.getBoundingClientRect();
+      const rect = close.getBoundingClientRect();
+      if (rect.top < bounds.top || rect.bottom > bounds.bottom || rect.right > bounds.right || rect.right < bounds.right - 100 || !close.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))) throw new Error("弹窗滚动后右上角关闭按钮不可见或不可点击");
+      dialog.scrollTop = 0;
+    });
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => !document.querySelector("#dialog").open);
   };

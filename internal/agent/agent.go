@@ -36,15 +36,14 @@ type Transport interface {
 type Upgrader interface {
 	Update(context.Context, model.AgentUpgrade) error
 }
-type PluginRunner interface {
+type EgressRunner interface {
 	Run(context.Context)
 }
 type Agent struct {
-	Collector    Collector
-	Prober       Prober
-	Transport    Transport
-	ExecutorSync ExecutorSync
-	Plugins      PluginRunner
+	Collector Collector
+	Prober    Prober
+	Transport Transport
+	Egress    EgressRunner
 	// Upgrader is set when the Agent runs under a service unit that restarts it
 	// (--self-update); nil leaves upgrades to the install command. Restart is
 	// called once a new binary is in place and must make Run return.
@@ -75,19 +74,9 @@ func (a Agent) Run(ctx context.Context) {
 		}
 	}
 	wg.Add(2)
-	if a.Plugins != nil {
+	if a.Egress != nil {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			a.Plugins.Run(ctx)
-		}()
-	}
-	if a.ExecutorSync != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			a.syncExecutor(ctx)
-		}()
+		go func() { defer wg.Done(); a.Egress.Run(ctx) }()
 	}
 	if transport, ok := a.Transport.(HeartbeatTransport); ok {
 		wg.Add(1)

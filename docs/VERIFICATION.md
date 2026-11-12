@@ -2,6 +2,9 @@
 
 这份文档写两件事：怎样验证一次修改，以及哪些行为只能在真实环境里验证。
 
+当前新部署基线与不兼容边界见 [新部署基线](FRESH-DEPLOYMENT.md)。数据库测试验证直接初始化、
+旧库拒绝且保留数据、失败原子回滚及当前备份重开，不再测试历代数据自动迁移。
+
 ## 每次修改
 
 ```sh
@@ -13,6 +16,13 @@ go test -race ./...        # 没有 gcc 的机器去掉 -race
 `bash scripts/pipeline.sh check` 会一次跑完以上三项，外加 `web/*.js` 语法检查、`scripts/presentation-test.mjs` 和一次性 Server 上的前端集成检查（需要 Node ≥ 20.19 或 Bun；没有 Node 时自动用 Bun，jsdom 与 esbuild 也由它安装）。
 
 前端检查同时运行 `scripts/market-permissions-test.mjs`，覆盖插件快捷更新确认、权限变化提示、取消不安装、历史版本独立权限，以及已绑定实例空清单同步。真实 CC 数据库上的下载表单提交、回执幂等和实例清单替换由 TZA-CC 的 `TestDownloadFormReceiptsAndInventory` 覆盖，需配置独立的 `TZA_CC_TEST_DATABASE_URL`。
+
+`scripts/component-workflow-ui-test.mjs` 覆盖首启一次确认：未确认不执行、精确摘要重核、
+权限/能力变化、失败保留输入、取消准备及默认停用日程。实际 HTTP/SQLite/签名管理包
+往返由 `internal/storage` 的 `TestWorkflowPreparationHTTPExactConsentAndLostApprovalReply` 覆盖。
+`TestWorkflowPreparationLinuxReadOnlyAcceptance` 及 `TestWorkflowPreparationLinuxPreservesLegacyTimers`
+默认跳过，必须使用固定 QA 目录及受保护的私有 state-root 挂载命名空间；分别验证
+干净节点只读准备与既有 timer 阻断。不能停止生产 timer、覆盖实际 Agent 或取消保护检查来通过测试。
 
 ## 前端集成检查（ui-smoke）
 

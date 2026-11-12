@@ -2,6 +2,7 @@ import { api, send, toast, guard, modal, esc } from "./api.js";
 import { bytes } from "./format.js";
 import { state, content, confirmAction } from "./admin-state.js";
 import { openNodePluginDetail } from "./admin-node-plugin-detail.js";
+import { openDeclarativePlugin } from "./admin-declarative-plugin.js";
 // TZA-CC 市场的共用部分：「主题」页（主题包）和「插件」页各带一块市场；附加包依附某一套主题，
 // 它的市场挂在那套主题的设置菜单里（addonMarket），不是主题市场的一个分类，TZA-CC 账号在
 // 「面板设置 → 账号与安全」。浏览器只请求本服务器的 /admin/market/*，目录、预览图与安装包都由服务器
@@ -137,7 +138,7 @@ function catalogHTML(scope) {
 function card(it) {
   if (it.type === "executor") {
     const official = it.id === "ipsentinel-runtime";
-    return `<button type="button" class="market-card is-plugin" data-package="${esc(it.id)}"><span class="plugin-glyph" aria-hidden="true">防护</span><span class="market-card-body"><span class="market-card-kind">官方插件</span><span class="market-card-title"><b>${esc(official ? "IP 地区防护 · IPSentinel" : it.name)}</b>${it.installed ? '<span class="pill good">已安装</span>' : ""}</span><small>${esc(official ? "防送中检测、目标地区拉回尝试与干净复测。实际组件按 Agent 安装。" : it.summary || "按需下载运行依赖，独立隔离运行")}</small><span class="market-card-meta">${esc(it.latest ? "v" + it.latest : "暂无版本")}</span><span class="market-card-footer"><strong>免费</strong><span>${it.installed ? "管理插件" : "查看详情"} →</span></span></span></button>`;
+    return `<button type="button" class="market-card is-plugin" data-package="${esc(it.id)}"><span class="plugin-glyph" aria-hidden="true">地区</span><span class="market-card-body"><span class="market-card-kind">官方插件</span><span class="market-card-title"><b>${esc(official ? "地区偏移检测 · IPSentinel" : it.name)}</b>${it.installed ? '<span class="pill good">已安装</span>' : ""}</span><small>${esc(official ? "Google、Meta 地区偏移检测、定位校正尝试与独立复测。主控浏览器通过节点出口执行。" : it.summary || "按需下载运行依赖，独立隔离运行")}</small><span class="market-card-meta">${esc(it.latest ? "v" + it.latest : "暂无版本")}</span><span class="market-card-footer"><strong>免费</strong><span>${it.installed ? "管理插件" : "查看详情"} →</span></span></span></button>`;
   }
   // 没有封面或封面取不到（.broken）时露出三格色样，附加包没有色样就写类型。
   const fallback = it.type === "plugin" ? glyph(it.kind) : it.swatch?.length ? swatch(it.swatch) : `<span class="muted">${typeName(it.type)}</span>`;
@@ -327,12 +328,13 @@ async function detail(id) {
   const usage = plugin
     ? (p.kind === "targets" ? "安装后：新建任务，在目标目录中选择这些探测目标。" : "安装后：到「告警与通知 → 配置出口」选择这个通知渠道。")
     : p.type === "addon" ? "安装后：到对应主题的设置中管理附加包。" : "安装后：访客可在外观菜单选择；在「面板设置」中可设为前台默认。";
-  const installBar = `<div class="market-install-bar"><div><b>${esc(plugin ? kindName(p.kind) : typeName(p.type))} · ${p.price > 0 ? yuan(p.price) : "免费"}</b><small>${esc(usage)}</small></div><button class="primary" id="market-install" ${disabled ? "disabled" : ""}>${esc(label)}</button></div>`;
+  const installBar = `<div class="market-install-bar"><div><b>${esc(plugin ? kindName(p.kind) : typeName(p.type))} · ${p.price > 0 ? yuan(p.price) : "免费"}</b><small>${esc(usage)}</small></div>${plugin && have ? '<button data-market-manage-plugin>管理插件</button>' : ""}<button class="primary" id="market-install" ${disabled ? "disabled" : ""}>${esc(label)}</button></div>`;
   const d = modal(
     p.name,
     `<div class="market-detail">${installBar}${plugin ? `<p>${glyph(p.kind)}</p>` : ""}${shots.length ? `<div class="market-shots">${shots.map((s) => `<span class="market-shot"><img data-media src="${esc(media(s))}" alt="" loading="lazy"></span>`).join("")}</div>` : p.swatch?.length ? `<p>${swatch(p.swatch)}</p>` : ""}<p class="market-meta">${esc(meta)}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">在 TZA-CC 查看</a>` : ""}</p>${paid}${host}${p.description ? `<p class="market-desc">${esc(p.description)}</p>` : p.summary ? `<p class="market-desc">${esc(p.summary)}</p>` : ""}${have ? `<p class="hint">本机已有 ${have.version ? "v" + esc(have.version) : ""}（${have.source === "market" ? "市场" : "本地上传"}）。</p>` : ""}${plugin ? `<h3>这个插件能做的事</h3>${permList(p.permissions) || '<p class="muted">市场没有列出。</p>'}` : ""}<details class="market-history"><summary>版本历史与更新说明</summary><div class="market-versions">${versions || '<p class="muted">市场没有列出版本。</p>'}</div></details></div>`,
   );
   paint(d);
+  d.querySelector("[data-market-manage-plugin]")?.addEventListener("click", guard(() => openDeclarativePlugin(p.id, { back: rerender })));
   const run = async (version, button) => {
     button.disabled = true;
     const text = button.textContent;
@@ -442,11 +444,13 @@ function schedulePoll(seconds) {
     if (!line) return;
     try {
       const r = await send("/admin/market/connect/poll", "POST");
+      if (!line.isConnected || content()?.querySelector("#market-poll") !== line) return;
       if (r.status === "pending") return schedulePoll(r.interval || seconds);
       await rerender();
       if (r.status === "bound") toast(`已连接 TZA-CC：${r.account || ""}`);
       else if (r.status === "expired") toast("验证码已过期，请重新连接");
     } catch (e) {
+      if (!line.isConnected) return;
       line.textContent = `暂时没有确认（${e.message}），稍后自动重试…`;
       schedulePoll(seconds);
     }

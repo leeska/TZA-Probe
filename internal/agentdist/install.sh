@@ -11,7 +11,6 @@
 #                            （NextTrace-API 的 v3 通道靠 NextTrace CLI 自建 WebSocket，本进程内查询必然失败）
 #   --trace-method NAME      内置回程的探测方式：icmp（默认，与 NextTrace CLI 一致）、tcp 或 udp
 #   --allow-http             允许明文 HTTP 的 endpoint（仅限可信私网；endpoint 为 http:// 时自动开启）
-#   --no-plugin              关闭 Agent 内置插件功能；主控将无法在此节点安装/更新组件
 #   --uninstall              停止服务并删除程序、配置与服务单元（systemd / OpenRC 均可）
 #
 # 不带 --token 再次执行时保留现有 /etc/tza-probe/agent.json，只更新二进制并重启，即升级。
@@ -28,19 +27,12 @@ NEXTTRACE=""
 GEO_PROVIDER=""
 TRACE_METHOD=""
 ALLOW_HTTP=""
-NO_PLUGIN=""
 UNINSTALL=""
 CONFIG=/etc/tza-probe/agent.json
 KEYFILE=/etc/tza-probe/upgrade-key.pub
 BIN=/usr/local/bin/tza-agent
 UNIT=/etc/systemd/system/tza-agent.service
 INITD=/etc/init.d/tza-agent
-RT_UNIT=/etc/systemd/system/tza-runtime-installer.service
-RT_HELPER=/usr/local/libexec/tza/tza-runtime-installer
-RT_KEYS=/etc/tza-probe/runtime-cc-keys
-RT_PY=/usr/local/libexec/tza/ipsentinel-install-runtime.py
-RT_CONFIG=/etc/tza-probe/runtime-installer.json
-PLUGIN_DISABLED=/etc/tza-probe/plugins.disabled
 PLUGIN_DROPIN=/etc/systemd/system/tza-agent.service.d/50-plugins.conf
 
 while [ $# -gt 0 ]; do
@@ -52,7 +44,6 @@ while [ $# -gt 0 ]; do
     --geo-provider) GEO_PROVIDER="$2"; shift 2 ;;
     --trace-method) TRACE_METHOD="$2"; shift 2 ;;
     --allow-http) ALLOW_HTTP=true; shift ;;
-    --no-plugin) NO_PLUGIN=true; shift ;;
     --uninstall) UNINSTALL=true; shift ;;
     -h|--help) sed -n '2,16p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
@@ -80,7 +71,6 @@ if [ "$(id -u)" -ne 0 ]; then
   [ -n "$GEO_PROVIDER" ] && quoted="$quoted --geo-provider $(q "$GEO_PROVIDER")"
   [ -n "$TRACE_METHOD" ] && quoted="$quoted --trace-method $(q "$TRACE_METHOD")"
   [ -n "$ALLOW_HTTP" ] && quoted="$quoted --allow-http"
-  [ -n "$NO_PLUGIN" ] && quoted="$quoted --no-plugin"
   [ -n "$UNINSTALL" ] && quoted="$quoted --uninstall"
   if command -v curl >/dev/null 2>&1; then
     get="curl -fsSL '$ENDPOINT/install.sh'"
@@ -114,10 +104,6 @@ if [ -n "$UNINSTALL" ]; then
   fi
   rm -f "$UNIT" "$INITD" "$BIN" "$BIN.previous"
   rm -f "$PLUGIN_DROPIN"
-  if [ "$INIT" = systemd ]; then
-    systemctl disable --now tza-runtime-installer 2>/dev/null || true
-    rm -f "$RT_UNIT" "$RT_HELPER" "$RT_PY" "$RT_KEYS" "$RT_CONFIG"
-  fi
   rm -rf /etc/tza-probe /var/lib/tza-agent
   [ "$INIT" = systemd ] && systemctl daemon-reload
   echo "已卸载 TZA Probe Agent"
@@ -229,11 +215,6 @@ if [ -z "$UPGRADE" ]; then
   chmod 0600 "$CONFIG"
 fi
 
-if [ -n "$NO_PLUGIN" ]; then
-  umask 077
-  : > "$PLUGIN_DISABLED"
-fi
-
 if [ "$INIT" = systemd ]; then
   install -d -m 0755 "$(dirname "$UNIT")"
   cat > "$UNIT" <<'TZA_AGENT_SERVICE'
@@ -265,7 +246,6 @@ ProtectHome=true
 WantedBy=multi-user.target
 TZA_AGENT_SERVICE
   chmod 0644 "$UNIT"
-  "$BIN" --config "$CONFIG" --prepare-plugins || echo "提示: Agent 插件初始化失败，普通探测不受影响；下次启动自动重试" >&2
   systemctl daemon-reload
   systemctl enable tza-agent >/dev/null 2>&1
   systemctl restart tza-agent
@@ -305,12 +285,4 @@ else
   echo "Agent 未能启动，最近日志：" >&2
   service_logs >&2 || true
   exit 1
-fi
-
-if [ "$INIT" != systemd ]; then
-  echo "提示: 当前系统不是 systemd，插件组件暂不支持；普通探测功能不受影响"
-elif [ -f "$PLUGIN_DISABLED" ]; then
-  echo "Agent 插件功能已在本机关闭；已安装插件及数据保留"
-else
-  echo "插件功能已内置于 Agent，无需补装助手；运行依赖在安装插件时下载"
 fi
