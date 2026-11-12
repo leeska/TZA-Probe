@@ -5777,3 +5777,19 @@ html[data-skin] [data-node-plugin-detail] .region-location details[open] { borde
 @media (max-width: 760px) {
   [data-node-plugin-detail] { padding-inline: 0; }
 }
+
+/* 地区偏移检测：缺浏览器 / 浏览器未连接 / 节点未开通出口时的引导（admin-ip-guard.js setupPanel）。 */
+.region-setup {
+  margin-bottom: var(--space-4);
+  padding: var(--space-5);
+}
+.region-setup h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+.region-setup p {
+  margin: var(--space-2) 0;
+}
+.region-setup .command-block + .command-block {
+  margin-top: var(--space-2);
+}

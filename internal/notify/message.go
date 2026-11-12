@@ -177,9 +177,6 @@ func messageText(e model.Event, channel string, limit int) string {
 	if e.Kind == "test" {
 		state = "🧪 连接测试"
 	}
-	if e.Kind == "executor" {
-		state = "执行器状态变化"
-	}
 	lines := []string{"TZA Probe · " + state}
 	if e.Kind != "test" {
 		lines = append(lines, "类型："+kindName(e.Kind))
@@ -207,9 +204,6 @@ func messageText(e model.Event, channel string, limit int) string {
 
 // kindName is the Chinese name of an event kind (the raw kind when unknown).
 func kindName(kind string) string {
-	if kind == "executor" {
-		return "节点执行器"
-	}
 	if kind == "test" {
 		return "连接测试"
 	}

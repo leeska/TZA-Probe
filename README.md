@@ -13,6 +13,7 @@
 - **主机监控**：CPU / 内存 / 根挂载点磁盘 / 网络速率 / 网卡累计 / 在线状态，30 天分钟级历史。
 - **网络探测**：按节点显式绑定的 IPv4 / IPv6 TCP 延迟与三网回程；回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / CTG / 4837 / 9929 / 10099 / CMIN2 / CMI）。
 - **IP 被墙检测**：用自有大陆与境外 Agent 对照检测同一公网 IP / TCP 端口，提供连续两轮证据与「疑似被墙 / 大陆可达 / 部分线路不可达 / 各地均不可达 / 证据不足」结论。
+- **地区偏移检测**（可选）：Server 上一个没有自己网络的隔离浏览器，经节点 Agent 的受限出口读取 Google / Meta 页面认定的地区，与目标地区比较，可在偏移时尝试一次校正并独立复测。默认不安装，见 [地区偏移检测](docs/IP-GUARD-INTEGRATION.md)。
 - **解锁检测**：节点用自己的出口检测 24 个流媒体 / AI / 交易所 / 常用服务，给出 `19/24` 式分数与明细。
 - **计费与提醒**：计费周期、流量额度、价格与到期时间、达量降速、按剩余时间比例估算的剩余价值；离线 / 续费 / 流量 / 降速 / 负载提醒，经 Telegram 或 Webhook 发送。
 - **公开面板**：顶部磁贴汇总剩余价值与每月成本，统一单位在后台「面板设置 → 计费汇总」切换（跨币种按内置固定参考汇率折算）；卡片与列表两种视图，浅色 / 深色主题与多套外观风格；搜索认中文、全拼、拼音首字母、英文与代号（香港 = `xianggang` / `xg` / `hk`）。
@@ -169,7 +170,7 @@ Server 在 `POST /mcp` 提供 [Model Context Protocol](https://modelcontextproto
 - [插件](docs/PLUGINS.md)：声明式通知渠道与探测目标集的格式、模板变量与安全边界。
 - [主题包与附加包](docs/THEMES.md)：自己做一套外观风格，或用附加包给某套主题添按节点 / 地区匹配的装饰（zip 上传，只含样式表与图片），格式、颜色变量与示例。
 - [组件边界](docs/ARCHITECTURE.md)、[HTTP 协议](docs/API.md)、[项目范围](docs/SCOPE.md)。
-- [IPSentinel 集中浏览器](docs/IPSENTINEL-CENTRAL-BROWSER.md)：主控隔离浏览器、Agent 受限出口、干净检测、拉回与独立复测。
+- [地区偏移检测](docs/IP-GUARD-INTEGRATION.md)：安装隔离浏览器（`--with-browser`）、节点开通出口（`--ipguard`）、判定规则与故障排查。
 - [验证方法](docs/VERIFICATION.md)：怎样跑检查，以及哪些行为只能在真实环境验证。
 
 检查与构建用自带的流水线（不依赖 GitHub Actions），Linux 与 macOS 都能跑。需要 Go 1.27；`check` 的前端部分另需 Node ≥ 20.19 或 Bun（没有 Node 时自动用 Bun）：

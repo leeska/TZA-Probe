@@ -1,0 +1,42 @@
+[Unit]
+Description=TZA Probe browser worker (region drift check)
+Documentation=https://github.com/leeska/TZA-Probe/blob/main/docs/IP-GUARD-INTEGRATION.md
+After=tza-server.service
+
+[Service]
+# Chromium reads Google / Meta pages for the region drift check. It has no network
+# of its own: PrivateNetwork leaves only loopback, and every connection goes through
+# the Server's private socket and from there through the node's Agent.
+User=tza-browser
+Group=tza-browser
+SupplementaryGroups=tza-browser-control
+ExecStart=/usr/local/bin/tza-server browser-worker --socket /run/tza-browser/control.sock --state /var/lib/tza-browser
+StateDirectory=tza-browser
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+PrivateNetwork=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=/run/tza-browser
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+LockPersonality=yes
+RestrictRealtime=yes
+UMask=0077
+# Chromium's own sandbox needs unprivileged user namespaces: do not add
+# RestrictNamespaces= or PrivateUsers= here.
+# Resources: one job at a time; raise MemoryMax with a drop-in on large pages.
+MemoryMax=700M
+MemorySwapMax=0
+CPUQuota=85%
+TasksMax=384
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

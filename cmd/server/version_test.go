@@ -122,3 +122,31 @@ func TestSourceInstallerPreservesOldReleaseTag(t *testing.T) {
 		}
 	}
 }
+
+// install.sh carries a copy of deploy/tza-browser.service for when neither the
+// release package nor GitHub provides it; the two must not drift apart.
+func TestInstallerBrowserUnitMatchesDeployFile(t *testing.T) {
+	script, err := os.ReadFile("../../deploy/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit, err := os.ReadFile("../../deploy/tza-browser.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(script)
+	start := strings.Index(text, "cat > \"$BROWSER_UNIT\" <<'UNIT'\n")
+	if start < 0 {
+		t.Fatal("browser unit fallback not found in install.sh")
+	}
+	body := text[start+len("cat > \"$BROWSER_UNIT\" <<'UNIT'\n"):]
+	body = body[:strings.Index(body, "\nUNIT\n")]
+	if body != strings.TrimRight(string(unit), "\n") {
+		t.Fatal("install.sh's tza-browser.service fallback differs from deploy/tza-browser.service")
+	}
+	for _, want := range []string{"PrivateNetwork=yes", "User=tza-browser", "browser-worker --socket /run/tza-browser/control.sock"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("browser unit lacks %s", want)
+		}
+	}
+}

@@ -1,11 +1,8 @@
 # 插件管理
 
 后台「插件」是唯一入口。声明式通知与目标集插件使用 `plugin.json`，由 Probe 解释执行；
-安装前确认能力与外部域名。
+安装前确认能力与外部域名。格式见 [插件说明](PLUGINS.md)。
 
-IPSentinel 的日常界面、主控浏览器与 Agent 受限出口见 [送中检测](IP-GUARD-INTEGRATION.md)。
-已安装包保留签名身份 `ipsentinel-runtime`，不再通过节点安装 Python、Chromium 或运行器。
-旧节点组件安装、预览、审批、暂停、同步和手工阶段入口已删除，不提供兼容通道。
-
-节点的浏览器出口许可由本机私有文件控制，默认关闭；面板开关不能扩大本机许可。
-卸载 IPSentinel 管理部分会停止节点检测并取消活动任务，历史记录不作为新的成功证据。
+地区偏移检测（Google / Meta 页面地区）不是插件：它是 Server 内置功能，浏览器随
+`tza-server` 一起发布，用安装脚本的 `--with-browser` 启用，见 [地区偏移检测](IP-GUARD-INTEGRATION.md)。
+包 ID `ipsentinel-runtime` 保留不用，上传的插件不能占用它。

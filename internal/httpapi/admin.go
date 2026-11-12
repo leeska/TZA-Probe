@@ -190,7 +190,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			write(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
-		if p.ID == tzapkg.OfficialExecutorID {
+		if p.ID == tzapkg.ReservedRuntimeID {
 			write(w, 400, map[string]string{"error": "此插件 ID 为保留 ID，不能用于上传的插件"})
 			return
 		}
@@ -202,7 +202,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			return
 		}
 		preview, err := tzapkg.OpenPlugin(body)
-		if err != nil || preview.ID == tzapkg.OfficialExecutorID {
+		if err != nil || preview.ID == tzapkg.ReservedRuntimeID {
 			write(w, 400, map[string]string{"error": "请上传有效的通知或目标集插件"})
 			return
 		}

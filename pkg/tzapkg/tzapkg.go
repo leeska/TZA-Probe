@@ -322,10 +322,14 @@ type Decoration struct {
 	Vars    map[string]string `json:"vars,omitempty"`
 }
 
-// Reserved are package IDs rejected by all versions of the shared registry.
-// Probe itself rejects its compiled-in shadcn ID; CC retains its old releases
-// for older Probes. Glass is distributed as a regular package.
-var Reserved = []string{OfficialExecutorID}
+// ReservedRuntimeID was the ID of the removed IPSentinel runtime package (the
+// browser now ships inside tza-server). It stays reserved so no uploaded
+// package can ever claim it on Probes that still carry its old records.
+const ReservedRuntimeID = "ipsentinel-runtime"
+
+// Reserved are package IDs no package may use. Probe itself also rejects its
+// compiled-in shadcn ID; glass is distributed as a regular package.
+var Reserved = []string{ReservedRuntimeID}
 
 var (
 	idPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)

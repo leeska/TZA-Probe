@@ -3,10 +3,9 @@ module github.com/leeska/TZA-Probe
 go 1.27.3
 
 require (
-	github.com/cyberphone/json-canonicalization v0.0.0-20261011152517-32a48195b9b2
+	github.com/go-rod/rod v0.116.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/nxtrace/NTrace-core v1.7.4
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/shirou/gopsutil/v4 v4.26.4
 	modernc.org/sqlite v1.44.3
 )
@@ -44,6 +43,11 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/tsosunchia/powclient v0.3.0 // indirect
 	github.com/xjasonlyu/windivert-go v0.0.0-20201010013527-4239d0afa76f // indirect
+	github.com/ysmood/fetchup v0.2.3 // indirect
+	github.com/ysmood/goob v0.4.0 // indirect
+	github.com/ysmood/got v0.40.0 // indirect
+	github.com/ysmood/gson v0.7.3 // indirect
+	github.com/ysmood/leakless v0.9.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260812173653-3d80eb74bc5b // indirect

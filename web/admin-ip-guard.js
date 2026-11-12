@@ -9,6 +9,26 @@ const exitAddresses = (node, family) => node.egress?.enabled && fresh(node.egres
 const canSaveExit = (node, draft) => exitAddresses(node, draft.family).length > 0 || !draft.enabled && node.policy?.expected_ip && node.policy.expected_ip.includes(":") === (draft.family === "ipv6");
 const sameEnvironment = (first, second) => first && second && ["expected_ip", "country", "locale", "timezone"].every(key => first[key] === second[key]) && ["latitude", "longitude", "country", "timezone"].every(key => first.position?.[key] === second.position?.[key]);
 const reasons = { http_denied: "服务拒绝访问，未取得地区信息", http_forbidden: "服务拒绝此出口访问（403），未取得地区信息", challenge_detected: "遇到验证页面，暂时无法判断", origin_not_allowed: "页面跳转到未批准的地址", egress_mismatch: "出口 IP 与设置不一致", local_permission_required: "此节点尚未开通检测出口" };
+const serverInstall = "curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --with-browser";
+const nodeEnable = () => `curl -fsSL ${location.origin}/install.sh | sh -s -- --endpoint ${location.origin} --ipguard`;
+const commandBlock = command => `<div class="command-block"><pre>${esc(command)}</pre><button type="button" class="primary" data-copy="${esc(command)}">复制命令</button></div>`;
+
+// What stands between this node and a check, in the order to fix it. Each state
+// is a key so the panel is only rebuilt when it changes (polling keeps it stable).
+export function setupState(data, node) {
+  if (!data.worker_configured) return "install";
+  if (!fresh(data.worker_seen)) return "worker";
+  if (node && !(node.egress?.enabled && fresh(node.egress.received_at))) return "node";
+  return "";
+}
+
+function setupPanel(state, node) {
+  if (state === "install") return `<section class="panel region-setup" data-setup="install"><h2>先安装检测浏览器</h2><p>地区偏移检测由 Server 上一个隔离的浏览器完成：它没有自己的网络，只能经各节点的 Agent 访问 Google 与 Meta。浏览器约占 300 MB 内存、200 MB 磁盘，默认不安装。</p><p>在 Server 主机上执行（已安装的 Server 会原样保留并一起升级）：</p>${commandBlock(serverInstall)}<p class="hint">脚本会下载固定版本的 Chromium 并校验、安装缺少的系统库与字体，先在与正式服务相同的隔离里自检，通过后才启用。</p></section>`;
+  if (state === "worker") return `<section class="panel region-setup" data-setup="worker"><h2>检测浏览器未连接</h2><p>Server 已开启浏览器接口，但浏览器服务最近没有连上。在 Server 主机上查看：</p>${commandBlock("systemctl status tza-browser")}${commandBlock("journalctl -u tza-browser -n 50 --no-pager")}<p class="hint">设置可以先保存，浏览器连上后按计划检测。</p></section>`;
+  if (state === "node") return `<section class="panel region-setup" data-setup="node"><h2>开通「${esc(node.name)}」的检测出口</h2><p>节点默认不允许浏览器经它访问外部网站。在该节点上执行下面的命令（只更新 Agent 与出口许可，不改其他配置）：</p>${commandBlock(nodeEnable())}<p class="hint">自动识别本机公网出口；NAT 主机会一并写好本机源地址。只允许访问 Google、Meta 及出口回显服务。关闭：把 --ipguard 换成 --ipguard-off 再执行一次。</p></section>`;
+  return "";
+}
+
 const countryLabel = code => {
   try { return `${new Intl.DisplayNames(["zh-CN"], { type: "region" }).of(code)}（${code}）`; }
   catch { return code; }
@@ -66,13 +86,30 @@ export async function renderIPGuard(root) {
     }
     return drafts.get(node.id);
   };
-  root.innerHTML = `<section class="region-page" data-region-page><header class="region-toolbar"><label class="region-node">节点<select data-region-node aria-label="节点">${data.nodes.map(node => `<option value="${esc(node.id)}" ${node.id === nodeID ? "selected" : ""}>${esc(node.name)}</option>`).join("")}</select></label></header><div data-region-form></div><p class="hint" data-region-notice role="status"></p><ul class="region-services" aria-label="服务检测状态">${services.map(service => `<li data-region-service="${service.id}"><strong>${service.name}</strong><div><span class="pill" data-reading></span><small data-note></small></div><button type="button" class="quiet" data-check="${service.id}">检测</button></li>`).join("")}</ul><p class="hint region-footnote">每 12 小时检查一次。正常只表示未发现页面地区异常，不代表服务商的 IP 归属或信誉已改变。</p></section>`;
+  root.innerHTML = `<section class="region-page" data-region-page><div data-region-setup></div><header class="region-toolbar"><label class="region-node">节点<select data-region-node aria-label="节点">${data.nodes.map(node => `<option value="${esc(node.id)}" ${node.id === nodeID ? "selected" : ""}>${esc(node.name)}</option>`).join("")}</select></label></header><div data-region-form></div><p class="hint" data-region-notice role="status"></p><ul class="region-services" aria-label="服务检测状态">${services.map(service => `<li data-region-service="${service.id}"><strong>${service.name}</strong><div><span class="pill" data-reading></span><small data-note></small></div><button type="button" class="quiet" data-check="${service.id}">检测</button></li>`).join("")}</ul><p class="hint region-footnote">每 12 小时检查一次。正常只表示未发现页面地区异常，不代表服务商的 IP 归属或信誉已改变。</p></section>`;
   const googleReading = root.querySelector('[data-region-service="google"] > div');
   googleReading.insertAdjacentHTML("afterbegin", '<span class="region-signal-title">搜索地区</span>');
   googleReading.insertAdjacentHTML("beforeend", '<div class="region-terms-reading"><span class="region-signal-title">条款地区</span><span class="pill" data-terms-reading></span><small data-terms-note></small><small>条款适用地区，不代表搜索已恢复；不参与自动校正。</small></div>');
+  let shownSetup = null;
+  const patchSetup = node => {
+    const state = setupState(data, node);
+    const key = state + ":" + (state === "node" ? node.id : "");
+    if (key !== shownSetup) {
+      shownSetup = key;
+      root.querySelector("[data-region-setup]").innerHTML = setupPanel(state, node);
+    }
+    // Without a browser the settings cannot do anything: show only the guide.
+    for (const part of root.querySelectorAll(".region-toolbar, [data-region-form], [data-region-notice], .region-services, .region-footnote")) part.hidden = state === "install";
+  };
+  root.addEventListener("click", event => {
+    const button = event.target.closest("[data-copy]");
+    if (!button) return;
+    navigator.clipboard?.writeText(button.dataset.copy).then(() => toast("已复制"), () => toast("复制失败，请手动选择命令"));
+  });
   const patch = () => {
     if (!alive()) return;
     const node = selected();
+    patchSetup(node);
     if (!node) { root.querySelector("[data-region-notice]").textContent = "先添加节点"; return; }
     const draft = draftFor(node);
     const ready = fresh(data.worker_seen) && node.egress?.enabled && fresh(node.egress.received_at);

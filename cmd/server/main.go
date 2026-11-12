@@ -46,6 +46,10 @@ func run() error {
 			return agentKeygenCommand(os.Args[2:])
 		case "agent-sign":
 			return agentSignCommand(os.Args[2:])
+		case "browser-worker":
+			return browserWorkerCommand(os.Args[2:])
+		case "browser-install":
+			return browserInstallCommand(os.Args[2:])
 		}
 	}
 	addr := flag.String("listen", "127.0.0.1:25774", "HTTP listen address; put TLS reverse proxy in front")
@@ -124,6 +128,7 @@ func run() error {
 		return err
 	}
 	guardBroker := ipguard.NewBroker(guardStore)
+	guardBroker.WorkerConfigured = *workerSocket != ""
 	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}, IPGuard: guardBroker}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup

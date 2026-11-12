@@ -36,13 +36,17 @@ type pending struct {
 type relayBudget struct{ used atomic.Int64 }
 
 type Broker struct {
-	Store      Store
-	mutex      sync.Mutex
-	pending    map[string]*pending
-	statuses   map[string]Status
-	budgets    map[string]*relayBudget
-	streams    map[string]int
-	workerSeen atomic.Int64
+	Store Store
+	// WorkerConfigured is set when the Server listens on a worker socket
+	// (--browser-socket): the browser is installed, whether or not it is
+	// connected right now.
+	WorkerConfigured bool
+	mutex            sync.Mutex
+	pending          map[string]*pending
+	statuses         map[string]Status
+	budgets          map[string]*relayBudget
+	streams          map[string]int
+	workerSeen       atomic.Int64
 }
 
 func NewBroker(store Store) *Broker {

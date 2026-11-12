@@ -100,7 +100,7 @@ func (a *API) ipguardRoutes(mux *http.ServeMux) {
 			}
 			entries = append(entries, value)
 		}
-		write(w, 200, map[string]any{"nodes": entries, "jobs": jobs, "environments": ipguard.Environments, "services": ipguard.Services, "worker_seen": broker.WorkerSeen(), "execution_location": "controller"})
+		write(w, 200, map[string]any{"nodes": entries, "jobs": jobs, "environments": ipguard.Environments, "services": ipguard.Services, "worker_seen": broker.WorkerSeen(), "worker_configured": broker.WorkerConfigured, "execution_location": "controller"})
 	}))
 	mux.HandleFunc("PUT /api/v1/admin/ipguard/nodes/{id}", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		var settings ipguard.Settings

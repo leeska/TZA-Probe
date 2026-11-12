@@ -11,6 +11,9 @@
 #                            （NextTrace-API 的 v3 通道靠 NextTrace CLI 自建 WebSocket，本进程内查询必然失败）
 #   --trace-method NAME      内置回程的探测方式：icmp（默认，与 NextTrace CLI 一致）、tcp 或 udp
 #   --allow-http             允许明文 HTTP 的 endpoint（仅限可信私网；endpoint 为 http:// 时自动开启）
+#   --ipguard [IP,IP]        开通地区偏移检测出口：允许 Server 的隔离浏览器经本机访问 Google / Meta。
+#                            不写 IP 时自动查本机的公网出口（IPv4 / IPv6），NAT 主机自动写好本机源地址
+#   --ipguard-off            关闭地区偏移检测出口
 #   --uninstall              停止服务并删除程序、配置与服务单元（systemd / OpenRC 均可）
 #
 # 不带 --token 再次执行时保留现有 /etc/tza-probe/agent.json，只更新二进制并重启，即升级。
@@ -28,6 +31,7 @@ GEO_PROVIDER=""
 TRACE_METHOD=""
 ALLOW_HTTP=""
 UNINSTALL=""
+IPGUARD=""
 CONFIG=/etc/tza-probe/agent.json
 KEYFILE=/etc/tza-probe/upgrade-key.pub
 BIN=/usr/local/bin/tza-agent
@@ -44,13 +48,24 @@ while [ $# -gt 0 ]; do
     --geo-provider) GEO_PROVIDER="$2"; shift 2 ;;
     --trace-method) TRACE_METHOD="$2"; shift 2 ;;
     --allow-http) ALLOW_HTTP=true; shift ;;
+    --ipguard)
+      case "${2:-}" in
+        ""|--*) IPGUARD=auto; shift ;;
+        *) IPGUARD="$2"; shift 2 ;;
+      esac ;;
+    --ipguard-off) IPGUARD=off; shift ;;
     --uninstall) UNINSTALL=true; shift ;;
-    -h|--help) sed -n '2,16p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done
 
 fail() { echo "错误: $*" >&2; exit 1; }
+
+case "$IPGUARD" in
+  ""|auto|off) ;;
+  *[!0-9A-Fa-f:.,]*) fail "--ipguard 只接受以逗号分隔的 IP 地址：$IPGUARD" ;;
+esac
 
 # endpoint 会原样拼进 sudo 重新执行的命令和 agent.json，只收 URL 里正常会出现的字符，
 # 引号、空白和 shell 元字符一律拒绝。
@@ -71,6 +86,12 @@ if [ "$(id -u)" -ne 0 ]; then
   [ -n "$GEO_PROVIDER" ] && quoted="$quoted --geo-provider $(q "$GEO_PROVIDER")"
   [ -n "$TRACE_METHOD" ] && quoted="$quoted --trace-method $(q "$TRACE_METHOD")"
   [ -n "$ALLOW_HTTP" ] && quoted="$quoted --allow-http"
+  case "$IPGUARD" in
+    "") ;;
+    auto) quoted="$quoted --ipguard" ;;
+    off) quoted="$quoted --ipguard-off" ;;
+    *) quoted="$quoted --ipguard $(q "$IPGUARD")" ;;
+  esac
   [ -n "$UNINSTALL" ] && quoted="$quoted --uninstall"
   if command -v curl >/dev/null 2>&1; then
     get="curl -fsSL '$ENDPOINT/install.sh'"
@@ -214,6 +235,63 @@ if [ -z "$UPGRADE" ]; then
     "$ENDPOINT" "$TOKEN" "$IFACES" "$NEXTTRACE" "$GEO_PROVIDER" "$TRACE_METHOD" "${ALLOW_HTTP:-false}" > "$CONFIG"
   chmod 0600 "$CONFIG"
 fi
+
+EGRESS=/etc/tza-probe/ipguard-egress.json
+
+# 公网出口：经固定的回显服务查（与 Server 浏览器核对出口用的是同一家）。
+public_ip() {
+  if command -v curl >/dev/null 2>&1; then
+    curl "-$1" -fsS -m 8 "$2" 2>/dev/null || true
+  else
+    wget "-$1" -qO- -T 8 "$2" 2>/dev/null || true
+  fi
+}
+# 本机连出去时用的源地址；NAT 主机上它与公网出口不同，Agent 拨号要绑这个。
+local_source() {
+  command -v ip >/dev/null 2>&1 || return 0
+  ip "-$1" route get "$2" 2>/dev/null | sed -n 's/.* src \([^ ]*\).*/\1/p' | head -n 1
+}
+
+write_egress() {
+  case "$IPGUARD" in
+    "") return 0 ;;
+    off)
+      rm -f "$EGRESS"
+      echo "已关闭地区偏移检测出口"
+      return 0 ;;
+  esac
+  allowed=""
+  sources=""
+  if [ "$IPGUARD" = auto ]; then
+    for family in 4 6; do
+      if [ "$family" = 4 ]; then
+        echo_url=https://api.ipify.org; probe=1.1.1.1
+      else
+        echo_url=https://api6.ipify.org; probe=2606:4700:4700::1111
+      fi
+      public=$(public_ip "$family" "$echo_url" | tr -d '[:space:]')
+      case "$public" in ""|*[!0-9A-Fa-f:.]*) continue ;; esac
+      allowed="${allowed:+$allowed, }\"$public\""
+      src=$(local_source "$family" "$probe")
+      if [ -n "$src" ] && [ "$src" != "$public" ]; then
+        sources="${sources:+$sources, }\"$public\": \"$src\""
+      fi
+    done
+    [ -n "$allowed" ] || fail "查不到本机的公网出口 IP；请用 --ipguard 1.2.3.4 直接指定"
+  else
+    OLDIFS=$IFS; IFS=','
+    for ip in $IPGUARD; do
+      [ -n "$ip" ] && allowed="${allowed:+$allowed, }\"$ip\""
+    done
+    IFS=$OLDIFS
+  fi
+  install -d -m 0700 /etc/tza-probe
+  umask 077
+  printf '{\n  "enabled": true,\n  "allowed_ips": [%s],\n  "services": ["google", "meta"],\n  "source_ips": {%s}\n}\n' "$allowed" "$sources" > "$EGRESS"
+  chmod 0600 "$EGRESS"
+  echo "已开通地区偏移检测出口：$(printf '%s' "$allowed" | tr -d '"')${sources:+（NAT 源地址：$(printf '%s' "$sources" | tr -d '"')）}"
+}
+write_egress
 
 if [ "$INIT" = systemd ]; then
   install -d -m 0755 "$(dirname "$UNIT")"

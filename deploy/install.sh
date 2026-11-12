@@ -16,7 +16,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
 #
 # 脚本只做五件事：取到 tza-server、装到 /usr/local/bin、建好数据目录、生成管理密钥与
-# 后台账号、装 systemd 服务。
+# 后台账号、装 systemd 服务。加 --with-browser 时再装地区偏移检测用的隔离浏览器
+# （固定版本的 Chromium、独立用户与无网络的 tza-browser 服务，见 docs/IP-GUARD-INTEGRATION.md）。
 # 重复执行即升级：旧二进制保留为 tza-server.previous，数据目录不动，已有的密钥与账号保留；
 # 服务已在运行时自动重启换上新版本，并等到新版本应答 /healthz 再结束。
 # 后台初始密码只在首次安装时显示一次；忘记密码执行 sudo tza-server reset-password --data 数据目录。
@@ -34,6 +35,13 @@ UNIT="/etc/systemd/system/tza-server.service"
 SERVICE_USER="tza-probe"
 SYSTEMD="auto"
 PICKED=""
+BROWSER="no"
+BROWSER_UNIT="/etc/systemd/system/tza-browser.service"
+BROWSER_DIR="/opt/tza-browser"
+BROWSER_STATE="/var/lib/tza-browser"
+BROWSER_RUN="/run/tza-browser"
+BROWSER_USER="tza-browser"
+BROWSER_GROUP="tza-browser-control"
 
 usage() {
   cat <<'EOF'
@@ -51,6 +59,8 @@ TZA Probe Server 一键安装（Linux amd64 / arm64）
   --listen ADDR      监听地址，默认 127.0.0.1:25774（跨主机接入请配置 HTTPS 反代）
   --data DIR         数据目录，默认 /var/lib/tza-probe（保存后台账号、数据库与兼容 API 凭据）
   --no-systemd       只安装二进制与数据目录，不注册 systemd 服务
+  --with-browser     同时安装地区偏移检测的隔离浏览器（约 300 MB 内存、200 MB 磁盘；需要 systemd）。
+                     装过一次后，再次执行本脚本会保留并一起升级它
   -h, --help         显示本说明
 EOF
 }
@@ -66,6 +76,7 @@ while [ $# -gt 0 ]; do
     --listen) LISTEN="${2:?--listen 需要地址}"; shift 2 ;;
     --data) DATA="${2:?--data 需要目录}"; shift 2 ;;
     --no-systemd) SYSTEMD="no"; shift ;;
+    --with-browser) BROWSER="yes"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数：$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -75,6 +86,11 @@ if [ "$PICKED" = "both" ]; then
   echo "从源码构建（--source/--ref）与从 Release 安装（--release/--version）只能选一种" >&2; exit 2
 fi
 case "$VERSION" in ""|v*) ;; *) echo "版本号要以 v 开头，例如 v1.0.0：$VERSION" >&2; exit 2 ;; esac
+# 装过浏览器的主机：升级时不带 --with-browser 也保留它。
+[ -f "$BROWSER_UNIT" ] && BROWSER="yes"
+if [ "$BROWSER" = "yes" ] && [ "$SYSTEMD" = "no" ]; then
+  echo "--with-browser 需要 systemd（浏览器靠 systemd 的 PrivateNetwork 隔离网络），不能与 --no-systemd 同用" >&2; exit 2
+fi
 
 if [ "$(id -u)" != "0" ]; then
   # 通过 curl | sh 执行时脚本本体就在标准输入上，不能用 sudo 重新执行自己，
@@ -97,6 +113,7 @@ need() {
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 UNIT_SRC=""
+BROWSER_UNIT_SRC=""
 
 if [ "$MODE" = "release" ]; then
   need curl
@@ -126,6 +143,7 @@ if [ "$MODE" = "release" ]; then
   tar -xzf "${WORK}/${PACK}" -C "$WORK"
   [ -f "${WORK}/tza-server" ] || { echo "发布包里没有 tza-server" >&2; exit 1; }
   [ -f "${WORK}/deploy/tza-server.service" ] && UNIT_SRC="${WORK}/deploy/tza-server.service"
+  [ -f "${WORK}/deploy/tza-browser.service" ] && BROWSER_UNIT_SRC="${WORK}/deploy/tza-browser.service"
 else
   need git
   need go
@@ -146,6 +164,7 @@ else
   (cd "${WORK}/src" && CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" \
     -o "${WORK}/tza-server" ./cmd/server)
   [ -f "${WORK}/src/deploy/tza-server.service" ] && UNIT_SRC="${WORK}/src/deploy/tza-server.service"
+  [ -f "${WORK}/src/deploy/tza-browser.service" ] && BROWSER_UNIT_SRC="${WORK}/src/deploy/tza-browser.service"
   # 源码构建默认不含 Agent 二进制，后台的一键安装命令会没用。这里顺手把两种架构都
   # 编好放进数据目录（Server 分发时优先用数据目录里这份，见 docs/DEPLOYMENT.md）。
   AGENTS="${WORK}/agents"
@@ -192,6 +211,189 @@ fi
 # init 以 root 运行时会把新文件交给数据目录的属主（服务账户）。
 CREDS="$("$BIN" init --data "$DATA")"
 
+# ---------------------------------------------------------------- 隔离浏览器（--with-browser）
+
+# ldd 报缺的共享库 → Debian / Ubuntu 包名；带 t64 的是 Debian 13 / Ubuntu 24.04 起的新名字，
+# 两个都试，装得上哪个用哪个。"fonts" 不是库：没有字体时 Chromium 一遇到网页字体就卡住。
+browser_packages() {
+  for lib in "$@"; do
+    case "$lib" in
+      libX11.so.*) echo libx11-6 ;;
+      libXcomposite.so.*) echo libxcomposite1 ;;
+      libXdamage.so.*) echo libxdamage1 ;;
+      libXext.so.*) echo libxext6 ;;
+      libXfixes.so.*) echo libxfixes3 ;;
+      libXrandr.so.*) echo libxrandr2 ;;
+      libxcb.so.*) echo libxcb1 ;;
+      libxkbcommon.so.*) echo libxkbcommon0 ;;
+      libasound.so.*) echo "libasound2t64|libasound2" ;;
+      libatk-1.0.so.*) echo "libatk1.0-0t64|libatk1.0-0" ;;
+      libatk-bridge-2.0.so.*) echo "libatk-bridge2.0-0t64|libatk-bridge2.0-0" ;;
+      libatspi.so.*) echo "libatspi2.0-0t64|libatspi2.0-0" ;;
+      libglib-2.0.so.*|libgio-2.0.so.*|libgobject-2.0.so.*) echo "libglib2.0-0t64|libglib2.0-0" ;;
+      libcups.so.*) echo "libcups2t64|libcups2" ;;
+      libdbus-1.so.*) echo libdbus-1-3 ;;
+      libexpat.so.*) echo libexpat1 ;;
+      libgbm.so.*) echo libgbm1 ;;
+      libnspr4.so) echo libnspr4 ;;
+      libnss3.so|libnssutil3.so|libsmime3.so) echo libnss3 ;;
+      libdrm.so.*) echo libdrm2 ;;
+      libudev.so.*) echo libudev1 ;;
+      fonts) echo fontconfig; echo fonts-dejavu-core ;;
+      *) echo "?$lib" ;;
+    esac
+  done | sort -u
+}
+
+browser_libraries() {
+  missing="$("$BIN" browser-install --dir "$BROWSER_DIR" "$@")" && return 0
+  status=$?
+  [ "$status" = 3 ] || { echo "安装 Chromium 失败（见上方信息）" >&2; exit 1; }
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "Chromium 还缺这些系统库，请用发行版的包管理器装上后重新执行本脚本：" >&2
+    echo "$missing" | sed 's/^/  /' >&2
+    exit 1
+  fi
+  picked=""
+  unknown=""
+  for want in $(browser_packages $missing); do
+    case "$want" in
+      \?*) unknown="${unknown} ${want#?}"; continue ;;
+    esac
+    choice=""
+    for candidate in $(echo "$want" | tr '|' ' '); do
+      if apt-cache show "$candidate" >/dev/null 2>&1; then choice="$candidate"; break; fi
+    done
+    [ -n "$choice" ] && picked="${picked} ${choice}"
+  done
+  if [ -n "$unknown" ]; then
+    echo "Chromium 还缺这些系统库，脚本认不出对应的包，请手动装上后重新执行：${unknown}" >&2
+    exit 1
+  fi
+  echo "安装 Chromium 依赖：${picked}"
+  # shellcheck disable=SC2086
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $picked >/dev/null
+  if ! still="$("$BIN" browser-install --dir "$BROWSER_DIR" --check-libs)"; then
+    echo "装完依赖后 Chromium 仍缺：" >&2
+    echo "$still" | sed 's/^/  /' >&2
+    exit 1
+  fi
+}
+
+# Chromium 的沙箱要用非特权用户命名空间。Ubuntu 23.10 起 AppArmor 默认拦下它：给这一个
+# Chromium 可执行文件写一份只放行 userns 的配置（Google Chrome 的官方包也是这么做的）。
+# 内核整体关掉了 userns 时不替你改内核参数，只说明怎么改。
+browser_userns() {
+  if [ "$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null || echo 1)" = 0 ]; then
+    echo "内核关闭了非特权用户命名空间（kernel.unprivileged_userns_clone=0），Chromium 的沙箱无法工作。" >&2
+    echo "确认可以开启后执行：sysctl -w kernel.unprivileged_userns_clone=1，并写入 /etc/sysctl.d/ 永久生效，再重新执行本脚本。" >&2
+    exit 1
+  fi
+  if [ "$(sysctl -n user.max_user_namespaces 2>/dev/null || echo 1)" = 0 ]; then
+    echo "内核把 user.max_user_namespaces 设成了 0，Chromium 的沙箱无法工作；调大后重新执行本脚本。" >&2
+    exit 1
+  fi
+  if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+    command -v apparmor_parser >/dev/null 2>&1 || { echo "AppArmor 限制了用户命名空间，但找不到 apparmor_parser" >&2; exit 1; }
+    cat > /etc/apparmor.d/tza-browser-chromium <<'APPARMOR'
+# TZA Probe：地区偏移检测的隔离浏览器。只放行 Chromium 沙箱需要的用户命名空间。
+abi <abi/4.0>,
+include <tunables/global>
+
+profile tza-browser-chromium /opt/tza-browser/chromium-*/chrome-headless-shell-*/chrome-headless-shell flags=(unconfined) {
+  userns,
+  include if exists <local/tza-browser-chromium>
+}
+APPARMOR
+    apparmor_parser -r /etc/apparmor.d/tza-browser-chromium
+    echo "已为 Chromium 写入 AppArmor 配置：/etc/apparmor.d/tza-browser-chromium"
+  fi
+}
+
+browser_unit() {
+  if [ -n "$BROWSER_UNIT_SRC" ]; then
+    cp "$BROWSER_UNIT_SRC" "$BROWSER_UNIT"
+    return
+  fi
+  if command -v curl >/dev/null 2>&1 && curl -fsSL -o "$BROWSER_UNIT" "${RAW}/deploy/tza-browser.service"; then
+    return
+  fi
+  # 与 deploy/tza-browser.service 保持一致（cmd/server 的测试会核对），取不到时的兜底。
+  cat > "$BROWSER_UNIT" <<'UNIT'
+[Unit]
+Description=TZA Probe browser worker (region drift check)
+Documentation=https://github.com/leeska/TZA-Probe/blob/main/docs/IP-GUARD-INTEGRATION.md
+After=tza-server.service
+
+[Service]
+# Chromium reads Google / Meta pages for the region drift check. It has no network
+# of its own: PrivateNetwork leaves only loopback, and every connection goes through
+# the Server's private socket and from there through the node's Agent.
+User=tza-browser
+Group=tza-browser
+SupplementaryGroups=tza-browser-control
+ExecStart=/usr/local/bin/tza-server browser-worker --socket /run/tza-browser/control.sock --state /var/lib/tza-browser
+StateDirectory=tza-browser
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+PrivateNetwork=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=/run/tza-browser
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+LockPersonality=yes
+RestrictRealtime=yes
+UMask=0077
+# Chromium's own sandbox needs unprivileged user namespaces: do not add
+# RestrictNamespaces= or PrivateUsers= here.
+# Resources: one job at a time; raise MemoryMax with a drop-in on large pages.
+MemoryMax=700M
+MemorySwapMax=0
+CPUQuota=85%
+TasksMax=384
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+setup_browser() {
+  echo "安装地区偏移检测的隔离浏览器"
+  getent group "$BROWSER_USER" >/dev/null 2>&1 || groupadd --system "$BROWSER_USER"
+  id -u "$BROWSER_USER" >/dev/null 2>&1 || useradd --system --gid "$BROWSER_USER" --home-dir "$BROWSER_STATE" --shell /usr/sbin/nologin "$BROWSER_USER"
+  # 只有 Server 与浏览器两个服务账户在这个组里：组决定谁能连私有 socket。
+  getent group "$BROWSER_GROUP" >/dev/null 2>&1 || groupadd --system "$BROWSER_GROUP"
+  usermod -aG "$BROWSER_GROUP" "$SERVICE_USER"
+  usermod -aG "$BROWSER_GROUP" "$BROWSER_USER"
+  browser_libraries
+  browser_userns
+  echo "d ${BROWSER_RUN} 0750 ${SERVICE_USER} ${BROWSER_GROUP} -" > /etc/tmpfiles.d/tza-browser.conf
+  systemd-tmpfiles --create /etc/tmpfiles.d/tza-browser.conf
+  install -d -m 0700 -o "$BROWSER_USER" -g "$BROWSER_USER" "$BROWSER_STATE"
+  # 先在与正式服务相同的隔离里自检：只有回环网卡、非 root、沙箱生效、有字体。
+  echo "浏览器自检（与正式服务同样的隔离）"
+  if ! systemd-run --quiet --wait --pipe --collect --uid="$BROWSER_USER" --gid="$BROWSER_USER" \
+      -p PrivateNetwork=yes -p PrivateTmp=yes -p NoNewPrivileges=yes -p ProtectHome=yes \
+      "$BIN" browser-worker --self-test --state "$BROWSER_STATE"; then
+    echo "!! 浏览器自检未通过，未启用地区偏移检测（Server 照常安装）。上面的 JSON 指出了原因。" >&2
+    BROWSER="failed"
+    return
+  fi
+  browser_unit
+  # Server 侧：打开私有 socket，并允许它在只读的 /run 里写这个目录。
+  sed -i -e "s#^ExecStart=\(.*\)\$#ExecStart=\1 --browser-socket ${BROWSER_RUN}/control.sock#" "$UNIT"
+  sed -i -e "s#^ReadWritePaths=\(.*\)\$#ReadWritePaths=\1 ${BROWSER_RUN}#" "$UNIT"
+  grep -q '^SupplementaryGroups=' "$UNIT" || sed -i "/^Group=/a SupplementaryGroups=${BROWSER_GROUP}" "$UNIT"
+}
+
 started="no"
 if [ "$SYSTEMD" != "no" ] && [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
   if [ -z "$UNIT_SRC" ]; then
@@ -230,6 +432,7 @@ UNIT
   if [ "$DATA" != "/var/lib/tza-probe" ]; then
     sed -i "s#^ReadWritePaths=.*#ReadWritePaths=${DATA}#" "$UNIT"
   fi
+  [ "$BROWSER" = "yes" ] && setup_browser
   systemctl daemon-reload
   systemctl enable tza-server >/dev/null 2>&1
   # 升级时服务还在跑旧进程，enable --now 不会换掉它：一律 restart（没在跑时等同 start）。
@@ -245,6 +448,13 @@ UNIT
       sleep 1
     done
   fi
+  if [ "$BROWSER" = "yes" ] && [ "$started" = "yes" ]; then
+    systemctl enable tza-browser >/dev/null 2>&1
+    if systemctl restart tza-browser; then BROWSER="started"; else BROWSER="failed"; fi
+  fi
+elif [ "$BROWSER" = "yes" ]; then
+  echo "--with-browser 需要 systemd，本机没有可用的 systemd，未安装浏览器" >&2
+  BROWSER="failed"
 fi
 
 echo
@@ -270,6 +480,12 @@ elif [ "$started" = "failed" ]; then
 else
   echo "未注册 systemd 服务，手动启动："
   echo "  sudo -u ${SERVICE_USER} ${BIN} --listen ${LISTEN} --data ${DATA}"
+fi
+if [ "$BROWSER" = "started" ]; then
+  echo "地区偏移检测浏览器已启动：systemctl status tza-browser（日志 journalctl -u tza-browser）"
+  echo "节点开通检测出口：在节点上重新执行接入命令并加 --ipguard（后台「地区偏移检测」页给出完整命令）"
+elif [ "$BROWSER" = "failed" ]; then
+  echo "!! 地区偏移检测浏览器没有启用，见上方原因；修好后重新执行本脚本并加 --with-browser" >&2
 fi
 echo
 echo "================ 后台登录信息 ================"
