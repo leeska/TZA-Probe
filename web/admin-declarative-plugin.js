@@ -28,7 +28,7 @@ export async function openDeclarativePlugin(id, { back } = {}) {
   if (!page.isConnected) return;
   const removeArea = document.createElement("section");
   removeArea.className = "panel";
-  removeArea.innerHTML = `<div class="panel-head"><div><h2>安装信息</h2><p>${esc(plugin.id)} · v${esc(plugin.version || "未标记")} · ${plugin.source === "market" ? "市场" : "本地上传"}</p></div><button class="danger" data-plugin-remove>移除插件</button></div><p class="plugin-content">${plugin.kind === "notify" ? "正在使用的通知渠道需先切换，移除后该插件不再出现在渠道列表中。" : "移除后目标集从目录中退出，已有任务使用已保存的目标快照，继续运行。"}</p>`;
+  removeArea.innerHTML = `<div class="panel-head"><div><h2>安装信息</h2><p>${esc(plugin.id)} · v${esc(plugin.version || "未标记")}</p></div><button class="danger" data-plugin-remove>移除插件</button></div><p class="plugin-content">${plugin.kind === "notify" ? "正在使用的通知渠道需先切换，移除后该插件不再出现在渠道列表中。" : "移除后目标集从目录中退出，已有任务使用已保存的目标快照，继续运行。"}</p>`;
   page.append(removeArea);
   removeArea.querySelector("[data-plugin-remove]").onclick = () => confirmAction(`移除插件 · ${plugin.name}`, plugin.kind === "notify"
     ? "移除这个通知插件。正在使用的通知渠道会阻止移除，请先切换渠道；历史事件保留。"

@@ -140,7 +140,7 @@ check_ui_smoke() {
   "$GO" run ./tools/themepack -out "$TMP/themes" themes/* > "$TMP/themepack.log" 2>&1 || { sed 's/^/   !! /' "$TMP/themepack.log"; FAILED=1; return; }
   mkdir -p "$TMP/data"
   "$TMP/tza-server" init --data "$TMP/data" > "$TMP/credentials" || { FAILED=1; return; }
-  "$TMP/tza-server" --listen "127.0.0.1:$port" --data "$TMP/data" --cc-url off > "$TMP/server.log" 2>&1 &
+  "$TMP/tza-server" --listen "127.0.0.1:$port" --data "$TMP/data" > "$TMP/server.log" 2>&1 &
   SRV_PID=$!
   code=000
   for i in $(seq 1 30); do
@@ -161,7 +161,6 @@ check_ui_smoke() {
       (cd "$deps" && "$JS" add jsdom@26.1.0 esbuild@0.25.10) > "$TMP/npm.log" 2>&1
     fi || { tail -5 "$TMP/npm.log" | sed 's/^/   /'; FAILED=1; return; }
   fi
-  TZA_UI_DEPS="$deps" "$JS" scripts/market-permissions-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/node-plugins-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/declarative-plugins-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/ip-guard-test.mjs || { FAILED=1; return; }

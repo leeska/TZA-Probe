@@ -111,8 +111,8 @@ func schema(properties map[string]any, required ...string) map[string]any {
 }
 
 // tools is the whole surface in a fixed order: the read-only tools first, then
-// the ones that change the fleet, then the TZA-CC market.
-var tools = append(append(append([]tool{}, readTools...), adminTools...), marketTools...)
+// the ones that change the fleet.
+var tools = append(append([]tool{}, readTools...), adminTools...)
 
 // toolList adds the caching hints the modern revision requires of list results;
 // the handshake revisions have no such field.

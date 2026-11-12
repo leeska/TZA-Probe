@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,14 +20,12 @@ import (
 	"github.com/leeska/TZA-Probe/internal/brand"
 	"github.com/leeska/TZA-Probe/internal/httpapi"
 	"github.com/leeska/TZA-Probe/internal/ipguard"
-	"github.com/leeska/TZA-Probe/internal/market"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/plugin"
 	"github.com/leeska/TZA-Probe/internal/service"
 	"github.com/leeska/TZA-Probe/internal/storage"
 	"github.com/leeska/TZA-Probe/internal/theme"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 	"github.com/leeska/TZA-Probe/web"
 )
 
@@ -54,14 +51,16 @@ func run() error {
 	addr := flag.String("listen", "127.0.0.1:25774", "HTTP listen address; put TLS reverse proxy in front")
 	dir := flag.String("data", "./data", "private data directory")
 	version := flag.Bool("version", false, "print version")
-	ccURL := flag.String("cc-url", "", "TZA-CC market address (default $TZA_CC_URL, else the official https://tza.cc; \"off\" disables the market)")
 	workerSocket := flag.String("browser-socket", "", "private Unix socket for the isolated browser worker")
-	var ccKeys []string
-	flag.Func("cc-key", `extra trusted TZA-CC signing key "<key id>:<base64>" (repeatable; also $TZA_CC_KEYS, comma-separated)`, func(v string) error {
-		ccKeys = append(ccKeys, v)
-		return nil
-	})
+	// The TZA-CC market was removed. The old flags are still accepted, so a unit
+	// file or compose command that passes them keeps starting.
+	legacyCC := false
+	flag.Func("cc-url", "removed: the TZA-CC market no longer exists; ignored", func(string) error { legacyCC = true; return nil })
+	flag.Func("cc-key", "removed: the TZA-CC market no longer exists; ignored", func(string) error { legacyCC = true; return nil })
 	flag.Parse()
+	if legacyCC || os.Getenv("TZA_CC_URL") != "" || os.Getenv("TZA_CC_KEYS") != "" {
+		slog.Warn("--cc-url / --cc-key / TZA_CC_URL / TZA_CC_KEYS are ignored: the TZA-CC market was removed; install themes and plugins by uploading zips")
+	}
 	if *version {
 		slog.Info(model.Version)
 		return nil
@@ -114,10 +113,6 @@ func run() error {
 	}
 	themes := &theme.Store{Dir: filepath.Join(*dir, "themes")}
 	plugins := &plugin.Store{Dir: filepath.Join(*dir, "plugins")}
-	cc, err := marketClient(*ccURL, ccKeys, os.Getenv, *dir, themes, plugins)
-	if err != nil {
-		return err
-	}
 	// 同一个发送器给后台的「发送测试」和告警引擎用：通知插件渠道经它查已安装的插件。
 	sender := notify.Transport{Plugins: plugins}
 	guardStore, err := ipguard.Open(filepath.Join(*dir, "ipguard.db"))
@@ -129,7 +124,7 @@ func run() error {
 		return err
 	}
 	guardBroker := ipguard.NewBroker(guardStore)
-	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Market: cc, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}, IPGuard: guardBroker}
+	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}, IPGuard: guardBroker}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -185,58 +180,6 @@ func run() error {
 		return nil
 	}
 	return err
-}
-
-// marketClient builds the TZA-CC client from --cc-url / TZA_CC_URL (the flag
-// wins, then the variable, then market.DefaultURL) and the trusted keys:
-// market.OfficialKeys plus TZA_CC_KEYS (comma-separated) plus every --cc-key.
-// "off" in either place means no market (nil client).
-func marketClient(flagURL string, flagKeys []string, getenv func(string) string, dir string, themes *theme.Store, plugins *plugin.Store) (*market.Client, error) {
-	address := flagURL
-	if address == "" {
-		address = getenv("TZA_CC_URL")
-	}
-	if address == "" {
-		address = market.DefaultURL
-	}
-	if strings.EqualFold(strings.TrimSpace(address), "off") {
-		slog.Info("TZA-CC market disabled")
-		return nil, nil
-	}
-	keys := map[string]ed25519.PublicKey{}
-	all := append([]string{}, market.OfficialKeys...)
-	for _, k := range strings.Split(getenv("TZA_CC_KEYS"), ",") {
-		if strings.TrimSpace(k) != "" {
-			all = append(all, k)
-		}
-	}
-	all = append(all, flagKeys...)
-	for _, k := range all {
-		id, pub, err := tzapkg.ParsePublicKey(k)
-		if err != nil {
-			return nil, fmt.Errorf("TZA-CC 公钥 %q：%w", k, err)
-		}
-		if old, dup := keys[id]; dup && !old.Equal(pub) {
-			return nil, fmt.Errorf("TZA-CC 公钥 id %q 出现了两次且内容不同", id)
-		}
-		keys[id] = pub
-	}
-	c, err := market.New(market.Config{URL: address, Keys: keys, Dir: dir, Probe: model.Version, Themes: themes, Plugins: plugins})
-	if err != nil {
-		return nil, err
-	}
-	if c == nil {
-		return nil, nil
-	}
-	if u, _ := market.ParseURL(address); u.Scheme == "http" {
-		slog.Warn("TZA-CC address is plain HTTP; the instance token travels unencrypted", "url", c.URL())
-	}
-	if len(keys) == 0 {
-		slog.Warn("TZA-CC market enabled without trusted signing keys; browsing works but installs are refused until --cc-key is set", "url", c.URL())
-	} else {
-		slog.Info("TZA-CC market enabled", "url", c.URL(), "trusted_keys", len(keys))
-	}
-	return c, nil
 }
 
 func databasePath(dir string) string {

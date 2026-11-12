@@ -4,11 +4,10 @@ import { api, send, toast, guard, modal, esc } from "./api.js";
 import { state, content, field, confirmAction } from "./admin-state.js";
 import { applyBrand, DEFAULT_NAME } from "./brand.js";
 import { CURRENCIES } from "./admin-nodes.js";
-import { accountPanel, loadMarket, wireAccount } from "./admin-market.js";
 const MCP_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/MCP.md";
 const mcpDocs = () => `<p class="hint mcp-doc">接入文档：<a href="${MCP_DOC_URL}" target="_blank" rel="noopener noreferrer">${MCP_DOC_URL}</a></p>`;
-// 面板设置分三个子页：外观与品牌（站点品牌、默认外观、延迟色带）/ 账号与安全（后台账号、MCP Key、
-// TZA-CC 账号）/ 数据（备份）。主题与插件各有自己的一栏，不在这里。显示项都走 /admin/panel 保存（见下方注释）。
+// 面板设置分三个子页：外观与品牌（站点品牌、默认外观、延迟色带）/ 账号与安全（后台账号、MCP Key）
+// / 数据（备份）。主题与插件各有自己的一栏，不在这里。显示项都走 /admin/panel 保存（见下方注释）。
 const VIEWS = [
   ["look", "外观与品牌"],
   ["account", "账号与安全"],
@@ -25,7 +24,6 @@ export async function renderSettings(nodesReady) {
     view === "look" ? api("/admin/themes").catch(() => null) : null,
     view === "account" ? api("/admin/account").catch(() => null) : null,
     view === "account" ? api("/admin/mcp-key") : null,
-    view === "account" ? loadMarket(() => renderSettings()) : null,
   ]);
   // 主题清单以服务端为准：默认皮肤下拉只列已安装的（内置现代极简 + 已安装的主题包）。
   if (themes) registerThemes(themes);
@@ -72,7 +70,7 @@ function priceUnitPanel(settings) {
 }
 
 function accountView(acct, mcp) {
-  return `${acct ? `<section data-part="panel" class="panel webhook-panel"><div><h3>后台账号</h3><p>${acct.configured ? `当前用户名：<b>${esc(acct.username)}</b>` : "尚未设置账号，请在服务器执行 tza-server reset-password 创建账号。"}</p><small>修改后其他已登录的浏览器需要重新登录。忘记密码时在服务器执行 tza-server reset-password --data 数据目录，会生成新密码。</small></div><div class="webhook-actions"><button id="edit-account" class="primary">${acct.configured ? "修改账号" : "设置账号"}</button></div></section>` : ""}<section data-part="panel" class="panel webhook-panel"><div><h3>MCP API Key</h3><p>${mcp.configured ? `已启用 · 生成于 ${esc(new Date(mcp.created_at).toLocaleString())}` : "尚未生成，MCP 接口未启用。"}</p><small>用于 AI 客户端连接并管理节点、任务和设置。仅用于 MCP；重新生成或撤销后旧 Key 立即失效。</small><p>连接地址：<code>${esc(location.origin + "/mcp")}</code></p><p class="hint">请求头：Authorization: Bearer &lt;API Key&gt;</p>${mcpDocs()}</div><div class="webhook-actions"><button id="generate-mcp-key" class="primary">${mcp.configured ? "重新生成" : "生成 API Key"}</button>${mcp.configured ? '<button id="revoke-mcp-key">撤销</button>' : ""}</div></section>${accountPanel()}`;
+  return `${acct ? `<section data-part="panel" class="panel webhook-panel"><div><h3>后台账号</h3><p>${acct.configured ? `当前用户名：<b>${esc(acct.username)}</b>` : "尚未设置账号，请在服务器执行 tza-server reset-password 创建账号。"}</p><small>修改后其他已登录的浏览器需要重新登录。忘记密码时在服务器执行 tza-server reset-password --data 数据目录，会生成新密码。</small></div><div class="webhook-actions"><button id="edit-account" class="primary">${acct.configured ? "修改账号" : "设置账号"}</button></div></section>` : ""}<section data-part="panel" class="panel webhook-panel"><div><h3>MCP API Key</h3><p>${mcp.configured ? `已启用 · 生成于 ${esc(new Date(mcp.created_at).toLocaleString())}` : "尚未生成，MCP 接口未启用。"}</p><small>用于 AI 客户端连接并管理节点、任务和设置。仅用于 MCP；重新生成或撤销后旧 Key 立即失效。</small><p>连接地址：<code>${esc(location.origin + "/mcp")}</code></p><p class="hint">请求头：Authorization: Bearer &lt;API Key&gt;</p>${mcpDocs()}</div><div class="webhook-actions"><button id="generate-mcp-key" class="primary">${mcp.configured ? "重新生成" : "生成 API Key"}</button>${mcp.configured ? '<button id="revoke-mcp-key">撤销</button>' : ""}</div></section>`;
 }
 
 function dataView() {
@@ -127,7 +125,6 @@ function wireAccountView(acct, mcp) {
     });
   });
   content().querySelector("#edit-account")?.addEventListener("click", () => accountForm(acct));
-  wireAccount();
 }
 // 站点品牌：名称换掉标签页标题与品牌区的 PROBE，logo 换掉 t·z·a 字标与 favicon。两项各自保存、
 // 各自清除；都清掉就回到内置的 TZA Probe 品牌。保存后 applyBrand 当场换上本页的标题、图标与侧栏，

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/market/markettest"
 	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-Probe/internal/pkgtest"
 	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
 
@@ -28,7 +28,7 @@ func (m memPlugins) Plugin(id string) (tzapkg.Plugin, error) {
 
 func parse(t *testing.T, id string) tzapkg.Plugin {
 	t.Helper()
-	p, err := tzapkg.ParsePlugin(markettest.PluginJSON(t, id))
+	p, err := tzapkg.ParsePlugin(pkgtest.PluginJSON(t, id))
 	if err != nil {
 		t.Fatal(err)
 	}

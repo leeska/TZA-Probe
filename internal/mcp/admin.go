@@ -151,7 +151,7 @@ var adminTools = []tool{
 	},
 	{
 		Name:        "list_plugins",
-		Description: "列出已安装的声明式插件：kind（notify 通知渠道 / targets 探测目标集）、名称、版本、来源（market 市场 / 本地上传）、它能做的事（permissions）；通知插件带设置表单 settings（update_settings 的 plugin_settings 按它填），目标集带目标个数（目标本身在 list_catalog 里）。",
+		Description: "列出已安装的声明式插件：kind（notify 通知渠道 / targets 探测目标集）、名称、版本、它能做的事（permissions）；通知插件带设置表单 settings（update_settings 的 plugin_settings 按它填），目标集带目标个数（目标本身在 list_catalog 里）。",
 		InputSchema: schema(map[string]any{}),
 		Annotations: annotations("List installed plugins", true, false, true),
 	},
@@ -658,7 +658,7 @@ func (s *Server) callAdminTool(ctx context.Context, params call) (map[string]any
 		}
 		return toolResult(map[string]any{"sent": true, "channel": channel}), nil, 0
 	}
-	return s.callMarketTool(ctx, params)
+	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + params.Name}, http.StatusOK
 }
 
 // listCatalog filters the built-in offline target list.

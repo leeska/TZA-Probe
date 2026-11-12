@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/market/markettest"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/pkgtest"
 	"github.com/leeska/TZA-Probe/internal/plugin"
 	"github.com/leeska/TZA-Probe/internal/storage"
 	"github.com/leeska/TZA-Probe/web"
@@ -59,7 +59,7 @@ func TestPluginRoutesAndChannel(t *testing.T) {
 	}))
 	defer receiver.Close()
 
-	ntfy := markettest.PluginZip(t, "ntfy", "")
+	ntfy := pkgtest.PluginZip(t, "ntfy", "")
 	w := call("POST", "/api/v1/admin/plugins/inspect", "application/zip", ntfy)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "permissions") || !strings.Contains(w.Body.String(), "你在设置里填写的地址") {
 		t.Fatalf("inspect: %d %s", w.Code, w.Body)
@@ -70,10 +70,10 @@ func TestPluginRoutesAndChannel(t *testing.T) {
 	if w := call("POST", "/api/v1/admin/plugins", "application/zip", ntfy); w.Code != 200 {
 		t.Fatalf("upload: %d %s", w.Code, w.Body)
 	}
-	if w := call("POST", "/api/v1/admin/plugins", "application/zip", markettest.Skin(t, "matcha", "1.0.0")); w.Code != 400 {
+	if w := call("POST", "/api/v1/admin/plugins", "application/zip", pkgtest.Skin(t, "matcha", "1.0.0")); w.Code != 400 {
 		t.Fatalf("theme as plugin: %d", w.Code)
 	}
-	if w := call("POST", "/api/v1/admin/plugins", "application/zip", markettest.PluginZip(t, "public-dns", "")); w.Code != 200 {
+	if w := call("POST", "/api/v1/admin/plugins", "application/zip", pkgtest.PluginZip(t, "public-dns", "")); w.Code != 200 {
 		t.Fatalf("upload targets: %d %s", w.Code, w.Body)
 	}
 	list := call("GET", "/api/v1/admin/plugins", "", nil).Body.String()

@@ -1,35 +1,22 @@
 // Package plugin keeps the installed declarative plugins: notification
 // channels and probe target sets, each a single plugin.json interpreted by
-// pkg/tzapkg (no code). Installed plugins live in <data>/plugins/<id>/plugin.json;
-// one installed from the TZA-CC market also has <data>/plugins/.market/<id>.json
-// recording the signed release. Nothing here is served over HTTP. See
+// pkg/tzapkg (no code). Installed plugins live in <data>/plugins/<id>/plugin.json.
+// Nothing here is served over HTTP. See
 // docs/PLUGINS.md.
 package plugin
 
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
-
-// Origin is what the Server remembers about a plugin installed from the market.
-type Origin struct {
-	Version     string    `json:"version"`
-	SHA256      string    `json:"sha256"`
-	KeyID       string    `json:"key_id"`
-	InstalledAt time.Time `json:"installed_at"`
-}
-
-const originDir = ".market"
 
 // ErrNotFound means no plugin is installed under the id; it matches
 // os.ErrNotExist, so callers need not import this package to recognise it.
@@ -98,55 +85,12 @@ func (s *Store) read(id string) (tzapkg.Plugin, error) {
 	if p.ID != id {
 		return tzapkg.Plugin{}, fmt.Errorf("插件 %s 的 plugin.json 写的 id 是 %s", id, p.ID)
 	}
-	if _, ok := s.origin(id); ok {
-		p.Source = tzapkg.SourceMarket
-	}
 	return p, nil
 }
 
-func (s *Store) originPath(id string) string { return filepath.Join(s.Dir, originDir, id+".json") }
-
-func (s *Store) origin(id string) (Origin, bool) {
-	raw, err := os.ReadFile(s.originPath(id))
-	if err != nil {
-		return Origin{}, false
-	}
-	var o Origin
-	if json.Unmarshal(raw, &o) != nil || o.Version == "" {
-		return Origin{}, false
-	}
-	return o, true
-}
-
-// Origin reports the market release an installed plugin came from; ok is
-// false for a local upload.
-func (s *Store) Origin(id string) (Origin, bool) {
-	if s == nil || s.Dir == "" || !tzapkg.ValidID(id) {
-		return Origin{}, false
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if _, err := os.Stat(filepath.Join(s.Dir, id, "plugin.json")); err != nil {
-		return Origin{}, false
-	}
-	return s.origin(id)
-}
-
-// Install validates and installs a locally uploaded plugin, replacing one
-// with the same id (and forgetting that one's market origin). Nothing is
-// written unless the archive passes.
-func (s *Store) Install(archive []byte) (tzapkg.Plugin, error) { return s.install(archive, nil) }
-
-// InstallMarket installs a plugin the market client has already verified
-// against its TZA-CC signature, and records where it came from.
-func (s *Store) InstallMarket(archive []byte, o Origin) (tzapkg.Plugin, error) {
-	if o.Version == "" || o.SHA256 == "" {
-		return tzapkg.Plugin{}, errors.New("缺少市场版本信息")
-	}
-	return s.install(archive, &o)
-}
-
-func (s *Store) install(archive []byte, o *Origin) (tzapkg.Plugin, error) {
+// Install validates and installs an uploaded plugin, replacing one with the
+// same id. Nothing is written unless the archive passes.
+func (s *Store) Install(archive []byte) (tzapkg.Plugin, error) {
 	if s == nil || s.Dir == "" {
 		return tzapkg.Plugin{}, errors.New("这个 Server 没有配置插件目录")
 	}
@@ -188,9 +132,6 @@ func (s *Store) install(archive []byte, o *Origin) (tzapkg.Plugin, error) {
 	if old != "" {
 		os.RemoveAll(old)
 	}
-	if err := s.setOrigin(p.ID, o); err != nil {
-		return tzapkg.Plugin{}, fmt.Errorf("插件已装好，但记不下市场来源：%w", err)
-	}
 	return s.read(p.ID)
 }
 
@@ -205,32 +146,6 @@ func pluginJSON(archive []byte) ([]byte, error) {
 		return nil, errors.New("压缩包里没有 plugin.json")
 	}
 	return raw, nil
-}
-
-func (s *Store) setOrigin(id string, o *Origin) error {
-	path := s.originPath(id)
-	if o == nil {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(o)
-	if err != nil {
-		return err
-	}
-	tmp := path + ".tmp-" + random()
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
 }
 
 // Remove deletes an installed plugin. Whether it may go (a notification
@@ -249,7 +164,6 @@ func (s *Store) Remove(id string) error {
 	if err := os.Rename(dir, trash); err != nil {
 		return err
 	}
-	s.setOrigin(id, nil)
 	return os.RemoveAll(trash)
 }
 

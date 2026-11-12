@@ -177,11 +177,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 
 	// ---- plugins：声明式插件（通知渠道 / 探测目标集，见 docs/PLUGINS.md）
 	route("GET /api/v1/admin/plugins", func(w http.ResponseWriter, r *http.Request) {
-		plugins := a.svc.PluginList()
-		for _, manager := range a.Market.Managers() {
-			plugins = append(plugins, service.PluginView{ID: manager.ID, Kind: manager.Kind, Name: manager.Name, Version: manager.Version, Source: manager.Source, Permissions: manager.Permissions, Hint: "主控管理部分；实际组件按 Agent 单独安装"})
-		}
-		write(w, 200, plugins)
+		write(w, 200, a.svc.PluginList())
 	})
 	// 上传前先看一眼：只校验、列出它能做的事，不落盘；面板据此请管理员确认。
 	route("POST /api/v1/admin/plugins/inspect", func(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +191,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			return
 		}
 		if p.ID == tzapkg.OfficialExecutorID {
-			write(w, 400, map[string]string{"error": "此插件 ID 只用于官方签名管理部分，请从市场安装"})
+			write(w, 400, map[string]string{"error": "此插件 ID 为保留 ID，不能用于上传的插件"})
 			return
 		}
 		write(w, 200, service.ViewPlugin(p))
@@ -207,7 +203,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		}
 		preview, err := tzapkg.OpenPlugin(body)
 		if err != nil || preview.ID == tzapkg.OfficialExecutorID {
-			write(w, 400, map[string]string{"error": "请上传有效的通知或目标集插件；官方管理部分须从市场验签安装"})
+			write(w, 400, map[string]string{"error": "请上传有效的通知或目标集插件"})
 			return
 		}
 		p, err := a.Plugins.Install(body)
@@ -218,33 +214,8 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		write(w, 200, service.ViewPlugin(p))
 	})
 	route("DELETE /api/v1/admin/plugins/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if r.PathValue("id") == tzapkg.OfficialExecutorID {
-			if a.IPGuard != nil {
-				policies, err := a.IPGuard.Store.Policies(r.Context())
-				if err != nil {
-					fail(w, err)
-					return
-				}
-				for node, policy := range policies {
-					if policy.Enabled {
-						policy.Enabled = false
-						if _, err := a.IPGuard.Store.SavePolicy(r.Context(), node, policy); err != nil {
-							fail(w, err)
-							return
-						}
-					}
-				}
-			}
-			if err := a.Market.RemoveManager(r.PathValue("id")); !errors.Is(err, model.ErrNotFound) {
-				respond(w, err)
-				return
-			}
-		}
 		respond(w, a.svc.RemovePlugin(r.Context(), r.PathValue("id")))
 	})
-
-	// ---- market：TZA-CC 的主题市场（目录、安装、更新、实例绑定、预览图代理），见 market.go
-	a.marketRoutes(route)
 
 	// ---- nodes
 	route("GET /api/v1/admin/nodes", a.nodes)

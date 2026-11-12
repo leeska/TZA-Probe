@@ -3,16 +3,69 @@ package httpapi
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
-	"github.com/leeska/TZA-Probe/internal/market"
-	"github.com/leeska/TZA-Probe/internal/theme"
+	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-Probe/internal/theme"
+	"github.com/leeska/TZA-Probe/web"
 )
 
+type themeEnv struct {
+	t       *testing.T
+	handler http.Handler
+	token   string
+}
+
+func newThemeEnv(t *testing.T) *themeEnv {
+	t.Helper()
+	dir := t.TempDir()
+	s, err := storage.Open(filepath.Join(dir, "probe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	token := model.Secret()
+	api := &API{Store: s, AdminToken: token, Assets: web.Handler(), Themes: &theme.Store{Dir: filepath.Join(dir, "themes")}}
+	return &themeEnv{t: t, handler: api.Handler(), token: token}
+}
+
+func (e *themeEnv) do(method, path string, body any, auth bool) *httptest.ResponseRecorder {
+	e.t.Helper()
+	reader := bytes.NewReader(nil)
+	if body != nil {
+		data, _ := json.Marshal(body)
+		reader = bytes.NewReader(data)
+	}
+	r := httptest.NewRequest(method, "https://probe.example"+path, reader)
+	if body != nil {
+		r.Header.Set("Content-Type", "application/json")
+	}
+	if auth {
+		r.Header.Set("Authorization", "Bearer "+e.token)
+	}
+	w := httptest.NewRecorder()
+	e.handler.ServeHTTP(w, r)
+	return w
+}
+
+func (e *themeEnv) json(w *httptest.ResponseRecorder) map[string]any {
+	e.t.Helper()
+	out := map[string]any{}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		e.t.Fatalf("not JSON (%d): %s", w.Code, w.Body.String())
+	}
+	return out
+}
+
 func TestThemeDialogScopeAndNodeBinding(t *testing.T) {
-	e := newMarketEnv(t, func(string, *theme.Store) *market.Client { return nil })
+	e := newThemeEnv(t)
 	upload := func(path string, files map[string]string, auth bool) *httptest.ResponseRecorder {
 		t.Helper()
 		var b bytes.Buffer

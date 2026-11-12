@@ -18,8 +18,8 @@
 | 公开页与后台，克制的玻璃效果与多套外观 | 公开页、后台 | web/styles.css、themes/glass/glass.css |
 | 数据库在线备份下载 | 面板设置 → 数据 → 数据备份 | storage/backup.go |
 | AI 客户端读写探针数据（覆盖管理面板的操作） | `POST /mcp` 的 MCP 工具 | internal/mcp、internal/httpapi |
-| 主题包 / 附加包：本地上传与 TZA-CC 市场安装（验签、来源与更新提示）；内置现代极简（默认）与液态玻璃，官方的复古印刷 / 二次元源码在 themes/；主题设置菜单（theme.json 的 settings，二次元的附加包开关在其中） | 主题（已安装 + 市场） | pkg/tzapkg、internal/theme、internal/market、themes/、tools/themepack、web/admin-themes.js、web/admin-market.js |
-| 声明式插件：通知渠道、探测目标集（市场安装或上传，装前确认权限） | 插件（已安装 + 市场）；配置出口；任务目录 | pkg/tzapkg（plugin.go、tpl.go）、internal/plugin、notify/plugin.go、service/plugins.go |
+| 主题包 / 附加包：本地上传安装；内置现代极简（默认）与液态玻璃，官方的复古印刷 / 二次元源码在 themes/；主题设置菜单（theme.json 的 settings，二次元的附加包开关在其中） | 主题（已安装） | pkg/tzapkg、internal/theme、themes/、tools/themepack、web/admin-themes.js、web/admin-packages.js |
+| 声明式插件：通知渠道、探测目标集（上传安装，装前确认权限） | 插件（已安装）；配置出口；任务目录 | pkg/tzapkg（plugin.go、tpl.go）、internal/plugin、notify/plugin.go、service/plugins.go |
 | 组件解耦 | 依赖接口和版本化 HTTP 协议 | docs/ARCHITECTURE.md |
 
 配套能力：历史图、Agent 接入配置和一键安装脚本、当前周期用量校正、通知状态和失败原因，以及任务暂停/恢复、复制、批量绑定、立即安排执行和最近执行记录。
@@ -37,6 +37,6 @@
 
 不做维护模式、远程终端、多用户权限系统、复杂报表或自动更新。Agent 的「一键升级」由管理员逐台触发，而且只装运维者用自己的私钥签过名、比现有版本新的程序；私钥不在 Server 上，Server 本身无法借这条路在节点上运行别的程序（见 [DEPLOYMENT.md](DEPLOYMENT.md)「一键升级」）。新需求只有确实服务于探针本身时才纳入，避免把简单探针做成运维平台。
 
-市场的边界：TZA-CC 市场可选，不连也不缺功能；包验签后安装，有新版只提示、不自动更新。插件只有声明式的两类——通知渠道（一个 HTTP 请求模板，只能发往声明的域名）和探测目标集（只往任务目录里加候选目标）——格式本身限定了它们能做的事，见 [PLUGINS.md](PLUGINS.md)。不做可执行代码的插件、前端注入脚本、Agent 端插件，也不提供远程命令通道；边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+包的边界：Probe 不连接任何市场，主题与插件只通过上传 zip 安装。插件只有声明式的两类——通知渠道（一个 HTTP 请求模板，只能发往声明的域名）和探测目标集（只往任务目录里加候选目标）——格式本身限定了它们能做的事，见 [PLUGINS.md](PLUGINS.md)。不做可执行代码的插件、前端注入脚本、Agent 端插件，也不提供远程命令通道；边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 部署、升级和恢复以 [DEPLOYMENT.md](DEPLOYMENT.md) 为准；[VERIFICATION.md](VERIFICATION.md) 说明验证方法与只能在真实环境验证的部分。

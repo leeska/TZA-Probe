@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/market/markettest"
+	"github.com/leeska/TZA-Probe/internal/pkgtest"
 	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
 
@@ -16,11 +16,11 @@ func TestInstallListRemove(t *testing.T) {
 	if list := s.List(); len(list) != 0 {
 		t.Fatalf("empty store: %v", list)
 	}
-	p, err := s.Install(markettest.PluginZip(t, "ntfy", ""))
+	p, err := s.Install(pkgtest.PluginZip(t, "ntfy", ""))
 	if err != nil || p.ID != "ntfy" || p.Kind != tzapkg.KindNotify || p.Source != "" {
 		t.Fatalf("install: %+v %v", p, err)
 	}
-	if _, err := s.Install(markettest.PluginZip(t, "public-dns", "")); err != nil {
+	if _, err := s.Install(pkgtest.PluginZip(t, "public-dns", "")); err != nil {
 		t.Fatal(err)
 	}
 	list := s.List()
@@ -36,26 +36,11 @@ func TestInstallListRemove(t *testing.T) {
 		t.Fatalf("stored plugin lost its settings: %v", err)
 	}
 
-	// Market install records the origin; a local upload over it forgets it.
-	if _, err := s.InstallMarket(markettest.PluginZip(t, "ntfy", "1.1.0"), Origin{}); err == nil {
-		t.Fatal("a market install needs its release")
-	}
-	p, err = s.InstallMarket(markettest.PluginZip(t, "ntfy", "1.1.0"), Origin{Version: "1.1.0", SHA256: strings.Repeat("a", 64)})
-	if err != nil || p.Source != tzapkg.SourceMarket || p.Version != "1.1.0" {
-		t.Fatalf("market install: %+v %v", p, err)
-	}
-	if o, ok := s.Origin("ntfy"); !ok || o.Version != "1.1.0" {
-		t.Fatalf("origin: %+v", o)
-	}
-	if p, _ := s.Install(markettest.PluginZip(t, "ntfy", "")); p.Source != "" {
-		t.Fatal("local upload kept the market origin")
-	}
-
 	// Rejects: a theme, extra files, an unknown field.
 	for name, archive := range map[string][]byte{
-		"theme":         markettest.Skin(t, "matcha", "1.0.0"),
-		"extra file":    markettest.Zip(t, map[string]string{"plugin.json": string(markettest.PluginJSON(t, "gotify")), "x.css": "a{}"}),
-		"unknown field": markettest.Zip(t, map[string]string{"plugin.json": strings.Replace(string(markettest.PluginJSON(t, "gotify")), `"hint"`, `"script":"x","hint"`, 1)}),
+		"theme":         pkgtest.Skin(t, "matcha", "1.0.0"),
+		"extra file":    pkgtest.Zip(t, map[string]string{"plugin.json": string(pkgtest.PluginJSON(t, "gotify")), "x.css": "a{}"}),
+		"unknown field": pkgtest.Zip(t, map[string]string{"plugin.json": strings.Replace(string(pkgtest.PluginJSON(t, "gotify")), `"hint"`, `"script":"x","hint"`, 1)}),
 	} {
 		if _, err := s.Install(archive); err == nil {
 			t.Fatalf("%s accepted", name)

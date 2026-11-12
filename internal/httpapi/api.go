@@ -22,7 +22,6 @@ import (
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/brand"
 	"github.com/leeska/TZA-Probe/internal/ipguard"
-	"github.com/leeska/TZA-Probe/internal/market"
 	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
@@ -57,7 +56,6 @@ type API struct {
 	Assets        http.Handler
 	Agents        *agentdist.Dist // nil disables /install.sh and /dl/
 	Themes        *theme.Store    // uploaded theme packages; nil means built-in skins only
-	Market        *market.Client  // TZA-CC client; nil means no market (routes answer 503)
 	Plugins       *plugin.Store   // installed declarative plugins; nil means none
 	Logo          *brand.Store    // uploaded site logo; nil means the built-in mark only
 	mu            sync.Mutex
@@ -218,7 +216,6 @@ func (a *API) Handler() http.Handler {
 		}
 		w.WriteHeader(204)
 	}))
-	// 接入命令的本机配置步骤：用节点 token 换一次握手身份与 CC 地址（见 install.go）。
 	mux.HandleFunc("POST /api/v1/agent/heartbeat", a.agent(func(w http.ResponseWriter, r *http.Request, id string) {
 		var body model.Heartbeat
 		if !decode(w, r, &body) {
@@ -272,12 +269,8 @@ func (a *API) Handler() http.Handler {
 	})
 	// MCP uses an independent, revocable API key managed in the panel.
 	a.mcpKeyRoutes(mux)
-	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier, Themes: a.Themes, Market: a.Market, Plugins: a.Plugins, Logo: a.Logo}
-	mux.HandleFunc("POST /mcp", a.mcpAuth(func(w http.ResponseWriter, r *http.Request) {
-		// install_market_package downloads from TZA-CC and can outlast the 30-second WriteTimeout.
-		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(installDeadline))
-		probe.ServeHTTP(w, r)
-	}))
+	probe := &mcp.Server{Source: a.Store, Notifier: a.Notifier, Themes: a.Themes, Plugins: a.Plugins, Logo: a.Logo}
+	mux.HandleFunc("POST /mcp", a.mcpAuth(probe.ServeHTTP))
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		// The modern revision dropped the standalone SSE stream (GET) and
 		// session termination (DELETE), so both answer 405.

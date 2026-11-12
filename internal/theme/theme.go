@@ -3,14 +3,12 @@
 //
 // CSS skins extend the core presentation. A frontend theme owns an HTML/JS
 // document, served with an opaque-origin sandbox and a public-only bridge.
-// Installed packages live in <data>/themes/<id>/; market signatures are stored
-// separately in .market and are never served. See docs/THEMES.md.
+// Installed packages live in <data>/themes/<id>/. See docs/THEMES.md.
 package theme
 
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -19,7 +17,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
@@ -27,7 +24,7 @@ import (
 // MaxUpload caps one uploaded archive.
 const MaxUpload = tzapkg.MaxUpload
 
-// The package format lives in pkg/tzapkg, shared with TZA-CC.
+// The package format lives in pkg/tzapkg.
 type (
 	Colors     = tzapkg.Colors
 	Manifest   = tzapkg.Manifest
@@ -36,35 +33,21 @@ type (
 )
 
 const (
-	TypeSkin     = tzapkg.TypeSkin
-	TypeAddon    = tzapkg.TypeAddon
-	SourceMarket = tzapkg.SourceMarket
+	TypeSkin  = tzapkg.TypeSkin
+	TypeAddon = tzapkg.TypeAddon
 )
-
-// Origin is what the Server remembers about a package installed from the
-// market: the signed release, so the market page can offer updates.
-type Origin struct {
-	Version     string    `json:"version"`
-	SHA256      string    `json:"sha256"`
-	KeyID       string    `json:"key_id"`
-	InstalledAt time.Time `json:"installed_at"`
-}
-
-// originDir holds the market records, beside the packages. Its name is not a
-// valid package id, so neither Installed nor ServeHTTP ever reach it.
-const originDir = ".market"
 
 // Builtins are the skins compiled into web/: their stylesheets are always on
 // the page, scoped by html[data-skin]. The first is the default skin
 // (model.DefaultPanelSkin). Only 现代极简 is compiled in; all other looks
-// are packages in themes/ that the market distributes.
+// are packages in themes/ that an administrator uploads.
 var Builtins = []Manifest{
 	{ID: "shadcn", Name: "现代极简", Hint: "中性灰 · 发丝描边 · 小圆角", Chrome: Colors{Light: "#ffffff", Dark: "#0a0a0a"}, Swatch: []string{"#f5f5f5", "#ffffff", "#171717"}, Builtin: true},
 }
 
 // IsBuiltin reports whether id is a compiled-in skin. A package under such an
-// id (现代极简 was a market package in v1.2) is ignored and cannot be
-// installed again; the market hides it.
+// id (现代极简 was a package in v1.2) is ignored and cannot be
+// installed again.
 func IsBuiltin(id string) bool { return builtin(id) }
 
 func builtin(id string) bool {
@@ -143,56 +126,12 @@ func (s *Store) read(id string) (Manifest, error) {
 	if info, err := os.Stat(dir); err == nil {
 		m.Rev = fmt.Sprintf("%x", info.ModTime().UnixNano())
 	}
-	if _, ok := s.origin(id); ok {
-		m.Source = SourceMarket
-	}
 	return m, nil
 }
 
-func (s *Store) originPath(id string) string { return filepath.Join(s.Dir, originDir, id+".json") }
-
-// origin reads a market record; callers hold the lock.
-func (s *Store) origin(id string) (Origin, bool) {
-	raw, err := os.ReadFile(s.originPath(id))
-	if err != nil {
-		return Origin{}, false
-	}
-	var o Origin
-	if json.Unmarshal(raw, &o) != nil || o.Version == "" {
-		return Origin{}, false
-	}
-	return o, true
-}
-
-// Origin reports the market release an installed package came from; ok is
-// false for a local upload (or a built-in).
-func (s *Store) Origin(id string) (Origin, bool) {
-	if s == nil || s.Dir == "" || !tzapkg.ValidID(id) {
-		return Origin{}, false
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if _, err := os.Stat(filepath.Join(s.Dir, id, "theme.json")); err != nil {
-		return Origin{}, false
-	}
-	return s.origin(id)
-}
-
-// Install unpacks and validates a locally uploaded package, replacing an
-// installed one with the same id (and forgetting that one's market origin).
-// Nothing is written unless the whole archive passes.
-func (s *Store) Install(archive []byte) (Manifest, error) { return s.install(archive, nil) }
-
-// InstallMarket installs a package the market client has already verified
-// against its TZA-CC signature, and records where it came from.
-func (s *Store) InstallMarket(archive []byte, o Origin) (Manifest, error) {
-	if o.Version == "" || o.SHA256 == "" {
-		return Manifest{}, errors.New("缺少市场版本信息")
-	}
-	return s.install(archive, &o)
-}
-
-func (s *Store) install(archive []byte, o *Origin) (Manifest, error) {
+// Install unpacks and validates an uploaded package, replacing an installed
+// one with the same id. Nothing is written unless the whole archive passes.
+func (s *Store) Install(archive []byte) (Manifest, error) {
 	if s == nil || s.Dir == "" {
 		return Manifest{}, errors.New("这个 Server 没有配置主题目录")
 	}
@@ -240,38 +179,7 @@ func (s *Store) install(archive []byte, o *Origin) (Manifest, error) {
 	if old != "" {
 		os.RemoveAll(old)
 	}
-	if err := s.setOrigin(m.ID, o); err != nil {
-		return Manifest{}, fmt.Errorf("主题包已装好，但记不下市场来源：%w", err)
-	}
 	return s.read(m.ID)
-}
-
-// setOrigin writes (or, for nil, removes) the market record of id; callers
-// hold the lock.
-func (s *Store) setOrigin(id string, o *Origin) error {
-	path := s.originPath(id)
-	if o == nil {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(o)
-	if err != nil {
-		return err
-	}
-	tmp := path + ".tmp-" + random()
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
 }
 
 // Remove deletes an installed package. Built-ins cannot be removed.
@@ -292,7 +200,6 @@ func (s *Store) Remove(id string) error {
 	if err := os.Rename(dir, trash); err != nil {
 		return err
 	}
-	s.setOrigin(id, nil)
 	return os.RemoveAll(trash)
 }
 

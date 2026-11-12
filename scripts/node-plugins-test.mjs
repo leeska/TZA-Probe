@@ -16,27 +16,23 @@ const writes = [], reads = [];
 window.fetch = async (url, options = {}) => {
   if (options.method) {
     writes.push(url);
-    assert.equal(url,"/api/v1/admin/market/install");
-    return new Response(JSON.stringify({ version:"0.5.0",source:"market" }));
+    return new Response("{}", { status: 500 });
   }
   reads.push(url);
-  assert.equal(url,"/api/v1/admin/ipguard");
-  return new Response(JSON.stringify({nodes:[],jobs:[],services:[],worker_seen:0}));
+  assert.equal(url, "/api/v1/admin/ipguard");
+  return new Response(JSON.stringify({ nodes: [], jobs: [], services: [], worker_seen: 0 }));
 };
 window.eval(bundle.outputFiles[0].text);
 const ui = window.pluginUI;
 ui.state.container = window.document;
-const pkg = {id:"ipsentinel-runtime",type:"executor",versions:[{version:"0.5.0",compatible:true}]};
-await ui.openNodePluginDetail(pkg);
-assert.equal(writes.length,0);
-assert.match(window.document.body.textContent,/不再安装 Chromium/);
-window.document.querySelector("[data-install-manager]").click();
-assert.equal(writes.length,0);
-window.document.querySelector("#confirm").click();
-await new Promise(resolve => setTimeout(resolve,20));
-assert.deepEqual(writes,["/api/v1/admin/market/install"]);
-assert.deepEqual(reads,["/api/v1/admin/ipguard"]);
-assert.equal(window.document.querySelector("[data-plugin-section]"),null);
-assert.match(window.document.querySelector("main").textContent,/先添加节点/);
+// 地区偏移检测是内置功能：打开即直接读取出口与任务，不查插件列表、不发任何安装请求。
+await ui.renderRegionPage(Promise.resolve());
+await new Promise((resolve) => setTimeout(resolve, 20));
+assert.equal(ui.state.tab, "ipguard");
+assert.deepEqual(writes, []);
+assert.deepEqual(reads, ["/api/v1/admin/ipguard"]);
+assert.equal(window.document.querySelector("[data-install-manager]"), null);
+assert.equal(window.document.querySelector("[data-region-install]"), null);
+assert.match(window.document.querySelector("main").textContent, /先添加节点/);
 dom.window.close();
-console.log("PASS: single central plugin entry, explicit signed-manager installation, no legacy installation tabs or requests.");
+console.log("PASS: built-in region detection page, no installation step or requests.");

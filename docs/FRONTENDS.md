@@ -2,7 +2,7 @@
 
 从 Probe 1.5.0 起，主题可以完全拥有公开前台，而不是覆盖核心卡片。独立主题自行决定 HTML、CSS、导航、页面、组件、交互和数据刷新；不需要核心 DOM、CSS 变量或 `data-part`。可以使用原生 JS，也可以把 React、Vue、Svelte 等框架构建为静态资源后打包。
 
-后台仍使用核心管理界面。CSS 主题、附加包和已有主题的安装方式不变；独立前台也出现在同一外观菜单里，能设为默认外观、上传更新或从市场安装。
+后台仍使用核心管理界面。CSS 主题、附加包和已有主题的安装方式不变；独立前台也出现在同一外观菜单里，能设为默认外观或上传更新。
 
 ## 最小主题
 
@@ -65,7 +65,7 @@ for (const node of nodes) {
 go run ./tools/themepack -out dist/themes examples/themes/observatory
 ```
 
-将生成的 zip 上传后台「主题」，选中它或设置为默认外观。开发文档 `README.md` 不进入 zip。市场上传也使用同一个 zip；CC 会将独立前台的最低兼容范围设为 `>=1.5.0`，不接受包含旧 Probe 的范围。审核和安装页会展示独立 HTML / JavaScript 及只读公开数据说明。
+将生成的 zip 上传后台「主题」，选中它或设置为默认外观。开发文档 `README.md` 不进入 zip。安装页会展示独立 HTML / JavaScript 及只读公开数据说明。
 
 ## SDK v1
 

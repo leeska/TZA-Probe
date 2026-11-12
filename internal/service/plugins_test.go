@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/market/markettest"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-Probe/internal/pkgtest"
 	"github.com/leeska/TZA-Probe/internal/plugin"
 )
 
@@ -20,7 +20,7 @@ func withPlugins(t *testing.T, ids ...string) (*Service, *plugin.Store) {
 	svc := open(t)
 	store := &plugin.Store{Dir: filepath.Join(t.TempDir(), "plugins")}
 	for _, id := range ids {
-		if _, err := store.Install(markettest.PluginZip(t, id, "")); err != nil {
+		if _, err := store.Install(pkgtest.PluginZip(t, id, "")); err != nil {
 			t.Fatal(err)
 		}
 	}

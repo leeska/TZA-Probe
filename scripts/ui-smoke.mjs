@@ -219,7 +219,7 @@ assert(nodeToken.length === 64);
 assert($("#install-command").textContent === `curl -fsSL ${base}/install.sh | sh -s -- --endpoint ${base} --token ${nodeToken}`, "one-line install command must carry endpoint and key");
 $(".close").click();
 const adminHeaders = { Authorization: "Bearer " + token };
-// 复古印刷 / 二次元不内置，是仓库 themes/ 下的官方主题包（发到 TZA-CC 市场）。
+// 复古印刷 / 二次元不内置，是仓库 themes/ 下的官方主题包（上传 zip 安装）。
 // 流水线把它们打成 zip（tools/themepack）放进 TZA_TEST_THEMES，这里像管理员上传一样装上，
 // 后面的皮肤断言才有东西可测。没装之前，内置的是现代极简（默认）与液态玻璃。
 {
@@ -1197,7 +1197,7 @@ $("#save-site-name").click();
 await until(() => w.document.title === "TZA Probe", "清空站点名称后标题回到默认");
 assert($(".sidebar .brand .brand-mark") && $(".sidebar .brand").textContent.startsWith("tzaPROBE"), "侧栏回到内置品牌");
 assert.deepEqual(await brandBoot(), { name: "", logo: "" }, "清除后首屏品牌为空");
-// 设置页分子标签：MCP Key、后台账号与 TZA-CC 账号在「账号与安全」，备份在「数据」。
+// 设置页分子标签：MCP Key 与后台账号在「账号与安全」，备份在「数据」。
 assert.deepEqual(
   [...w.document.querySelectorAll("[data-settings-view]")].map((b) => b.textContent),
   ["外观与品牌", "账号与安全", "数据"],
@@ -1208,7 +1208,7 @@ $('[data-settings-view="data"]').click();
 await until(() => $("#download-backup"), "数据子页");
 $('[data-settings-view="account"]').click();
 await until(() => $("#generate-mcp-key"), "账号与安全子页");
-assert($(".market-connect")?.textContent.includes("市场已关闭"), "市场关闭时 TZA-CC 账号一栏写明不需要连接");
+assert(!$(".market-connect") && !w.document.body.textContent.includes("TZA-CC"), "设置里不再有 TZA-CC 账号");
 // MCP Key management is reachable from settings and never exposed on later reads.
 $("#generate-mcp-key").click();
 await until(() => $("#mcp-api-key"), "generate MCP key");
@@ -1238,19 +1238,12 @@ $("#confirm-mcp").click();
 await until(() => !$("#revoke-mcp-key"), "revoke MCP key");
 assert.equal((await mcpCall(secondMCPKey)).status, 401);
 
-// 主题与插件各占侧栏一栏，各带一块市场；不再有单独的「市场」栏。
-assert(!$('[data-tab="market"]'), "市场不再单独成栏");
-// 一次性 Server 用 --cc-url off 关掉了市场（不连官方 CC）：市场块写明怎么打开，市场接口 503，已安装列表照常出来。
-// 主题、插件页都分「已安装」「市场」两个子页，默认在已安装。
+// Probe 不连 TZA-CC：主题与插件各占侧栏一栏，只有已安装列表与上传入口，没有市场子页。
+assert(!$('[data-tab="market"]'), "没有单独的「市场」栏");
 $('[data-tab="themes"]').click();
 await until(() => $("#theme-file"), "themes page");
-assert(!$(".market-off") && $('[data-subview="installed"]').getAttribute("aria-selected") === "true", "主题页默认是已安装子页，不带市场");
+assert(!$("[data-subview]") && !$(".market-off"), "主题页没有市场子页");
 assert(!$(".theme-panel .list-pager"), "一页放得下时没有翻页条");
-$('[data-subview="market"]').click();
-await until(() => $(".market-off") && !$("#theme-file"), "themes market without TZA-CC");
-assert($(".market-off").textContent.includes("--cc-url"), "未配置时要说明怎么配");
-$('[data-subview="installed"]').click();
-await until(() => $("#theme-file"), "back to installed themes");
 assert.deepEqual(
   [...w.document.querySelectorAll(".theme-panel .theme-list > .theme-row > .theme-copy > b")].map((b) => b.textContent),
   ["现代极简", "二次元", "液态玻璃", "复古印刷"],
@@ -1268,13 +1261,12 @@ $("#dialog .close").click();
 await until(() => !$("#theme-settings-frame"), "closing settings disposes the developer frame");
 assert($('[data-remove-theme="glass"]') && !$('[data-remove-theme="shadcn"]') && $('[data-remove-theme="press"]'), "只有现代极简不能删除，液态玻璃是普通主题包");
 $('[data-tab="plugins"]').click();
-// 面包屑在切页时立刻换，内容要等接口回来：等插件页自己的上传入口出现，别拿主题页残留的 .market-off 当成功。
-await until(() => $("#plugin-file"), "plugins page without TZA-CC");
-assert($(".theme-panel") && !$(".market-off"), "插件页默认是已安装列表");
-$('[data-subview="market"]').click();
-await until(() => $(".market-off") && !$("#plugin-file"), "plugins market without TZA-CC");
-assert.equal((await fetch(base + "/api/v1/admin/market/catalog", { headers: adminHeaders })).status, 503);
-assert.equal((await (await fetch(base + "/api/v1/admin/market/status", { headers: adminHeaders })).json()).configured, false);
+// 面包屑在切页时立刻换，内容要等接口回来：等插件页自己的上传入口出现。
+await until(() => $("#plugin-file"), "plugins page");
+assert($(".theme-panel") && !$("[data-subview]"), "插件页只有已安装列表");
+for (const path of ["/api/v1/admin/market/status", "/api/v1/admin/market/catalog"]) {
+  assert.equal((await fetch(base + path, { headers: adminHeaders })).status, 404, path + " 已移除");
+}
 
 $("#logout").click();
 await until(() => $("#login"), "logout");

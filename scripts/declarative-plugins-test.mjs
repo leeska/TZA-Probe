@@ -53,7 +53,7 @@ window.fetch = async (url, options = {}) => {
   if (url === "/api/v1/admin/notification") return failRead ? new Response("{}", { status: 503 }) : new Response(JSON.stringify(settings));
   if (url === "/api/v1/admin/catalog") return new Response(JSON.stringify(catalog));
   if (url === "/api/v1/admin/nodes") return new Response(JSON.stringify([{ id: "node-one", name: "测试节点", group: "" }]));
-  if (url.startsWith("/api/v1/admin/market/")) return new Response("{}", { status: 503 });
+  if (url.startsWith("/api/v1/admin/market/")) throw new Error("market request after CC removal: " + url);
   throw new Error("Unexpected read: " + url);
 };
 window.eval(bundle.outputFiles[0].text);

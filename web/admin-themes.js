@@ -2,40 +2,26 @@ import { api, send, toast, guard, esc, modal } from "./api.js";
 import { customThemeDialog } from "./admin-theme-dialog.js";
 import { registerThemes } from "./skins.js";
 import { state, content, confirmAction } from "./admin-state.js";
-import { addonMarket, addonScope, catalogPanel, loadMarket, marketPill, pager, sourceBits, subTabs, swatch, wireMarket } from "./admin-market.js";
+import { pager, paint, swatch } from "./admin-packages.js";
 const THEME_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/THEMES.md";
-// 主题：内置的现代极简 + 已安装的主题包，下面是主题市场。官方的其它外观也是主题包，
-// 和别人做的主题一样从市场装。CSS 主题沿用核心组件；独立前台主题在隔离文档里运行自己的 HTML / JavaScript。
+// 主题：内置的现代极简 + 上传的主题包。官方的其它外观也是主题包，和别人做的主题一样上传 zip 安装。
+// CSS 主题沿用核心组件；独立前台主题在隔离文档里运行自己的 HTML / JavaScript。
 //
 // 每个主题旁边的「设置」打开它自己的设置弹窗：菜单项由主题开发者在 theme.json 的 settings 里按
 // docs/THEMES.md「主题设置」的规范声明（开关、单选、附加包开关），这里只负责照着画、存到服务端，
 // 对所有访客生效。附加包（"type": "addon"）不是外观，只给 for 写的那套主题添装饰项，所以列在那套主题
 // 下面、在它的设置菜单里开关；那套主题没装时它们不生效，单独成一组提示一句。
 export async function renderThemes(nodesReady) {
-  const view = state.themesView === "market" ? "market" : "installed";
   // 本页不用节点列表；切页时外壳传来的节点请求一起等，顶栏在线计数随之刷新。页内重画不传。
-  const [, themes, panel] = await Promise.all([nodesReady, api("/admin/themes"), view === "installed" ? api("/admin/panel").catch(() => ({})) : {}]);
+  const [, themes, panel] = await Promise.all([nodesReady, api("/admin/themes"), api("/admin/panel").catch(() => ({}))]);
   registerThemes(themes);
-  // 设置菜单里有附加包开关的主题，各带一块自己的附加包市场；市场子页只取主题目录。
-  const hosts = themes.filter((t) => t.type !== "addon" && (t.settings || []).some((st) => st.type === "addons"));
-  const scopes = view === "market" ? ["themes"] : hosts.map((t) => addonScope(t.id));
-  const updates = await loadMarket(() => renderThemes(), themes, scopes);
   if (state.tab !== "themes") return;
-  const body = view === "market" ? catalogPanel("themes") : installedPanel(themes, updates, panel.default_skin);
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>为公开面板选择外观。到市场挑选主题，在已安装中管理主题设置与附加包。</p></div><div class="heading-actions">${marketPill()}</div></section>${subTabs(view, "主题分类")}${body}`;
-  content().querySelectorAll("[data-subview]").forEach((b) =>
-    (b.onclick = guard(async () => {
-      state.themesView = b.dataset.subview;
-      await renderThemes();
-    })),
-  );
-  wireMarket();
-  if (view === "installed") {
-    wireInstalled(themes, updates);
-    for (const id of opened) {
-      const t = themes.find((x) => x.id === id);
-      if (t) showSettings(t, themes, updates);
-    }
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">THEMES</div><h1>主题</h1><p>为公开面板选择外观，管理主题设置与附加包。</p></div></section>${installedPanel(themes, panel.default_skin)}`;
+  paint(content());
+  wireInstalled(themes);
+  for (const id of opened) {
+    const t = themes.find((x) => x.id === id);
+    if (t) showSettings(t, themes);
   }
 }
 
@@ -45,25 +31,25 @@ const opened = new Set();
 const PER_PAGE = 8;
 let installedPage = 1;
 
-function installedPanel(list, updates, defaultSkin) {
+function installedPanel(list, defaultSkin) {
   const skins = list.filter((t) => t.type !== "addon");
   const addons = list.filter((t) => t.type === "addon");
-  const rows = skins.map((t) => skinRow(t, updates, defaultSkin));
+  const rows = skins.map((t) => skinRow(t, defaultSkin));
   // 依附的主题已装但它的设置里没有附加包开关：附加包照样生效，列在一组里方便更新与删除。
   const loose = addons.filter((a) => skins.some((t) => t.id === a.for && !(t.settings || []).some((st) => st.type === "addons")));
   // 依附的主题被删了、附加包还在：留着它们（再装那套主题就恢复），但写明现在不生效。
   const orphans = addons.filter((a) => !skins.some((t) => t.id === a.for));
-  if (loose.length) rows.push(`<div class="theme-group">${loose.map((t) => addonRow(t, updates)).join("")}</div>`);
-  if (orphans.length) rows.push(`<div class="theme-group"><p class="hint">下面的附加包依附的主题没装，暂不生效；装回那套主题即恢复。</p>${orphans.map((t) => addonRow(t, updates)).join("")}</div>`);
+  if (loose.length) rows.push(`<div class="theme-group">${loose.map((t) => addonRow(t)).join("")}</div>`);
+  if (orphans.length) rows.push(`<div class="theme-group"><p class="hint">下面的附加包依附的主题没装，暂不生效；装回那套主题即恢复。</p>${orphans.map((t) => addonRow(t)).join("")}</div>`);
   const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   installedPage = Math.min(Math.max(1, installedPage), pages);
   const shown = rows.slice((installedPage - 1) * PER_PAGE, installedPage * PER_PAGE).join("");
-  return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">管理本机外观与主题设置，附加包归在对应主题下。</span></div><div class="panel-actions"><label class="button theme-upload">上传主题包 / 附加包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${shown}</div>${pager(installedPage, installedPage < pages, "installed-page", pages)}<details class="market-upload-help"><summary>手动上传与开发文档</summary><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级（之后按本地包对待，不再提示更新）。主题包存在数据目录的 themes/ 下，不在数据库备份里；前台默认外观在「面板设置」里选。</p></details></section>`;
+  return `<section data-part="panel" class="panel theme-panel"><div class="panel-head"><div><h3>已安装</h3><span class="muted">管理本机外观与主题设置，附加包归在对应主题下。</span></div><div class="panel-actions"><label class="button theme-upload">上传主题包 / 附加包<input id="theme-file" type="file" accept=".zip,application/zip" hidden></label></div></div><div class="theme-list">${shown}</div>${pager(installedPage, installedPage < pages, "installed-page", pages)}<details class="market-upload-help"><summary>手动上传与开发文档</summary><p class="hint">主题包格式与可用的颜色变量见 <a href="${THEME_DOC_URL}" target="_blank" rel="noopener noreferrer">docs/THEMES.md</a>。同一个 id 再次上传即覆盖升级。主题包存在数据目录的 themes/ 下，不在数据库备份里；前台默认外观在「面板设置」里选。</p></details></section>`;
 }
 
-function skinRow(t, updates, defaultSkin) {
+function skinRow(t, defaultSkin) {
   const meta = t.builtin ? t.hint || "" : [t.hint, [t.id, t.version && "v" + t.version, t.author].filter(Boolean).join(" · ")].filter(Boolean).join("\n");
-  const bits = t.builtin ? { pills: '<span class="pill">内置</span>', actions: "" } : sourceBits(t, updates);
+  const builtin = t.builtin ? '<span class="pill">内置</span>' : "";
   const isDefault = t.id === defaultSkin ? '<span class="pill good">前台默认</span>' : "";
   const remove = t.builtin ? "" : `<button type="button" class="danger" data-remove-theme="${esc(t.id)}">删除</button>`;
   const open = opened.has(t.id);
@@ -72,7 +58,7 @@ function skinRow(t, updates, defaultSkin) {
   const gear = (t.settings?.length || t.settings_ui)
     ? `<button type="button" class="theme-gear${open ? " on" : ""}" data-theme-settings="${esc(t.id)}" aria-haspopup="dialog" title="${esc(t.name)}的主题设置">${GEAR}<span>设置</span></button>`
     : "";
-  return `<div class="theme-row">${swatch(t.swatch)}<span class="theme-copy"><b>${esc(t.name)}</b>${t.frontend ? '<small>独立前台 · HTML / JavaScript</small>' : ""}<small>${esc(meta).replace("\n", "<br>")}</small></span>${isDefault}${bits.pills}${bits.actions}${gear}${addonGear}${remove}</div>`;
+  return `<div class="theme-row">${swatch(t.swatch)}<span class="theme-copy"><b>${esc(t.name)}</b>${t.frontend ? '<small>独立前台 · HTML / JavaScript</small>' : ""}<small>${esc(meta).replace("\n", "<br>")}</small></span>${isDefault}${builtin}${gear}${addonGear}${remove}</div>`;
 }
 
 const GEAR = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.8v1.8M10 15.4v1.8M2.8 10h1.8M15.4 10h1.8M4.9 4.9l1.3 1.3M13.8 13.8l1.3 1.3M4.9 15.1l1.3-1.3M13.8 6.2l1.3-1.3"/></svg>`;
@@ -83,7 +69,7 @@ const toggle = (skin, key, value, on, label) =>
 
 // 主题的设置菜单：缩进一级挂在主题下面，按 settings 的顺序逐项画。值以服务端发来的 options 为准，
 // 没存过的用 theme.json 里的 default。
-function settingsMenu(t, addons, updates) {
+function settingsMenu(t, addons) {
   if (!t.settings?.length) return "";
   const opts = t.options || {};
   const item = (st) => {
@@ -100,12 +86,12 @@ function settingsMenu(t, addons, updates) {
     }
     if (st.type === "addons") {
       const off = new Set(Array.isArray(opts[st.id]) ? opts[st.id] : []);
-      const rows = addons.map((p) => addonRow(p, updates, toggle(t.id, st.id, p.id, !off.has(p.id), `启用 ${p.name}`))).join("");
+      const rows = addons.map((p) => addonRow(p, toggle(t.id, st.id, p.id, !off.has(p.id), `启用 ${p.name}`))).join("");
       // 主题自己也带装饰项时多一行开关（值是主题自己的 id）；它的 default 项总是最后的兜底，关不掉。
       const own = t.decorations?.length
         ? `<div class="theme-row is-pack"><span class="theme-copy"><b>${esc(t.name)}自带</b><small>${esc(decoSummary(t))}；关掉后只用附加包里的，都匹配不上时仍由自带的默认项兜底</small></span>${toggle(t.id, st.id, t.id, !off.has(t.id), `启用${t.name}自带的装饰项`)}</div>`
         : "";
-      return `<div class="opt-group"><div class="opt-row">${head}</div>${own}${rows || '<p class="hint">还没有附加包：从下面的市场添加，也可以上传自己做的附加包。</p>'}${addonMarket(t.id)}</div>`;
+      return `<div class="opt-group"><div class="opt-row">${head}</div>${own}${rows || '<p class="hint">还没有附加包：在「已安装」上传依附这套主题的附加包。</p>'}</div>`;
     }
     return "";
   };
@@ -116,16 +102,15 @@ function settingsMenu(t, addons, updates) {
 const decoSummary = (t) =>
   `${(t.decorations || []).length} 个装饰项：${(t.decorations || []).map((d) => d.name + ((d.regions || []).length ? `（${d.regions.join(" / ")}）` : d.default ? "（默认）" : "")).join("、")}`;
 
-function addonRow(t, updates, enable = "") {
+function addonRow(t, enable = "") {
   // 缩略图：前四个装饰项各自的第一张图。
   const firsts = (t.decorations || []).map((d) => Object.values(d.images || {})[0]).filter(Boolean).slice(0, 4);
   const thumbs = `<span class="pack-thumbs" aria-hidden="true">${firsts.map((f) => `<img src="/themes/${esc(t.id)}/${esc(f)}?v=${esc(t.rev || "")}" alt="" loading="lazy">`).join("")}</span>`;
   const meta = [t.id, t.version && "v" + t.version, t.author].filter(Boolean).join(" · ");
-  const bits = sourceBits(t, updates);
-  return `<div class="theme-row is-pack">${thumbs}<span class="theme-copy"><b>${esc(t.name)}</b><small>${esc(decoSummary(t))}<br>${esc(meta)}</small></span><span class="pill">附加包</span>${bits.pills}${bits.actions}<button type="button" class="danger" data-remove-theme="${esc(t.id)}">删除</button>${enable}</div>`;
+  return `<div class="theme-row is-pack">${thumbs}<span class="theme-copy"><b>${esc(t.name)}</b><small>${esc(decoSummary(t))}<br>${esc(meta)}</small></span><span class="pill">附加包</span><button type="button" class="danger" data-remove-theme="${esc(t.id)}">删除</button>${enable}</div>`;
 }
 
-function wireInstalled(list, updates, root = content()) {
+function wireInstalled(list, root = content()) {
   root.querySelectorAll("[data-installed-page]").forEach((b) =>
     (b.onclick = guard(async () => {
       installedPage = Number(b.dataset.installedPage);
@@ -145,14 +130,14 @@ function wireInstalled(list, updates, root = content()) {
   root.querySelectorAll("[data-theme-addons]").forEach((b) => {
     b.onclick = () => {
       const t = list.find((x) => x.id === b.dataset.themeAddons);
-      if (t) { opened.add(t.id); showSettings(t, list, updates); }
+      if (t) { opened.add(t.id); showSettings(t, list); }
     };
   });
   root.querySelectorAll("[data-theme-settings]").forEach((b) =>
     (b.onclick = () => {
       const t = list.find((x) => x.id === b.dataset.themeSettings);
       if (t?.settings_ui) customThemeDialog(t, () => renderThemes());
-      else if (t) { opened.add(t.id); showSettings(t, list, updates); }
+      else if (t) { opened.add(t.id); showSettings(t, list); }
     }),
   );
   root.querySelectorAll("[data-opt-skin]").forEach((b) =>
@@ -192,11 +177,11 @@ function wireInstalled(list, updates, root = content()) {
   );
 }
 
-function showSettings(t, list, updates) {
+function showSettings(t, list) {
   const menu = t.settings_ui ? { ...t, settings: (t.settings || []).filter((st) => st.type === "addons") } : t;
-  const d = modal(`${t.name} · ${t.settings_ui ? "附加包" : "设置"}`, settingsMenu(menu, list.filter((x) => x.type === "addon" && x.for === t.id), updates));
+  const d = modal(`${t.name} · ${t.settings_ui ? "附加包" : "设置"}`, settingsMenu(menu, list.filter((x) => x.type === "addon" && x.for === t.id)));
   d.classList.add("theme-settings-dialog");
   d.addEventListener("close", () => { opened.delete(t.id); d.classList.remove("theme-settings-dialog"); }, { once: true });
-  wireInstalled(list, updates, d);
-  wireMarket(d);
+  paint(d);
+  wireInstalled(list, d);
 }

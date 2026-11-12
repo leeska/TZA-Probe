@@ -15,7 +15,6 @@ go test -race ./...        # 没有 gcc 的机器去掉 -race
 
 `bash scripts/pipeline.sh check` 会一次跑完以上三项，外加 `web/*.js` 语法检查、`scripts/presentation-test.mjs` 和一次性 Server 上的前端集成检查（需要 Node ≥ 20.19 或 Bun；没有 Node 时自动用 Bun，jsdom 与 esbuild 也由它安装）。
 
-前端检查同时运行 `scripts/market-permissions-test.mjs`，覆盖插件快捷更新确认、权限变化提示、取消不安装、历史版本独立权限，以及已绑定实例空清单同步。真实 CC 数据库上的下载表单提交、回执幂等和实例清单替换由 TZA-CC 的 `TestDownloadFormReceiptsAndInventory` 覆盖，需配置独立的 `TZA_CC_TEST_DATABASE_URL`。
 
 `scripts/component-workflow-ui-test.mjs` 覆盖首启一次确认：未确认不执行、精确摘要重核、
 权限/能力变化、失败保留输入、取消准备及默认停用日程。实际 HTTP/SQLite/签名管理包
@@ -33,7 +32,7 @@ npm install --prefix /tmp/tza-ui-deps --no-audit --no-fund jsdom@26.1.0 esbuild@
 go build -o bin/tza-server ./cmd/server
 mkdir -p /tmp/tza-ui-data
 ./bin/tza-server init --data /tmp/tza-ui-data > /tmp/tza-ui-credentials
-./bin/tza-server --listen 127.0.0.1:25874 --data /tmp/tza-ui-data --cc-url off
+./bin/tza-server --listen 127.0.0.1:25874 --data /tmp/tza-ui-data
 # 官方主题包（复古印刷 / 现代极简 / 二次元）打成 zip，ui-smoke 会把它们装到这台一次性 Server 上：
 go run ./tools/themepack -out /tmp/tza-ui-themes themes/*
 # 另一个终端：
@@ -77,7 +76,7 @@ jsdom 不做布局，排版类问题只有真浏览器量得出来。用法见�
 
 ## 审阅修复回归
 
-源码版本解析由 `cmd/server` 的版本测试覆盖精确 tag、开发分支、无 Git 的源码目录及安装旧 tag 的兼容路径。`scripts/theme-addons-test.mjs` 验证自定义设置主题仍可浏览、安装、更新和删除附加包；与 `scripts/market-permissions-test.mjs` 使用相同的临时前端依赖。
+源码版本解析由 `cmd/server` 的版本测试覆盖精确 tag、开发分支、无 Git 的源码目录及安装旧 tag 的兼容路径。`scripts/theme-addons-test.mjs` 验证自定义设置主题仍可管理与删除附加包，且不再发出任何市场请求。
 
 Agent 的状态序号测试覆盖故障心跳在恢复报告之后到达、报告尚未应答时的心跳，以及服务端重启和 Agent 新会话。CC 的 `TestConcurrentFirstRegistration` 需配置独立测试数据库，跨两个连接池并发注册，验证仅一位首次管理员及关闭注册时的行为。
 

@@ -1,7 +1,7 @@
 # 插件管理
 
 后台「插件」是唯一入口。声明式通知与目标集插件使用 `plugin.json`，由 Probe 解释执行；
-安装前确认能力与外部域名，市场包继续验证签名。
+安装前确认能力与外部域名。
 
 IPSentinel 的日常界面、主控浏览器与 Agent 受限出口见 [送中检测](IP-GUARD-INTEGRATION.md)。
 已安装包保留签名身份 `ipsentinel-runtime`，不再通过节点安装 Python、Chromium 或运行器。

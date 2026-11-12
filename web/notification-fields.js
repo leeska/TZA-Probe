@@ -23,7 +23,7 @@ export function pluginFields(plugin, current) {
     return `<label>${label}${control}${help}</label>`;
   }).join("");
   const permissions = (plugin.permissions || []).map(permission => `<li>${esc(permission)}</li>`).join("");
-  return `${fields || '<p class="hint">这个插件不需要设置。</p>'}<p class="hint">${esc(plugin.hint || plugin.name)}${plugin.version ? ` · v${esc(plugin.version)}` : ""}${plugin.source === "market" ? " · 市场" : " · 本地上传"}</p>${permissions ? `<ul class="plugin-perms">${permissions}</ul>` : ""}`;
+  return `${fields || '<p class="hint">这个插件不需要设置。</p>'}<p class="hint">${esc(plugin.hint || plugin.name)}${plugin.version ? ` · v${esc(plugin.version)}` : ""}</p>${permissions ? `<ul class="plugin-perms">${permissions}</ul>` : ""}`;
 }
 
 export function pluginSettings(form, plugin) {

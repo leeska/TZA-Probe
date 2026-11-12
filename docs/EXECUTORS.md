@@ -1,3 +1,5 @@
+> **已停用**：Probe 已移除 TZA-CC 市场与节点执行器安装链路，本文仅作历史记录；地区偏移检测现为 Server 内置功能，见 [IP-GUARD-INTEGRATION.md](IP-GUARD-INTEGRATION.md)。
+
 # 节点执行器：IPSentinel 只读、托管控制与中控排期
 
 产品界面以「IP 地区防护」呈现，默认页突出防送中检测、拉回尝试与干净复测；安装与技术维护收进高级页。官方插件归属与源码整合边界见 [IP-GUARD-INTEGRATION.md](IP-GUARD-INTEGRATION.md)。现有包 ID 和协议身份不变。
