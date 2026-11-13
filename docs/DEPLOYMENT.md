@@ -78,7 +78,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.8.1-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.9.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -209,6 +209,17 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 - **镜像**：列表、删除（还有容器在用时 Docker 会拒绝）、拉取（私有仓库要先在节点上 `docker login`）。
 - **Compose**：列出节点上已有的项目（从容器标签找到）和面板新建的项目（放在节点的 `/opt/tza-compose/<项目名>/`）。可以编辑 compose 文件（保存前节点会用 `docker compose config` 检查，旧文件留作 `.tza-bak`），一键部署（up -d）、拉取镜像、重启、停止并移除容器（down，数据卷保留）。「删除项目」先 down，面板建的项目再删掉节点上的目录；节点上原有的项目只移除容器、文件保留；可选同时删除数据卷。
 - **审计**：启停、删除、拉镜像、保存 compose、Compose 操作、看日志和容器终端都写入审计日志。
+
+## 证书
+
+后台「证书」用 Let's Encrypt 签发证书，用 Cloudflare DNS 验证，支持通配符。
+
+- **DNS 账号**：在 Cloudflare「我的个人资料 → API 令牌」用「编辑区域 DNS」模板建一个令牌（权限：区域 → DNS → 编辑、区域 → 区域 → 读取，区域资源选要签证书的域名），在页面下方添加。令牌保存在主控数据库里，页面只显示末四位。
+- **申请**：填域名（每行一个，通配符写 `*.example.com`），选 DNS 账号和要下发的节点。主控会在 Cloudflare 临时加 `_acme-challenge` TXT 记录，验证完删掉，通常一两分钟签好。
+- **下发**：写到节点的目录（默认 `/etc/tza-certs/<域名>/`）下的 `fullchain.pem` 和 `privkey.pem`，再在该目录执行重载命令（如 `systemctl reload nginx`）。节点要用 `--manage` 接入。nginx 配置里 `ssl_certificate` 和 `ssl_certificate_key` 指向这两个文件即可。
+- **续期**：有效期剩不到三分之一时（90 天的证书即剩 30 天时）自动续期，续期后自动重新下发。失败时旧证书继续可用，隔 1 到 24 小时再试，总览卡片会提示。
+- **测试环境**：页面底部可切到 Let's Encrypt 测试环境，不受签发次数限制，但证书不被浏览器信任，用来试流程。
+- **下载**：每张证书可以下载证书链和私钥，下载私钥会写审计日志。
 
 ## 主题与插件
 

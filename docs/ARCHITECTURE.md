@@ -51,7 +51,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
   - `Router`：通过 `module.Routes` 挂路由，有 `Public`、`Admin`、`Agent` 三种；鉴权和同源检查用的是 httpapi 自己那一套
   - `Overviewer`：给后台总览提供卡片（`module.Card`：标题、结论、语气、最多 6 条待处理项、点开去哪一页）。总览页 `GET /admin/overview` 先放核心的四张（节点、到期与流量、网络探测、告警），再按模块顺序放各模块的；某个模块读数出错只把它那张卡标成「读取失败」，不影响整页
   
-  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）、`proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站与转发，见下面「代理」一节）和 `docker`（节点上的容器、镜像与 Compose 项目，见「Docker」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
+  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）、`proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站与转发，见下面「代理」一节）、`docker`（节点上的容器、镜像与 Compose 项目，见「Docker」一节）和 `certs`（Let's Encrypt 证书的签发、续期与下发，见「证书」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
 - **任务类型**：`model.RegisterTaskKind` 登记每种 `Task.Type`。登记的内容包括：
   - 定义从哪个字段读、怎么校验、怎么展开成探测
   - `FixedBindings`：节点带角色，只能编辑任务来改绑定，不能批量绑定或解绑
@@ -94,6 +94,15 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 - **流**：日志（`docker.logs`，没有 TTY 的容器要拆 Engine 的 8 字节分帧）、拉镜像（`docker.pull`，把进度 JSON 压成一行一步）、Compose 操作（`docker.compose.run`：up -d --remove-orphans、down、pull、restart）和容器终端（`docker.exec`：PTY 上跑 `docker exec -it <容器> sh -c "bash 或 sh"`，和主机终端共用 `runTerminal`）。它们都说 shell 能力的 `channel.Message`，主控用远程管理模块的 `Bridge` 转成浏览器的 WebSocket（`GET /api/v1/admin/docker/stream`），同源检查与审计日志（动作名和 `.closed`）同终端一样。
 - **Compose 项目**：Agent 从容器标签（`com.docker.compose.project`、`working_dir`、`config_files`）和 `/opt/tza-compose/<项目名>/compose.yaml` 两处找项目，按项目名解析路径，主控从不传路径。保存时先写同目录的临时文件，`docker compose config --quiet` 通过才替换，旧文件留作 `.tza-bak`；新名字在 `/opt/tza-compose/` 下建目录（0700），文件 0600。删除（`delete`）是 `down --remove-orphans`（可加 `--volumes`），成功后只删 Root 下名为项目名的那一级目录，节点上原有的项目不动文件。
 - **同一个 `<dialog>`**：前端所有弹窗共用一个元素，从编辑窗直接打开输出窗时，前一个弹窗的 close 事件会晚到，`openStream` 收到时弹窗仍开着就忽略。
+
+### 证书
+
+`internal/certs` 在主控上（迁移 certs/1：表 `certs`、`certs_dns`、`certs_state`），`internal/agent/certs.go` 在节点上，能力名 `certs`。
+
+- **签发**：`certs.ACME` 用 `golang.org/x/crypto/acme` 向 Let's Encrypt（`certs_state.staging` 为 1 时用测试环境）申请，只用 DNS-01。账号密钥（ECDSA P-256）第一次用时生成，按 CA 目录分别存在 `certs_state`。每个授权在 Cloudflare 加一条 `_acme-challenge.<域名>` TXT（`certs.Cloudflare`：按名字逐级往上找 zone），等这个 zone 的每台权威 DNS 都答出记录（最多 3 分钟，不问公共 DNS，免得被缓存的「不存在」拖住）再提交验证，结束后删记录。证书私钥 ECDSA P-256，按 CA 返回的完整链存 PEM。
+- **续期**：`Module.Run` 每小时和每次 Kick 跑一轮 `Process`。有效期剩不到三分之一（最多提前 30 天，`Cert.RenewAt`）、改了域名或点了「立即续期」时重签；失败保留旧证书，状态记 error，按 1、3、6、12、24 小时退避（Let's Encrypt 对失败验证有次数限制）。
+- **下发**：每个目标是 节点 + 目录 + 重载命令。目标记着已下发的序列号，和当前证书不同就经管理通道发 `certs.deploy`：Agent 校验目录（规范的绝对路径，不能是 /etc、/usr 这类系统目录本身，不能在 /proc、/sys、/dev 下），先原子写 `privkey.pem`（0600）再写 `fullchain.pem`（0644），然后在该目录下用 `/bin/sh -c` 跑重载命令（1 分钟超时）。重载失败时文件已写入，记错误但不反复重试。
+- **API 里不出私钥**：列表不带 PEM；私钥只能从 `download?part=key` 下载，写审计日志。Cloudflare 令牌只回末四位，保存时先调 `/user/tokens/verify` 校验。
 
 ### 审计日志与两步验证
 

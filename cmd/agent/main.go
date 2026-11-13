@@ -82,6 +82,8 @@ func managementCapabilities() map[string]map[string]channel.Handler {
 		channel.CapabilityProxy: agent.NewProxyHost().Handlers(),
 		// Docker：本机 Docker Engine API（白名单）、日志、拉镜像、Compose 项目与容器终端。
 		channel.CapabilityDocker: agent.NewDockerHost().Handlers(),
+		// 证书：主控签发的证书写到指定目录，再执行重载命令。
+		channel.CapabilityCerts: agent.CertHandlers(),
 	}
 }
 

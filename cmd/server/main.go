@@ -18,6 +18,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/brand"
+	"github.com/leeska/TZA-Probe/internal/certs"
 	"github.com/leeska/TZA-Probe/internal/channel"
 	"github.com/leeska/TZA-Probe/internal/docker"
 	"github.com/leeska/TZA-Probe/internal/httpapi"
@@ -139,9 +140,15 @@ func run() error {
 	drift.Broker, drift.Nodes = guardBroker, store
 	hub := &channel.Hub{}
 	remoteMod.Hub, remoteMod.Nodes = hub, store
+	var certsMod *certs.Module
 	for _, m := range modules {
-		if d, ok := m.(*docker.Module); ok {
-			d.Nodes = store
+		switch m := m.(type) {
+		case *docker.Module:
+			m.Nodes = store
+		case *certs.Module:
+			m.Store, m.Hub, m.Nodes = &certs.Store{DB: store.DB()}, hub, store
+			m.Init()
+			certsMod = m
 		}
 	}
 	usersMod.Store = &users.Store{DB: store.DB()}
@@ -172,6 +179,8 @@ func run() error {
 	go func() { defer wg.Done(); usersMod.Run(ctx) }()
 	wg.Add(1)
 	go func() { defer wg.Done(); proxyMod.Run(ctx) }()
+	wg.Add(1)
+	go func() { defer wg.Done(); certsMod.Run(ctx) }()
 	go func() {
 		defer wg.Done()
 		channels := &service.Service{Store: store, Plugins: plugins}
@@ -367,5 +376,5 @@ func shippedModules() ([]module.Module, *regiondrift.Module, *remote.Module, *us
 	drift, remoteMod, usersMod, proxyMod := &regiondrift.Module{}, &remote.Module{}, &users.Module{}, &proxy.Module{}
 	// Docker 不建表，复用远程管理的通道与转接。
 	dockerMod := &docker.Module{Remote: remoteMod}
-	return []module.Module{drift, remoteMod, usersMod, proxyMod, dockerMod}, drift, remoteMod, usersMod, proxyMod
+	return []module.Module{drift, remoteMod, usersMod, proxyMod, dockerMod, &certs.Module{}}, drift, remoteMod, usersMod, proxyMod
 }
