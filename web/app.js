@@ -98,6 +98,13 @@ async function start() {
     await mountAdmin(app);
     return;
   }
+  // 使用者自己的用量页：/u/{token}，不受「整个前台需要登录」影响。
+  const userToken = location.pathname.match(/^\/u\/([0-9a-f]{32})$/)?.[1];
+  if (userToken) {
+    const { mountUserPage } = await import("./user-page.js");
+    await mountUserPage(app, userToken);
+    return;
+  }
   // 整个前台需要登录：没有后台会话就只给登录提示，不发数据请求。
   if (loginRequired() && !(await fetch("/api/v1/session", { credentials: "same-origin" }).then((r) => r.ok, () => false))) {
     app.innerHTML = `<header data-part="public-header" class="public-header">${brandHTML()}<nav>${themeButton()}</nav></header><main class="empty login-gate"><h1>此面板需要登录后查看</h1><p>管理员已关闭公开访问。</p><a class="button primary" href="/admin">登录</a></main>`;

@@ -78,7 +78,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.3.1-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.4.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -171,6 +171,10 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 - **所在地区与定位**：编辑节点时，「节点所在地区」和地区偏移检测的目标地区、出口地址族、精确定位放在同一节。「自动检测」按这台节点 Agent 连接的公网 IP 查询位置（ipwho.is），填上节点所在地区；地区偏移的目标地区还空着时也一并填上。随节点一起保存。
 - **前台显示**：「面板设置 → 外观与品牌 → 前台显示」可以关掉公开面板的「延迟与回程」「解锁检测」「价格与到期」三个区块。关掉后访客的接口就不再返回这部分数据（不是只在页面上藏起来）。主机状态、资源与流量用量始终显示。
 - **整个前台需要登录**：同一处勾选后，没有登录后台的访客打开公开面板只看到登录提示，前台接口一律返回 401。适合只给自己看的部署。
+
+## 使用者
+
+后台「使用者」给朋友开账号：名称、备注、启用开关、流量额度（GB，0 为不限）、每月重置日（1–28，0 为不重置）和到期日。添加后会复制一条用量页链接（`https://你的域名/u/…`），对方打开就能看到自己的状态、本期流量、下次重置和到期时间，不需要登录。链接就是凭证：泄露了用「更换链接」作废旧的。流量用完或过期后状态会标出来；代理节点与订阅链接在后续版本接上，到时按这里的状态放行或停用。
 
 ## 主题与插件
 

@@ -31,6 +31,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/storage"
 	"github.com/leeska/TZA-Probe/internal/theme"
 	"github.com/leeska/TZA-Probe/internal/totp"
+	"github.com/leeska/TZA-Probe/internal/users"
 	"github.com/leeska/TZA-Probe/web"
 )
 
@@ -108,7 +109,7 @@ func run() error {
 		slog.Warn("administrator account created; initial credentials are in admin-password.txt in the data directory, delete that file after signing in", "dir", *dir)
 	}
 	dbPath := databasePath(*dir)
-	modules, drift, remoteMod := shippedModules()
+	modules, drift, remoteMod, usersMod := shippedModules()
 	store, err := storage.OpenWith(dbPath, module.Migrations(modules))
 	if err != nil {
 		return err
@@ -135,6 +136,7 @@ func run() error {
 	guardBroker.WorkerConfigured = *workerSocket != ""
 	drift.Broker, drift.Nodes = guardBroker, store
 	remoteMod.Hub, remoteMod.Nodes = &channel.Hub{}, store
+	usersMod.Store = &users.Store{DB: store.DB()}
 	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}, Modules: modules}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
@@ -153,6 +155,8 @@ func run() error {
 	// 地区偏移检测：按任务与节点设置生成每台节点的检测设置（见 regiondrift.reconcile）。
 	wg.Add(1)
 	go func() { defer wg.Done(); drift.Run(ctx) }()
+	wg.Add(1)
+	go func() { defer wg.Done(); usersMod.Run(ctx) }()
 	go func() {
 		defer wg.Done()
 		channels := &service.Service{Store: store, Plugins: plugins}
@@ -273,7 +277,7 @@ func checkDataCommand(args []string) error {
 	if _, err := os.Stat(*dir); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	mods, _, _ := shippedModules()
+	mods, _, _, _ := shippedModules()
 	return storage.CheckDataDir(*dir, module.Migrations(mods))
 }
 
@@ -344,7 +348,7 @@ func resetPasswordCommand(args []string) error {
 // shippedModules is every module this binary serves, in migration order,
 // still unconfigured: check-data only needs their migrations, and run wires
 // the ones it returns separately once the database is open.
-func shippedModules() ([]module.Module, *regiondrift.Module, *remote.Module) {
-	drift, remoteMod := &regiondrift.Module{}, &remote.Module{}
-	return []module.Module{drift, remoteMod}, drift, remoteMod
+func shippedModules() ([]module.Module, *regiondrift.Module, *remote.Module, *users.Module) {
+	drift, remoteMod, usersMod := &regiondrift.Module{}, &remote.Module{}, &users.Module{}
+	return []module.Module{drift, remoteMod, usersMod}, drift, remoteMod, usersMod
 }
