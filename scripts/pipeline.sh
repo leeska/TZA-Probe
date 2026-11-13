@@ -164,6 +164,7 @@ check_ui_smoke() {
   TZA_UI_DEPS="$deps" "$JS" scripts/node-plugins-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/declarative-plugins-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/ip-guard-test.mjs || { FAILED=1; return; }
+  TZA_UI_DEPS="$deps" "$JS" scripts/location-picker-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/search-picker-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/home-network-test.mjs || { FAILED=1; return; }
   TZA_UI_DEPS="$deps" "$JS" scripts/node-identity-test.mjs || { FAILED=1; return; }

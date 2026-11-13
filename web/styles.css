@@ -5902,3 +5902,7 @@ button.overview-card:focus-visible { border-color: rgba(var(--accent-rgb), 0.45)
 .public-sections legend { font-size: var(--text-sm); color: var(--muted); margin-bottom: var(--space-2); }
 dialog.region-dialog { max-width: calc(100vw - 32px); }
 dialog.region-dialog .region-intro { margin: 0 0 var(--space-4); }
+/* 节点表单「所在地区与定位」：自动检测一行，地区偏移设置作为小节。 */
+.node-location .locate-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: var(--space-2) 0 var(--space-4); }
+.node-location .locate-row small { color: var(--muted); }
+.node-location .node-drift h4 { margin: var(--space-4) 0 var(--space-2); font-size: var(--text-sm); }

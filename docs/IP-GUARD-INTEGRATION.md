@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 装过一次后，再执行安装脚本（不带 `--with-browser`）也会保留并一起升级浏览器。资源：约 300 MB 内存、
 200 MB 磁盘；服务单元限 `MemoryMax=700M`，可用 drop-in 调整。Docker 部署暂不支持浏览器。
 
-没有安装浏览器时，后台「节点管理 → 地区偏移」弹窗只显示安装说明。
+没有安装浏览器时，后台编辑节点时「所在地区与定位」里会给出安装命令，设置可以先保存。
 
 ## 开通节点出口
 

@@ -24,6 +24,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/brand"
 	"github.com/leeska/TZA-Probe/internal/httpjson"
+	"github.com/leeska/TZA-Probe/internal/ipguard"
 	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/module"
@@ -56,8 +57,11 @@ type browserSession struct {
 type API struct {
 	// Modules mount their routes behind the API's authentication (see
 	// internal/module); cmd/server lists them.
-	Modules    []module.Module
-	Store      Repository
+	Modules []module.Module
+	Store   Repository
+	// Locator looks node addresses up for 自动检测; nil makes a default one
+	// (tests set it to a fake transport).
+	Locator    *ipguard.Locator
 	Notifier   notify.Sender
 	AdminToken string
 	AccountDir string // data directory holding the panel account; "" disables password login
@@ -80,6 +84,8 @@ type API struct {
 	nodesSnap        snapshot[[]model.NodeView]
 	observationsSnap snapshot[map[string][]model.Observation]
 	publicPolicy     policyCache
+	agentAddrs       agentAddrs
+	locatorOnce      sync.Once
 	samplesSnap      snapshot[map[string]any]
 	svc              *service.Service
 	// upgrades 是一键升级 Agent 的队列，见 upgrade.go。
@@ -504,6 +510,9 @@ func (a *API) agent(next func(http.ResponseWriter, *http.Request, string)) http.
 		if err != nil {
 			write(w, 401, map[string]string{"error": "unauthorized"})
 			return
+		}
+		if ip := publicClientIP(r); ip != "" {
+			a.agentAddrs.set(id, ip)
 		}
 		next(w, r, id)
 	}

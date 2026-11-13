@@ -130,6 +130,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 
 	// ---- 审计日志：后台的每次写操作、登录，以及模块记下的特权操作（命令、终端）
 	route("GET /api/v1/admin/overview", a.overview)
+	route("GET /api/v1/admin/nodes/{id}/locate", a.locateNode)
 	route("GET /api/v1/admin/audit", func(w http.ResponseWriter, r *http.Request) {
 		before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))

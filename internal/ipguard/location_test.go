@@ -78,3 +78,41 @@ func TestLocationServicesFixedHostsCacheAndSearch(t *testing.T) {
 		t.Fatal("unbounded reverse lookup")
 	}
 }
+
+// 节点所在地区的自动检测：中文名、大陆取城市（去掉「市」）、港澳台用简称、其他国家用国名；
+// 同一个 IP 一天内只查一次；是否能作为地区偏移的目标地区写在 supported 里。
+func TestDescribe(t *testing.T) {
+	locator := NewLocator()
+	answers := map[string]string{
+		"1.2.3.4": `{"success":true,"ip":"1.2.3.4","country_code":"CN","country":"中国","region":"广东","city":"深圳市","latitude":22.5,"longitude":114.1,"timezone":{"id":"Asia/Shanghai"}}`,
+		"5.6.7.8": `{"success":true,"ip":"5.6.7.8","country_code":"HK","country":"中国香港","region":"","city":"","latitude":22.3,"longitude":114.2,"timezone":{"id":"Asia/Hong_Kong"}}`,
+		"8.8.8.8": `{"success":true,"ip":"8.8.8.8","country_code":"US","country":"美国","region":"加利福尼亚","city":"山景城","latitude":37.4,"longitude":-122.1,"timezone":{"id":"America/Los_Angeles"}}`,
+	}
+	requests := 0
+	locator.Client.Transport = locationTransport(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.URL.Host != "ipwho.is" || request.URL.Query().Get("lang") != "zh-CN" {
+			t.Fatal("unexpected lookup", request.URL)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(answers[strings.TrimPrefix(request.URL.Path, "/")]))}, nil
+	})
+	ctx := context.Background()
+	for ip, want := range map[string]string{"1.2.3.4": "深圳", "5.6.7.8": "香港", "8.8.8.8": "美国"} {
+		place, err := locator.Describe(ctx, ip)
+		if err != nil || place.Region != want {
+			t.Fatalf("%s → %+v %v, want %s", ip, place, err, want)
+		}
+	}
+	if place, _ := locator.Describe(ctx, "1.2.3.4"); place.CountryCode != "CN" || place.Supported != (Environments["CN"] != Environment{}) {
+		t.Fatalf("supported 跟着地区偏移支持的目标地区走：%+v", place)
+	}
+	if place, _ := locator.Describe(ctx, "8.8.8.8"); !place.Supported || place.Timezone != "America/Los_Angeles" {
+		t.Fatalf("%+v", place)
+	}
+	if requests != 3 {
+		t.Fatalf("同一个 IP 要缓存：%d 次请求", requests)
+	}
+	if RegionName(IPPlace{CountryCode: "CN", Province: "上海市"}) != "上海" {
+		t.Fatal("没有城市时用省级名称")
+	}
+}

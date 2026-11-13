@@ -2,7 +2,7 @@ import { showToken } from "./agent-setup.js";
 import { api, send, esc, toast, modal, guard } from "./api.js";
 import { bytes, date, days, kindName, stamp, stampISO, statusLabel, diagnosticHint, remainingValueLabel, remainingValueHint } from "./format.js";
 import { detail } from "./detail.js";
-import { openRegionDialog } from "./admin-node-plugin-detail.js";
+import { autoLocateHTML, driftHTML, wireNodeLocation } from "./node-location.js";
 import { regionOptions } from "./regions.js";
 import { regionCombobox, wireComboboxes } from "./region-picker.js";
 import { alertSummary } from "./admin-alerts.js";
@@ -77,8 +77,7 @@ function cardRegionMiss(n) {
   return ` <span class="region-miss" title="绑定的探测任务目标在「${esc(where)}」，与卡片地区「${esc(latency === route ? route : `${route} / ${latency}`)}」对不上，公开卡片不显示延迟和回程。在「编辑」里改卡片地区，或给任务加上这个地区的目标。">卡片无探测</span>`;
 }
 function renderNodes(firing) {
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${state.nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${state.nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${state.nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${state.nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div><div id="goto-firing" class="stat-link${firing?.length ? " stat-warn" : ""}" role="button" tabindex="0" title="查看当前告警"><span>正在告警</span><strong>${firing ? firing.length : "—"}</strong></div></div><section data-part="panel" class="panel"><div class="panel-head"><h3>全部节点</h3><div class="panel-actions"><button id="upgrade-all" class="quiet" title="把版本落后于面板的 Agent 全部升级到 ${esc(state.serverVersion)}" ${state.nodes.some(isStale) ? "" : "hidden"}>⇡ 升级 Agent（<b>${state.nodes.filter(isStale).length}</b>）</button><button id="manage-groups" class="quiet" title="按分组调整成员、改名、合并或解散">分组管理</button><button id="manage-regions" class="quiet" title="按节点所在地区调整成员、改名">地区管理</button><button id="sort-nodes" class="quiet" ${state.nodes.length < 2 ? "disabled" : ""} title="按分组、名称、地区或到期时间重排全部节点">⇅ 一键排序</button><button id="refresh-nodes" class="quiet">↻ 刷新</button></div></div><div class="table-scroll"><table class="stack"><thead><tr>${pickHead}<th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${state.nodes.map((n) => `<tr data-node="${n.id}">${pickCell(n)}<td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"}${n.vendor ? ` · 商家 ${esc(n.vendor)}` : ""} · 回程地区 ${esc(n.display.route_region || "未设置")}${cardRegionMiss(n)}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span>${firingPill(n, firing)}<small data-agent="${n.id}">${agentLine(n)}</small><small>连接 ${n.last_seen ? date(n.last_seen) : "从未"}</small><small>有效指标 ${n.metrics_at ? date(n.metrics_at) : "尚无"}</small>${n.metrics_stale ? `<small class="warn-text">${esc(diagnosticHint(n))}</small>` : ""}</td><td data-label="分组 / 地区"><button type="button" class="text-button pick-by" data-pick-by="group" data-value="${esc(n.group || "")}" title="选中「${esc(n.group || "默认")}」分组的全部节点">${esc(n.group || "默认")}</button><small>${n.region ? `<button type="button" class="text-button pick-by" data-pick-by="region" data-value="${esc(n.region)}" title="选中地区「${esc(n.region)}」的全部节点">${esc(n.region)}</button>` : "—"}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}<small class="remaining-value" title="${esc(remainingValueHint)}">剩余价值 ${esc(remainingValueLabel(n))}</small></td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button><button data-region-settings="${n.id}" title="这台节点的地区偏移检测目标地区、出口地址族与定位">地区偏移</button>${upgradeButton(n)}<button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="8" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>${batchBar()}`;
-  content().querySelectorAll("[data-region-settings]").forEach((b) => (b.onclick = guard(() => openRegionDialog(null, { node: b.dataset.regionSettings, name: nodeName(b.dataset.regionSettings) }))));
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">INVENTORY</div><h1>节点管理<span>${state.nodes.length}</span></h1><p>管理接入、展示、计费周期和每台主机的提醒规则。</p></div><button id="add-node" class="primary">＋ 添加节点</button></section><div class="admin-stats"><div><span>在线</span><strong>${state.nodes.filter((n) => n.online).length}</strong></div><div><span>公开展示</span><strong>${state.nodes.filter((n) => n.public).length}</strong></div><div><span>7 天内到期或过期</span><strong>${state.nodes.filter((n) => n.billing.expires_at && days(n.billing.expires_at) <= 7).length}</strong></div><div id="goto-firing" class="stat-link${firing?.length ? " stat-warn" : ""}" role="button" tabindex="0" title="查看当前告警"><span>正在告警</span><strong>${firing ? firing.length : "—"}</strong></div></div><section data-part="panel" class="panel"><div class="panel-head"><h3>全部节点</h3><div class="panel-actions"><button id="upgrade-all" class="quiet" title="把版本落后于面板的 Agent 全部升级到 ${esc(state.serverVersion)}" ${state.nodes.some(isStale) ? "" : "hidden"}>⇡ 升级 Agent（<b>${state.nodes.filter(isStale).length}</b>）</button><button id="manage-groups" class="quiet" title="按分组调整成员、改名、合并或解散">分组管理</button><button id="manage-regions" class="quiet" title="按节点所在地区调整成员、改名">地区管理</button><button id="sort-nodes" class="quiet" ${state.nodes.length < 2 ? "disabled" : ""} title="按分组、名称、地区或到期时间重排全部节点">⇅ 一键排序</button><button id="refresh-nodes" class="quiet">↻ 刷新</button></div></div><div class="table-scroll"><table class="stack"><thead><tr>${pickHead}<th class="drag-col" title="按住手柄拖动调整顺序">顺序</th><th>主机</th><th>状态</th><th>分组 / 地区</th><th>周期用量</th><th>到期时间</th><th>操作</th></tr></thead><tbody>${state.nodes.map((n) => `<tr data-node="${n.id}">${pickCell(n)}<td class="drag-cell" data-label="顺序">${dragHandle(n)}</td><td data-label="主机"><button class="text-button" data-inspect="${n.id}">${esc(n.name)}</button><small>${n.public ? "公开" : "私有"}${n.vendor ? ` · 商家 ${esc(n.vendor)}` : ""} · 回程地区 ${esc(n.display.route_region || "未设置")}${cardRegionMiss(n)}</small></td><td data-label="状态"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span>${firingPill(n, firing)}<small data-agent="${n.id}">${agentLine(n)}</small><small>连接 ${n.last_seen ? date(n.last_seen) : "从未"}</small><small>有效指标 ${n.metrics_at ? date(n.metrics_at) : "尚无"}</small>${n.metrics_stale ? `<small class="warn-text">${esc(diagnosticHint(n))}</small>` : ""}</td><td data-label="分组 / 地区"><button type="button" class="text-button pick-by" data-pick-by="group" data-value="${esc(n.group || "")}" title="选中「${esc(n.group || "默认")}」分组的全部节点">${esc(n.group || "默认")}</button><small>${n.region ? `<button type="button" class="text-button pick-by" data-pick-by="region" data-value="${esc(n.region)}" title="选中地区「${esc(n.region)}」的全部节点">${esc(n.region)}</button>` : "—"}</small></td><td data-label="周期用量">${bytes(n.traffic_used)}<small>${n.billing.traffic_limit ? "/ " + bytes(n.billing.traffic_limit) : "未设置额度"}</small></td><td data-label="到期时间">${dueCell(n.billing.expires_at)}<small class="remaining-value" title="${esc(remainingValueHint)}">剩余价值 ${esc(remainingValueLabel(n))}</small></td><td data-label="操作"><div class="row-actions"><button data-edit="${n.id}">编辑</button><button data-token="${n.id}" title="${n.last_seen ? "生成新密钥并给出安装命令，旧密钥立即失效" : "生成密钥并给出安装命令"}">${n.last_seen ? "重置密钥" : "接入"}</button><button data-billing="${n.id}">用量校正</button>${upgradeButton(n)}<button data-delete="${n.id}" class="danger">删除</button></div></td></tr>`).join("") || '<tr><td colspan="8" class="empty-cell">还没有节点。添加后下载接入配置，启动 Agent。</td></tr>'}</tbody></table></div></section>${batchBar()}`;
   content().querySelectorAll("[data-billing]").forEach((b) => {
     b.onclick = () => {
       const n = state.nodes.find((x) => x.id === b.dataset.billing);
@@ -375,7 +374,8 @@ function nodeForm(existing) {
   const d = modal(
     existing ? "编辑节点" : "添加节点",
     `<form id="node-form">
-<div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${field("商家（显示为卡片名牌，留空不显示）", "vendor", n.vendor || "", "text", 'maxlength="60" list="vendor-list" placeholder="如 netcup / Hytron" autocomplete="off"')}<datalist id="vendor-list">${[...new Set(state.nodes.map((x) => x.vendor).filter(Boolean))].sort().map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>${regionCombobox("节点所在地区", "region", n.region, options)}${decorationSelect(n.decoration || "")}${check("在公开页面展示", "public", n.public)}</div></div>
+<div class="form-section"><h3>基本信息</h3><div class="form-grid">${field("节点名称", "name", n.name, "text", 'required maxlength="100"')}${field("分组", "group", n.group)}${field("商家（显示为卡片名牌，留空不显示）", "vendor", n.vendor || "", "text", 'maxlength="60" list="vendor-list" placeholder="如 netcup / Hytron" autocomplete="off"')}<datalist id="vendor-list">${[...new Set(state.nodes.map((x) => x.vendor).filter(Boolean))].sort().map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>${decorationSelect(n.decoration || "")}${check("在公开页面展示", "public", n.public)}</div></div>
+<div class="form-section node-location"><h3>所在地区与定位</h3><div class="form-grid">${regionCombobox("节点所在地区", "region", n.region, options)}</div>${autoLocateHTML(existing)}${driftHTML()}</div>
 <div class="form-section"><h3>公开卡片</h3><p class="hint">卡片按这里的地区挑选三网的探测结果，地区要和任务目标的地区一致才对得上；三网之外的目标（常用海外、自定义）一个一行，不受地区限制。回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / 9929 等），IPv4 与 IPv6 分开检测。</p><div class="form-grid">${regionCombobox("回程地区", "representative", n.display.route_region, cardOptions, { placeholder: "不指定（按任务地区匹配）" })}${regionCombobox("延迟地区（留空沿用回程地区）", "latency_region", n.display.latency_region, cardOptions, { placeholder: "沿用回程地区" })}</div><div class="option-groups card-carriers"><div class="option-group"><span class="option-label">显示延迟的运营商</span>${carriers("latency_carrier:", ["电信", "联通", "移动", "其他"], n.display.latency_carriers)}</div><div class="option-group"><span class="option-label">显示回程的运营商</span>${carriers("route_carrier:", ["电信", "联通", "移动"], n.display.route_carriers)}</div></div><p class="hint">只在这台机器实际有探测的运营商里筛选，每组至少勾一项；不勾「其他（国际）」就不显示海外目标那几行。回程只有三网。</p></div>
 <div class="form-section"><h3>流量与计费</h3><div class="form-grid">${field("流量额度（GB，0 为不设上限）", "quota", n.billing.traffic_limit / 1e9, "number", 'min="0" step="any"')}${select(
       "流量计费方式",
@@ -394,6 +394,8 @@ function nodeForm(existing) {
   const form = d.querySelector("form"),
     el = (name) => form.elements.namedItem(name);
   wireComboboxes(form);
+  const location = wireNodeLocation(form, existing);
+  d.addEventListener("close", () => location.dispose(), { once: true });
   // 运营商筛选至少留一项：接口里空列表的意思是「不筛选、全部显示」，全部取消勾选存下去
   // 就成了全显示，正好和勾选框表达的相反。
   for (const prefix of ["latency_carrier:", "route_carrier:"]) {
@@ -450,6 +452,8 @@ function nodeForm(existing) {
   }
   form.onsubmit = guard(async (e) => {
     e.preventDefault();
+    const blocked = location.check();
+    if (blocked) { toast(blocked); return; }
     const f = new FormData(e.target),
       get = (k) => String(f.get(k) || ""),
       // 从元素读取而非 FormData：禁用的阈值不出现在 FormData 里，
@@ -494,11 +498,17 @@ function nodeForm(existing) {
       existing ? "PUT" : "POST",
       value,
     );
+    // 地区偏移的节点设置跟着节点一起保存；它失败不撤销节点本身的修改，只提示。
+    let note = "";
+    if (existing) {
+      try { note = await location.save(existing.id); }
+      catch (error) { note = `节点已保存，但地区偏移设置没保存：${error.message}`; }
+    }
     d.close();
     await render();
     // 新建返回一次性密钥；编辑（PUT）成功是 204，没有正文。
     if (result?.token) showToken(result.token, value.name);
-    else toast("节点已保存");
+    else toast(note || "节点已保存");
   });
 }
 // 「接入」与「重置密钥」是同一个动作（生成新密钥），但对一台从没上报过的机器不该说「旧 Agent

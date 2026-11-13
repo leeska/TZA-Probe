@@ -40,9 +40,9 @@ export function environmentChoices(kind) {
   return choices;
 }
 
-export function environmentPicker(label, name, value, kind, { allowedValues, allowCustom = true } = {}) {
+export function environmentPicker(label, name, value, kind, { allowedValues, allowCustom = true, required = true } = {}) {
   const choices = environmentChoices(kind).filter(choice => !allowedValues || allowedValues.includes(choice.value));
-  return searchPicker(label, name, value, choices, { allowCustom, placeholder: kind === "timezone" ? "选择时区，或输入城市 / IANA 名称搜索" : kind === "language" ? "选择语言，或输入名称 / 语言代码搜索" : "选择地区，或输入名称 / 两位代码搜索" });
+  return searchPicker(label, name, value, choices, { allowCustom, required, placeholder: kind === "timezone" ? "选择时区，或输入城市 / IANA 名称搜索" : kind === "language" ? "选择语言，或输入名称 / 语言代码搜索" : "选择地区，或输入名称 / 两位代码搜索" });
 }
 
 export { wireSearchPickers };
