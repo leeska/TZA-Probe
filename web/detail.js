@@ -2,6 +2,7 @@ import { api, esc, modal, guard } from "./api.js";
 import { bytes, bandwidth, date, mbps, osLabel, statusLabel, statusName, reasonName, diagnosticHint, remainingValueLabel, remainingValueHint } from "./format.js";
 import { chart, wireCharts, colorClass, axisRow, formatValue, niceCeiling, stamp } from "./charts.js";
 import { unlockCatalog, unlockPanel } from "./unlock.js";
+import { sectionHidden, applyHidden } from "./public-config.js";
 // 详情页要发三个请求，任何一个失败或长时间无响应，弹窗都会停在“读取节点详情…”：
 // 每个请求都带截止时间，失败时把原因和重试按钮写进弹窗。
 const requestTimeout = 15000;
@@ -57,14 +58,15 @@ export async function detail(id, focus = null) {
   const loads = Promise.all([
     api(`/nodes/${id}/history?hours=24&slim=1`),
     api(`/nodes/${id}/observations`),
-    api(`/nodes/${id}/network-history?hours=24`),
+    sectionHidden("network") ? Promise.resolve([]) : api(`/nodes/${id}/network-history?hours=24`),
     // 解锁目录（名称 / 分类）全站一份，取一次就缓存，用来画「解锁检测」那一块。
     unlockCatalog(),
   ]);
   // 节点不在列表里时下面直接返回，这批请求的失败不该变成未处理的拒绝。
   loads.catch(() => {});
   const list = await api("/nodes");
-  const n = list.find((x) => x.id === id);
+  const found = list.find((x) => x.id === id);
+  const n = found && applyHidden(found);
   if (!n) {
     // 节点可能刚被删掉或改了可见性，此时列表里已经没有它：说清楚，别留一个空弹窗。
     const open = document.querySelector(`#dialog[data-node-id="${id}"]`);
@@ -147,7 +149,7 @@ export async function detail(id, focus = null) {
     !focused && n.unlock?.total
       ? `<div class="unlock-block">${unlockPanel(n.unlock, catalog, { tested: true })}</div>`
       : "";
-  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><span>最近连接 ${date(n.last_seen)}</span>${n.metrics_stale ? `<span class="warn-text">${esc(diagnosticHint(n))}</span>` : ""}</div>${focused ? "" : `<div data-part="detail-stats" class="detail-stats"><div><span>本周期用量</span><strong>${bytes(n.traffic_used)}</strong><small>按计费方式统计 · ${date(n.cycle_start)} — ${date(n.cycle_end)}（本地时间）</small></div><div><span>本次开机网卡累计</span><strong>${n.metrics ? `↑ ${bytes(n.metrics.net_out)} / ↓ ${bytes(n.metrics.net_in)}` : "指标不可用"}</strong><small>${n.metrics ? `开机以来网卡收发总量，不按计费周期 · 运行 ${Math.floor(n.metrics.uptime / 86400)} 天 · ` : ""} ${esc(osLabel(n, "—"))} ${esc(n.metrics?.arch || n.agent_status?.arch || "")}</small></div><div class="detail-remaining-value"><span>剩余价值</span><strong>${esc(remainingValueLabel(n))}</strong><small>${esc(remainingValueHint)}</small></div>${throttleTile}${bandwidthTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24, n)}</div>${unlockSection}`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}${routeHint}`;
+  const content = `<div class="detail-meta"><span class="pill ${n.online ? "good" : ""}">${statusLabel(n)}</span><span>最近连接 ${date(n.last_seen)}</span>${n.metrics_stale ? `<span class="warn-text">${esc(diagnosticHint(n))}</span>` : ""}</div>${focused ? "" : `<div data-part="detail-stats" class="detail-stats"><div><span>本周期用量</span><strong>${bytes(n.traffic_used)}</strong><small>按计费方式统计 · ${date(n.cycle_start)} — ${date(n.cycle_end)}（本地时间）</small></div><div><span>本次开机网卡累计</span><strong>${n.metrics ? `↑ ${bytes(n.metrics.net_out)} / ↓ ${bytes(n.metrics.net_in)}` : "指标不可用"}</strong><small>${n.metrics ? `开机以来网卡收发总量，不按计费周期 · 运行 ${Math.floor(n.metrics.uptime / 86400)} 天 · ` : ""} ${esc(osLabel(n, "—"))} ${esc(n.metrics?.arch || n.agent_status?.arch || "")}</small></div>${sectionHidden("billing") ? "" : `<div class="detail-remaining-value"><span>剩余价值</span><strong>${esc(remainingValueLabel(n))}</strong><small>${esc(remainingValueHint)}</small></div>`}${throttleTile}${bandwidthTile}</div><div class="section-head"><h3>主机历史</h3>${historyRange()}</div><div id="charts">${hostCharts(history, 24, n)}</div>${unlockSection}`}<div class="section-head"><h3>${focused ? esc(focusTitle) : "网络与三网回程"}</h3><div class="heading-actions">${familyControl}${focused && focusKind !== "route" ? historyRange(168) : ""}</div></div>${networkPanel}${routeHint}`;
   const head = d.querySelector(".modal-head");
   d.replaceChildren(head);
   d.insertAdjacentHTML("beforeend", content);
@@ -221,7 +223,7 @@ export async function detail(id, focus = null) {
     const hit = rangeCache.get(url);
     if (hit && Date.now() - hit.at < cacheTTL) return hit;
     const entry = { at: Date.now(), settled: false };
-    entry.promise = api(url).finally(() => (entry.settled = true));
+    entry.promise = (sectionHidden("network") && url.includes("/network-history") ? Promise.resolve([]) : api(url)).finally(() => (entry.settled = true));
     // 失败的不留在缓存里，下次选同一档会重新请求；预取的失败也不该变成未处理的拒绝。
     entry.promise.catch(() => rangeCache.get(url) === entry && rangeCache.delete(url));
     rangeCache.set(url, entry);

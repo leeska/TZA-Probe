@@ -5849,3 +5849,54 @@ dialog.terminal-dialog {
   font-size: 1.05em;
   letter-spacing: 0.06em;
 }
+
+/* 后台总览：每张卡一个结论 + 待处理项，按语气给左边一条色带。 */
+.overview-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+.overview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--panel, transparent);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: calc(18px * var(--radius-scale));
+  padding: var(--space-5);
+  min-height: 0;
+  height: auto;
+  white-space: normal;
+}
+button.overview-card { cursor: pointer; }
+button.overview-card:hover,
+button.overview-card:focus-visible { border-color: rgba(var(--accent-rgb), 0.45); }
+.overview-card.good { border-left-color: var(--green); }
+.overview-card.warn { border-left-color: var(--orange); }
+.overview-card.bad { border-left-color: var(--red); }
+.overview-card-title { font-size: var(--text-sm); color: var(--muted); font-weight: 500; }
+.overview-card strong { font-size: var(--text-2xl, 1.5rem); font-weight: 650; color: var(--ink); letter-spacing: -0.02em; }
+.overview-card.bad strong { color: var(--red); }
+.overview-card.warn strong { color: var(--orange); }
+.overview-card > small { color: var(--muted); }
+.overview-card ul { list-style: none; margin: var(--space-2) 0 0; padding: var(--space-2) 0 0; border-top: 1px solid var(--line); display: grid; gap: var(--space-1, 4px); }
+.overview-card li { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
+.overview-card li span { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-card li small { color: var(--muted); text-align: right; }
+.overview-card li.bad small { color: var(--red); }
+.overview-card li.warn small { color: var(--orange); }
+.login-gate .button { margin-top: var(--space-4); }
+/* 「创建任务」的类型选择。 */
+.task-types { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); padding: var(--space-2) 0; }
+.task-type { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); text-align: left; height: auto; white-space: normal; padding: var(--space-4) var(--space-5); border: 1px solid var(--line); border-radius: calc(14px * var(--radius-scale)); }
+.task-type:hover, .task-type:focus-visible { border-color: rgba(var(--accent-rgb), 0.45); }
+.task-type small { color: var(--muted); font-weight: 400; }
+.pill.bad { background: rgba(255, 59, 48, 0.12); color: #b42318; border-color: rgba(255, 59, 48, 0.3); }
+.public-actions { flex-wrap: wrap; align-items: center; }
+.public-sections { display: flex; flex-wrap: wrap; gap: var(--space-3); border: 0; padding: 0; margin: 0; }
+.public-sections legend { font-size: var(--text-sm); color: var(--muted); margin-bottom: var(--space-2); }

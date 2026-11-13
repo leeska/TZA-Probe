@@ -1,4 +1,5 @@
 import { THEMES } from "./theme.js";
+import { PUBLIC_SECTIONS } from "./public-config.js";
 import { SKINS, registerThemes } from "./skins.js";
 import { api, send, toast, guard, modal, esc } from "./api.js";
 import { state, content, field, confirmAction } from "./admin-state.js";
@@ -96,7 +97,14 @@ function lookView(settings) {
   // 后台存的值直接亮在下拉框里；认不出来（未配置 / 手改过库）就显示内置默认。
   const themeNow = THEMES.some((t) => t.id === settings.default_theme) ? settings.default_theme : "auto";
   const skinNow = SKINS.some((s) => s.id === settings.default_skin) ? settings.default_skin : SKINS[0].id;
-  return `${brandPanel(settings)}<section data-part="panel" class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。风格只列已安装的主题，更多主题在「主题」里安装。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${esc(s.id)}"${s.id === skinNow ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section><section data-part="panel" class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片和列表的延迟、丢包率按色带内的最近 10 次探测统计；每格一次探测，早于这个范围的探测不参与统计，对应格子留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section>${priceUnitPanel(settings)}`;
+  return `${brandPanel(settings)}${publicPanel(settings)}<section data-part="panel" class="panel webhook-panel"><div><h3>默认外观</h3><p>访客第一次打开公开面板时使用的明暗与风格。</p><small>访客在面板右上角切换过之后，以访客自己的选择为准。风格只列已安装的主题，更多主题在「主题」里安装。</small></div><div class="webhook-actions"><label class="window-field">明暗<select id="default-theme">${THEMES.map((t) => `<option value="${t.id}"${t.id === themeNow ? " selected" : ""}>${t.name}</option>`).join("")}</select></label><label class="window-field">风格<select id="default-skin">${SKINS.map((s) => `<option value="${esc(s.id)}"${s.id === skinNow ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label><button id="save-look" class="primary">保存</button></div></section><section data-part="panel" class="panel webhook-panel"><div><h3>延迟色带</h3><p>公开卡片和列表的延迟、丢包率按色带内的最近 10 次探测统计；每格一次探测，早于这个范围的探测不参与统计，对应格子留空。</p><small>探测正常时色带总是满的，这一项只在探测间隔很长或节点停过一阵时看得出区别。探测结果保留 7 天。</small></div><div class="webhook-actions"><label class="window-field">只显示最近<select id="latency-window">${windowOptions}</select></label><button id="save-window" class="primary">保存</button></div></section>${priceUnitPanel(settings)}`;
+}
+
+// 前台显示：按区块关掉公开面板的内容（服务端就不再返回给访客），或整个前台需要登录。
+function publicPanel(settings) {
+  const hidden = settings.public_hidden || [];
+  const boxes = PUBLIC_SECTIONS.map((x) => `<label class="checkbox" title="${esc(x.note)}"><input type="checkbox" name="public-section" value="${x.id}" ${hidden.includes(x.id) ? "" : "checked"}>${esc(x.label)}</label>`).join("");
+  return `<section data-part="panel" class="panel webhook-panel public-panel"><div><h3>前台显示</h3><p>公开面板显示哪些内容。取消勾选的区块，访客的接口就不再返回那部分数据。</p><small>主机状态、资源与流量用量始终显示。管理员登录后打开前台，版面与访客一致。</small></div><div class="webhook-actions public-actions"><fieldset class="public-sections"><legend>显示的区块</legend>${boxes}</fieldset><label class="checkbox"><input type="checkbox" id="public-login" ${settings.public_login ? "checked" : ""}>整个前台需要登录</label><button id="save-public" class="primary">保存</button></div></section>`;
 }
 
 // 计费汇总：公开面板顶部「剩余价值汇总 / 每月成本」两块磁贴统一折算成的货币。
@@ -142,6 +150,13 @@ function wireLook(settings) {
     await renderSettings();
     const label = CURRENCIES.find(([code]) => code === unit)?.[1] || unit;
     toast(`计费汇总单位：${label}`);
+  });
+  content().querySelector("#save-public").onclick = guard(async () => {
+    const shown = new Set([...content().querySelectorAll('[name="public-section"]:checked')].map((b) => b.value));
+    const login = content().querySelector("#public-login").checked;
+    await send("/admin/panel", "PUT", { public_hidden: PUBLIC_SECTIONS.map((x) => x.id).filter((id) => !shown.has(id)), public_login: login });
+    await renderSettings();
+    toast(login ? "已保存：前台需要登录后查看" : "已保存前台显示设置");
   });
   wireBrand(settings);
 }

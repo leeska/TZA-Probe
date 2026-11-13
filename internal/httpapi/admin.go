@@ -129,6 +129,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 	})
 
 	// ---- 审计日志：后台的每次写操作、登录，以及模块记下的特权操作（命令、终端）
+	route("GET /api/v1/admin/overview", a.overview)
 	route("GET /api/v1/admin/audit", func(w http.ResponseWriter, r *http.Request) {
 		before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -722,6 +723,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 			return
 		}
 		_, err := a.svc.PatchPanel(r.Context(), v)
+		a.forgetPolicy()
 		respond(w, err)
 	})
 	// 站点 logo：请求体就是图片本身（不走 JSON）。类型由内容判断，不看 Content-Type。

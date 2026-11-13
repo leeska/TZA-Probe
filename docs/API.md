@@ -4,9 +4,11 @@
 
 密码校验前限制实际尝试速度：匿名请求共享 30 次突发额度，每 2 秒补充一次；持有效设备 Cookie 的请求使用独立的 10 次额度，每 6 秒补充一次。额度耗尽后在密码校验前直接返回 429，并通过 `Retry-After` 告知下一次额度恢复的等待秒数；正确密码同样遵守额度，成功和失败的校验都消耗额度。额度自动补充，不永久锁定账号；改密后旧设备 Cookie 失效。浏览器会话绑定登录时验证的密码版本；终端重置密码使所有旧会话失效，网页改密仅保留本次会话。
 
+前台（访客）接口：`/nodes`、`/nodes/live`、`/nodes/{id}/history`、`/nodes/{id}/network-history`、`/nodes/{id}/observations`、`/observations`、`/latency-samples`、`/unlock-catalog`。后台开了「整个前台需要登录」时，未登录的请求一律 401 `{"error":"此面板需要登录后查看","login":true}`；关掉的区块里，`/nodes/{id}/network-history` 与 `/latency-samples` 属于 `network`、`/unlock-catalog` 属于 `unlock`，访客请求 404，观测接口滤掉对应类型。管理员不受这些开关影响。开关在 `/theme-default.js` 里以 `window.__tzaPublic={hidden, login}` 交给前台。
+
 | 方法与路径（均以 /api/v1 开头） | 用途 |
 | --- | --- |
-| GET /nodes | 公开节点；登录管理员可见全部 |
+| GET /nodes | 公开节点；登录管理员可见全部。后台关掉的前台区块，访客拿到的节点里对应字段为空：`network` 清空 `probe_targets` 与 `display`，`unlock` 清空 `unlock`，`billing` 只保留 `billing` 的 `reset_at`、`traffic_limit`、`traffic_mode`，`remaining_value` 为 null |
 | GET /nodes/live | 与 /nodes 同一批节点，只带每秒会变的部分：`id`、`online`、`last_seen`、`metrics`、`traffic_used`、`avg_bps`、`covered_hours`、`window_hours`、`throttled`。公开页每秒取它，配置、探测计划与解锁结论随 10 秒一轮的 /nodes 更新 |
 | GET /nodes/{id}/history?hours=24 | 1–720 小时，最多约 240 桶的主机曲线 ；`slim=1` 只带 cpu / memory_used / memory_total / rate_in / rate_out |
 | GET /observations | 所有可见节点的最新观测，按节点 id 分组，不带跳表（首页卡片用） |
@@ -31,7 +33,7 @@
 | GET /admin/backup | 下载整个数据库的一致快照（SQLite 文件，`VACUUM INTO` 生成，不用停服）；文件名 `tza-backup-YYYYMMDD-HHMMSS.db` |
 | GET、PUT /admin/account | 后台账号：GET 回 `{"username":…,"configured":true}`；PUT 提交 `{"current_password":…,"username":…,"password":…}` 修改用户名与密码（用户名 1–32 个非空白字符，密码 8–128 个字符；当前密码错误 400），成功后除本次以外的浏览器会话全部失效。忘记密码在服务器执行 `tza-server reset-password` |
 | GET、POST、DELETE /admin/mcp-key | MCP API Key：GET 只回 `configured` 与已启用时的 `created_at`；POST 生成或重新生成，回一次性 `api_key`；DELETE 撤销。数据库只保存摘要，旧 Key 在重新生成或撤销后立即失效 |
-| GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：站点名称 `site_name`（标签页标题与品牌区的名字，最多 32 字，空串恢复默认的 TZA Probe）、只读的 logo 地址 `site_logo`（未上传为空）、默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限）、计费汇总单位 `price_unit`（公开面板顶部「剩余价值汇总 / 每月成本」统一折算成的货币，取值与节点货币选项同表，默认 CNY） |
+| GET、PUT /admin/panel | 面板显示项（PUT 只改传了的项）：站点名称 `site_name`（标签页标题与品牌区的名字，最多 32 字，空串恢复默认的 TZA Probe）、只读的 logo 地址 `site_logo`（未上传为空）、默认明暗 `default_theme`、皮肤 `default_skin`、延迟色带时间窗（`latency_window_minutes`，1–10080 分钟：色带固定画最近 10 次探测，这一项是它们的年龄上限，早于它的不画；界面给 1 小时 / 6 小时 / 24 小时 / 3 天 / 7 天 档位，7 天即探测结果保留上限）、计费汇总单位 `price_unit`（公开面板顶部「剩余价值汇总 / 每月成本」统一折算成的货币，取值与节点货币选项同表，默认 CNY）、前台关掉的区块 `public_hidden`（`network` 延迟与回程、`unlock` 解锁检测、`billing` 价格与到期；关掉后访客接口不再返回这部分数据，见下方公开接口说明）、整个前台是否需要登录 `public_login` |
 | PUT、DELETE /admin/panel/logo | 站点 logo：PUT 的请求体就是图片本身（不走 JSON），类型按内容判断，只收 PNG / JPEG / GIF / WebP / ICO / SVG，最大 512 KB，回 `{"site_logo":"/site-logo?v=…"}`；SVG 含脚本、事件属性、外链引用或 DOCTYPE 时 400，超大 413。DELETE 移除，回到内置字标。文件存在数据目录的 `branding/`，不在数据库备份里 |
 | GET、POST /admin/themes、DELETE /admin/themes/{id} | 主题包清单（内置 + 已安装）、上传 zip、删除，见 [THEMES.md](THEMES.md#接口) |
 | PUT /admin/themes/{id}/settings | 改主题设置（主题在 theme.json 里声明的菜单，附加包开关也在其中），请求体只写要改的项，回 `{options}`，见 [THEMES.md](THEMES.md#主题设置) |
@@ -50,6 +52,7 @@
 | GET /admin/remote | 远程管理：每台节点管理通道的状态 `[{id, name, connected, since, capabilities}]`；只有本机开启了远程管理（`--manage`）的 Agent 会连上 |
 | POST /admin/remote/exec | `{"node_id":…,"command":…,"timeout_seconds":60}`：经管理通道在节点上用 `/bin/sh -c` 执行一条命令（命令最多 16 KB，超时 1–3600 秒），等它结束后回 `{output, exit_code, error, truncated, duration_ms}`，输出最多 1 MB；通道未连接回 502。命令原文与退出码写入审计日志 |
 | GET /admin/remote/terminal?node=&cols=&rows= | WebSocket（须与面板同源）：节点上的交互终端（登录 shell + PTY）。浏览器发 `{"i":"按键"}` 与 `{"resize":{"cols","rows"}}`，收二进制帧的终端输出，结束时收文本帧 `{"exit":码}`。会话的开始与结束（时长、键入字节数，不记录内容）写入审计日志 |
+| GET /admin/overview | 后台总览：`{cards, generated_at}`。每张卡 `{id, title, page, value, note, tone, items:[{label, note, tone}]}`，`tone` 为空、`good`、`warn` 或 `bad`，`page` 是点开去的后台页面。先是核心的 `nodes`、`billing`（两周内到期与流量过 90%）、`tasks`（含被墙检测异常）、`alerts`，再是各模块的（`regiondrift`、`remote`） |
 | GET /admin/audit?before=&limit=&node= | 审计日志，按 id 倒序分页（`limit` 默认 100、上限 500）：后台的每次写操作（路由与状态码，不含请求体）、登录与登录失败、远程命令与终端。字段 `{id, at, actor, source, action, node_id, status, detail}`，保留 365 天 |
 | GET /admin/totp、POST /admin/totp/setup、POST /admin/totp/enable、POST /admin/totp/disable | 两步验证：GET 回 `{"enabled":…}`；setup 生成新密钥回 `{secret, uri}`（10 分钟内有效）；enable `{"code":…}` 用它算出的验证码确认后生效；disable `{"code":…}` 用当前验证码关闭。开启后 `POST /login` 还要 `code`：密码正确但缺验证码或验证码错误时 401 `{"error":…,"totp":true}`，同一个验证码只能用一次 |
 | GET /agent/channel | 管理通道（协议 v2）：Agent 用节点令牌建立的 WebSocket，请求头 `X-Channel-Capabilities` 列出它提供的能力（如 `shell`），其上用 yamux 多路复用，由 Server 按需开流，见 [ARCHITECTURE.md](ARCHITECTURE.md#管理通道) |

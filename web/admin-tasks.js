@@ -1,14 +1,46 @@
 import { controlTask, bindTasks, taskRuns } from "./task-controls.js";
 import { taskEditor, taskSummary } from "./task-editor.js";
-import { api, send, esc, toast, guard } from "./api.js";
+import { api, send, esc, toast, guard, modal } from "./api.js";
+import { serviceReading, preferRegionNode } from "./admin-ip-guard.js";
 import { blockTaskEditor, blockChecksHTML, wireBlockChecks, loadBlockChecks } from "./block-checks.js";
 import { date } from "./format.js";
-import { state, content, taskName, confirmAction, moreMenu, wireMoreMenus, render } from "./admin-state.js";
+import { state, content, taskName, confirmAction, moreMenu, wireMoreMenus, render, go } from "./admin-state.js";
 export async function tasksPage(nodesReady) {
   // 执行汇总读不到不该挡住任务列表：那一列退回「尚未执行」。
-  const [, list, health, blocks] = await Promise.all([nodesReady, api("/admin/tasks"), api("/admin/tasks/health").catch(() => ({})), loadBlockChecks()]);
+  // 地区偏移检测按节点保存设置（不在任务表里），读不到也不挡任务列表：那几行不画。
+  const [, list, health, blocks, region] = await Promise.all([nodesReady, api("/admin/tasks"), api("/admin/tasks/health").catch(() => ({})), loadBlockChecks(), api("/admin/ipguard").catch(() => null)]);
   state.tasks = list;
-  renderTasks(health, blocks);
+  renderTasks(health, blocks, region);
+}
+
+// 统一的「创建任务」：先选类型。地区偏移检测按节点设置，选它直接进那一页。
+const TASK_TYPES = [
+  { id: "probe", title: "延迟与回程", note: "TCP 延迟、丢包与三网回程路由，按目标目录或自定义地址" },
+  { id: "unlock", title: "解锁检测", note: "流媒体与 AI 服务的可用性，按内置目录逐项检测" },
+  { id: "block", title: "IP 被墙检测", note: "大陆节点与境外节点同时连接同一 IP 端口，对比判断" },
+  { id: "region", title: "地区偏移检测", note: "Google、Meta 识别的地区是否偏离目标，按节点设置" },
+];
+function chooseTaskType() {
+  const d = modal("创建任务", `<div class="task-types">${TASK_TYPES.map((t) => `<button type="button" class="task-type" data-type="${t.id}"><strong>${t.title}</strong><small>${t.note}</small></button>`).join("")}</div>`);
+  d.querySelectorAll("[data-type]").forEach((b) => (b.onclick = guard(async () => {
+    const type = b.dataset.type;
+    if (type === "region") { d.close(); return go("ipguard"); }
+    if (type === "block") return blockTaskEditor(null, state.nodes, render);
+    await taskForm(type === "unlock" ? { type: "unlock", enabled: true, node_ids: [] } : null);
+  })));
+}
+
+// 地区偏移检测的一行：每个设置过的节点一行，状态取两项服务里最差的那个。
+function regionRows(region) {
+  if (!region) return "";
+  const order = { bad: 3, "": 1, good: 0 };
+  return region.nodes.filter((n) => n.policy).map((n) => {
+    const services = n.policy.services || [];
+    const readings = services.map((id) => ({ id, ...serviceReading(n, id, region.jobs) }));
+    const worst = readings.reduce((a, b) => ((order[b.tone] ?? 1) > (order[a?.tone] ?? -1) ? b : a), null);
+    const label = { google: "Google", meta: "Meta" };
+    return `<tr data-region-row="${esc(n.id)}"><td data-label="选择"></td><td data-label="任务">地区偏移 · ${esc(n.name)}<small>地区偏移检测 · 每 12 小时</small></td><td data-label="状态"><span class="pill ${n.policy.enabled ? "good" : ""}">${n.policy.enabled ? "已启用" : "已停用"}</span></td><td data-label="目标">${esc(services.map((s) => label[s] || s).join("、"))}<small>${esc(n.policy.expected_ip || "")}</small></td><td data-label="地区 / 运营商">${esc(n.policy.country || "—")}</td><td data-label="节点">1 个</td><td data-label="最近执行">${worst ? `<span class="pill ${worst.tone}">${esc(worst.label)}</span><small>${esc(worst.note || "")}</small>` : "—"}</td><td data-label="操作"><div class="row-actions"><button data-edit-region="${esc(n.id)}">编辑</button></div></td></tr>`;
+  }).join("");
 }
 // 「最近执行」一格：各目标最近一次执行的汇总（/admin/tasks/health）。有失败就标橙并写几项，
 // 全部成功标绿，只有在途的写「执行中」；明细仍在「执行记录」里。
@@ -23,11 +55,11 @@ function healthCell(t, h) {
       : `<span class="pill">执行中</span>`;
   return `${pill}<small>${h.last_finished ? "完成于 " + date(h.last_finished) : "尚无完成记录"}</small>`;
 }
-function renderTasks(health = {}, blocks = []) {
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">NETWORK OBSERVABILITY</div><h1>网络探测<span>${state.tasks.length}</span></h1><p>每个任务独立配置目标、协议、频率和参与节点。</p></div><div class="heading-actions"><button id="bind-selected">批量绑定节点</button><button id="add-block-task">＋ IP 被墙检测</button><button id="add-task" class="primary">＋ 创建任务</button></div></section>${blockChecksHTML(blocks)}<section data-part="panel" class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-tasks" type="checkbox" aria-label="选择全部任务"><span>全选</span></label></th><th>任务</th><th>状态</th><th>目标</th><th>地区 / 运营商</th><th>节点</th><th>最近执行</th><th>操作</th></tr></thead><tbody>${state.tasks.map((t) => { const s = taskSummary(t); const bound = t.node_ids?.filter((id) => state.nodes.some((n) => n.id === id)).length || 0; return `<tr><td data-label="选择"><input type="checkbox" data-select-task="${t.id}" aria-label="选择 ${esc(t.name)}"></td><td data-label="任务">${esc(t.name)}<small>${s.block ? "IP 被墙检测 · " : s.unlock ? "解锁检测 · " : ""}${esc(s.intervals)}</small></td><td data-label="状态"><span class="pill ${t.enabled ? "good" : ""}">${t.enabled ? "已启用" : "已停用"}</span></td><td data-label="目标">${s.unlock ? "内置目录" : s.count + " 个地址"}<small>${esc(s.families)}</small></td><td data-label="地区 / 运营商" title="${esc(s.targetsFull)}">${esc(s.targets)}<small>${s.regions > 3 ? `共 ${s.regions} 个地区` : ""}</small></td><td data-label="节点">${bound} 个</td><td data-label="最近执行">${healthCell(t, health[t.id])}</td><td data-label="操作"><div class="row-actions"><button data-edit-task="${t.id}">编辑</button><button data-control="${t.enabled ? "pause" : "resume"}" data-task="${t.id}">${t.enabled ? "暂停" : "恢复"}</button>${moreMenu(`<button data-control="run" data-task="${t.id}" ${!t.enabled || !bound ? "disabled" : ""}>立即执行</button><button data-runs-task="${t.id}">执行记录</button><button data-copy-task="${t.id}">复制</button><button class="menu-danger" data-delete-task="${t.id}">删除</button>`)}</div></td></tr>`; }).join("") || '<tr><td colspan="8" class="empty-cell">暂无任务。可从内置三网目标目录选择，也可填写自定义目标。</td></tr>'}</tbody></table></div></section>`;
+function renderTasks(health = {}, blocks = [], region = null) {
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">NETWORK OBSERVABILITY</div><h1>网络探测<span>${state.tasks.length + (region?.nodes.filter((n) => n.policy).length || 0)}</span></h1><p>延迟与回程、解锁、IP 被墙和地区偏移检测都在这里创建；每个任务独立配置目标、频率和参与节点。</p></div><div class="heading-actions"><button id="bind-selected">批量绑定节点</button><button id="add-task" class="primary">＋ 创建任务</button></div></section>${blockChecksHTML(blocks)}<section data-part="panel" class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th class="select-col"><label class="checkbox select-all"><input id="select-tasks" type="checkbox" aria-label="选择全部任务"><span>全选</span></label></th><th>任务</th><th>状态</th><th>目标</th><th>地区 / 运营商</th><th>节点</th><th>最近执行</th><th>操作</th></tr></thead><tbody>${state.tasks.map((t) => { const s = taskSummary(t); const bound = t.node_ids?.filter((id) => state.nodes.some((n) => n.id === id)).length || 0; return `<tr><td data-label="选择"><input type="checkbox" data-select-task="${t.id}" aria-label="选择 ${esc(t.name)}"></td><td data-label="任务">${esc(t.name)}<small>${s.block ? "IP 被墙检测 · " : s.unlock ? "解锁检测 · " : ""}${esc(s.intervals)}</small></td><td data-label="状态"><span class="pill ${t.enabled ? "good" : ""}">${t.enabled ? "已启用" : "已停用"}</span></td><td data-label="目标">${s.unlock ? "内置目录" : s.count + " 个地址"}<small>${esc(s.families)}</small></td><td data-label="地区 / 运营商" title="${esc(s.targetsFull)}">${esc(s.targets)}<small>${s.regions > 3 ? `共 ${s.regions} 个地区` : ""}</small></td><td data-label="节点">${bound} 个</td><td data-label="最近执行">${healthCell(t, health[t.id])}</td><td data-label="操作"><div class="row-actions"><button data-edit-task="${t.id}">编辑</button><button data-control="${t.enabled ? "pause" : "resume"}" data-task="${t.id}">${t.enabled ? "暂停" : "恢复"}</button>${moreMenu(`<button data-control="run" data-task="${t.id}" ${!t.enabled || !bound ? "disabled" : ""}>立即执行</button><button data-runs-task="${t.id}">执行记录</button><button data-copy-task="${t.id}">复制</button><button class="menu-danger" data-delete-task="${t.id}">删除</button>`)}</div></td></tr>`; }).join("")}${regionRows(region)}${state.tasks.length || region?.nodes.some((n) => n.policy) ? "" : '<tr><td colspan="8" class="empty-cell">暂无任务。点「创建任务」选择类型。</td></tr>'}</tbody></table></div></section>`;
   wireMoreMenus(content());
   wireBlockChecks(content(), blocks, render);
-  content().querySelector("#add-block-task").onclick = () => blockTaskEditor(null, state.nodes, render);
+  content().querySelectorAll("[data-edit-region]").forEach((b) => (b.onclick = () => { preferRegionNode(b.dataset.editRegion); go("ipguard"); }));
   content().querySelector("#select-tasks").onchange = (e) => content().querySelectorAll("[data-select-task]").forEach((b) => b.checked = e.target.checked);
   content().querySelector("#bind-selected").onclick = () => {
     const ids = new Set([...content().querySelectorAll("[data-select-task]:checked")].map((b) => b.dataset.selectTask));
@@ -45,7 +77,7 @@ function renderTasks(health = {}, blocks = []) {
     delete copy.id; copy.name = copy.name.slice(0, 20) + " 副本"; copy.enabled = false;
     await taskForm(copy);
   }));
-  content().querySelector("#add-task").onclick = guard(() => taskForm());
+  content().querySelector("#add-task").onclick = chooseTaskType;
   content()
     .querySelectorAll("[data-edit-task]")
     .forEach(

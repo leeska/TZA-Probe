@@ -8,6 +8,7 @@
 package module
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -65,4 +66,52 @@ func Mount(modules []Module, r Routes) {
 			router.Routes(r)
 		}
 	}
+}
+
+// Card is one tile on the admin overview: a headline value, a tone and up to a
+// few items that need attention. Page is the admin tab the tile opens.
+type Card struct {
+	ID    string     `json:"id"`
+	Title string     `json:"title"`
+	Page  string     `json:"page,omitempty"`
+	Value string     `json:"value"`
+	Note  string     `json:"note,omitempty"`
+	Tone  string     `json:"tone,omitempty"` // "", "good", "warn", "bad"
+	Items []CardItem `json:"items,omitempty"`
+}
+
+// CardItem is one line under a card: a node, a task or an entry to look at.
+type CardItem struct {
+	Label string `json:"label"`
+	Note  string `json:"note,omitempty"`
+	Tone  string `json:"tone,omitempty"`
+}
+
+// MaxCardItems bounds the lines one card lists; the value carries the total.
+const MaxCardItems = 6
+
+// Overviewer is a module that contributes cards to the admin overview. A
+// module whose data cannot be read returns an error; the overview then shows
+// that card as unavailable instead of failing the page.
+type Overviewer interface {
+	Overview(ctx context.Context) ([]Card, error)
+}
+
+// Overview collects the cards of every module that has them, in module order.
+// A failing module yields one card that says so.
+func Overview(ctx context.Context, modules []Module) []Card {
+	out := []Card{}
+	for _, m := range modules {
+		o, ok := m.(Overviewer)
+		if !ok {
+			continue
+		}
+		cards, err := o.Overview(ctx)
+		if err != nil {
+			out = append(out, Card{ID: m.ID(), Title: m.ID(), Value: "读取失败", Note: err.Error(), Tone: "warn"})
+			continue
+		}
+		out = append(out, cards...)
+	}
+	return out
 }

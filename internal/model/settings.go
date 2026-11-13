@@ -166,27 +166,31 @@ func ValidatePriceUnit(v string) error {
 // SiteLogo "" mean the built-in TZA Probe brand; SiteLogo is the uploaded
 // logo's versioned URL.
 type PanelSettings struct {
-	LatencyWindowMinutes int    `json:"latency_window_minutes"`
-	DefaultTheme         string `json:"default_theme"`
-	DefaultSkin          string `json:"default_skin"`
-	SiteName             string `json:"site_name"`
-	SiteLogo             string `json:"site_logo"`
-	PriceUnit            string `json:"price_unit"`
+	LatencyWindowMinutes int      `json:"latency_window_minutes"`
+	DefaultTheme         string   `json:"default_theme"`
+	DefaultSkin          string   `json:"default_skin"`
+	SiteName             string   `json:"site_name"`
+	SiteLogo             string   `json:"site_logo"`
+	PriceUnit            string   `json:"price_unit"`
+	PublicHidden         []string `json:"public_hidden"`
+	PublicLogin          bool     `json:"public_login"`
 }
 
 // PanelPatch changes only the fields it carries. An empty SiteName restores
 // the default; the logo is uploaded separately (PUT /api/v1/admin/panel/logo).
 type PanelPatch struct {
-	LatencyWindowMinutes *int    `json:"latency_window_minutes"`
-	DefaultTheme         *string `json:"default_theme"`
-	DefaultSkin          *string `json:"default_skin"`
-	SiteName             *string `json:"site_name"`
-	PriceUnit            *string `json:"price_unit"`
+	LatencyWindowMinutes *int      `json:"latency_window_minutes"`
+	DefaultTheme         *string   `json:"default_theme"`
+	DefaultSkin          *string   `json:"default_skin"`
+	SiteName             *string   `json:"site_name"`
+	PriceUnit            *string   `json:"price_unit"`
+	PublicHidden         *[]string `json:"public_hidden"`
+	PublicLogin          *bool     `json:"public_login"`
 }
 
 // Empty reports whether the patch changes nothing.
 func (p PanelPatch) Empty() bool {
-	return p.LatencyWindowMinutes == nil && p.DefaultTheme == nil && p.DefaultSkin == nil && p.SiteName == nil && p.PriceUnit == nil
+	return p.LatencyWindowMinutes == nil && p.DefaultTheme == nil && p.DefaultSkin == nil && p.SiteName == nil && p.PriceUnit == nil && p.PublicHidden == nil && p.PublicLogin == nil
 }
 
 // Validate checks every carried field before anything is written. installed
@@ -194,6 +198,11 @@ func (p PanelPatch) Empty() bool {
 func (p PanelPatch) Validate(installed func(string) bool) error {
 	if p.LatencyWindowMinutes != nil {
 		if err := ValidateLatencyWindowMinutes(*p.LatencyWindowMinutes); err != nil {
+			return err
+		}
+	}
+	if p.PublicHidden != nil {
+		if err := ValidatePublicHidden(*p.PublicHidden); err != nil {
 			return err
 		}
 	}
@@ -215,6 +224,51 @@ func (p PanelPatch) Validate(installed func(string) bool) error {
 	if p.PriceUnit != nil {
 		if err := ValidatePriceUnit(*p.PriceUnit); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// 前台按模块开关：被关掉的区块服务端就不返回数据（访客拿不到），前台也不画；管理员登录后
+// 照常拿到全部数据。整个前台需要登录时，未登录的访客只看到登录提示。
+const (
+	SettingPublicHidden = "public_hidden" // 逗号分隔的区块 id
+	SettingPublicLogin  = "public_login"  // "1" 为整个前台需要登录
+)
+
+// PublicSections are the visitor-facing sections that can be turned off, in
+// display order: id → label.
+var PublicSections = []struct{ ID, Label, Note string }{
+	{"network", "延迟与回程", "卡片上的延迟色带、三网回程，以及详情里的网络历史"},
+	{"unlock", "解锁检测", "流媒体与 AI 服务的解锁结果"},
+	{"billing", "价格与到期", "价格、到期时间、剩余价值，以及顶部的成本汇总"},
+}
+
+// PublicHidden parses the stored list, keeping only known section ids, in
+// PublicSections order.
+func PublicHidden(stored string) []string {
+	set := map[string]bool{}
+	for _, v := range strings.Split(stored, ",") {
+		set[strings.TrimSpace(v)] = true
+	}
+	out := []string{}
+	for _, s := range PublicSections {
+		if set[s.ID] {
+			out = append(out, s.ID)
+		}
+	}
+	return out
+}
+
+// ValidatePublicHidden rejects an unknown section id.
+func ValidatePublicHidden(list []string) error {
+	for _, v := range list {
+		known := false
+		for _, s := range PublicSections {
+			known = known || s.ID == v
+		}
+		if !known {
+			return fmt.Errorf("未知的前台区块 %q", v)
 		}
 	}
 	return nil

@@ -9,6 +9,7 @@ import { distroBadge, regionFlag, offlineBadge, offlineTitle, isPending } from "
 import { unlockBadge, unlockCatalog, unlockPanel } from "./unlock.js";
 import { decorationVars, pickDecoration } from "./decorations.js";
 import { brandHTML } from "./brand.js";
+import { sectionHidden, loginRequired, applyHidden } from "./public-config.js";
 import "./ui-select.js";
 
 const app = document.querySelector("#app");
@@ -77,7 +78,7 @@ function noWheelStepping() {
 
 // 后台模块只在 /admin 才下载：公开页的访客用不到它们。依赖一次性声明成 modulepreload，
 // 并行下载，不等 admin.js 解析完再一层层发现。
-const ADMIN_MODULES = ["admin.js", "admin-state.js", "admin-nodes.js", "admin-tasks.js", "admin-alerts.js", "admin-themes.js", "admin-plugins.js", "admin-packages.js", "admin-settings.js", "task-controls.js", "task-editor.js", "agent-setup.js", "regions.js", "region-picker.js"];
+const ADMIN_MODULES = ["admin.js", "admin-state.js", "admin-pages.js", "admin-overview.js", "admin-nodes.js", "admin-tasks.js", "admin-alerts.js", "admin-themes.js", "admin-plugins.js", "admin-packages.js", "admin-settings.js", "task-controls.js", "task-editor.js", "agent-setup.js", "regions.js", "region-picker.js"];
 function loadAdmin() {
   for (const name of ADMIN_MODULES) {
     const link = document.createElement("link");
@@ -95,6 +96,11 @@ async function start() {
   if (adminPage) {
     const { mountAdmin } = await loadAdmin();
     await mountAdmin(app);
+    return;
+  }
+  // 整个前台需要登录：没有后台会话就只给登录提示，不发数据请求。
+  if (loginRequired() && !(await fetch("/api/v1/session", { credentials: "same-origin" }).then((r) => r.ok, () => false))) {
+    app.innerHTML = `<header data-part="public-header" class="public-header">${brandHTML()}<nav>${themeButton()}</nav></header><main class="empty login-gate"><h1>此面板需要登录后查看</h1><p>管理员已关闭公开访问。</p><a class="button primary" href="/admin">登录</a></main>`;
     return;
   }
   renderShell();
@@ -175,7 +181,7 @@ async function refresh() {
   const catalogTicket = unlockCatalog();
   const next = await api("/nodes");
   if (ticket !== generation) return;
-  nodes = next;
+  nodes = next.map(applyHidden);
   const groups = [...new Set(nodes.map((n) => n.group).filter(Boolean))];
   if (group && !groups.includes(group)) group = "";
   setHTML(document.querySelector("#group-filter"),
@@ -195,6 +201,12 @@ async function refresh() {
   renderCards();
 
   // 卡片上每个小格子是一次探测结果，所以除了逐目标的最新观测，还要取最近若干次原始结果。
+  // 延迟与回程关掉时这两份都不取（访客取了也是 404 / 空）。
+  if (sectionHidden("network")) {
+    latencySamples = [];
+    observations.clear();
+    return;
+  }
   const sampleTicket = api("/latency-samples?limit=20")
     .then((data) => { if (ticket === generation) latencySamples = data.samples || []; })
     .catch(() => { if (ticket === generation) latencySamples = []; });
@@ -250,7 +262,8 @@ function overviewInner() {
   }
   const valueTile = `<div data-part="overview-tile" class="overview-tile" title="已估算 ${valueCount} 台 · 价格 × 剩余时间 ÷ 价格周期，到期后为 0；${esc(fxHint)}"><div class="tile-header"><span>剩余价值<span class="tile-label-extra">汇总</span></span><span class="tile-badge green-badge">${esc(priceUnit)}</span></div><strong>${valueCount ? money(value) : "—"}</strong></div>`;
   const costTile = `<div data-part="overview-tile" class="overview-tile" title="已计价 ${costCount} 台 · 价格按周期折算为每月（月按 30 天），免费机器为 0；${esc(fxHint)}"><div class="tile-header"><span>每月成本</span><span class="tile-badge green-badge">${esc(priceUnit)}</span></div><strong>${costCount ? money(cost) + '<small> / 月</small>' : "—"}</strong></div>`;
-  return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${hasLiveMetrics ? bytes(rateOut) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${hasLiveMetrics ? bytes(rateIn) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>${valueTile}${costTile}`;
+  const billingTiles = sectionHidden("billing") ? "" : valueTile + costTile;
+  return `<div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>在线节点</span><i class="dot ${online.length ? "active" : ""}"></i></div><strong>${online.length}<small> / ${nodes.length}</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时上传</span><span class="tile-badge orange-badge">↑</span></div><strong>${hasLiveMetrics ? bytes(rateOut) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>实时下载</span><span class="tile-badge teal-badge">↓</span></div><strong>${hasLiveMetrics ? bytes(rateIn) : "—"}<small>/s</small></strong></div><div data-part="overview-tile" class="overview-tile"><div class="tile-header"><span>本周期用量合计</span><span class="tile-badge purple-badge">⚡</span></div><strong>${bytes(traffic)}</strong></div>${billingTiles}`;
 }
 
 // 小卡片只保留「窗口均值 / 阈值」；完整单位和规则放在 title 与无障碍标签中。
@@ -1009,6 +1022,7 @@ function bandwidthLine(n) {
 }
 
 function billingInner(n, expiry) {
+  if (sectionHidden("billing")) return "";
   return `${expiryPill(n, expiry)}${priceLabel(n)}<span class="remaining-value" title="${esc(remainingValueHint)}">剩余价值 ${esc(remainingValueLabel(n))}</span>`;
 }
 

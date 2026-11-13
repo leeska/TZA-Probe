@@ -647,7 +647,17 @@ func (s *Service) Panel(ctx context.Context) (model.PanelSettings, error) {
 	if err != nil {
 		return model.PanelSettings{}, err
 	}
+	hidden, err := s.Store.Setting(ctx, model.SettingPublicHidden)
+	if err != nil {
+		return model.PanelSettings{}, err
+	}
+	login, err := s.Store.Setting(ctx, model.SettingPublicLogin)
+	if err != nil {
+		return model.PanelSettings{}, err
+	}
 	panel := model.PanelSettings{
+		PublicHidden:         model.PublicHidden(hidden),
+		PublicLogin:          login == "1",
 		LatencyWindowMinutes: model.LatencyWindowMinutes(window),
 		DefaultTheme:         model.PanelTheme(theme),
 		DefaultSkin:          s.panelSkin(skin),
@@ -701,6 +711,20 @@ func (s *Service) writePanel(ctx context.Context, patch model.PanelPatch) error 
 	}
 	if patch.SiteName != nil {
 		if err := s.Store.SetSetting(ctx, model.SettingSiteName, strings.TrimSpace(*patch.SiteName)); err != nil {
+			return err
+		}
+	}
+	if patch.PublicHidden != nil {
+		if err := s.Store.SetSetting(ctx, model.SettingPublicHidden, strings.Join(model.PublicHidden(strings.Join(*patch.PublicHidden, ",")), ",")); err != nil {
+			return err
+		}
+	}
+	if patch.PublicLogin != nil {
+		value := ""
+		if *patch.PublicLogin {
+			value = "1"
+		}
+		if err := s.Store.SetSetting(ctx, model.SettingPublicLogin, value); err != nil {
 			return err
 		}
 	}

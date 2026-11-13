@@ -61,6 +61,10 @@ export function serviceReading(node, service, jobs) {
   return { label: "未知", tone: "", note: `${reasons[result?.reason] || (result?.page?.signal === "homepage_hkredirect" ? "旧检测没有实际地区证据，等待重新检测" : "未取得实际地区，暂时无法与目标比较")} ${time}` };
 }
 
+// 从任务列表点「编辑」进来时先选中那一台（只用一次）。
+let preferred = "";
+export function preferRegionNode(id) { preferred = id; }
+
 export async function renderIPGuard(root) {
   root.disposeRegionGuard?.();
   const controller = new AbortController();
@@ -75,7 +79,8 @@ export async function renderIPGuard(root) {
   try { data = await api("/admin/ipguard", { signal: controller.signal }); }
   catch (error) { dispose(); throw error; }
   if (!alive()) { dispose(); return; }
-  let nodeID = data.nodes.find(node => node.policy)?.id || data.nodes[0]?.id;
+  let nodeID = data.nodes.find(node => node.id === preferred)?.id || data.nodes.find(node => node.policy)?.id || data.nodes[0]?.id;
+  preferred = "";
   const drafts = new Map();
   const selected = () => data.nodes.find(node => node.id === nodeID);
   const draftFor = node => {

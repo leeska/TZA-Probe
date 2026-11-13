@@ -49,6 +49,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 - **Server 端**：`internal/module` 定义接口。一个模块实现 `Module`（`ID()`），再按需实现：
   - `Migrator`：在主库里建自己的表，见下节
   - `Router`：通过 `module.Routes` 挂路由，有 `Public`、`Admin`、`Agent` 三种；鉴权和同源检查用的是 httpapi 自己那一套
+  - `Overviewer`：给后台总览提供卡片（`module.Card`：标题、结论、语气、最多 6 条待处理项、点开去哪一页）。总览页 `GET /admin/overview` 先放核心的四张（节点、到期与流量、网络探测、告警），再按模块顺序放各模块的；某个模块读数出错只把它那张卡标成「读取失败」，不影响整页
   
   `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有两个模块：`regiondrift`（地区偏移检测）和 `remote`（远程管理：管理通道、命令、终端）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
 - **任务类型**：`model.RegisterTaskKind` 登记每种 `Task.Type`。登记的内容包括：
@@ -59,6 +60,8 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
   
   storage 和 MCP 只查这张表，不再按类型名写分支。内置的三种类型 probe、unlock、block 也通过它登记。
 - **Agent 能力**：Agent 在上报和心跳里带 `capabilities`。Server 只检查格式：小写标识符、不重复、最多 32 个，不认识的名字照样保留，所以更新的 Agent 不会因为多报了能力被拒。某种能力具体怎么用，由用到它的模块自己判断，例如 `AllowsUnlock`。
+- **前台区块开关**：`model.PublicSections` 列出可关的区块（`network` 延迟与回程、`unlock` 解锁检测、`billing` 价格与到期），另有「整个前台需要登录」。访客接口都经 `httpapi/public.go` 的 `a.public(区块, handler)`：需要登录时一律 401（`{"login":true}`），区块关掉时属于它的接口 404，节点列表里对应字段清空（`publicPolicy.strip`），观测按类型过滤。开关缓存 2 秒，后台保存时立即失效。前台从 `/theme-default.js` 的 `window.__tzaPublic` 读到开关（`web/public-config.js`），管理员登录后看前台拿到的是全量数据，前台按同一规则去掉，版面与访客一致。
+- **任务入口**：「网络探测」页的「创建任务」先选类型：延迟与回程、解锁检测、IP 被墙检测走任务表；地区偏移检测仍按节点保存设置（每台节点有自己的出口、目标地区和定位，不适合多节点共用一个任务），选它进地区偏移页，已设置的节点也作为行列在任务表里。
 - **后台页面**：`web/admin-pages.js` 是页面清单，每一项是 id、名称、图标和页面函数。侧栏、面包屑和切页都由这张清单生成，新模块加一项就有自己的页面。
 
 ### 管理通道

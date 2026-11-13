@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,6 +79,7 @@ type API struct {
 	// 匿名面板共用的快照，见 panelNodes / allObservations / latencySamples。
 	nodesSnap        snapshot[[]model.NodeView]
 	observationsSnap snapshot[map[string][]model.Observation]
+	publicPolicy     policyCache
 	samplesSnap      snapshot[map[string]any]
 	svc              *service.Service
 	// upgrades 是一键升级 Agent 的队列，见 upgrade.go。
@@ -159,14 +161,16 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/session", a.admin(func(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, map[string]any{"authenticated": true, "version": model.Version})
 	}))
-	mux.HandleFunc("GET /api/v1/nodes", a.nodes)
-	mux.HandleFunc("GET /api/v1/nodes/live", a.liveNodes)
-	mux.HandleFunc("GET /api/v1/nodes/{id}/history", a.history)
-	mux.HandleFunc("GET /api/v1/nodes/{id}/network-history", a.networkHistory)
-	mux.HandleFunc("GET /api/v1/nodes/{id}/observations", a.observations)
-	mux.HandleFunc("GET /api/v1/observations", a.allObservations)
-	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
-	mux.HandleFunc("GET /api/v1/unlock-catalog", a.unlockCatalog)
+	// 访客接口都经 a.public：整个前台需要登录时一律 401；第一个参数是所属区块，
+	// 后台关掉该区块时访客拿到 404（见 public.go）。
+	mux.HandleFunc("GET /api/v1/nodes", a.public("", a.nodes))
+	mux.HandleFunc("GET /api/v1/nodes/live", a.public("", a.liveNodes))
+	mux.HandleFunc("GET /api/v1/nodes/{id}/history", a.public("", a.history))
+	mux.HandleFunc("GET /api/v1/nodes/{id}/network-history", a.public("network", a.networkHistory))
+	mux.HandleFunc("GET /api/v1/nodes/{id}/observations", a.public("", a.observations))
+	mux.HandleFunc("GET /api/v1/observations", a.public("", a.allObservations))
+	mux.HandleFunc("GET /api/v1/latency-samples", a.public("network", a.latencySamples))
+	mux.HandleFunc("GET /api/v1/unlock-catalog", a.public("unlock", a.unlockCatalog))
 	a.adminRoutes(mux)
 	module.Mount(a.Modules, moduleRoutes{a: a, mux: mux})
 	// 前台默认外观必须在样式表之前定下来，否则首屏会先按内置默认闪一下再跳到设置里的皮肤。
@@ -197,6 +201,11 @@ func (a *API) Handler() http.Handler {
 			// 计费汇总单位：公开面板顶部「每月成本 / 剩余价值汇总」用它统一折算（web/format.js
 			// 的固定参考汇率表按币种查）。跟着首屏脚本走，面板设置改完下一次打开即生效。
 			fmt.Fprintf(w, "window.__tzaPriceUnit=%q;\n", unit)
+			// 前台区块开关与「需要登录」：app.js 据此不画关掉的区块、未登录时显示登录提示。
+			// 数据本身由 a.public 在服务端过滤，这里只决定版面。
+			policy := a.policy(r)
+			publicJS, _ := json.Marshal(map[string]any{"hidden": policy.hidden, "login": policy.login})
+			fmt.Fprintf(w, "window.__tzaPublic=%s;\n", publicJS)
 		}
 	})
 	// 后台上传的站点 logo（没有时 404）；类型白名单、SVG 检查与它自己的 CSP 见 brand.Store。
@@ -613,11 +622,12 @@ func (a *API) visibleNodes(r *http.Request) ([]model.NodeView, error) {
 	if err != nil {
 		return nil, err
 	}
+	policy := a.policy(r)
 	out := []model.NodeView{}
 	for _, n := range nodes {
 		if admin || (n.Public && n.LastSeen > 0) {
 			if !admin {
-				n = n.Redact()
+				n = policy.strip(n.Redact())
 			}
 			out = append(out, n)
 		}
@@ -713,6 +723,10 @@ func (a *API) observations(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	if !a.isAdmin(r) {
+		policy := a.policy(r)
+		out = slices.DeleteFunc(out, func(o model.Observation) bool { return !policy.keepObservation(o) })
+	}
 	for i := range out {
 		if slim {
 			out[i].Result.Hops = nil
@@ -755,6 +769,20 @@ func (a *API) allObservations(w http.ResponseWriter, r *http.Request) {
 		out, err = a.observationsSnap.get(probesTTL, func() (map[string][]model.Observation, error) {
 			return compute(context.WithoutCancel(r.Context()))
 		})
+		// The snapshot is shared: filter into a new map, never in place.
+		if policy := a.policy(r); err == nil && len(policy.hidden) > 0 {
+			filtered := make(map[string][]model.Observation, len(out))
+			for id, list := range out {
+				keep := []model.Observation{}
+				for _, o := range list {
+					if policy.keepObservation(o) {
+						keep = append(keep, o)
+					}
+				}
+				filtered[id] = keep
+			}
+			out = filtered
+		}
 	}
 	if err != nil {
 		fail(w, err)

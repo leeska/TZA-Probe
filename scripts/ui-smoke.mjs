@@ -114,7 +114,12 @@ assert(!$('#login [name="token"]') && !$("#login-mode"), "仅提供用户名密�
 set($("#login"), "username", username);
 set($("#login"), "password", password);
 submit($("#login"));
-await until(() => $("#add-node"), "admin home");
+// 登录后首页是总览：核心卡片（节点、到期与流量、网络探测、告警）都在，点「节点」卡进节点管理。
+await until(() => $(".overview-cards"), "admin home (overview)");
+for (const id of ["nodes", "billing", "tasks", "alerts"])
+  assert($(`[data-card="${id}"]`), `总览要有 ${id} 卡片`);
+$('[data-card="nodes"]').click();
+await until(() => $("#add-node"), "node list from the overview card");
 $("#add-node").click();
 let form = $("#node-form");
 assert(form);
@@ -531,6 +536,10 @@ await fetch(base + "/api/v1/admin/nodes/" + zeroNode.id, { method: "DELETE", hea
 $('[data-tab="tasks"]').click();
 await until(() => $("#add-task"), "task list");
 $("#add-task").click();
+// 「创建任务」先选类型：四种都在，选「延迟与回程」进网络探测表单。
+await until(() => $(".task-types"), "task type chooser");
+assert.deepEqual([...w.document.querySelectorAll("[data-type]")].map((b) => b.dataset.type), ["probe", "unlock", "block", "region"]);
+$('[data-type="probe"]').click();
 await until(() => $("#catalog-search"), "task editor");
 const picker = $("#catalog-search");
 picker.value = "上海";
@@ -871,6 +880,8 @@ await until(
 $('[data-tab="tasks"]').click();
 await until(() => $("#add-task"), "tasks page for unlock");
 $("#add-task").click();
+await until(() => $('[data-type="probe"]'), "task type chooser for unlock");
+$('[data-type="probe"]').click();
 await until(() => $("#task-form"), "task editor for unlock");
 {
   const form = $("#task-form");
