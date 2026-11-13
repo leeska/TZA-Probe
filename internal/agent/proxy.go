@@ -108,7 +108,97 @@ func (h *ProxyHost) Handlers() map[string]channel.Handler {
 		channel.KindProxyInstall: h.install,
 		channel.KindProxyApply:   h.apply,
 		channel.KindProxyRemove:  h.remove,
+		channel.KindProxyStats:   h.stats,
 	}
+}
+
+// statsAPI is where the Server's xray configuration puts the stats API
+// (proxy.StatsAPIPort; the Agent does not import the Server's packages).
+const statsAPI = "127.0.0.1:62789"
+
+// stats reads and resets xray's per-user counters ("user>>>ID>>>traffic>>>
+// uplink"). Counters live in the running process, so a restart loses what
+// was not read yet; the Server reads before every apply to keep that small.
+func (h *ProxyHost) stats(ctx context.Context, raw json.RawMessage, conn net.Conn) error {
+	var p channel.ProxyStatsParams
+	if err := json.Unmarshal(raw, &p); err != nil || p.Kernel != "xray" {
+		return channel.WriteLine(conn, channel.ProxyStats{Error: "只有 xray 能按使用者统计流量"})
+	}
+	h.mu.Lock()
+	state := h.loadState()[p.Kernel]
+	h.mu.Unlock()
+	if state.Version == "" || state.ConfigSHA256 == "" {
+		return channel.WriteLine(conn, channel.ProxyStats{Users: map[string]channel.UserTraffic{}})
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	out, err := h.Run(ctx, h.binaryPath(p.Kernel, state.Version), "api", "statsquery", "--server="+statsAPI, "-pattern", "user>>>", "-reset")
+	if err != nil {
+		return channel.WriteLine(conn, channel.ProxyStats{Error: "读取流量失败：" + lastLine(out, err)})
+	}
+	users, err := parseXrayStats(out)
+	if err != nil {
+		return channel.WriteLine(conn, channel.ProxyStats{Error: err.Error()})
+	}
+	return channel.WriteLine(conn, channel.ProxyStats{Users: users})
+}
+
+func lastLine(out []byte, err error) string {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if last := strings.TrimSpace(lines[len(lines)-1]); last != "" {
+		return last
+	}
+	return err.Error()
+}
+
+// parseXrayStats reads `xray api statsquery` output: {"stat":[{"name":…,
+// "value":…}]}, where a zero value is left out and the value may be a JSON
+// string (protojson int64). Text before the JSON (warnings) is skipped.
+func parseXrayStats(out []byte) (map[string]channel.UserTraffic, error) {
+	users := map[string]channel.UserTraffic{}
+	start := strings.IndexByte(string(out), '{')
+	if start < 0 {
+		if strings.TrimSpace(string(out)) == "" {
+			return users, nil
+		}
+		return nil, errors.New("流量统计输出无法识别")
+	}
+	var doc struct {
+		Stat []struct {
+			Name  string      `json:"name"`
+			Value json.Number `json:"value"`
+		} `json:"stat"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(out[start:])))
+	decoder.UseNumber()
+	if err := decoder.Decode(&doc); err != nil {
+		return nil, errors.New("流量统计输出无法识别")
+	}
+	for _, st := range doc.Stat {
+		parts := strings.Split(st.Name, ">>>")
+		if len(parts) != 4 || parts[0] != "user" || parts[2] != "traffic" || parts[1] == "" {
+			continue
+		}
+		value := int64(0)
+		if st.Value != "" {
+			n, err := strconv.ParseInt(strings.Trim(string(st.Value), `"`), 10, 64)
+			if err != nil || n < 0 {
+				continue
+			}
+			value = n
+		}
+		t := users[parts[1]]
+		switch parts[3] {
+		case "uplink":
+			t.Up += value
+		case "downlink":
+			t.Down += value
+		default:
+			continue
+		}
+		users[parts[1]] = t
+	}
+	return users, nil
 }
 
 func (h *ProxyHost) status(ctx context.Context, _ json.RawMessage, conn net.Conn) error {

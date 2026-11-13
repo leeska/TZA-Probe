@@ -13,7 +13,8 @@ function statusCell(inbound, view) {
   const k = view.kernels?.[inbound.kernel];
   if (!k) return '<span class="pill">等待同步</span>';
   if (k.error) return `<span class="pill bad">出错</span><small>${esc(k.error)}</small>`;
-  if (k.synced && k.active) return `<span class="pill good">运行中</span><small>${esc(inbound.kernel)} ${esc(k.version || "")}</small>`;
+  const traffic = inbound.kernel === "xray" ? (k.stats_error ? `流量读取失败：${esc(k.stats_error)}` : "按人统计流量") : "sing-box 不统计流量";
+  if (k.synced && k.active) return `<span class="pill good">运行中</span><small>${esc(inbound.kernel)} ${esc(k.version || "")} · ${traffic}</small>`;
   return '<span class="pill">同步中</span>';
 }
 
@@ -62,7 +63,7 @@ function inboundForm(existing, data, people) {
     return `<option value="${esc(n.id)}" ${n.id === i.node_id ? "selected" : ""}>${esc(n.name)}${note}</option>`;
   }).join("");
   const userBoxes = people.map((u) => `<label class="checkbox"><input type="checkbox" name="user" value="${esc(u.id)}" ${i.user_ids.includes(u.id) ? "checked" : ""}>${esc(u.name)}<small>${u.status === "active" ? "" : "当前不可用"}</small></label>`).join("") || '<p class="hint">还没有使用者，先在「使用者」里添加。</p>';
-  const d = modal(existing ? `编辑入站 · ${existing.name}` : "添加入站", `<form id="inbound-form"><section class="form-section"><h3>基本</h3><div class="form-grid">${field("名称", "name", i.name, "text", 'required maxlength="40" placeholder="如 日本直连"')}<label>节点<select name="node_id" required><option value="">选择节点</option>${nodeOptions}</select></label><label>协议<select name="protocol"><option value="vless-reality" ${i.protocol === "vless-reality" ? "selected" : ""}>VLESS Reality（直连）</option><option value="ss2022" ${i.protocol === "ss2022" ? "selected" : ""}>Shadowsocks 2022（中转 / 落地）</option></select></label><label>内核<select name="kernel"><option value="xray" ${i.kernel === "xray" ? "selected" : ""}>xray</option><option value="sing-box" ${i.kernel === "sing-box" ? "selected" : ""}>sing-box</option></select></label>${field("端口", "port", i.port, "number", 'min="1" max="65535" required')}${field("连接地址（客户端连的域名或 IP）", "address", i.address, "text", 'maxlength="253" placeholder="如 jp.example.com 或节点公网 IP"')}</div>${check("启用", "enabled", i.enabled)}</section><section class="form-section" data-reality><h3>Reality</h3><div class="form-grid">${field("目标网站（域名:443）", "dest", i.reality?.dest || "", "text", 'placeholder="与节点同地区、支持 TLS 1.3 的境外网站"')}${field("SNI（留空同目标域名）", "server_name", i.reality?.server_name || "", "text")}</div><p class="hint">Reality 借用目标网站的 TLS 握手。别用 microsoft、apple 这类大家都在用的站，挑一个和节点同地区、支持 TLS 1.3 的网站。密钥由主控生成，编辑时保留。</p></section><section class="form-section"><h3>使用者</h3><p class="hint">都不勾就是全部使用者都能用。停用、过期或流量用完的使用者会自动排除。</p><div class="node-checkboxes">${userBoxes}</div></section><div class="form-footer"><button type="submit" class="primary">保存</button></div></form>`);
+  const d = modal(existing ? `编辑入站 · ${existing.name}` : "添加入站", `<form id="inbound-form"><section class="form-section"><h3>基本</h3><div class="form-grid">${field("名称", "name", i.name, "text", 'required maxlength="40" placeholder="如 日本直连"')}<label>节点<select name="node_id" required><option value="">选择节点</option>${nodeOptions}</select></label><label>协议<select name="protocol"><option value="vless-reality" ${i.protocol === "vless-reality" ? "selected" : ""}>VLESS Reality（直连）</option><option value="ss2022" ${i.protocol === "ss2022" ? "selected" : ""}>Shadowsocks 2022（中转 / 落地）</option></select></label><label>内核<select name="kernel"><option value="xray" ${i.kernel === "xray" ? "selected" : ""}>xray</option><option value="sing-box" ${i.kernel === "sing-box" ? "selected" : ""}>sing-box</option></select><small data-kernel-note></small></label>${field("端口", "port", i.port, "number", 'min="1" max="65535" required')}${field("连接地址（客户端连的域名或 IP）", "address", i.address, "text", 'maxlength="253" placeholder="如 jp.example.com 或节点公网 IP"')}</div>${check("启用", "enabled", i.enabled)}</section><section class="form-section" data-reality><h3>Reality</h3><div class="form-grid">${field("目标网站（域名:443）", "dest", i.reality?.dest || "", "text", 'placeholder="与节点同地区、支持 TLS 1.3 的境外网站"')}${field("SNI（留空同目标域名）", "server_name", i.reality?.server_name || "", "text")}</div><p class="hint">Reality 借用目标网站的 TLS 握手。别用 microsoft、apple 这类大家都在用的站，挑一个和节点同地区、支持 TLS 1.3 的网站。密钥由主控生成，编辑时保留。</p></section><section class="form-section"><h3>使用者</h3><p class="hint">都不勾就是全部使用者都能用。停用、过期或流量用完的使用者会自动排除。</p><div class="node-checkboxes">${userBoxes}</div></section><div class="form-footer"><button type="submit" class="primary">保存</button></div></form>`);
   const form = d.querySelector("#inbound-form");
   const el = (n) => form.elements.namedItem(n);
   const syncProtocol = () => {
@@ -70,8 +71,17 @@ function inboundForm(existing, data, people) {
     form.querySelector("[data-reality]").hidden = !reality;
     el("dest").required = reality;
   };
-  el("protocol").onchange = syncProtocol;
+  const syncKernel = () => {
+    const xray = el("kernel").value === "xray";
+    const reality = el("protocol").value === "vless-reality";
+    form.querySelector("[data-kernel-note]").textContent = xray
+      ? `按人统计流量，计入额度。${reality ? "注意：xray 的 Reality 连不上 sing-box 内核的客户端（SFA、SFI、Hiddify），sing-box 订阅里不会有它。" : ""}`
+      : "官方 sing-box 不提供按人流量，这个入站的流量不计入额度。";
+  };
+  el("protocol").onchange = () => { syncProtocol(); syncKernel(); };
+  el("kernel").onchange = syncKernel;
   syncProtocol();
+  syncKernel();
   form.onsubmit = guard(async (e) => {
     e.preventDefault();
     const body = {

@@ -23,8 +23,12 @@ type User struct {
 	Enabled bool   `json:"enabled"`
 	// TrafficLimit is the allowance per period in bytes; 0 is unlimited.
 	TrafficLimit int64 `json:"traffic_limit"`
-	// TrafficUsed is counted since PeriodStart (filled by traffic accounting).
+	// TrafficUsed is counted since PeriodStart by traffic accounting (upload
+	// plus download, the figure the quota is checked against); TrafficUp and
+	// TrafficDown split it for subscription clients.
 	TrafficUsed int64 `json:"traffic_used"`
+	TrafficUp   int64 `json:"traffic_up"`
+	TrafficDown int64 `json:"traffic_down"`
 	// ResetDay is the day of the month (1–28) the usage starts over; 0 never.
 	ResetDay    int    `json:"reset_day"`
 	PeriodStart int64  `json:"period_start"`

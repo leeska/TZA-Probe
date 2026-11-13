@@ -2,10 +2,13 @@ package proxy
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/httpjson"
@@ -123,6 +126,8 @@ func (m *Module) Routes(r module.Routes) {
 		}
 		httpjson.Write(w, 200, links)
 	})
+	// 订阅：只凭使用者的 token，不需要登录（前台需要登录时也照常可用）。
+	r.Public("GET /api/v1/sub/{token}", m.subscription)
 	// 立即同步：等这一轮做完再回，后台据此刷新状态。
 	r.Admin("POST /api/v1/admin/proxy/sync", func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 10*time.Minute)
@@ -183,4 +188,56 @@ func (m *Module) Overview(ctx context.Context) ([]module.Card, error) {
 		card.Value, card.Tone, card.Note = fmt.Sprintf("%d 个入站", enabled), "good", "各节点配置已同步"
 	}
 	return []module.Card{card}, nil
+}
+
+// subscription serves a user's subscription in the format the client wants
+// (?format=clash|singbox|base64, else from the User-Agent; ?mode=global
+// proxies everything). The subscription-userinfo header carries usage,
+// quota and expiry, which most clients show.
+func (m *Module) subscription(w http.ResponseWriter, req *http.Request) {
+	u, err := m.Users.ByToken(req.Context(), req.PathValue("token"))
+	if errors.Is(err, users.ErrNotFound) {
+		http.Error(w, "订阅不存在或链接已更换", 404)
+		return
+	} else if err != nil {
+		http.Error(w, "读取失败", 500)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	switch u.Status(time.Now()) {
+	case users.StatusDisabled:
+		http.Error(w, "这个使用者已停用", 403)
+		return
+	case users.StatusExpired:
+		http.Error(w, "这个使用者已过期", 403)
+		return
+	}
+	inbounds, err := m.Store.List(req.Context())
+	if err != nil {
+		http.Error(w, "读取失败", 500)
+		return
+	}
+	member := MemberOf(u)
+	format := FormatFor(req.URL.Query().Get("format"), req.UserAgent())
+	mode := ModeRule
+	if req.URL.Query().Get("mode") == ModeGlobal {
+		mode = ModeGlobal
+	}
+	body, contentType, err := Subscription(format, mode, Entries(inbounds, member), member)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	info := fmt.Sprintf("upload=%d; download=%d; total=%d", u.TrafficUp, u.TrafficDown, u.TrafficLimit)
+	if t, err := time.Parse(time.RFC3339, u.ExpiresAt); err == nil {
+		info += "; expire=" + strconv.FormatInt(t.Unix(), 10)
+	}
+	w.Header().Set("Subscription-Userinfo", info)
+	w.Header().Set("Profile-Update-Interval", "12")
+	title := "TZA · " + u.Name
+	w.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(title)))
+	ext := map[string]string{FormatClash: ".yaml", FormatSingBox: ".json", FormatBase64: ".txt"}[format]
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(title+ext))
+	w.Header().Set("Content-Type", contentType)
+	w.Write(body)
 }

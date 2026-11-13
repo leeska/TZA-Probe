@@ -19,6 +19,9 @@ const (
 	// KindProxyRemove stops the service and removes its configuration (the
 	// binary stays); answers ProxyResult.
 	KindProxyRemove = "proxy.remove"
+	// KindProxyStats reads and resets the per-user traffic counters of a
+	// running kernel (xray only); answers ProxyStats.
+	KindProxyStats = "proxy.stats"
 	// MaxKernelBinary bounds an installed binary.
 	MaxKernelBinary = 128 << 20
 	// MaxProxyConfig bounds a configuration.
@@ -54,6 +57,22 @@ type ProxyApplyParams struct {
 
 type ProxyRemoveParams struct {
 	Kernel string `json:"kernel"`
+}
+
+type ProxyStatsParams struct {
+	Kernel string `json:"kernel"`
+}
+
+// UserTraffic is bytes counted for one user since the previous read.
+type UserTraffic struct {
+	Up   int64 `json:"up"`
+	Down int64 `json:"down"`
+}
+
+// ProxyStats maps user id → traffic since the previous read.
+type ProxyStats struct {
+	Users map[string]UserTraffic `json:"users"`
+	Error string                 `json:"error,omitempty"`
 }
 
 type ProxyResult struct {

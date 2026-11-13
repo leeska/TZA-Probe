@@ -165,3 +165,31 @@ func TestRoutes(t *testing.T) {
 		t.Fatal(cards)
 	}
 }
+
+func TestAddUsage(t *testing.T) {
+	_, mod := openStore(t)
+	s := mod.Store
+	ctx := context.Background()
+	now := time.Now()
+	a, _ := s.Create(ctx, users.User{Name: "a", Enabled: true, TrafficLimit: 100}, now)
+	b, _ := s.Create(ctx, users.User{Name: "b", Enabled: true}, now)
+	gone, err := s.AddUsage(ctx, map[string]users.Usage{a.ID: {Up: 40, Down: 30}, b.ID: {Down: 500}, "missing": {Up: 1}}, now)
+	if err != nil || len(gone) != 0 {
+		t.Fatal(gone, err)
+	}
+	gone, _ = s.AddUsage(ctx, map[string]users.Usage{a.ID: {Down: 30}}, now)
+	if len(gone) != 1 || gone[0] != a.ID {
+		t.Fatal("用完额度的要报出来", gone)
+	}
+	got, _ := s.Get(ctx, a.ID)
+	if got.TrafficUsed != 100 || got.TrafficUp != 40 || got.TrafficDown != 60 {
+		t.Fatalf("%+v", got)
+	}
+	if gone, _ = s.AddUsage(ctx, map[string]users.Usage{a.ID: {Down: 1}}, now); len(gone) != 0 {
+		t.Fatal("已经超额的不重复报", gone)
+	}
+	got, _ = s.ResetUsage(ctx, a.ID, now)
+	if got.TrafficUsed != 0 || got.TrafficUp != 0 || got.TrafficDown != 0 {
+		t.Fatalf("%+v", got)
+	}
+}

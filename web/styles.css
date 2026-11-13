@@ -5922,3 +5922,12 @@ dialog.region-dialog .region-intro { margin: 0 0 var(--space-4); }
 [data-user] progress { display: block; width: 120px; margin-top: 4px; }
 .proxy-links { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-3); }
 .proxy-links pre { white-space: pre-wrap; word-break: break-all; }
+.sub-links { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: grid; gap: var(--space-4); }
+.sub-links li > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-2); }
+.sub-links small { color: var(--muted); }
+.sub-links pre { white-space: pre-wrap; word-break: break-all; }
+.sub-links .command-block { margin: 0; }
+.sub-links .command-block .button { flex: 0 0 auto; align-self: center; }
+@media (max-width: 560px) { .sub-links .command-block { flex-wrap: wrap; } .sub-links .command-block pre { flex-basis: 100%; } }
+.user-page .user-card + .user-card { margin-top: var(--space-4); }
+.user-card h2 { margin: 0 0 var(--space-2); font-size: var(--text-lg, 1.125rem); }

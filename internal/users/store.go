@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/leeska/TZA-Probe/internal/storage"
@@ -23,7 +24,13 @@ func Migrations() []storage.Migration {
 
 var ErrNotFound = errors.New("使用者不存在")
 
-type Store struct{ DB *sql.DB }
+// Store keeps users as JSON rows. Every read-modify-write holds mu, so the
+// accounting loop adding usage and an administrator's edit never overwrite
+// each other (the Server is the only writer).
+type Store struct {
+	DB *sql.DB
+	mu sync.Mutex
+}
 
 func (s *Store) scan(rows *sql.Rows) ([]User, error) {
 	defer rows.Close()
@@ -43,6 +50,12 @@ func (s *Store) scan(rows *sql.Rows) ([]User, error) {
 }
 
 func (s *Store) List(ctx context.Context) ([]User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.list(ctx)
+}
+
+func (s *Store) list(ctx context.Context) ([]User, error) {
 	rows, err := s.DB.QueryContext(ctx, "SELECT value FROM users ORDER BY created_at, id")
 	if err != nil {
 		return nil, err
@@ -98,11 +111,14 @@ func (s *Store) put(ctx context.Context, u User) error {
 
 // Create stores a new user with a fresh id and token; usage starts now.
 func (s *Store) Create(ctx context.Context, u User, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	u.Name, u.Note = strings.TrimSpace(u.Name), strings.TrimSpace(u.Note)
 	if err := u.Validate(); err != nil {
 		return User{}, err
 	}
-	u.ID, u.Token, u.CreatedAt, u.PeriodStart, u.TrafficUsed = newID(), NewToken(), now.Unix(), now.Unix(), 0
+	u.ID, u.Token, u.CreatedAt, u.PeriodStart = newID(), NewToken(), now.Unix(), now.Unix()
+	u.TrafficUsed, u.TrafficUp, u.TrafficDown = 0, 0, 0
 	u.newCredentials()
 	return u, s.put(ctx, u)
 }
@@ -114,6 +130,8 @@ func (s *Store) Update(ctx context.Context, id string, in User) (User, error) {
 	if err := in.Validate(); err != nil {
 		return User{}, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	u, err := s.Get(ctx, id)
 	if err != nil {
 		return User{}, err
@@ -126,6 +144,8 @@ func (s *Store) Update(ctx context.Context, id string, in User) (User, error) {
 }
 
 func (s *Store) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	result, err := s.DB.ExecContext(ctx, "DELETE FROM users WHERE id=?", id)
 	if err != nil {
 		return err
@@ -139,6 +159,8 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 // RotateToken gives the user a new token; the old subscription link and usage
 // page stop working at once.
 func (s *Store) RotateToken(ctx context.Context, id string) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	u, err := s.Get(ctx, id)
 	if err != nil {
 		return User{}, err
@@ -150,18 +172,22 @@ func (s *Store) RotateToken(ctx context.Context, id string) (User, error) {
 
 // ResetUsage zeroes the usage and starts a new period now.
 func (s *Store) ResetUsage(ctx context.Context, id string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	u, err := s.Get(ctx, id)
 	if err != nil {
 		return User{}, err
 	}
-	u.TrafficUsed, u.PeriodStart = 0, now.Unix()
+	u.TrafficUsed, u.TrafficUp, u.TrafficDown, u.PeriodStart = 0, 0, 0, now.Unix()
 	return u, s.put(ctx, u)
 }
 
 // RollPeriods starts a new period for every user whose reset day has passed.
 // Run periodically; returns how many were reset.
 func (s *Store) RollPeriods(ctx context.Context, now time.Time) (int, error) {
-	list, err := s.List(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list, err := s.list(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -171,7 +197,7 @@ func (s *Store) RollPeriods(ctx context.Context, now time.Time) (int, error) {
 		if next == 0 || now.Unix() < next {
 			continue
 		}
-		u.TrafficUsed, u.PeriodStart = 0, next
+		u.TrafficUsed, u.TrafficUp, u.TrafficDown, u.PeriodStart = 0, 0, 0, next
 		// A server that was off for months catches up to the current period.
 		for {
 			if after := u.NextReset(); after != 0 && now.Unix() >= after {
@@ -186,4 +212,39 @@ func (s *Store) RollPeriods(ctx context.Context, now time.Time) (int, error) {
 		n++
 	}
 	return n, nil
+}
+
+// Usage is traffic counted for one user since the last report.
+type Usage struct{ Up, Down int64 }
+
+// AddUsage adds counted traffic to each user's current period and returns
+// the ids that ran out of quota with it (their proxy access must go now).
+// Ids of users deleted meanwhile are ignored.
+func (s *Store) AddUsage(ctx context.Context, usage map[string]Usage, now time.Time) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	exhausted := []string{}
+	for id, add := range usage {
+		if add.Up <= 0 && add.Down <= 0 {
+			continue
+		}
+		u, err := s.Get(ctx, id)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return exhausted, err
+		}
+		before := u.Status(now)
+		u.TrafficUp += max(0, add.Up)
+		u.TrafficDown += max(0, add.Down)
+		u.TrafficUsed += max(0, add.Up) + max(0, add.Down)
+		if err := s.put(ctx, u); err != nil {
+			return exhausted, err
+		}
+		if before == StatusActive && u.Status(now) == StatusExceeded {
+			exhausted = append(exhausted, id)
+		}
+	}
+	return exhausted, nil
 }

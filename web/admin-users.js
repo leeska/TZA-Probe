@@ -1,6 +1,8 @@
 // 后台「使用者」：分给朋友用的账号。每人有流量额度（可按月重置）、到期时间、开关和一个订阅 token；
-// token 也是使用者自己查看用量的链接（/u/{token}）。代理入站与订阅输出在后续步骤里接上。
+// token 同时是订阅链接（/api/v1/sub/{token}）和使用者自己查看用量的页面（/u/{token}）。
+// 本期流量来自 xray 入站的按人统计，每分钟累计一次。
 import { api, send, esc, toast, modal, guard } from "./api.js";
+import { subscriptionHTML, wireCopy } from "./subscription.js";
 import { bytes } from "./format.js";
 import { content, field, check, confirmAction, moreMenu, wireMoreMenus, render } from "./admin-state.js";
 
@@ -11,7 +13,7 @@ const pageLink = (u) => `${location.origin}/u/${u.token}`;
 function usageCell(u) {
   const limit = u.traffic_limit;
   const percent = limit ? Math.min(100, (u.traffic_used / limit) * 100) : 0;
-  return `${bytes(u.traffic_used)}<small>${limit ? `/ ${bytes(limit)}` : "不限流量"}</small>${limit ? `<progress max="100" value="${percent.toFixed(1)}" aria-label="已用 ${percent.toFixed(0)}%"></progress>` : ""}`;
+  return `${bytes(u.traffic_used)}<small>${limit ? `/ ${bytes(limit)}` : "不限流量"} · ↑${bytes(u.traffic_up || 0)} ↓${bytes(u.traffic_down || 0)}</small>${limit ? `<progress max="100" value="${percent.toFixed(1)}" aria-label="已用 ${percent.toFixed(0)}%"></progress>` : ""}`;
 }
 function resetCell(u) {
   if (!u.reset_day) return '<span class="muted">不重置</span>';
@@ -22,13 +24,14 @@ export async function usersPage(nodesReady) {
   const [, list] = await Promise.all([nodesReady, api("/admin/users")]);
   const rows = list.map((u) => {
     const [label, tone] = STATUS[u.status] || [u.status, ""];
-    return `<tr data-user="${esc(u.id)}"><td data-label="使用者">${esc(u.name)}<small>${esc(u.note || "")}</small></td><td data-label="状态"><span class="pill ${tone}">${label}</span></td><td data-label="本期流量">${usageCell(u)}</td><td data-label="重置">${resetCell(u)}</td><td data-label="到期">${u.expires_at ? esc(dayOf(u.expires_at)) : '<span class="muted">长期</span>'}</td><td data-label="操作"><div class="row-actions"><button data-edit-user="${esc(u.id)}">编辑</button><button data-copy-user="${esc(u.id)}">复制用量页</button>${moreMenu(`<button data-reset-user="${esc(u.id)}">清零本期用量</button><button data-rotate-user="${esc(u.id)}">更换链接</button><button class="menu-danger" data-delete-user="${esc(u.id)}">删除</button>`)}</div></td></tr>`;
+    return `<tr data-user="${esc(u.id)}"><td data-label="使用者">${esc(u.name)}<small>${esc(u.note || "")}</small></td><td data-label="状态"><span class="pill ${tone}">${label}</span></td><td data-label="本期流量">${usageCell(u)}</td><td data-label="重置">${resetCell(u)}</td><td data-label="到期">${u.expires_at ? esc(dayOf(u.expires_at)) : '<span class="muted">长期</span>'}</td><td data-label="操作"><div class="row-actions"><button data-edit-user="${esc(u.id)}">编辑</button><button data-sub-user="${esc(u.id)}">订阅</button>${moreMenu(`<button data-copy-user="${esc(u.id)}">复制用量页</button><button data-reset-user="${esc(u.id)}">清零本期用量</button><button data-rotate-user="${esc(u.id)}">更换链接</button><button class="menu-danger" data-delete-user="${esc(u.id)}">删除</button>`)}</div></td></tr>`;
   }).join("");
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">USERS</div><h1>使用者<span>${list.length}</span></h1><p>分给朋友用的账号：流量额度、到期时间和各自的用量页。代理节点与订阅链接在后续版本接上。</p></div><div class="heading-actions"><button id="add-user" class="primary">＋ 添加使用者</button></div></section><section data-part="panel" class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th>使用者</th><th>状态</th><th>本期流量</th><th>重置</th><th>到期</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-cell">还没有使用者。点「添加使用者」给朋友开一个。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">USERS</div><h1>使用者<span>${list.length}</span></h1><p>分给朋友用的账号：流量额度、到期时间和各自的用量页。订阅里是对方能用的代理入站；流量按 xray 入站统计，sing-box 入站不计入。</p></div><div class="heading-actions"><button id="add-user" class="primary">＋ 添加使用者</button></div></section><section data-part="panel" class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th>使用者</th><th>状态</th><th>本期流量</th><th>重置</th><th>到期</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-cell">还没有使用者。点「添加使用者」给朋友开一个。</td></tr>'}</tbody></table></div></section>`;
   const byId = (id) => list.find((u) => u.id === id);
   wireMoreMenus(content());
   content().querySelector("#add-user").onclick = () => userForm(null);
   content().querySelectorAll("[data-edit-user]").forEach((b) => (b.onclick = () => userForm(byId(b.dataset.editUser))));
+  content().querySelectorAll("[data-sub-user]").forEach((b) => (b.onclick = () => showSubscription(byId(b.dataset.subUser))));
   content().querySelectorAll("[data-copy-user]").forEach((b) => (b.onclick = () => copyLink(byId(b.dataset.copyUser))));
   content().querySelectorAll("[data-reset-user]").forEach((b) => (b.onclick = () => {
     const u = byId(b.dataset.resetUser);
@@ -46,6 +49,11 @@ export async function usersPage(nodesReady) {
     const u = byId(b.dataset.deleteUser);
     confirmAction(`删除使用者 · ${u.name}`, `删除「${u.name}」，对方的链接立即失效。此操作无法撤销。`, async () => { await send(`/admin/users/${u.id}`, "DELETE"); await render(); }, { label: "删除" });
   }));
+}
+
+function showSubscription(u) {
+  const d = modal(`订阅 · ${u.name}`, `<p class="hint">把其中一条发给对方，导入客户端即可；客户端会显示已用流量和到期时间。链接就是凭证，换链接后旧的立即失效。</p>${subscriptionHTML(u.token, u.name)}`);
+  wireCopy(d, toast);
 }
 
 function copyLink(u) {

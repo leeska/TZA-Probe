@@ -3,8 +3,10 @@ package proxy_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -74,6 +76,7 @@ func TestProxyOverChannel(t *testing.T) {
 	root := t.TempDir()
 	var mu sync.Mutex
 	var commands []string
+	var statsOut []byte // the next `xray api statsquery -reset` answer
 	host := &agent.ProxyHost{Root: root, Systemd: func() bool { return true }, Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
 		mu.Lock()
 		commands = append(commands, name+" "+strings.Join(args, " "))
@@ -83,6 +86,13 @@ func TestProxyOverChannel(t *testing.T) {
 		}
 		if name == "id" {
 			return []byte(fmt.Sprint(os.Getgid())), nil
+		}
+		if len(args) > 1 && args[0] == "api" && args[1] == "statsquery" {
+			mu.Lock()
+			defer mu.Unlock()
+			out := statsOut
+			statsOut = nil
+			return out, nil
 		}
 		return nil, nil
 	}}
@@ -147,6 +157,62 @@ func TestProxyOverChannel(t *testing.T) {
 	call("GET", "/admin/proxy/inbounds/"+in.ID+"/links", nil, &links)
 	if len(links) != 1 || links[0].Name != "甲" || !strings.HasPrefix(links[0].Link, "vless://"+a.ProxyUUID+"@jp.example.com:443?") {
 		t.Fatalf("链接：%+v", links)
+	}
+	// 流量：节点上读到的按人计数记到使用者本期用量上，订阅里带用量头。
+	mu.Lock()
+	statsOut = []byte(`{"stat":[{"name":"user>>>` + a.ID + `>>>traffic>>>uplink","value":1000},{"name":"user>>>` + a.ID + `>>>traffic>>>downlink","value":"5000"},{"name":"user>>>gone>>>traffic>>>downlink","value":7}]}`)
+	mu.Unlock()
+	call("POST", "/admin/proxy/sync", nil, &synced)
+	var after users.View
+	var list []users.View
+	call("GET", "/admin/users", nil, &list)
+	for _, u := range list {
+		if u.ID == a.ID {
+			after = u
+		}
+	}
+	if after.TrafficUsed != 6000 || after.TrafficUp != 1000 || after.TrafficDown != 5000 {
+		t.Fatalf("用量：%+v", after)
+	}
+	sub := func(query, agent string) (*http.Response, string) {
+		req, _ := http.NewRequest("GET", server.URL+"/api/v1/sub/"+a.Token+query, nil)
+		req.Header.Set("User-Agent", agent)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		raw, _ := io.ReadAll(res.Body)
+		return res, string(raw)
+	}
+	res, body := sub("", "mihomo/1.19")
+	if res.StatusCode != 200 || !strings.Contains(body, `name: "日本"`) || !strings.Contains(body, a.ProxyUUID) || res.Header.Get("Subscription-Userinfo") != "upload=1000; download=5000; total=0" {
+		t.Fatalf("Clash 订阅：%d %s %s", res.StatusCode, res.Header, body)
+	}
+	if res, body = sub("?format=base64", ""); res.StatusCode != 200 {
+		t.Fatal(res.StatusCode)
+	} else if raw, _ := base64.StdEncoding.DecodeString(body); !strings.HasPrefix(string(raw), "vless://"+a.ProxyUUID+"@jp.example.com:443?") {
+		t.Fatalf("base64 订阅：%s", raw)
+	}
+	if res, _ = sub("", "SFA/1.12"); res.Header.Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatal("sing-box 客户端要拿到 JSON", res.Header)
+	}
+	// 用完额度的人在下一轮被移出配置；订阅照常能取，客户端据此显示用量。
+	call("PUT", "/admin/users/"+a.ID, map[string]any{"name": "甲", "enabled": true, "traffic_limit": 4000}, nil)
+	call("POST", "/admin/proxy/sync", nil, &synced)
+	config, _ = os.ReadFile(filepath.Join(root, "etc/tza-proxy/xray.json"))
+	if bytes.Contains(config, []byte(a.ProxyUUID)) {
+		t.Fatal("超额的使用者要从配置里去掉")
+	}
+	if res, _ = sub("", "clash"); res.StatusCode != 200 {
+		t.Fatal(res.StatusCode)
+	}
+	if res, _ = sub("", ""); res.Header.Get("Subscription-Userinfo") != "upload=1000; download=5000; total=4000" {
+		t.Fatal(res.Header)
+	}
+	req, _ := http.NewRequest("GET", server.URL+"/api/v1/sub/"+strings.Repeat("0", 32), nil)
+	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 404 {
+		t.Fatal("未知 token 要 404")
 	}
 	call("DELETE", "/admin/proxy/inbounds/"+in.ID, nil, nil)
 	call("POST", "/admin/proxy/sync", nil, &synced)

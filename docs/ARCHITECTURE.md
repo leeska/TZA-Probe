@@ -51,7 +51,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
   - `Router`：通过 `module.Routes` 挂路由，有 `Public`、`Admin`、`Agent` 三种；鉴权和同源检查用的是 httpapi 自己那一套
   - `Overviewer`：给后台总览提供卡片（`module.Card`：标题、结论、语气、最多 6 条待处理项、点开去哪一页）。总览页 `GET /admin/overview` 先放核心的四张（节点、到期与流量、网络探测、告警），再按模块顺序放各模块的；某个模块读数出错只把它那张卡标成「读取失败」，不影响整页
   
-  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`；流量统计在后续步骤接上）和 `proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站，见下面「代理」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
+  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）和 `proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站，见下面「代理」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
 - **任务类型**：`model.RegisterTaskKind` 登记每种 `Task.Type`。登记的内容包括：
   - 定义从哪个字段读、怎么校验、怎么展开成探测
   - `FixedBindings`：节点带角色，只能编辑任务来改绑定，不能批量绑定或解绑
@@ -82,6 +82,8 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 - **服务**：每个内核一个 systemd 单元 `tza-proxy-<内核>`，以系统用户 `tza-proxy`（第一次应用时创建）运行，只给 `CAP_NET_BIND_SERVICE`；配置里有使用者的凭据，文件为 root:tza-proxy 0640。不用 DynamicUser / LoadCredential，因为它们要 systemd 247+，Ubuntu 20.04 还是 245。
 - **同步**：`proxy.Module.Sync` 为每个节点按启用的入站渲染配置（排序后的 JSON，哈希判断是否需要下发），只给当前可用的使用者（停用、过期、流量用完的去掉）。内核版本不符先装内核，配置哈希不符或服务没在运行就重新应用，节点不再需要的内核就移除。保存入站或使用者后立即同步一次，之后每分钟一次。
 - **凭据**：每位使用者有自己的 VLESS UUID 和 Shadowsocks 2022 密钥（`users.User.ProxyUUID` / `ProxyKey`），「更换链接」时和 token 一起换掉。
+- **流量**：xray 配置打开 stats API（只监听 `127.0.0.1:62789`，入站不能用这个端口），使用者以 id 作为 email。每轮同步、在任何会重启内核的操作之前，主控发 `proxy.stats`，节点执行 `xray api statsquery -pattern user>>> -reset` 读出并清零按人的上下行字节数；主控用 `users.Store.AddUsage` 累加到本期用量（`traffic_up`、`traffic_down`、`traffic_used`）。有人因此用完额度时立即再同步一轮，把他从配置里去掉。官方 sing-box 没有编进 v2ray API，所以 sing-box 入站不统计、不计入额度。内核重启前没读到的计数会丢，最多一分钟的量。
+- **订阅**：`GET /api/v1/sub/{token}`（`proxy.Module.subscription`，凭 token 不需要登录）。格式取 `?format=clash|singbox|base64`，没有时按 User-Agent 判断（`proxy.FormatFor`），都认不出就给 base64 分享链接。Clash/mihomo 与 sing-box 配置用内置规则：私有地址和中国大陆直连，其余走「节点选择」（含「自动选择」测速组）；`?mode=global` 全部代理。只列出这位使用者能用、填了连接地址的启用入站。xray 26.9.8 起 Reality 服务端要求客户端带 X25519MLKEM768 密钥，sing-box 的 uTLS 指纹不带（SagerNet/sing-box#4520，放宽 minClientVer 也不行），所以 sing-box 订阅里去掉 xray 内核的 Reality 入站。响应头 `Subscription-Userinfo` 带用量、额度和到期，停用或过期的使用者返回 403。
 
 ### 审计日志与两步验证
 

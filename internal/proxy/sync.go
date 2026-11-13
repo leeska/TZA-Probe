@@ -35,6 +35,9 @@ type KernelView struct {
 	Active  bool   `json:"active"`
 	Synced  bool   `json:"synced"`
 	Error   string `json:"error,omitempty"`
+	// StatsError is why traffic could not be read this round (the service
+	// itself may be fine).
+	StatsError string `json:"stats_error,omitempty"`
 }
 
 // NodeView is a node's proxy state after the last sync.
@@ -150,6 +153,7 @@ func (m *Module) Sync(ctx context.Context) error {
 		return err
 	}
 	views := map[string]NodeView{}
+	usage := map[string]users.Usage{}
 	for _, n := range nodes {
 		status := m.Hub.Status(n.ID)
 		v := NodeView{ID: n.ID, Name: n.Name, Connected: status.Connected, Capable: slices.Contains(status.Capabilities, channel.CapabilityProxy), Kernels: map[string]KernelView{}}
@@ -160,7 +164,7 @@ func (m *Module) Sync(ctx context.Context) error {
 				v.Error = "节点没有连接管理通道或未开启代理能力：在节点上重跑接入命令并加 --manage"
 			}
 		default:
-			v.Error = m.syncNode(ctx, n.ID, want[n.ID], &v)
+			v.Error = m.syncNode(ctx, n.ID, want[n.ID], &v, usage)
 			v.At = time.Now().Unix()
 		}
 		views[n.ID] = v
@@ -168,7 +172,38 @@ func (m *Module) Sync(ctx context.Context) error {
 	m.state.mu.Lock()
 	m.state.nodes = views
 	m.state.mu.Unlock()
+	exhausted, err := m.Users.AddUsage(ctx, usage, time.Now())
+	if err != nil {
+		return fmt.Errorf("记录流量：%w", err)
+	}
+	if len(exhausted) > 0 {
+		// Their access goes on the next round, not a minute later.
+		slog.Info("proxy: users out of quota", "users", exhausted)
+		m.Kick()
+	}
 	return nil
+}
+
+// collect reads and resets a running kernel's per-user counters into usage.
+// It runs before anything restarts the kernel, which would drop them.
+func (m *Module) collect(ctx context.Context, node, kernel string, usage map[string]users.Usage) string {
+	if kernel != KernelXray {
+		return ""
+	}
+	var st channel.ProxyStats
+	if err := m.call(ctx, node, channel.KindProxyStats, channel.ProxyStatsParams{Kernel: kernel}, nil, &st); err != nil {
+		return "读取流量失败：" + err.Error()
+	}
+	if st.Error != "" {
+		return st.Error
+	}
+	for id, t := range st.Users {
+		u := usage[id]
+		u.Up += t.Up
+		u.Down += t.Down
+		usage[id] = u
+	}
+	return ""
 }
 
 // Nodes is every node's state after the last sync.
@@ -183,7 +218,7 @@ func (m *Module) NodeViews() []NodeView {
 	return out
 }
 
-func (m *Module) syncNode(ctx context.Context, node string, want map[string][]byte, view *NodeView) string {
+func (m *Module) syncNode(ctx context.Context, node string, want map[string][]byte, view *NodeView, usage map[string]users.Usage) string {
 	var status channel.ProxyStatus
 	if err := m.call(ctx, node, channel.KindProxyStatus, nil, nil, &status); err != nil {
 		return "读取代理状态失败：" + err.Error()
@@ -196,6 +231,9 @@ func (m *Module) syncNode(ctx context.Context, node string, want map[string][]by
 		config, needed := want[kernel]
 		current := status.Kernels[kernel]
 		kv := KernelView{Version: current.Version, Active: current.Active}
+		if current.Active && current.ConfigSHA256 != "" {
+			kv.StatsError = m.collect(ctx, node, kernel, usage)
+		}
 		if !needed {
 			if current.ConfigSHA256 != "" {
 				var r channel.ProxyResult

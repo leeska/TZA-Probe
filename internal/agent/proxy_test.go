@@ -127,3 +127,20 @@ func TestProxyConfigOutsideAgentDir(t *testing.T) {
 		t.Fatalf("config %s is unreadable for %s", h.configPath("xray"), ProxyUser)
 	}
 }
+
+func TestParseXrayStats(t *testing.T) {
+	out := []byte("2026/11/14 warn something\n{\"stat\":[{\"name\":\"user>>>a>>>traffic>>>uplink\",\"value\":\"12\"},{\"name\":\"user>>>a>>>traffic>>>downlink\",\"value\":30},{\"name\":\"user>>>b>>>traffic>>>downlink\"},{\"name\":\"inbound>>>x>>>traffic>>>uplink\",\"value\":5},{\"name\":\"user>>>c>>>traffic>>>uplink\",\"value\":-1}]}")
+	got, err := parseXrayStats(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["a"].Up != 12 || got["a"].Down != 30 || got["b"].Down != 0 {
+		t.Fatalf("%+v", got)
+	}
+	if got, err := parseXrayStats(nil); err != nil || len(got) != 0 {
+		t.Fatal("没有计数时输出为空", got, err)
+	}
+	if _, err := parseXrayStats([]byte("rpc error")); err == nil {
+		t.Fatal("看不懂的输出要报错")
+	}
+}

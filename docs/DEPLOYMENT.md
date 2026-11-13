@@ -78,7 +78,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.5.1-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.6.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -174,7 +174,7 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 
 ## 使用者
 
-后台「使用者」给朋友开账号：名称、备注、启用开关、流量额度（GB，0 为不限）、每月重置日（1–28，0 为不重置）和到期日。添加后会复制一条用量页链接（`https://你的域名/u/…`），对方打开就能看到自己的状态、本期流量、下次重置和到期时间，不需要登录。链接就是凭证：泄露了用「更换链接」作废旧的。流量用完或过期后状态会标出来；代理节点与订阅链接在后续版本接上，到时按这里的状态放行或停用。
+后台「使用者」给朋友开账号：名称、备注、启用开关、流量额度（GB，0 为不限）、每月重置日（1–28，0 为不重置）和到期日。添加后会复制一条用量页链接（`https://你的域名/u/…`），对方打开就能看到自己的状态、本期流量、下次重置和到期时间，不需要登录。链接就是凭证：泄露了用「更换链接」作废旧的。停用、过期或流量用完的使用者会在下一次同步时从代理节点上去掉。「订阅」按钮给出这位使用者的订阅链接，用量页上也有。
 
 ## 代理
 
@@ -185,6 +185,9 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 - **添加入站**：选节点、协议、内核、端口，填客户端连接的地址（域名或节点 IP）。Reality 要填一个目标网站（与节点同地区、支持 TLS 1.3 的境外网站，别用 microsoft、apple 这类大家都在用的站）。使用者不勾就是全部。
 - **生效**：保存后主控立即同步：首次会把内核传到节点（几十 MB，一两分钟），节点先用内核检查配置，通过后启动 `tza-proxy-xray` 或 `tza-proxy-sing-box` 服务。状态一列显示运行中或出错原因。
 - **链接**：每个入站的「链接」给出每位使用者的导入链接。停用、过期或流量用完的使用者会在下一次同步（最多一分钟）时从节点配置里去掉。
+- **流量**：xray 入站按使用者统计上下行，每分钟计入本期用量，额度用完的人一分钟内被停掉。官方 sing-box 不提供按人统计，sing-box 入站的流量不计入额度，要限额的人请用 xray 入站。
+- **订阅**：使用者页和用量页都有订阅链接，一个地址按客户端自动给 Clash/mihomo、sing-box 或通用 base64 格式，也有分格式的地址和一键导入。内置规则是国内直连、其余走代理，订阅地址加上 `mode=global` 参数（如 `…/sub/<token>?mode=global`）改成全部代理。客户端会显示已用流量和到期时间。
+- **兼容性**：xray 内核的 Reality 入站连不上 sing-box 内核的客户端（SFA、SFI、Hiddify 等），这是 xray 26.9.8 起的已知问题，sing-box 订阅里不会列出它们。给这类客户端用，选 Shadowsocks 2022 或 sing-box 内核的 Reality。
 - **防火墙**：如果节点开着防火墙，要自己放行入站端口。
 
 ## 主题与插件

@@ -14,6 +14,8 @@ type obj = map[string]any
 // Config renders the whole configuration one kernel runs on a node: every
 // enabled inbound for that kernel with the members allowed on it. Users are
 // named by their id (the email in xray), which traffic accounting keys on.
+// Only xray counts traffic per user: the official sing-box builds leave out
+// the v2ray API that would expose it.
 // The output is deterministic (sorted keys), so its hash tells whether a node
 // is up to date.
 func Config(kernel string, inbounds []Inbound, members []Member) ([]byte, error) {
@@ -24,7 +26,13 @@ func Config(kernel string, inbounds []Inbound, members []Member) ([]byte, error)
 		for _, in := range inbounds {
 			list = append(list, xrayInbound(in, in.Members(members)))
 		}
-		out = obj{"log": obj{"loglevel": "warning"}, "inbounds": list, "outbounds": []any{obj{"protocol": "freedom", "tag": "direct"}, obj{"protocol": "blackhole", "tag": "block"}}}
+		out = obj{"log": obj{"loglevel": "warning"}, "inbounds": list, "outbounds": []any{obj{"protocol": "freedom", "tag": "direct"}, obj{"protocol": "blackhole", "tag": "block"}},
+			// Per-user traffic: the Agent reads and resets these counters
+			// through the stats API (loopback only) at every sync.
+			"api":    obj{"tag": "api", "listen": fmt.Sprintf("127.0.0.1:%d", StatsAPIPort), "services": []string{"StatsService"}},
+			"stats":  obj{},
+			"policy": obj{"levels": obj{"0": obj{"statsUserUplink": true, "statsUserDownlink": true}}},
+		}
 	case KernelSingBox:
 		list := []any{}
 		for _, in := range inbounds {

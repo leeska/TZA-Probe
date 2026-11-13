@@ -57,6 +57,8 @@ type Public struct {
 	Status       string `json:"status"`
 	TrafficLimit int64  `json:"traffic_limit"`
 	TrafficUsed  int64  `json:"traffic_used"`
+	TrafficUp    int64  `json:"traffic_up"`
+	TrafficDown  int64  `json:"traffic_down"`
 	ResetDay     int    `json:"reset_day"`
 	PeriodStart  int64  `json:"period_start"`
 	NextReset    int64  `json:"next_reset"`
@@ -151,7 +153,7 @@ func (m *Module) Routes(r module.Routes) {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		httpjson.Write(w, 200, Public{Name: u.Name, Status: u.Status(m.now()), TrafficLimit: u.TrafficLimit, TrafficUsed: u.TrafficUsed, ResetDay: u.ResetDay, PeriodStart: u.PeriodStart, NextReset: u.NextReset(), ExpiresAt: u.ExpiresAt})
+		httpjson.Write(w, 200, Public{Name: u.Name, Status: u.Status(m.now()), TrafficLimit: u.TrafficLimit, TrafficUsed: u.TrafficUsed, TrafficUp: u.TrafficUp, TrafficDown: u.TrafficDown, ResetDay: u.ResetDay, PeriodStart: u.PeriodStart, NextReset: u.NextReset(), ExpiresAt: u.ExpiresAt})
 	})
 }
 

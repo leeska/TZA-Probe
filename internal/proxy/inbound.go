@@ -23,6 +23,8 @@ const (
 	SSMethod = "2022-blake3-aes-128-gcm"
 	// VLESSFlow is the flow every VLESS Reality user gets.
 	VLESSFlow = "xtls-rprx-vision"
+	// StatsAPIPort is where xray answers traffic queries, on 127.0.0.1 only.
+	StatsAPIPort = 62789
 )
 
 // Inbound is one listening port on a node.
@@ -78,6 +80,9 @@ func (in *Inbound) Prepare(previous *Inbound) error {
 	}
 	if in.Port < 1 || in.Port > 65535 {
 		return errors.New("端口为 1–65535")
+	}
+	if in.Port == StatsAPIPort {
+		return fmt.Errorf("端口 %d 留给 xray 的流量统计接口，请换一个", StatsAPIPort)
 	}
 	if in.Address != "" && !validHost(in.Address) {
 		return errors.New("连接地址须是域名或 IP")
@@ -190,12 +195,15 @@ func (in Inbound) Members(all []Member) []Member {
 }
 
 // ShareLink is the URI a client imports for member on in.
-func (in Inbound) ShareLink(m Member) string {
+func (in Inbound) ShareLink(m Member) string { return in.NamedLink(m, in.Name+" · "+m.Name) }
+
+// NamedLink is ShareLink with the name the client shows.
+func (in Inbound) NamedLink(m Member, name string) string {
 	host := in.Address
 	if strings.Contains(host, ":") {
 		host = "[" + host + "]"
 	}
-	name := url.PathEscape(in.Name + " · " + m.Name)
+	name = url.PathEscape(name)
 	switch in.Protocol {
 	case ProtocolVLESSReality:
 		q := url.Values{"encryption": {"none"}, "flow": {VLESSFlow}, "security": {"reality"}, "sni": {in.Reality.ServerName}, "fp": {"chrome"}, "pbk": {in.Reality.PublicKey}, "sid": {in.Reality.ShortID}, "type": {"tcp"}}
