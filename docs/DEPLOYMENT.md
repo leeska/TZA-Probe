@@ -78,7 +78,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.7.1-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.8.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -199,6 +199,16 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 - **使用者**：规则可以归属一位使用者，流量计入他的额度；他停用、过期或流量用完时，这条规则在下一次同步时停掉。不归属就只统计。
 - **流量**：按规则统计，每分钟累计一次，列表里显示创建以来的上下行。
 - **端口**：入口端口和隧道端口不能和同一节点上的入站或其他转发重复，62789 留给 xray 的统计接口。节点有防火墙的话，入口端口和出口节点的隧道端口都要放行。
+
+## Docker
+
+后台「Docker」管理节点上的容器、镜像和 Compose 项目。
+
+- **前提**：节点装了 Docker（Compose 项目还要 `docker compose` 插件），并用 `--manage` 接入。想在某台节点上关掉，在 `/etc/tza-probe/manage.json` 的 `disabled_capabilities` 里写 `"docker"` 后重启 Agent。
+- **容器**：列表显示镜像、状态和映射端口；可以看日志（实时跟踪）、进入容器终端（有 bash 用 bash，否则 sh），启动、停止、重启和强制删除。
+- **镜像**：列表、删除（还有容器在用时 Docker 会拒绝）、拉取（私有仓库要先在节点上 `docker login`）。
+- **Compose**：列出节点上已有的项目（从容器标签找到）和面板新建的项目（放在节点的 `/opt/tza-compose/<项目名>/`）。可以编辑 compose 文件（保存前节点会用 `docker compose config` 检查，旧文件留作 `.tza-bak`），一键部署（up -d）、拉取镜像、重启、停止并移除容器（down，数据卷保留）。
+- **审计**：启停、删除、拉镜像、保存 compose、Compose 操作、看日志和容器终端都写入审计日志。
 
 ## 主题与插件
 

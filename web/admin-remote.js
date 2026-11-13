@@ -90,44 +90,61 @@ function adoptXtermStyles(root) {
   };
 }
 
-async function openTerminal(node, name) {
+function openTerminal(node, name) {
+  return openStream(`/api/v1/admin/remote/terminal?node=${encodeURIComponent(node)}`, `终端 · ${name}`, { interactive: true });
+}
+
+// openStream 打开一个经管理通道转接的 WebSocket 流并用 xterm 显示：终端（interactive，键入和
+// 窗口大小发给节点）或只出不进的输出（日志、拉镜像、Compose 操作）。path 不含 cols/rows。
+export async function openStream(path, title, { interactive = false, onExit } = {}) {
   const w = await loadXterm();
-  const d = modal(`终端 · ${name}`, `<div class="terminal-box"><div class="terminal-host"></div></div><p class="hint terminal-status">连接中…</p>`);
+  const d = modal(title, `<div class="terminal-box"><div class="terminal-host"></div></div><p class="hint terminal-status">连接中…</p>`);
   d.classList.add("terminal-dialog");
   const host = d.querySelector(".terminal-host");
   const status = d.querySelector(".terminal-status");
-  const term = new w.Terminal({ cursorBlink: true, fontSize: 13, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", scrollback: 5000, theme: { background: "#0b0d10" } });
+  const term = new w.Terminal({ cursorBlink: interactive, disableStdin: !interactive, convertEol: !interactive, fontSize: 13, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", scrollback: 10000, theme: { background: "#0b0d10" } });
   const fit = new w.FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(host);
   const unstyle = adoptXtermStyles(host);
   fit.fit();
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(`${proto}//${location.host}/api/v1/admin/remote/terminal?node=${encodeURIComponent(node)}&cols=${term.cols}&rows=${term.rows}`);
+  const ws = new WebSocket(`${proto}//${location.host}${path}${path.includes("?") ? "&" : "?"}cols=${term.cols}&rows=${term.rows}`);
   ws.binaryType = "arraybuffer";
-  ws.onopen = () => { status.textContent = "已连接。关闭窗口即断开；本次会话写入审计日志。"; term.focus(); };
+  let ended = false;
+  ws.onopen = () => {
+    status.textContent = interactive ? "已连接。关闭窗口即断开；本次会话写入审计日志。" : "进行中…关闭窗口即停止；本次操作写入审计日志。";
+    if (interactive) term.focus();
+  };
   ws.onmessage = (e) => {
     if (typeof e.data === "string") {
       const m = JSON.parse(e.data);
-      status.textContent = `会话已结束（退出码 ${m.exit}）${m.error ? " · " + m.error : ""}`;
+      ended = true;
+      status.textContent = interactive ? `会话已结束（退出码 ${m.exit}）${m.error ? " · " + m.error : ""}` : m.exit === 0 ? "完成" : `失败（退出码 ${m.exit}）${m.error ? " · " + m.error : ""}`;
+      onExit?.(m);
       return;
     }
     term.write(new Uint8Array(e.data));
   };
-  ws.onclose = () => { if (status.textContent.startsWith("连接中") || status.textContent.startsWith("已连接")) status.textContent = "连接已断开"; };
-  ws.onerror = () => toast("终端连接失败：节点的管理通道可能未连接");
+  ws.onclose = () => { if (!ended) status.textContent = "连接已断开"; };
+  ws.onerror = () => toast("连接失败：节点的管理通道可能未连接");
   const sendJSON = (v) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(v));
-  term.onData((data) => sendJSON({ i: data }));
-  const resize = () => { fit.fit(); sendJSON({ resize: { cols: term.cols, rows: term.rows } }); };
+  if (interactive) term.onData((data) => sendJSON({ i: data }));
+  const resize = () => { fit.fit(); if (interactive) sendJSON({ resize: { cols: term.cols, rows: term.rows } }); };
   const observer = new ResizeObserver(resize);
   observer.observe(host);
-  d.addEventListener("close", () => {
+  // 弹窗是同一个 <dialog>：从另一个弹窗（如 compose 编辑）直接打开时，那次关闭排队的 close
+  // 事件会晚一步到达，此时弹窗仍开着，要忽略。
+  const onClose = () => {
+    if (d.open) return;
+    d.removeEventListener("close", onClose);
     observer.disconnect();
     ws.close();
     term.dispose();
     unstyle();
     d.classList.remove("terminal-dialog");
-  }, { once: true });
+  };
+  d.addEventListener("close", onClose);
 }
 
 // 审计日志：后台的每次写操作、登录，以及命令与终端会话。
@@ -143,5 +160,5 @@ export async function auditPage(nodesReady) {
   if (all) all.onclick = guard(async () => { state.auditNode = ""; await auditPage(Promise.resolve()); });
 }
 
-const ACTIONS = { login: "登录", "login.failed": "登录失败", "shell.exec": "执行命令", "shell.terminal": "打开终端", "shell.terminal.closed": "终端结束" };
+const ACTIONS = { login: "登录", "login.failed": "登录失败", "shell.exec": "执行命令", "shell.terminal": "打开终端", "shell.terminal.closed": "终端结束", "docker.exec": "进入容器终端", "docker.exec.closed": "容器终端结束", "docker.logs": "查看容器日志", "docker.logs.closed": "日志查看结束", "docker.image.pull": "拉取镜像", "docker.image.pull.closed": "拉取镜像结束", "docker.image.remove": "删除镜像", "docker.container.start": "启动容器", "docker.container.stop": "停止容器", "docker.container.restart": "重启容器", "docker.container.remove": "删除容器", "docker.compose.write": "保存 compose 文件", "docker.compose.up": "Compose 部署", "docker.compose.down": "Compose 停止并移除", "docker.compose.pull": "Compose 拉取镜像", "docker.compose.restart": "Compose 重启" };
 const actionName = (a) => ACTIONS[a] || a;

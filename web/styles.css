@@ -5922,6 +5922,11 @@ dialog.region-dialog .region-intro { margin: 0 0 var(--space-4); }
 [data-user] progress { display: block; width: 120px; margin-top: 4px; }
 .proxy-links { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-3); }
 .proxy-links pre { white-space: pre-wrap; word-break: break-all; }
+.inline-select { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--muted); }
+.inline-select select { min-width: 180px; }
+.code-input { font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.5; width: 100%; tab-size: 2; white-space: pre; }
+.danger-text { color: var(--bad, #d14343); }
+.docker-error { border-left: 3px solid var(--bad, #d14343); }
 .input-with-button { display: flex; gap: var(--space-2); align-items: stretch; }
 .input-with-button input { flex: 1 1 auto; min-width: 0; }
 .input-with-button button { flex: 0 0 auto; white-space: nowrap; }

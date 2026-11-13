@@ -51,7 +51,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
   - `Router`：通过 `module.Routes` 挂路由，有 `Public`、`Admin`、`Agent` 三种；鉴权和同源检查用的是 httpapi 自己那一套
   - `Overviewer`：给后台总览提供卡片（`module.Card`：标题、结论、语气、最多 6 条待处理项、点开去哪一页）。总览页 `GET /admin/overview` 先放核心的四张（节点、到期与流量、网络探测、告警），再按模块顺序放各模块的；某个模块读数出错只把它那张卡标成「读取失败」，不影响整页
   
-  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）和 `proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站，见下面「代理」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
+  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）、`proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站与转发，见下面「代理」一节）和 `docker`（节点上的容器、镜像与 Compose 项目，见「Docker」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
 - **任务类型**：`model.RegisterTaskKind` 登记每种 `Task.Type`。登记的内容包括：
   - 定义从哪个字段读、怎么校验、怎么展开成探测
   - `FixedBindings`：节点带角色，只能编辑任务来改绑定，不能批量绑定或解绑
@@ -85,6 +85,15 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 - **流量**：xray 配置打开 stats API（只监听 `127.0.0.1:62789`，入站不能用这个端口），使用者以 id 作为 email。每轮同步、在任何会重启内核的操作之前，主控发 `proxy.stats`，节点执行 `xray api statsquery -pattern user>>> -reset` 读出并清零按人的上下行字节数；主控用 `users.Store.AddUsage` 累加到本期用量（`traffic_up`、`traffic_down`、`traffic_used`）。有人因此用完额度时立即再同步一轮，把他从配置里去掉。官方 sing-box 没有编进 v2ray API，所以 sing-box 入站不统计、不计入额度。内核重启前没读到的计数会丢，最多一分钟的量。
 - **转发**：`proxy.Forward`（表 `proxy_forwards`，迁移 proxy/2），全部跑在节点的 xray 里。直接转发是入口节点上的 dokodemo-door 入站（标签 `fw-<id>`）连目标；隧道再加一个 Shadowsocks 2022 出站（`fw-<id>-out`，每条规则一个密钥）和路由规则，连到出口节点上这条规则专用的 SS2022 入站（`tun-<id>`），出口节点用 freedom 连目标。`desired` 把每条生效的规则（启用，且归属的使用者存在并可用）分到入口和出口节点的 `Plan` 里，节点只有转发也会装 xray。入站与转发（入口端口、隧道出口端口）在每台节点上共用端口冲突检查（`Store.checkPorts`）。xray 配置打开 `policy.system` 的入站计数，Agent 读全部计数（不再只读 `user>>>`），按规则的入口入站累计到规则自己的 `traffic_up/down`，归属使用者的同时计入他的用量；出口一侧不计，避免重复。xray 的 splice 零拷贝会绕过计数器（直接转发的下行一直是 0），所以 Agent 写的 xray 服务单元带 `Environment=XRAY_BUF_SPLICE=disable`。
 - **订阅**：`GET /api/v1/sub/{token}`（`proxy.Module.subscription`，凭 token 不需要登录）。格式取 `?format=clash|singbox|base64`，没有时按 User-Agent 判断（`proxy.FormatFor`），都认不出就给 base64 分享链接。Clash/mihomo 与 sing-box 配置用内置规则：私有地址和中国大陆直连，其余走「节点选择」（含「自动选择」测速组）；`?mode=global` 全部代理。只列出这位使用者能用、填了连接地址的启用入站。xray 26.9.8 起 Reality 服务端要求客户端带 X25519MLKEM768 密钥，sing-box 的 uTLS 指纹不带（SagerNet/sing-box#4520，放宽 minClientVer 也不行），所以 sing-box 订阅里去掉 xray 内核的 Reality 入站。响应头 `Subscription-Userinfo` 带用量、额度和到期，停用或过期的使用者返回 403。
+
+### Docker
+
+`internal/docker` 在主控上，`internal/agent/docker.go` 在节点上，能力名 `docker`（管理通道上，节点要用 `--manage` 接入；管理版的 Agent 单元没有沙箱，以 root 运行）。
+
+- **Engine API**：Agent 直接连本机 `/var/run/docker.sock`（不解析 docker 命令行输出）。主控发 `docker.api`，Agent 只执行白名单里的调用：`/version`、`/info`、容器与镜像列表、单个容器的详情、容器 start / stop / restart / 删除、按 ID 删镜像；路径里的容器名和镜像 ID 用正则校验，查询参数也有白名单。建容器、exec、build 这类调用都不放行。
+- **流**：日志（`docker.logs`，没有 TTY 的容器要拆 Engine 的 8 字节分帧）、拉镜像（`docker.pull`，把进度 JSON 压成一行一步）、Compose 操作（`docker.compose.run`：up -d --remove-orphans、down、pull、restart）和容器终端（`docker.exec`：PTY 上跑 `docker exec -it <容器> sh -c "bash 或 sh"`，和主机终端共用 `runTerminal`）。它们都说 shell 能力的 `channel.Message`，主控用远程管理模块的 `Bridge` 转成浏览器的 WebSocket（`GET /api/v1/admin/docker/stream`），同源检查与审计日志（动作名和 `.closed`）同终端一样。
+- **Compose 项目**：Agent 从容器标签（`com.docker.compose.project`、`working_dir`、`config_files`）和 `/opt/tza-compose/<项目名>/compose.yaml` 两处找项目，按项目名解析路径，主控从不传路径。保存时先写同目录的临时文件，`docker compose config --quiet` 通过才替换，旧文件留作 `.tza-bak`；新名字在 `/opt/tza-compose/` 下建目录（0700），文件 0600。
+- **同一个 `<dialog>`**：前端所有弹窗共用一个元素，从编辑窗直接打开输出窗时，前一个弹窗的 close 事件会晚到，`openStream` 收到时弹窗仍开着就忽略。
 
 ### 审计日志与两步验证
 

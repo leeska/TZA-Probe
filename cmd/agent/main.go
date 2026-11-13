@@ -80,6 +80,8 @@ func managementCapabilities() map[string]map[string]channel.Handler {
 		channel.CapabilityShell: agent.ShellHandlers(),
 		// 代理：主控下发内核与配置，本机用 systemd 托管 tza-proxy-<内核> 服务。
 		channel.CapabilityProxy: agent.NewProxyHost().Handlers(),
+		// Docker：本机 Docker Engine API（白名单）、日志、拉镜像、Compose 项目与容器终端。
+		channel.CapabilityDocker: agent.NewDockerHost().Handlers(),
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/brand"
 	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-Probe/internal/docker"
 	"github.com/leeska/TZA-Probe/internal/httpapi"
 	"github.com/leeska/TZA-Probe/internal/ipguard"
 	"github.com/leeska/TZA-Probe/internal/model"
@@ -138,6 +139,11 @@ func run() error {
 	drift.Broker, drift.Nodes = guardBroker, store
 	hub := &channel.Hub{}
 	remoteMod.Hub, remoteMod.Nodes = hub, store
+	for _, m := range modules {
+		if d, ok := m.(*docker.Module); ok {
+			d.Nodes = store
+		}
+	}
 	usersMod.Store = &users.Store{DB: store.DB()}
 	// 代理：入站存在主库，内核缓存在数据目录的 kernels/，经同一个管理通道下发到节点。
 	proxyMod.Store, proxyMod.Users, proxyMod.Hub, proxyMod.Nodes = &proxy.Store{DB: store.DB()}, usersMod.Store, hub, store
@@ -359,5 +365,7 @@ func resetPasswordCommand(args []string) error {
 // the ones it returns separately once the database is open.
 func shippedModules() ([]module.Module, *regiondrift.Module, *remote.Module, *users.Module, *proxy.Module) {
 	drift, remoteMod, usersMod, proxyMod := &regiondrift.Module{}, &remote.Module{}, &users.Module{}, &proxy.Module{}
-	return []module.Module{drift, remoteMod, usersMod, proxyMod}, drift, remoteMod, usersMod, proxyMod
+	// Docker 不建表，复用远程管理的通道与转接。
+	dockerMod := &docker.Module{Remote: remoteMod}
+	return []module.Module{drift, remoteMod, usersMod, proxyMod, dockerMod}, drift, remoteMod, usersMod, proxyMod
 }

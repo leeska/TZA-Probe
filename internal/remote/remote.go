@@ -192,20 +192,28 @@ func sameOrigin(r *http.Request) bool {
 }
 
 func (m *Module) terminal(w http.ResponseWriter, req *http.Request, r module.Routes) {
+	cols, _ := strconv.Atoi(req.URL.Query().Get("cols"))
+	rows, _ := strconv.Atoi(req.URL.Query().Get("rows"))
+	m.Bridge(w, req, r, req.URL.Query().Get("node"), channel.KindTerminal, channel.TerminalParams{Cols: cols, Rows: rows}, "shell.terminal", "")
+}
+
+// Bridge relays a browser WebSocket to an Agent stream of kind that speaks
+// channel.Message lines (a terminal, or any output stream ending in Exit):
+// keystrokes and resizes go to the Agent, output comes back as binary frames
+// and the exit as a text frame. It checks the request's origin and the node,
+// and writes action (with detail) and action+".closed" to the audit log.
+func (m *Module) Bridge(w http.ResponseWriter, req *http.Request, r module.Routes, node, kind string, params any, action, detail string) {
 	if !sameOrigin(req) {
 		httpjson.Error(w, 403, "请求来源不受信任")
 		return
 	}
-	node := req.URL.Query().Get("node")
 	if !m.known(req.Context(), node) {
 		httpjson.Error(w, 404, "节点不存在")
 		return
 	}
-	cols, _ := strconv.Atoi(req.URL.Query().Get("cols"))
-	rows, _ := strconv.Atoi(req.URL.Query().Get("rows"))
-	agent, err := m.Hub.Open(req.Context(), node, channel.KindTerminal, channel.TerminalParams{Cols: cols, Rows: rows})
+	agent, err := m.Hub.Open(req.Context(), node, kind, params)
 	if err != nil {
-		r.Audit(req, model.AuditEntry{Action: "shell.terminal", NodeID: node, Status: 502, Detail: err.Error()})
+		r.Audit(req, model.AuditEntry{Action: action, NodeID: node, Status: 502, Detail: strings.TrimSpace(detail + "\n# " + err.Error())})
 		httpjson.Error(w, 502, err.Error())
 		return
 	}
@@ -219,7 +227,7 @@ func (m *Module) terminal(w http.ResponseWriter, req *http.Request, r module.Rou
 	}
 	defer browser.Close()
 	started := time.Now()
-	r.Audit(req, model.AuditEntry{Action: "shell.terminal", NodeID: node, Status: 101})
+	r.Audit(req, model.AuditEntry{Action: action, NodeID: node, Status: 101, Detail: detail})
 	var bytesIn atomic.Int64
 	var once sync.Once
 	var writeMu sync.Mutex
@@ -295,6 +303,6 @@ func (m *Module) terminal(w http.ResponseWriter, req *http.Request, r module.Rou
 		}
 	}
 	finish()
-	r.Audit(req, model.AuditEntry{Action: "shell.terminal.closed", NodeID: node, Status: exit,
+	r.Audit(req, model.AuditEntry{Action: action + ".closed", NodeID: node, Status: exit,
 		Detail: "持续 " + time.Since(started).Round(time.Second).String() + "，键入 " + strconv.FormatInt(bytesIn.Load(), 10) + " 字节"})
 }

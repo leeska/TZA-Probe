@@ -22,11 +22,21 @@ func setProcessGroup(cmd *exec.Cmd) {
 func terminalHandler(ctx context.Context, raw json.RawMessage, conn net.Conn) error {
 	var params channel.TerminalParams
 	json.Unmarshal(raw, &params)
-	size := &pty.Winsize{Cols: clampSize(params.Cols, 80), Rows: clampSize(params.Rows, 24)}
+	return runTerminal(ctx, conn, params.Cols, params.Rows, nil, loginShell(), "-l")
+}
+
+// runTerminal runs name args on a PTY and relays it over conn as Messages
+// (keystrokes and resizes in, output and the exit code out). env nil is the
+// shell environment.
+func runTerminal(ctx context.Context, conn net.Conn, cols, rows int, env []string, name string, args ...string) error {
+	size := &pty.Winsize{Cols: clampSize(cols, 80), Rows: clampSize(rows, 24)}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, loginShell(), "-l")
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = shellEnv()
+	if env != nil {
+		cmd.Env = env
+	}
 	cmd.Dir = home()
 	cmd.Cancel = func() error { return cmd.Process.Kill() }
 	tty, err := pty.StartWithSize(cmd, size)
