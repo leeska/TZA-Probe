@@ -118,3 +118,12 @@ func TestProxyHost(t *testing.T) {
 		t.Fatal("内核名不能带路径")
 	}
 }
+
+// The agent keeps /etc/tza-probe at 0700, so the unprivileged service user
+// must find its config somewhere else (v2.5.0 got this wrong).
+func TestProxyConfigOutsideAgentDir(t *testing.T) {
+	h := &ProxyHost{}
+	if strings.HasPrefix(h.configPath("xray"), "/etc/tza-probe/") {
+		t.Fatalf("config %s is unreadable for %s", h.configPath("xray"), ProxyUser)
+	}
+}

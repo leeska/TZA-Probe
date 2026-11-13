@@ -78,7 +78,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 `internal/proxy` 管入站，`internal/agent/proxy.go` 在节点上执行。
 
 - **内核来源**：xray 与 sing-box 的版本和各架构压缩包的 SHA-256 固定在 `proxy.Kernels` 里。主控第一次需要时从官方 GitHub release 下载，校验不符直接丢弃，取出内核文件缓存在数据目录的 `kernels/`。节点从不自己下载。
-- **下发**：管理通道上的四种请求，能力名 `proxy`：`proxy.status`（已装的内核、生效的配置哈希、服务是否在运行）、`proxy.install`（请求行后跟内核文件原始字节，节点校验 SHA-256 后装到 `/usr/local/lib/tza-probe/kernels/<内核>/<版本>/`）、`proxy.apply`（请求行后跟配置原始字节；节点先用内核自检 `xray run -test` / `sing-box check`，通过才写入 `/etc/tza-probe/proxy/<内核>.json`（0600）并重启服务）、`proxy.remove`（停服务、删配置，保留内核）。
+- **下发**：管理通道上的四种请求，能力名 `proxy`：`proxy.status`（已装的内核、生效的配置哈希、服务是否在运行）、`proxy.install`（请求行后跟内核文件原始字节，节点校验 SHA-256 后装到 `/usr/local/lib/tza-probe/kernels/<内核>/<版本>/`）、`proxy.apply`（请求行后跟配置原始字节；节点先用内核自检 `xray run -test` / `sing-box check`，通过才写入 `/etc/tza-proxy/<内核>.json`（root:tza-proxy 0640，目录 0750；不放在 0700 的 `/etc/tza-probe` 下，否则服务用户读不到）并重启服务）、`proxy.remove`（停服务、删配置，保留内核）。
 - **服务**：每个内核一个 systemd 单元 `tza-proxy-<内核>`，以系统用户 `tza-proxy`（第一次应用时创建）运行，只给 `CAP_NET_BIND_SERVICE`；配置里有使用者的凭据，文件为 root:tza-proxy 0640。不用 DynamicUser / LoadCredential，因为它们要 systemd 247+，Ubuntu 20.04 还是 245。
 - **同步**：`proxy.Module.Sync` 为每个节点按启用的入站渲染配置（排序后的 JSON，哈希判断是否需要下发），只给当前可用的使用者（停用、过期、流量用完的去掉）。内核版本不符先装内核，配置哈希不符或服务没在运行就重新应用，节点不再需要的内核就移除。保存入站或使用者后立即同步一次，之后每分钟一次。
 - **凭据**：每位使用者有自己的 VLESS UUID 和 Shadowsocks 2022 密钥（`users.User.ProxyUUID` / `ProxyKey`），「更换链接」时和 token 一起换掉。

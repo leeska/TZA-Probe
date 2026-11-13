@@ -123,7 +123,7 @@ func TestProxyOverChannel(t *testing.T) {
 	if len(synced.Nodes) != 1 || synced.Nodes[0].Error != "" || !synced.Nodes[0].Kernels["xray"].Synced || !synced.Nodes[0].Kernels["xray"].Active {
 		t.Fatalf("首次同步：%+v", synced.Nodes)
 	}
-	config, err := os.ReadFile(filepath.Join(root, "etc/tza-probe/proxy/xray.json"))
+	config, err := os.ReadFile(filepath.Join(root, "etc/tza-proxy/xray.json"))
 	if err != nil || !bytes.Contains(config, []byte(a.ProxyUUID)) || !bytes.Contains(config, []byte(b.ProxyUUID)) {
 		t.Fatalf("配置里要有两位使用者：%s", config)
 	}
@@ -139,7 +139,7 @@ func TestProxyOverChannel(t *testing.T) {
 	}
 	call("PUT", "/admin/users/"+b.ID, map[string]any{"name": "乙", "enabled": false}, nil)
 	call("POST", "/admin/proxy/sync", nil, &synced)
-	config, _ = os.ReadFile(filepath.Join(root, "etc/tza-probe/proxy/xray.json"))
+	config, _ = os.ReadFile(filepath.Join(root, "etc/tza-proxy/xray.json"))
 	if bytes.Contains(config, []byte(b.ProxyUUID)) || !bytes.Contains(config, []byte(a.ProxyUUID)) || applies() != 2 {
 		t.Fatalf("停用的使用者要去掉：%s", config)
 	}
@@ -150,7 +150,7 @@ func TestProxyOverChannel(t *testing.T) {
 	}
 	call("DELETE", "/admin/proxy/inbounds/"+in.ID, nil, nil)
 	call("POST", "/admin/proxy/sync", nil, &synced)
-	if _, err := os.Stat(filepath.Join(root, "etc/tza-probe/proxy/xray.json")); err == nil {
+	if _, err := os.Stat(filepath.Join(root, "etc/tza-proxy/xray.json")); err == nil {
 		t.Fatal("删掉入站后节点上的配置要移除")
 	}
 	if !strings.Contains(strings.Join(commands, "\n"), "systemctl disable --now tza-proxy-xray") {

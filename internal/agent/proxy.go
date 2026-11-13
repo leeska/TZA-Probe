@@ -57,7 +57,9 @@ func (h *ProxyHost) path(parts ...string) string {
 	return filepath.Join(append([]string{"/" + strings.TrimPrefix(h.Root, "/")}, parts...)...)
 }
 func (h *ProxyHost) kernelDir() string { return h.path("usr/local/lib/tza-probe/kernels") }
-func (h *ProxyHost) configDir() string { return h.path("etc/tza-probe/proxy") }
+// configDir is outside /etc/tza-probe on purpose: that directory is 0700
+// (it holds the agent token), so tza-proxy could never reach a file in it.
+func (h *ProxyHost) configDir() string { return h.path("etc/tza-proxy") }
 func (h *ProxyHost) unitPath(k string) string {
 	return h.path("etc/systemd/system", "tza-proxy-"+k+".service")
 }
@@ -327,6 +329,7 @@ func (h *ProxyHost) ensureUser(ctx context.Context) (int, error) {
 	if err := os.Chmod(h.configDir(), 0750); err != nil {
 		return 0, err
 	}
+	os.RemoveAll(h.path("etc/tza-probe/proxy")) // left by v2.5.0
 	return gid, nil
 }
 
