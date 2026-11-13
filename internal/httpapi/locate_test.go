@@ -66,6 +66,9 @@ func TestLocateNode(t *testing.T) {
 	if w := call("GET", path, token, "", nil); w.Code != 401 {
 		t.Fatalf("Agent 不能调后台接口：%d", w.Code)
 	}
+	if w := call("GET", "/admin/nodes/"+node+"/address", admin, "", nil); w.Code != 200 || !strings.Contains(w.Body.String(), `"ip":"8.8.8.8"`) {
+		t.Fatalf("节点地址：%d %s", w.Code, w.Body)
+	}
 	w := call("GET", path, admin, "", nil)
 	var place ipguard.IPPlace
 	if err := json.Unmarshal(w.Body.Bytes(), &place); err != nil || w.Code != 200 || place.Region != "美国" || place.IP != "8.8.8.8" || asked != "/8.8.8.8" {

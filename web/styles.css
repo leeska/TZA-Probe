@@ -5922,6 +5922,9 @@ dialog.region-dialog .region-intro { margin: 0 0 var(--space-4); }
 [data-user] progress { display: block; width: 120px; margin-top: 4px; }
 .proxy-links { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-3); }
 .proxy-links pre { white-space: pre-wrap; word-break: break-all; }
+.input-with-button { display: flex; gap: var(--space-2); align-items: stretch; }
+.input-with-button input { flex: 1 1 auto; min-width: 0; }
+.input-with-button button { flex: 0 0 auto; white-space: nowrap; }
 .sub-links { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: grid; gap: var(--space-4); }
 .sub-links li > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-2); }
 .sub-links small { color: var(--muted); }

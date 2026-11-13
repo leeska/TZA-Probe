@@ -132,15 +132,17 @@ func (h *ProxyHost) stats(ctx context.Context, raw json.RawMessage, conn net.Con
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	out, err := h.Run(ctx, h.binaryPath(p.Kernel, state.Version), "api", "statsquery", "--server="+statsAPI, "-pattern", "user>>>", "-reset")
+	// Every counter: users ("user>>>…") and inbounds ("inbound>>>…", how
+	// forwards are counted).
+	out, err := h.Run(ctx, h.binaryPath(p.Kernel, state.Version), "api", "statsquery", "--server="+statsAPI, "-reset")
 	if err != nil {
 		return channel.WriteLine(conn, channel.ProxyStats{Error: "读取流量失败：" + lastLine(out, err)})
 	}
-	users, err := parseXrayStats(out)
+	users, inbounds, err := parseXrayStats(out)
 	if err != nil {
 		return channel.WriteLine(conn, channel.ProxyStats{Error: err.Error()})
 	}
-	return channel.WriteLine(conn, channel.ProxyStats{Users: users})
+	return channel.WriteLine(conn, channel.ProxyStats{Users: users, Inbounds: inbounds})
 }
 
 func lastLine(out []byte, err error) string {
@@ -153,15 +155,17 @@ func lastLine(out []byte, err error) string {
 
 // parseXrayStats reads `xray api statsquery` output: {"stat":[{"name":…,
 // "value":…}]}, where a zero value is left out and the value may be a JSON
-// string (protojson int64). Text before the JSON (warnings) is skipped.
-func parseXrayStats(out []byte) (map[string]channel.UserTraffic, error) {
+// string (protojson int64). Text before the JSON (warnings) is skipped. It
+// returns the "user>>>" counters by user and the "inbound>>>" ones by tag.
+func parseXrayStats(out []byte) (map[string]channel.UserTraffic, map[string]channel.UserTraffic, error) {
 	users := map[string]channel.UserTraffic{}
+	inbounds := map[string]channel.UserTraffic{}
 	start := strings.IndexByte(string(out), '{')
 	if start < 0 {
 		if strings.TrimSpace(string(out)) == "" {
-			return users, nil
+			return users, inbounds, nil
 		}
-		return nil, errors.New("流量统计输出无法识别")
+		return nil, nil, errors.New("流量统计输出无法识别")
 	}
 	var doc struct {
 		Stat []struct {
@@ -172,11 +176,22 @@ func parseXrayStats(out []byte) (map[string]channel.UserTraffic, error) {
 	decoder := json.NewDecoder(strings.NewReader(string(out[start:])))
 	decoder.UseNumber()
 	if err := decoder.Decode(&doc); err != nil {
-		return nil, errors.New("流量统计输出无法识别")
+		return nil, nil, errors.New("流量统计输出无法识别")
 	}
 	for _, st := range doc.Stat {
 		parts := strings.Split(st.Name, ">>>")
-		if len(parts) != 4 || parts[0] != "user" || parts[2] != "traffic" || parts[1] == "" {
+		if len(parts) != 4 || parts[2] != "traffic" || parts[1] == "" {
+			continue
+		}
+		into := users
+		switch parts[0] {
+		case "user":
+		case "inbound":
+			if parts[1] == "api" {
+				continue
+			}
+			into = inbounds
+		default:
 			continue
 		}
 		value := int64(0)
@@ -187,7 +202,7 @@ func parseXrayStats(out []byte) (map[string]channel.UserTraffic, error) {
 			}
 			value = n
 		}
-		t := users[parts[1]]
+		t := into[parts[1]]
 		switch parts[3] {
 		case "uplink":
 			t.Up += value
@@ -196,9 +211,9 @@ func parseXrayStats(out []byte) (map[string]channel.UserTraffic, error) {
 		default:
 			continue
 		}
-		users[parts[1]] = t
+		into[parts[1]] = t
 	}
-	return users, nil
+	return users, inbounds, nil
 }
 
 func (h *ProxyHost) status(ctx context.Context, _ json.RawMessage, conn net.Conn) error {
@@ -290,6 +305,12 @@ func runArgs(kernel, config string) string {
 const ProxyUser = "tza-proxy"
 
 func unit(kernel, binary, config string) string {
+	env := ""
+	if kernel == "xray" {
+		// splice (zero-copy relay) bypasses xray's traffic counters, so a
+		// port forward's download would never be counted.
+		env = "Environment=XRAY_BUF_SPLICE=disable\n"
+	}
 	return fmt.Sprintf(`# Managed by tza-agent: the Server's 代理 module writes this file.
 [Unit]
 Description=TZA Probe proxy (%[1]s)
@@ -297,7 +318,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=%[2]s %[3]s
+%[5]sExecStart=%[2]s %[3]s
 User=%[4]s
 Group=%[4]s
 AmbientCapabilities=CAP_NET_BIND_SERVICE
@@ -312,7 +333,7 @@ RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
-`, kernel, binary, runArgs(kernel, config), ProxyUser)
+`, kernel, binary, runArgs(kernel, config), ProxyUser, env)
 }
 
 func (h *ProxyHost) apply(ctx context.Context, raw json.RawMessage, conn net.Conn) error {

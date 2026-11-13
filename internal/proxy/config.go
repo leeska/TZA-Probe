@@ -19,6 +19,20 @@ type obj = map[string]any
 // The output is deterministic (sorted keys), so its hash tells whether a node
 // is up to date.
 func Config(kernel string, inbounds []Inbound, members []Member) ([]byte, error) {
+	return NodeConfig(kernel, Plan{Inbounds: inbounds}, members)
+}
+
+// Plan is what one kernel runs on one node: proxy inbounds, the forwards
+// that enter here and the tunnels that leave here (forwards are xray only).
+type Plan struct {
+	Inbounds []Inbound
+	Entry    []Forward
+	Exit     []Forward
+}
+
+// NodeConfig renders a node's whole configuration for kernel.
+func NodeConfig(kernel string, plan Plan, members []Member) ([]byte, error) {
+	inbounds := plan.Inbounds
 	var out obj
 	switch kernel {
 	case KernelXray:
@@ -26,12 +40,32 @@ func Config(kernel string, inbounds []Inbound, members []Member) ([]byte, error)
 		for _, in := range inbounds {
 			list = append(list, xrayInbound(in, in.Members(members)))
 		}
-		out = obj{"log": obj{"loglevel": "warning"}, "inbounds": list, "outbounds": []any{obj{"protocol": "freedom", "tag": "direct"}, obj{"protocol": "blackhole", "tag": "block"}},
+		outbounds := []any{obj{"protocol": "freedom", "tag": "direct"}, obj{"protocol": "blackhole", "tag": "block"}}
+		rules := []any{}
+		for _, f := range plan.Entry {
+			list = append(list, obj{"tag": f.entryTag(), "listen": "0.0.0.0", "port": f.Port, "protocol": "dokodemo-door",
+				"settings": obj{"address": f.Target, "port": f.TargetPort, "network": f.Network}})
+			if f.Exit != nil {
+				outbounds = append(outbounds, obj{"tag": f.tunnelTag(), "protocol": "shadowsocks", "settings": obj{"servers": []any{
+					obj{"address": f.Exit.Address, "port": f.Exit.Port, "method": SSMethod, "password": f.Exit.Key},
+				}}})
+				rules = append(rules, obj{"type": "field", "inboundTag": []string{f.entryTag()}, "outboundTag": f.tunnelTag()})
+			}
+		}
+		for _, f := range plan.Exit {
+			list = append(list, obj{"tag": f.exitTag(), "listen": "0.0.0.0", "port": f.Exit.Port, "protocol": "shadowsocks",
+				"settings": obj{"method": SSMethod, "password": f.Exit.Key, "network": f.Network}})
+		}
+		out = obj{"log": obj{"loglevel": "warning"}, "inbounds": list, "outbounds": outbounds,
 			// Per-user traffic: the Agent reads and resets these counters
 			// through the stats API (loopback only) at every sync.
-			"api":    obj{"tag": "api", "listen": fmt.Sprintf("127.0.0.1:%d", StatsAPIPort), "services": []string{"StatsService"}},
-			"stats":  obj{},
-			"policy": obj{"levels": obj{"0": obj{"statsUserUplink": true, "statsUserDownlink": true}}},
+			"api":   obj{"tag": "api", "listen": fmt.Sprintf("127.0.0.1:%d", StatsAPIPort), "services": []string{"StatsService"}},
+			"stats": obj{},
+			"policy": obj{"levels": obj{"0": obj{"statsUserUplink": true, "statsUserDownlink": true}},
+				"system": obj{"statsInboundUplink": true, "statsInboundDownlink": true}},
+		}
+		if len(rules) > 0 {
+			out["routing"] = obj{"rules": rules}
 		}
 	case KernelSingBox:
 		list := []any{}

@@ -69,10 +69,12 @@ type UserTraffic struct {
 	Down int64 `json:"down"`
 }
 
-// ProxyStats maps user id → traffic since the previous read.
+// ProxyStats is traffic since the previous read: per user id and per
+// inbound tag (forwards are counted at their entry inbound "fw-<id>").
 type ProxyStats struct {
-	Users map[string]UserTraffic `json:"users"`
-	Error string                 `json:"error,omitempty"`
+	Users    map[string]UserTraffic `json:"users"`
+	Inbounds map[string]UserTraffic `json:"inbounds,omitempty"`
+	Error    string                 `json:"error,omitempty"`
 }
 
 type ProxyResult struct {

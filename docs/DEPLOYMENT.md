@@ -78,7 +78,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.6.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.7.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -189,6 +189,16 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 - **订阅**：使用者页和用量页都有订阅链接，一个地址按客户端自动给 Clash/mihomo、sing-box 或通用 base64 格式，也有分格式的地址和一键导入。内置规则是国内直连、其余走代理，订阅地址加上 `mode=global` 参数（如 `…/sub/<token>?mode=global`）改成全部代理。客户端会显示已用流量和到期时间。
 - **兼容性**：xray 内核的 Reality 入站连不上 sing-box 内核的客户端（SFA、SFI、Hiddify 等），这是 xray 26.9.8 起的已知问题，sing-box 订阅里不会列出它们。给这类客户端用，选 Shadowsocks 2022 或 sing-box 内核的 Reality。
 - **防火墙**：如果节点开着防火墙，要自己放行入站端口。
+
+## 转发
+
+后台「转发」做端口转发和中转隧道，跑在节点的 xray 里（和代理共用内核与同步，前提同样是节点用 `--manage` 接入）。
+
+- **直接转发**：入口节点的一个端口转到目标地址:端口，可选 TCP、UDP 或两者。
+- **经隧道中转**：入口节点把流量用 Shadowsocks 2022 加密送到出口节点，由出口节点去连目标。要填出口节点、出口地址（入口节点连它用的域名或公网 IP，「填入节点 IP」按钮取 Agent 最近的连接地址）和出口节点上的隧道端口。
+- **使用者**：规则可以归属一位使用者，流量计入他的额度；他停用、过期或流量用完时，这条规则在下一次同步时停掉。不归属就只统计。
+- **流量**：按规则统计，每分钟累计一次，列表里显示创建以来的上下行。
+- **端口**：入口端口和隧道端口不能和同一节点上的入站或其他转发重复，62789 留给 xray 的统计接口。节点有防火墙的话，入口端口和出口节点的隧道端口都要放行。
 
 ## 主题与插件
 

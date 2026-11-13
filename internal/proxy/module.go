@@ -69,7 +69,12 @@ func (m *Module) Routes(r module.Routes) {
 		for _, name := range []string{KernelXray, KernelSingBox} {
 			kernels = append(kernels, KernelInfo{Name: name, Version: Kernels[name].Version})
 		}
-		httpjson.Write(w, 200, map[string]any{"inbounds": inbounds, "nodes": m.NodeViews(), "kernels": kernels})
+		forwards, err := m.Store.Forwards(req.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		httpjson.Write(w, 200, map[string]any{"inbounds": inbounds, "forwards": forwards, "nodes": m.NodeViews(), "kernels": kernels})
 	})
 	save := func(w http.ResponseWriter, req *http.Request, id string, code int) {
 		var in Inbound
@@ -126,6 +131,59 @@ func (m *Module) Routes(r module.Routes) {
 		}
 		httpjson.Write(w, 200, links)
 	})
+	saveForward := func(w http.ResponseWriter, req *http.Request, id string, code int) {
+		var f Forward
+		if !httpjson.Decode(w, req, &f) {
+			return
+		}
+		f.ID = id
+		for _, node := range []string{f.NodeID, f.exitNode()} {
+			if node == "" {
+				continue
+			}
+			if ok, err := m.nodeExists(req.Context(), node); err != nil {
+				fail(w, err)
+				return
+			} else if !ok {
+				httpjson.Error(w, 400, "节点不存在")
+				return
+			}
+		}
+		if f.UserID != "" {
+			if _, err := m.Users.Get(req.Context(), f.UserID); errors.Is(err, users.ErrNotFound) {
+				httpjson.Error(w, 400, "使用者不存在")
+				return
+			} else if err != nil {
+				fail(w, err)
+				return
+			}
+		}
+		saved, err := m.Store.SaveForward(req.Context(), f)
+		if errors.Is(err, ErrForwardNotFound) {
+			httpjson.Error(w, 404, err.Error())
+			return
+		} else if err != nil {
+			httpjson.Error(w, 400, err.Error())
+			return
+		}
+		m.Kick()
+		httpjson.Write(w, code, saved)
+	}
+	r.Admin("POST /api/v1/admin/proxy/forwards", func(w http.ResponseWriter, req *http.Request) { saveForward(w, req, "", 201) })
+	r.Admin("PUT /api/v1/admin/proxy/forwards/{id}", func(w http.ResponseWriter, req *http.Request) {
+		saveForward(w, req, req.PathValue("id"), 200)
+	})
+	r.Admin("DELETE /api/v1/admin/proxy/forwards/{id}", func(w http.ResponseWriter, req *http.Request) {
+		if err := m.Store.DeleteForward(req.Context(), req.PathValue("id")); errors.Is(err, ErrForwardNotFound) {
+			httpjson.Error(w, 404, err.Error())
+			return
+		} else if err != nil {
+			fail(w, err)
+			return
+		}
+		m.Kick()
+		w.WriteHeader(204)
+	})
 	// 订阅：只凭使用者的 token，不需要登录（前台需要登录时也照常可用）。
 	r.Public("GET /api/v1/sub/{token}", m.subscription)
 	// 立即同步：等这一轮做完再回，后台据此刷新状态。
@@ -157,12 +215,26 @@ func (m *Module) Overview(ctx context.Context) ([]module.Card, error) {
 	if err != nil {
 		return nil, err
 	}
-	card := module.Card{ID: "proxy", Title: "代理", Page: "proxy"}
+	card := module.Card{ID: "proxy", Title: "代理与转发", Page: "proxy"}
 	enabled := 0
 	for _, in := range inbounds {
 		if in.Enabled {
 			enabled++
 		}
+	}
+	forwards, err := m.Store.Forwards(ctx)
+	if err != nil {
+		return nil, err
+	}
+	forwarding := 0
+	for _, f := range forwards {
+		if f.Enabled {
+			forwarding++
+		}
+	}
+	value := fmt.Sprintf("%d 个入站", enabled)
+	if forwarding > 0 {
+		value += fmt.Sprintf(" · %d 条转发", forwarding)
 	}
 	problems := 0
 	for _, v := range m.NodeViews() {
@@ -180,12 +252,12 @@ func (m *Module) Overview(ctx context.Context) ([]module.Card, error) {
 		}
 	}
 	switch {
-	case len(inbounds) == 0:
-		card.Value, card.Note = "0", "还没有入站"
+	case len(inbounds) == 0 && len(forwards) == 0:
+		card.Value, card.Note = "0", "还没有入站或转发"
 	case problems > 0:
-		card.Value, card.Tone, card.Note = fmt.Sprintf("%d 个入站", enabled), "bad", fmt.Sprintf("%d 台节点同步出错", problems)
+		card.Value, card.Tone, card.Note = value, "bad", fmt.Sprintf("%d 台节点同步出错", problems)
 	default:
-		card.Value, card.Tone, card.Note = fmt.Sprintf("%d 个入站", enabled), "good", "各节点配置已同步"
+		card.Value, card.Tone, card.Note = value, "good", "各节点配置已同步"
 	}
 	return []module.Card{card}, nil
 }

@@ -76,38 +76,70 @@ func (m *Module) members(ctx context.Context) ([]Member, error) {
 	return out, nil
 }
 
-// desired renders every node's configurations: node → kernel → config.
-func (m *Module) desired(ctx context.Context) (map[string]map[string][]byte, error) {
+// Active reports whether a forward runs now: enabled, and its user (if any)
+// exists and is active.
+func (f Forward) Active(active map[string]bool) bool {
+	return f.Enabled && (f.UserID == "" || active[f.UserID])
+}
+
+// desired renders every node's configurations: node → kernel → config. It
+// also returns the forwards, for traffic accounting.
+func (m *Module) desired(ctx context.Context) (map[string]map[string][]byte, []Forward, error) {
 	inbounds, err := m.Store.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	forwards, err := m.Store.Forwards(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 	members, err := m.members(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	grouped := map[string]map[string][]Inbound{}
+	active := map[string]bool{}
+	for _, mem := range members {
+		active[mem.ID] = true
+	}
+	plans := map[string]map[string]*Plan{}
+	plan := func(node, kernel string) *Plan {
+		if plans[node] == nil {
+			plans[node] = map[string]*Plan{}
+		}
+		if plans[node][kernel] == nil {
+			plans[node][kernel] = &Plan{}
+		}
+		return plans[node][kernel]
+	}
 	for _, in := range inbounds {
-		if !in.Enabled {
+		if in.Enabled {
+			p := plan(in.NodeID, in.Kernel)
+			p.Inbounds = append(p.Inbounds, in)
+		}
+	}
+	for _, f := range forwards {
+		if !f.Active(active) {
 			continue
 		}
-		if grouped[in.NodeID] == nil {
-			grouped[in.NodeID] = map[string][]Inbound{}
+		p := plan(f.NodeID, KernelXray)
+		p.Entry = append(p.Entry, f)
+		if f.Exit != nil {
+			p := plan(f.Exit.NodeID, KernelXray)
+			p.Exit = append(p.Exit, f)
 		}
-		grouped[in.NodeID][in.Kernel] = append(grouped[in.NodeID][in.Kernel], in)
 	}
 	out := map[string]map[string][]byte{}
-	for node, kernels := range grouped {
+	for node, kernels := range plans {
 		out[node] = map[string][]byte{}
-		for kernel, list := range kernels {
-			config, err := Config(kernel, list, members)
+		for kernel, p := range kernels {
+			config, err := NodeConfig(kernel, *p, members)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			out[node][kernel] = config
 		}
 	}
-	return out, nil
+	return out, forwards, nil
 }
 
 // Kick asks Run to sync now.
@@ -144,7 +176,7 @@ func (m *Module) Run(ctx context.Context) {
 func (m *Module) Sync(ctx context.Context) error {
 	m.state.run.Lock()
 	defer m.state.run.Unlock()
-	want, err := m.desired(ctx)
+	want, forwards, err := m.desired(ctx)
 	if err != nil {
 		return err
 	}
@@ -154,6 +186,7 @@ func (m *Module) Sync(ctx context.Context) error {
 	}
 	views := map[string]NodeView{}
 	usage := map[string]users.Usage{}
+	byInbound := map[string]users.Usage{} // inbound tag → bytes
 	for _, n := range nodes {
 		status := m.Hub.Status(n.ID)
 		v := NodeView{ID: n.ID, Name: n.Name, Connected: status.Connected, Capable: slices.Contains(status.Capabilities, channel.CapabilityProxy), Kernels: map[string]KernelView{}}
@@ -164,7 +197,7 @@ func (m *Module) Sync(ctx context.Context) error {
 				v.Error = "节点没有连接管理通道或未开启代理能力：在节点上重跑接入命令并加 --manage"
 			}
 		default:
-			v.Error = m.syncNode(ctx, n.ID, want[n.ID], &v, usage)
+			v.Error = m.syncNode(ctx, n.ID, want[n.ID], &v, usage, byInbound)
 			v.At = time.Now().Unix()
 		}
 		views[n.ID] = v
@@ -172,6 +205,29 @@ func (m *Module) Sync(ctx context.Context) error {
 	m.state.mu.Lock()
 	m.state.nodes = views
 	m.state.mu.Unlock()
+	// Forward traffic is counted at the entry inbound and goes to the
+	// forward's own total and to its user.
+	owner := map[string]string{}
+	for _, f := range forwards {
+		owner[f.ID] = f.UserID
+	}
+	perForward := map[string]users.Usage{}
+	for tag, t := range byInbound {
+		id, ok := ForwardFromTag(tag)
+		if _, known := owner[id]; !ok || !known {
+			continue
+		}
+		perForward[id] = t
+		if user := owner[id]; user != "" {
+			u := usage[user]
+			u.Up += t.Up
+			u.Down += t.Down
+			usage[user] = u
+		}
+	}
+	if err := m.Store.AddForwardTraffic(ctx, perForward); err != nil {
+		return fmt.Errorf("记录转发流量：%w", err)
+	}
 	exhausted, err := m.Users.AddUsage(ctx, usage, time.Now())
 	if err != nil {
 		return fmt.Errorf("记录流量：%w", err)
@@ -186,7 +242,7 @@ func (m *Module) Sync(ctx context.Context) error {
 
 // collect reads and resets a running kernel's per-user counters into usage.
 // It runs before anything restarts the kernel, which would drop them.
-func (m *Module) collect(ctx context.Context, node, kernel string, usage map[string]users.Usage) string {
+func (m *Module) collect(ctx context.Context, node, kernel string, usage, byInbound map[string]users.Usage) string {
 	if kernel != KernelXray {
 		return ""
 	}
@@ -203,6 +259,12 @@ func (m *Module) collect(ctx context.Context, node, kernel string, usage map[str
 		u.Down += t.Down
 		usage[id] = u
 	}
+	for tag, t := range st.Inbounds {
+		u := byInbound[tag]
+		u.Up += t.Up
+		u.Down += t.Down
+		byInbound[tag] = u
+	}
 	return ""
 }
 
@@ -218,7 +280,7 @@ func (m *Module) NodeViews() []NodeView {
 	return out
 }
 
-func (m *Module) syncNode(ctx context.Context, node string, want map[string][]byte, view *NodeView, usage map[string]users.Usage) string {
+func (m *Module) syncNode(ctx context.Context, node string, want map[string][]byte, view *NodeView, usage, byInbound map[string]users.Usage) string {
 	var status channel.ProxyStatus
 	if err := m.call(ctx, node, channel.KindProxyStatus, nil, nil, &status); err != nil {
 		return "读取代理状态失败：" + err.Error()
@@ -232,7 +294,7 @@ func (m *Module) syncNode(ctx context.Context, node string, want map[string][]by
 		current := status.Kernels[kernel]
 		kv := KernelView{Version: current.Version, Active: current.Active}
 		if current.Active && current.ConfigSHA256 != "" {
-			kv.StatsError = m.collect(ctx, node, kernel, usage)
+			kv.StatsError = m.collect(ctx, node, kernel, usage, byInbound)
 		}
 		if !needed {
 			if current.ConfigSHA256 != "" {

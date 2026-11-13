@@ -87,6 +87,17 @@ func (a *API) locateNode(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, place)
 }
 
+// nodeAddress answers GET /api/v1/admin/nodes/{id}/address: the public IP
+// the node's Agent last connected from (for filling connection addresses).
+func (a *API) nodeAddress(w http.ResponseWriter, r *http.Request) {
+	addr, ok := a.agentAddrs.get(r.PathValue("id"))
+	if !ok || addr.IP == "" {
+		write(w, 409, map[string]string{"error": "还没有收到这台节点 Agent 的公网连接，接入并上报后再试"})
+		return
+	}
+	write(w, 200, map[string]string{"ip": addr.IP})
+}
+
 func (a *API) locator() *ipguard.Locator {
 	a.locatorOnce.Do(func() {
 		if a.Locator == nil {
