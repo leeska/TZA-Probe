@@ -183,13 +183,35 @@ func TestDockerOverChannel(t *testing.T) {
 		t.Fatal("未知的流要拒绝")
 	}
 
+	// 删除面板建的项目：down 之后目录一起删掉。
+	del, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/api/v1/admin/docker/stream?kind=compose&action=delete&project=blog&node="+node, header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		kind, data, err := del.ReadMessage()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if kind == websocket.TextMessage {
+			if !strings.Contains(string(data), `"exit":0`) {
+				t.Fatal(string(data))
+			}
+			break
+		}
+	}
+	del.Close()
+	if _, err := os.Stat(filepath.Join(root, "compose/blog")); !os.IsNotExist(err) {
+		t.Fatal("删除项目后目录要删掉", err)
+	}
+
 	var audit []model.AuditEntry
 	call("GET", "/admin/audit?limit=50", nil, &audit)
 	actions := []string{}
 	for _, e := range audit {
 		actions = append(actions, e.Action)
 	}
-	for _, want := range []string{"docker.container.stop", "docker.container.remove", "docker.compose.write", "docker.logs"} {
+	for _, want := range []string{"docker.container.stop", "docker.container.remove", "docker.compose.write", "docker.logs", "docker.compose.delete"} {
 		if !strings.Contains(strings.Join(actions, ","), want) {
 			t.Errorf("审计日志缺 %s：%v", want, actions)
 		}

@@ -100,10 +100,13 @@ type ComposeWriteParams struct {
 	Content string `json:"content"`
 }
 
-// ComposeRunParams runs Action (up, down, pull, restart) for a project.
+// ComposeRunParams runs Action (up, down, pull, restart, delete) for a
+// project. delete is down and then, for a project made from the panel, its
+// directory; Volumes also removes the project's named volumes.
 type ComposeRunParams struct {
 	Project string `json:"project"`
 	Action  string `json:"action"`
+	Volumes bool   `json:"volumes,omitempty"`
 }
 
 type DockerResult struct {

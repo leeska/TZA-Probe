@@ -232,4 +232,20 @@ func TestComposeProjects(t *testing.T) {
 	if last.Error != "项目不存在" {
 		t.Fatal(last)
 	}
+
+	// 删除：先 down，面板建的项目再删目录；节点上原有的项目只移除容器、不动文件。
+	out, last = output(t, callHandler(t, h.composeRun, channel.ComposeRunParams{Project: "web", Action: "delete", Volumes: true}))
+	if !strings.Contains(out, " down --remove-orphans --volumes") || !strings.Contains(out, "文件保留在 /srv/web") || *last.Exit != 0 {
+		t.Fatalf("删除已有项目：%q", out)
+	}
+	out, last = output(t, callHandler(t, h.composeRun, channel.ComposeRunParams{Project: "blog", Action: "delete"}))
+	if strings.Contains(out, "--volumes") || !strings.Contains(out, "已删除项目目录") || *last.Exit != 0 {
+		t.Fatalf("删除面板项目：%q", out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "compose/blog")); !os.IsNotExist(err) {
+		t.Fatal("面板项目的目录要删掉", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "compose")); err != nil {
+		t.Fatal("compose 根目录要保留", err)
+	}
 }

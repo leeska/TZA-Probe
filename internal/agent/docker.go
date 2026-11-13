@@ -453,8 +453,7 @@ func (h *DockerHost) compose(ctx context.Context, p channel.ComposeProject, file
 		all = append(all, "-f", f)
 	}
 	cmd := exec.CommandContext(ctx, h.CLI, append(all, args...)...)
-	cmd.Env = h.cliEnv()
-	cmd.Dir = p.Dir
+	cmd.Env = h.cliEnv() // --project-directory sets the directory; no chdir
 	cmd.WaitDelay = 2 * time.Second
 	setProcessGroup(cmd)
 	return cmd
@@ -550,6 +549,7 @@ var composeActions = map[string][]string{
 	"down":    {"down"},
 	"pull":    {"pull"},
 	"restart": {"restart"},
+	"delete":  {"down", "--remove-orphans"},
 }
 
 func (h *DockerHost) composeRun(ctx context.Context, raw json.RawMessage, conn net.Conn) error {
@@ -565,6 +565,9 @@ func (h *DockerHost) composeRun(ctx context.Context, raw json.RawMessage, conn n
 	if err != nil {
 		return finish(conn, err)
 	}
+	if p.Action == "delete" && p.Volumes {
+		args = append(args, "--volumes")
+	}
 	cmd := h.compose(ctx, project, project.Files, args...)
 	out := &crlfWriter{w: messageWriter{conn}}
 	cmd.Stdout, cmd.Stderr = out, out
@@ -575,10 +578,24 @@ func (h *DockerHost) composeRun(ctx context.Context, raw json.RawMessage, conn n
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		code := exitErr.ExitCode()
-		return send(conn, channel.Message{Exit: &code, Error: "docker compose " + p.Action + " 失败"})
+		return send(conn, channel.Message{Exit: &code, Error: "docker compose " + args[0] + " 失败"})
 	}
 	if err != nil {
 		return finish(conn, fmt.Errorf("运行 docker compose 失败（节点装了 compose 插件吗？）：%w", err))
+	}
+	if p.Action == "delete" {
+		if !project.Managed {
+			out.Write([]byte("这个项目不是在面板里建的，容器已移除，文件保留在 " + project.Dir + "\n"))
+			return finish(conn, nil)
+		}
+		// Only a directory directly under Root is ever removed.
+		if rel, err := filepath.Rel(h.Root, project.Dir); err != nil || rel != project.Name {
+			return finish(conn, errors.New("项目目录不在 compose 根目录下，未删除"))
+		}
+		if err := os.RemoveAll(project.Dir); err != nil {
+			return finish(conn, fmt.Errorf("删除项目目录失败：%w", err))
+		}
+		out.Write([]byte("已删除项目目录 " + project.Dir + "\n"))
 	}
 	return finish(conn, nil)
 }

@@ -53,7 +53,7 @@ export async function dockerPage(nodesReady) {
     const tags = (i.RepoTags || []).filter((t) => t !== "<none>:<none>");
     return `<tr><td data-label="镜像">${tags.length ? tags.map(esc).join("<br>") : '<span class="muted">未标记</span>'}<small>${esc(short(i.Id))}</small></td><td data-label="大小">${bytes(i.Size)}</td><td data-label="创建">${esc(ago(i.Created))}</td><td data-label="操作"><div class="row-actions"><button class="danger-text" data-rmi="${esc(i.Id)}" data-name="${esc(tags[0] || short(i.Id))}">删除</button></div></td></tr>`;
   }).join("");
-  const projectRows = projects.map((p) => `<tr><td data-label="项目">${esc(p.name)}<small>${p.managed ? "面板创建" : "节点上已有"}</small></td><td data-label="目录"><code>${esc(p.dir || "—")}</code></td><td data-label="容器">${p.running} / ${p.containers} 运行</td><td data-label="操作"><div class="row-actions"><button data-edit-project="${esc(p.name)}">编辑</button><button data-compose="up" data-project="${esc(p.name)}">部署</button>${moreMenu(`<button data-compose="pull" data-project="${esc(p.name)}">拉取镜像</button><button data-compose="restart" data-project="${esc(p.name)}">重启</button><button class="menu-danger" data-compose="down" data-project="${esc(p.name)}">停止并移除容器</button>`)}</div></td></tr>`).join("");
+  const projectRows = projects.map((p) => `<tr><td data-label="项目">${esc(p.name)}<small>${p.managed ? "面板创建" : "节点上已有"}</small></td><td data-label="目录"><code>${esc(p.dir || "—")}</code></td><td data-label="容器">${p.running} / ${p.containers} 运行</td><td data-label="操作"><div class="row-actions"><button data-edit-project="${esc(p.name)}">编辑</button><button data-compose="up" data-project="${esc(p.name)}">部署</button>${moreMenu(`<button data-compose="pull" data-project="${esc(p.name)}">拉取镜像</button><button data-compose="restart" data-project="${esc(p.name)}">重启</button><button class="menu-danger" data-compose="down" data-project="${esc(p.name)}">停止并移除容器</button><button class="menu-danger" data-delete-project="${esc(p.name)}" data-managed="${p.managed ? 1 : ""}">删除项目</button>`)}</div></td></tr>`).join("");
   content().querySelector("[data-part=panel]").outerHTML = `${ov.error ? `<section class="panel docker-error"><p>${esc(ov.error)}</p></section>` : ""}
   <section data-part="panel" class="panel"><div class="panel-head"><h3>容器 <span class="muted">${containers.length}</span></h3><small>${version}</small></div><div class="table-scroll"><table class="stack"><thead><tr><th>容器</th><th>镜像</th><th>状态</th><th>端口</th><th>操作</th></tr></thead><tbody>${containerRows || '<tr><td colspan="5" class="empty-cell">没有容器。</td></tr>'}</tbody></table></div></section>
   <section data-part="panel" class="panel"><div class="panel-head"><h3>Compose 项目 <span class="muted">${projects.length}</span></h3><button id="new-project" class="primary">＋ 新建项目</button></div><div class="table-scroll"><table class="stack"><thead><tr><th>项目</th><th>目录</th><th>容器</th><th>操作</th></tr></thead><tbody>${projectRows || '<tr><td colspan="4" class="empty-cell">没有 Compose 项目。面板新建的项目放在节点的 /opt/tza-compose/&lt;项目名&gt;/。</td></tr>'}</tbody></table></div></section>
@@ -81,6 +81,7 @@ export async function dockerPage(nodesReady) {
     if (action === "down") confirmAction(`停止并移除 · ${project}`, `对「${project}」执行 docker compose down：停止并删除这个项目的容器和网络（数据卷保留）。`, async () => run(), { label: "执行" });
     else run();
   });
+  q("[data-delete-project]", (b) => deleteProject(node, b.dataset.deleteProject, !!b.dataset.managed));
   content().querySelector("#new-project").onclick = () => projectEditor(node, nodeName, "");
   content().querySelector("#pull-image").onclick = () => pullForm(node);
 }
@@ -90,6 +91,19 @@ function wireHeading() {
   if (select) select.onchange = () => { state.dockerNode = select.value; render(); };
   const refresh = content().querySelector("#docker-refresh");
   if (refresh) refresh.onclick = () => render();
+}
+
+function deleteProject(node, project, managed) {
+  const d = modal(`删除项目 · ${project}`, `<form id="delete-project"><p>${managed
+    ? `先对「${esc(project)}」执行 docker compose down（停止并删除容器和网络），再删除节点上的项目目录 <code>/opt/tza-compose/${esc(project)}</code>，compose 文件一起删掉。此操作无法撤销。`
+    : `「${esc(project)}」不是在面板里建的：只执行 docker compose down 停止并删除容器和网络，项目文件留在节点上。`}</p><label class="checkbox"><input type="checkbox" name="volumes">同时删除这个项目的数据卷（数据库等数据会丢失）</label><div class="form-footer"><button type="submit" class="primary danger">删除</button></div></form>`);
+  const form = d.querySelector("#delete-project");
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const volumes = form.elements.namedItem("volumes").checked;
+    d.close();
+    openStream(stream({ node, kind: "compose", project, action: "delete", ...(volumes ? { volumes: 1 } : {}) }), `删除 · ${project}`, { onExit: () => render() });
+  };
 }
 
 function pullForm(node) {

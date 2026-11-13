@@ -92,7 +92,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 
 - **Engine API**：Agent 直接连本机 `/var/run/docker.sock`（不解析 docker 命令行输出）。主控发 `docker.api`，Agent 只执行白名单里的调用：`/version`、`/info`、容器与镜像列表、单个容器的详情、容器 start / stop / restart / 删除、按 ID 删镜像；路径里的容器名和镜像 ID 用正则校验，查询参数也有白名单。建容器、exec、build 这类调用都不放行。
 - **流**：日志（`docker.logs`，没有 TTY 的容器要拆 Engine 的 8 字节分帧）、拉镜像（`docker.pull`，把进度 JSON 压成一行一步）、Compose 操作（`docker.compose.run`：up -d --remove-orphans、down、pull、restart）和容器终端（`docker.exec`：PTY 上跑 `docker exec -it <容器> sh -c "bash 或 sh"`，和主机终端共用 `runTerminal`）。它们都说 shell 能力的 `channel.Message`，主控用远程管理模块的 `Bridge` 转成浏览器的 WebSocket（`GET /api/v1/admin/docker/stream`），同源检查与审计日志（动作名和 `.closed`）同终端一样。
-- **Compose 项目**：Agent 从容器标签（`com.docker.compose.project`、`working_dir`、`config_files`）和 `/opt/tza-compose/<项目名>/compose.yaml` 两处找项目，按项目名解析路径，主控从不传路径。保存时先写同目录的临时文件，`docker compose config --quiet` 通过才替换，旧文件留作 `.tza-bak`；新名字在 `/opt/tza-compose/` 下建目录（0700），文件 0600。
+- **Compose 项目**：Agent 从容器标签（`com.docker.compose.project`、`working_dir`、`config_files`）和 `/opt/tza-compose/<项目名>/compose.yaml` 两处找项目，按项目名解析路径，主控从不传路径。保存时先写同目录的临时文件，`docker compose config --quiet` 通过才替换，旧文件留作 `.tza-bak`；新名字在 `/opt/tza-compose/` 下建目录（0700），文件 0600。删除（`delete`）是 `down --remove-orphans`（可加 `--volumes`），成功后只删 Root 下名为项目名的那一级目录，节点上原有的项目不动文件。
 - **同一个 `<dialog>`**：前端所有弹窗共用一个元素，从编辑窗直接打开输出窗时，前一个弹窗的 close 事件会晚到，`openStream` 收到时弹窗仍开着就忽略。
 
 ### 审计日志与两步验证

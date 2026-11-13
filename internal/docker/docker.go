@@ -208,11 +208,16 @@ func (m *Module) Routes(r module.Routes) {
 			m.Remote.Bridge(w, req, r, node, channel.KindDockerPull, channel.DockerPullParams{Image: image}, "docker.image.pull", image)
 		case "compose":
 			project, action := q.Get("project"), q.Get("action")
-			if !projectName.MatchString(project) || !slices.Contains([]string{"up", "down", "pull", "restart"}, action) {
+			if !projectName.MatchString(project) || !slices.Contains([]string{"up", "down", "pull", "restart", "delete"}, action) {
 				httpjson.Error(w, 400, "项目或操作无效")
 				return
 			}
-			m.Remote.Bridge(w, req, r, node, channel.KindComposeRun, channel.ComposeRunParams{Project: project, Action: action}, "docker.compose."+action, project)
+			volumes := action == "delete" && q.Get("volumes") == "1"
+			detail := project
+			if volumes {
+				detail += "（同时删除数据卷）"
+			}
+			m.Remote.Bridge(w, req, r, node, channel.KindComposeRun, channel.ComposeRunParams{Project: project, Action: action, Volumes: volumes}, "docker.compose."+action, detail)
 		case "exec":
 			c := q.Get("container")
 			if !containerRef.MatchString(c) {
