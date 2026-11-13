@@ -18,6 +18,15 @@ import (
 type Module struct {
 	Store *Store
 	Now   func() time.Time // tests; nil is time.Now
+	// OnChange runs after a user is added, edited, deleted or gets a new
+	// token or period (the proxy module resyncs its configurations).
+	OnChange func()
+}
+
+func (m *Module) changed() {
+	if m.OnChange != nil {
+		m.OnChange()
+	}
 }
 
 func (*Module) ID() string                      { return "users" }
@@ -88,6 +97,7 @@ func (m *Module) Routes(r module.Routes) {
 			httpjson.Error(w, 400, err.Error())
 			return
 		}
+		m.changed()
 		httpjson.Write(w, 201, m.view(u))
 	})
 	r.Admin("PUT /api/v1/admin/users/{id}", func(w http.ResponseWriter, req *http.Request) {
@@ -104,6 +114,7 @@ func (m *Module) Routes(r module.Routes) {
 			fail(w, err)
 			return
 		}
+		m.changed()
 		httpjson.Write(w, 200, m.view(u))
 	})
 	r.Admin("DELETE /api/v1/admin/users/{id}", func(w http.ResponseWriter, req *http.Request) {
@@ -111,6 +122,7 @@ func (m *Module) Routes(r module.Routes) {
 			fail(w, err)
 			return
 		}
+		m.changed()
 		w.WriteHeader(204)
 	})
 	r.Admin("POST /api/v1/admin/users/{id}/token", func(w http.ResponseWriter, req *http.Request) {
@@ -119,6 +131,7 @@ func (m *Module) Routes(r module.Routes) {
 			fail(w, err)
 			return
 		}
+		m.changed()
 		httpjson.Write(w, 200, m.view(u))
 	})
 	r.Admin("POST /api/v1/admin/users/{id}/reset", func(w http.ResponseWriter, req *http.Request) {
@@ -127,6 +140,7 @@ func (m *Module) Routes(r module.Routes) {
 			fail(w, err)
 			return
 		}
+		m.changed()
 		httpjson.Write(w, 200, m.view(u))
 	})
 	// 使用者自己看用量：只凭订阅 token，不需要后台登录（前台需要登录时也照常可用）。
@@ -153,6 +167,7 @@ func (m *Module) Run(ctx context.Context) {
 			slog.Warn("users: roll periods", "error", err)
 		} else if n > 0 {
 			slog.Info("users: new traffic period", "users", n)
+			m.changed()
 		}
 		select {
 		case <-ctx.Done():

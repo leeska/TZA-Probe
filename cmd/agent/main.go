@@ -76,7 +76,11 @@ func loadManage(path string) (manageConfig, error) {
 // managementCapabilities is every capability Manage can turn on, with its
 // stream handlers.
 func managementCapabilities() map[string]map[string]channel.Handler {
-	return map[string]map[string]channel.Handler{channel.CapabilityShell: agent.ShellHandlers()}
+	return map[string]map[string]channel.Handler{
+		channel.CapabilityShell: agent.ShellHandlers(),
+		// 代理：主控下发内核与配置，本机用 systemd 托管 tza-proxy-<内核> 服务。
+		channel.CapabilityProxy: agent.NewProxyHost().Handlers(),
+	}
 }
 
 // errRestart ends the process with agent.ExitRestart so the service manager

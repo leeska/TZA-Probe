@@ -47,7 +47,20 @@ func (s *Store) List(ctx context.Context) ([]User, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.scan(rows)
+	list, err := s.scan(rows)
+	if err != nil {
+		return nil, err
+	}
+	// Users made before proxy support get their credentials on first read.
+	for i := range list {
+		if list[i].ProxyUUID == "" || list[i].ProxyKey == "" {
+			list[i].newCredentials()
+			if err := s.put(ctx, list[i]); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return list, nil
 }
 
 func (s *Store) Get(ctx context.Context, id string) (User, error) {
@@ -90,6 +103,7 @@ func (s *Store) Create(ctx context.Context, u User, now time.Time) (User, error)
 		return User{}, err
 	}
 	u.ID, u.Token, u.CreatedAt, u.PeriodStart, u.TrafficUsed = newID(), NewToken(), now.Unix(), now.Unix(), 0
+	u.newCredentials()
 	return u, s.put(ctx, u)
 }
 
@@ -105,6 +119,9 @@ func (s *Store) Update(ctx context.Context, id string, in User) (User, error) {
 		return User{}, err
 	}
 	u.Name, u.Note, u.Enabled, u.TrafficLimit, u.ResetDay, u.ExpiresAt = in.Name, in.Note, in.Enabled, in.TrafficLimit, in.ResetDay, in.ExpiresAt
+	if u.ProxyUUID == "" || u.ProxyKey == "" {
+		u.newCredentials()
+	}
 	return u, s.put(ctx, u)
 }
 
@@ -127,6 +144,7 @@ func (s *Store) RotateToken(ctx context.Context, id string) (User, error) {
 		return User{}, err
 	}
 	u.Token = NewToken()
+	u.newCredentials()
 	return u, s.put(ctx, u)
 }
 

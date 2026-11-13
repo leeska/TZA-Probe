@@ -5920,3 +5920,5 @@ dialog.region-dialog .region-intro { margin: 0 0 var(--space-4); }
 .user-facts dt { color: var(--muted); font-size: var(--text-sm); }
 .user-facts dd { margin: 0; font-weight: 600; }
 [data-user] progress { display: block; width: 120px; margin-top: 4px; }
+.proxy-links { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-3); }
+.proxy-links pre { white-space: pre-wrap; word-break: break-all; }

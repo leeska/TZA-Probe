@@ -51,7 +51,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
   - `Router`：通过 `module.Routes` 挂路由，有 `Public`、`Admin`、`Agent` 三种；鉴权和同源检查用的是 httpapi 自己那一套
   - `Overviewer`：给后台总览提供卡片（`module.Card`：标题、结论、语气、最多 6 条待处理项、点开去哪一页）。总览页 `GET /admin/overview` 先放核心的四张（节点、到期与流量、网络探测、告警），再按模块顺序放各模块的；某个模块读数出错只把它那张卡标成「读取失败」，不影响整页
   
-  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有三个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`；代理入站与流量统计在后续步骤接上）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
+  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`；流量统计在后续步骤接上）和 `proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站，见下面「代理」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
 - **任务类型**：`model.RegisterTaskKind` 登记每种 `Task.Type`。登记的内容包括：
   - 定义从哪个字段读、怎么校验、怎么展开成探测
   - `FixedBindings`：节点带角色，只能编辑任务来改绑定，不能批量绑定或解绑
@@ -72,6 +72,16 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 - **连接**：Server 端的 `channel.Hub` 记着每台节点最新的一条连接。同一节点再连进来，就替换掉旧连接。yamux 每 20 秒保活一次，nginx 默认 60 秒的空闲超时不会断开它。Agent 断线后会退避重连，间隔从 2 秒起，最长 1 分钟。
 - **开关**：Agent 只在 `/etc/tza-probe/manage.json` 开启时连通道，这个文件由安装脚本的 `--manage` 写入。同一文件里的 `disabled_capabilities` 能在本机关掉单项能力：关掉的能力不注册处理器，Server 要求也打不开。开启远程管理的节点换用不带沙箱的服务单元，Agent 以 root 运行，这是远程管理本来的要求。
 - **鉴权与审计**：终端的浏览器 WebSocket 是 GET 请求，API 不会替它检查同源，所以 `internal/remote` 自己检查 Origin。每条命令（原文和退出码）、每个终端会话（开始、结束、时长、键入字节数，不记录内容）都写入审计日志。
+
+### 代理
+
+`internal/proxy` 管入站，`internal/agent/proxy.go` 在节点上执行。
+
+- **内核来源**：xray 与 sing-box 的版本和各架构压缩包的 SHA-256 固定在 `proxy.Kernels` 里。主控第一次需要时从官方 GitHub release 下载，校验不符直接丢弃，取出内核文件缓存在数据目录的 `kernels/`。节点从不自己下载。
+- **下发**：管理通道上的四种请求，能力名 `proxy`：`proxy.status`（已装的内核、生效的配置哈希、服务是否在运行）、`proxy.install`（请求行后跟内核文件原始字节，节点校验 SHA-256 后装到 `/usr/local/lib/tza-probe/kernels/<内核>/<版本>/`）、`proxy.apply`（请求行后跟配置原始字节；节点先用内核自检 `xray run -test` / `sing-box check`，通过才写入 `/etc/tza-probe/proxy/<内核>.json`（0600）并重启服务）、`proxy.remove`（停服务、删配置，保留内核）。
+- **服务**：每个内核一个 systemd 单元 `tza-proxy-<内核>`，以系统用户 `tza-proxy`（第一次应用时创建）运行，只给 `CAP_NET_BIND_SERVICE`；配置里有使用者的凭据，文件为 root:tza-proxy 0640。不用 DynamicUser / LoadCredential，因为它们要 systemd 247+，Ubuntu 20.04 还是 245。
+- **同步**：`proxy.Module.Sync` 为每个节点按启用的入站渲染配置（排序后的 JSON，哈希判断是否需要下发），只给当前可用的使用者（停用、过期、流量用完的去掉）。内核版本不符先装内核，配置哈希不符或服务没在运行就重新应用，节点不再需要的内核就移除。保存入站或使用者后立即同步一次，之后每分钟一次。
+- **凭据**：每位使用者有自己的 VLESS UUID 和 Shadowsocks 2022 密钥（`users.User.ProxyUUID` / `ProxyKey`），「更换链接」时和 token 一起换掉。
 
 ### 审计日志与两步验证
 

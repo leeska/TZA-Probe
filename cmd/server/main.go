@@ -25,6 +25,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/module"
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/plugin"
+	"github.com/leeska/TZA-Probe/internal/proxy"
 	"github.com/leeska/TZA-Probe/internal/regiondrift"
 	"github.com/leeska/TZA-Probe/internal/remote"
 	"github.com/leeska/TZA-Probe/internal/service"
@@ -109,7 +110,7 @@ func run() error {
 		slog.Warn("administrator account created; initial credentials are in admin-password.txt in the data directory, delete that file after signing in", "dir", *dir)
 	}
 	dbPath := databasePath(*dir)
-	modules, drift, remoteMod, usersMod := shippedModules()
+	modules, drift, remoteMod, usersMod, proxyMod := shippedModules()
 	store, err := storage.OpenWith(dbPath, module.Migrations(modules))
 	if err != nil {
 		return err
@@ -135,8 +136,14 @@ func run() error {
 	guardBroker := ipguard.NewBroker(guardStore)
 	guardBroker.WorkerConfigured = *workerSocket != ""
 	drift.Broker, drift.Nodes = guardBroker, store
-	remoteMod.Hub, remoteMod.Nodes = &channel.Hub{}, store
+	hub := &channel.Hub{}
+	remoteMod.Hub, remoteMod.Nodes = hub, store
 	usersMod.Store = &users.Store{DB: store.DB()}
+	// 代理：入站存在主库，内核缓存在数据目录的 kernels/，经同一个管理通道下发到节点。
+	proxyMod.Store, proxyMod.Users, proxyMod.Hub, proxyMod.Nodes = &proxy.Store{DB: store.DB()}, usersMod.Store, hub, store
+	proxyMod.Kernels = &proxy.Cache{Dir: filepath.Join(*dir, "kernels")}
+	proxyMod.Init()
+	usersMod.OnChange = proxyMod.Kick
 	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}, Modules: modules}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
@@ -157,6 +164,8 @@ func run() error {
 	go func() { defer wg.Done(); drift.Run(ctx) }()
 	wg.Add(1)
 	go func() { defer wg.Done(); usersMod.Run(ctx) }()
+	wg.Add(1)
+	go func() { defer wg.Done(); proxyMod.Run(ctx) }()
 	go func() {
 		defer wg.Done()
 		channels := &service.Service{Store: store, Plugins: plugins}
@@ -277,7 +286,7 @@ func checkDataCommand(args []string) error {
 	if _, err := os.Stat(*dir); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	mods, _, _, _ := shippedModules()
+	mods, _, _, _, _ := shippedModules()
 	return storage.CheckDataDir(*dir, module.Migrations(mods))
 }
 
@@ -348,7 +357,7 @@ func resetPasswordCommand(args []string) error {
 // shippedModules is every module this binary serves, in migration order,
 // still unconfigured: check-data only needs their migrations, and run wires
 // the ones it returns separately once the database is open.
-func shippedModules() ([]module.Module, *regiondrift.Module, *remote.Module, *users.Module) {
-	drift, remoteMod, usersMod := &regiondrift.Module{}, &remote.Module{}, &users.Module{}
-	return []module.Module{drift, remoteMod, usersMod}, drift, remoteMod, usersMod
+func shippedModules() ([]module.Module, *regiondrift.Module, *remote.Module, *users.Module, *proxy.Module) {
+	drift, remoteMod, usersMod, proxyMod := &regiondrift.Module{}, &remote.Module{}, &users.Module{}, &proxy.Module{}
+	return []module.Module{drift, remoteMod, usersMod, proxyMod}, drift, remoteMod, usersMod, proxyMod
 }

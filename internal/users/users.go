@@ -7,6 +7,7 @@ package users
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -30,6 +31,29 @@ type User struct {
 	ExpiresAt   string `json:"expires_at"` // RFC 3339; empty never expires
 	Token       string `json:"token"`
 	CreatedAt   int64  `json:"created_at"`
+	// ProxyUUID (VLESS) and ProxyKey (Shadowsocks 2022, base64 of 16 bytes)
+	// are the user's proxy credentials. They are made with the user and
+	// replaced together with the token, so 更换链接 also cuts off the old
+	// credentials.
+	ProxyUUID string `json:"proxy_uuid"`
+	ProxyKey  string `json:"proxy_key"`
+}
+
+// newCredentials fills the proxy credentials.
+func (u *User) newCredentials() {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		panic(err)
+	}
+	raw[6] = raw[6]&0x0f | 0x40 // version 4
+	raw[8] = raw[8]&0x3f | 0x80 // RFC 4122 variant
+	h := hex.EncodeToString(raw[:])
+	u.ProxyUUID = h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+	var key [16]byte
+	if _, err := rand.Read(key[:]); err != nil {
+		panic(err)
+	}
+	u.ProxyKey = base64.StdEncoding.EncodeToString(key[:])
 }
 
 // Status words, in the order they win: a disabled user is disabled even when
