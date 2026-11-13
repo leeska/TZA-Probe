@@ -6,8 +6,11 @@ package regiondrift
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +31,7 @@ type NodeLister interface {
 type Module struct {
 	Broker *ipguard.Broker
 	Nodes  NodeLister
+	state  state
 }
 
 func (*Module) ID() string { return "regiondrift" }
@@ -125,50 +129,115 @@ func (m *Module) Routes(r module.Routes) {
 			}
 			entries = append(entries, value)
 		}
-		httpjson.Write(w, 200, map[string]any{"nodes": entries, "jobs": jobs, "environments": ipguard.Environments, "services": ipguard.Services, "worker_seen": broker.WorkerSeen(), "worker_configured": broker.WorkerConfigured, "execution_location": "controller"})
-	})
-	r.Admin("PUT /api/v1/admin/ipguard/nodes/{id}", func(w http.ResponseWriter, req *http.Request) {
-		var settings ipguard.Settings
-		if !httpjson.Decode(w, req, &settings) {
-			return
-		}
-		nodes, err := m.Nodes.Nodes(req.Context(), time.Now())
+		tasks, err := broker.Store.Tasks(req.Context())
 		if err != nil {
 			httpjson.Fail(w, err)
 			return
 		}
-		exists := false
-		for _, node := range nodes {
-			if node.ID == req.PathValue("id") {
-				exists = true
-			}
-		}
-		if !exists {
-			httpjson.Error(w, 404, "节点不存在")
+		settings, err := broker.Store.NodeSettings(req.Context())
+		if err != nil {
+			httpjson.Fail(w, err)
 			return
 		}
-		for _, service := range settings.Services {
-			if service != "google" && service != "meta" {
-				httpjson.Error(w, 400, "仅支持 Google 和 Meta 地区偏移检测")
-				return
-			}
+		httpjson.Write(w, 200, map[string]any{"tasks": tasks, "node_settings": settings, "pending": m.Pending(), "nodes": entries, "jobs": jobs, "environments": ipguard.Environments, "services": ipguard.Services, "worker_seen": broker.WorkerSeen(), "worker_configured": broker.WorkerConfigured, "execution_location": "controller"})
+	})
+	r.Admin("POST /api/v1/admin/ipguard/tasks", func(w http.ResponseWriter, req *http.Request) {
+		var t ipguard.Task
+		if !httpjson.Decode(w, req, &t) {
+			return
+		}
+		t.ID = ""
+		m.saveTask(w, req, t, 201)
+	})
+	r.Admin("PUT /api/v1/admin/ipguard/tasks/{id}", func(w http.ResponseWriter, req *http.Request) {
+		var t ipguard.Task
+		if !httpjson.Decode(w, req, &t) {
+			return
+		}
+		t.ID = req.PathValue("id")
+		m.saveTask(w, req, t, 200)
+	})
+	r.Admin("DELETE /api/v1/admin/ipguard/tasks/{id}", func(w http.ResponseWriter, req *http.Request) {
+		if err := broker.Store.DeleteTask(req.Context(), req.PathValue("id")); errors.Is(err, ipguard.ErrNoTask) {
+			httpjson.Error(w, 404, err.Error())
+			return
+		} else if err != nil {
+			httpjson.Fail(w, err)
+			return
+		}
+		m.settle(req.Context())
+		w.WriteHeader(204)
+	})
+	// 立即检测：任务里每台已就绪的节点、每个服务各排一次，跳过还没有检测设置或出口未连接的。
+	r.Admin("POST /api/v1/admin/ipguard/tasks/{id}/run", func(w http.ResponseWriter, req *http.Request) {
+		tasks, err := broker.Store.Tasks(req.Context())
+		if err != nil {
+			httpjson.Fail(w, err)
+			return
+		}
+		idx := slices.IndexFunc(tasks, func(t ipguard.Task) bool { return t.ID == req.PathValue("id") })
+		if idx < 0 {
+			httpjson.Error(w, 404, ipguard.ErrNoTask.Error())
+			return
+		}
+		task := tasks[idx]
+		if !task.Enabled {
+			httpjson.Error(w, 409, "任务已停用")
+			return
+		}
+		if time.Now().Unix()-broker.WorkerSeen() > 30 {
+			httpjson.Error(w, 409, "检测浏览器未连接")
+			return
 		}
 		policies, err := broker.Store.Policies(req.Context())
 		if err != nil {
 			httpjson.Fail(w, err)
 			return
 		}
-		policy, err := settings.Policy(policies[req.PathValue("id")], broker.Status(req.PathValue("id")))
-		if err != nil {
-			httpjson.Error(w, 409, err.Error())
+		queued, skipped := 0, 0
+		for _, node := range task.NodeIDs {
+			status := broker.Status(node)
+			if _, ok := policies[node]; !ok || !status.Enabled || time.Now().Unix()-status.ReceivedAt > 45 {
+				skipped++
+				continue
+			}
+			for _, service := range task.Services {
+				if _, err := broker.Store.Enqueue(req.Context(), node, service, "baseline", ""); err != nil {
+					skipped++
+					continue
+				}
+				queued++
+			}
+		}
+		httpjson.Write(w, 202, map[string]int{"queued": queued, "skipped": skipped})
+	})
+	r.Admin("PUT /api/v1/admin/ipguard/node-settings/{id}", func(w http.ResponseWriter, req *http.Request) {
+		var settings ipguard.NodeSettings
+		if !httpjson.Decode(w, req, &settings) {
 			return
 		}
-		value, err := broker.Store.SavePolicy(req.Context(), req.PathValue("id"), policy)
-		if err != nil {
-			httpjson.Error(w, 409, err.Error())
+		id := req.PathValue("id")
+		if ok, err := m.nodeExists(req.Context(), id); err != nil {
+			httpjson.Fail(w, err)
+			return
+		} else if !ok {
+			httpjson.Error(w, 404, "节点不存在")
 			return
 		}
-		httpjson.Write(w, 200, value)
+		if err := broker.Store.SaveNodeSettings(req.Context(), id, settings); err != nil {
+			httpjson.Error(w, 400, err.Error())
+			return
+		}
+		m.settle(req.Context())
+		httpjson.Write(w, 200, map[string]any{"settings": settings, "pending": m.Pending()[id]})
+	})
+	r.Admin("DELETE /api/v1/admin/ipguard/node-settings/{id}", func(w http.ResponseWriter, req *http.Request) {
+		if err := broker.Store.DeleteNodeSettings(req.Context(), req.PathValue("id")); err != nil {
+			httpjson.Fail(w, err)
+			return
+		}
+		m.settle(req.Context())
+		w.WriteHeader(204)
 	})
 	r.Admin("POST /api/v1/admin/ipguard/jobs", func(w http.ResponseWriter, req *http.Request) {
 		var input struct {
@@ -217,4 +286,44 @@ func (m *Module) Routes(r module.Routes) {
 			httpjson.Error(w, 403, "通道未授权")
 		}
 	})
+}
+
+// saveTask checks the node list against the nodes that exist, saves, and
+// reconciles so the policies follow before the response.
+func (m *Module) saveTask(w http.ResponseWriter, req *http.Request, t ipguard.Task, created int) {
+	for _, id := range t.NodeIDs {
+		if ok, err := m.nodeExists(req.Context(), id); err != nil {
+			httpjson.Fail(w, err)
+			return
+		} else if !ok {
+			httpjson.Error(w, 400, "节点不存在："+id)
+			return
+		}
+	}
+	saved, err := m.Broker.Store.SaveTask(req.Context(), t)
+	if errors.Is(err, ipguard.ErrNoTask) {
+		httpjson.Error(w, 404, err.Error())
+		return
+	} else if err != nil {
+		httpjson.Error(w, 400, err.Error())
+		return
+	}
+	m.settle(req.Context())
+	httpjson.Write(w, created, saved)
+}
+
+func (m *Module) nodeExists(ctx context.Context, id string) (bool, error) {
+	nodes, err := m.Nodes.Nodes(ctx, time.Now())
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(nodes, func(n model.NodeView) bool { return n.ID == id }), nil
+}
+
+// settle reconciles right after a save; a failure is logged and left to the
+// next periodic run (the save itself already succeeded).
+func (m *Module) settle(ctx context.Context) {
+	if err := m.reconcile(ctx); err != nil {
+		slog.Warn("region drift reconcile", "error", err)
+	}
 }

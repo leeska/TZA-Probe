@@ -150,6 +150,9 @@ func run() error {
 		}()
 		go func() { defer wg.Done(); guardBroker.Schedule(ctx) }()
 	}
+	// 地区偏移检测：按任务与节点设置生成每台节点的检测设置（见 regiondrift.reconcile）。
+	wg.Add(1)
+	go func() { defer wg.Done(); drift.Run(ctx) }()
 	go func() {
 		defer wg.Done()
 		channels := &service.Service{Store: store, Plugins: plugins}

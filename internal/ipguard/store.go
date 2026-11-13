@@ -50,7 +50,7 @@ func Open(path string) (*Database, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err = db.Exec("PRAGMA journal_mode=WAL;\n" + ddl); err != nil {
+	if _, err = db.Exec("PRAGMA journal_mode=WAL;\n" + ddl + "\n" + tasksDDL); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -114,6 +114,33 @@ func (store *Database) SavePolicy(ctx context.Context, node string, policy Polic
 	}
 	return policy, tx.Commit()
 }
+
+// DeletePolicy removes the node's region drift settings together with its
+// check history (a later add starts clean). Running jobs are dropped too: the
+// worker's late completion finds no row and is ignored.
+func (store *Database) DeletePolicy(ctx context.Context, node string) error {
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, "DELETE FROM ipguard_policies WHERE node_id=?", node)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return ErrNoPolicy
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ipguard_jobs WHERE node_id=?", node); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ErrNoPolicy is DeletePolicy on a node without region drift settings.
+var ErrNoPolicy = errors.New("该节点没有地区偏移检测设置")
 
 func (store *Database) Enqueue(ctx context.Context, node, service, phase, dedupe string) (Job, error) {
 	if phase != "baseline" && phase != "followup" && phase != "experiment" {

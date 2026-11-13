@@ -41,6 +41,11 @@ func Migrations() []storage.Migration {
 			return nil
 		})
 		return nil
+	}}, {Module: "regiondrift", Version: 2, Name: "tasks across nodes, per-node settings", Up: func(c *storage.MigrationContext) error {
+		if _, err := c.Tx.Exec(tasksDDL); err != nil {
+			return err
+		}
+		return importPolicies(c.Tx)
 	}}}
 }
 

@@ -78,7 +78,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.2.1-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.3.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -167,7 +167,7 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 ## 后台总览与前台显示
 
 - **总览**：登录后台的首页。每张卡一个结论：节点在线情况、两周内到期或流量过 90% 的机器、网络探测与被墙检测的异常、正在触发的告警、地区偏移检测、远程管理通道。点卡片进对应页面。
-- **创建任务**：「网络探测」页的「创建任务」先选类型：延迟与回程、解锁检测、IP 被墙检测、地区偏移检测。地区偏移检测在这里按节点设置（弹窗里选节点、开启检测、选目标地区），设置过的节点也会列在任务表里，点「编辑」修改。
+- **创建任务**：「网络探测」页的「创建任务」先选类型：延迟与回程、解锁检测、IP 被墙检测、地区偏移检测。地区偏移检测和解锁检测一样，一个任务可以选多台节点，在任务里选检测服务（Google / Meta）、是否启用、是否自动校正；每台节点的目标地区、出口地址族和精确定位在「节点管理」那台节点的「地区偏移」里设置。任务里还没设置目标地区或出口未连接的节点会标成「未生效」，设置好后自动开始检测。一台节点只能属于一个地区偏移检测任务。
 - **前台显示**：「面板设置 → 外观与品牌 → 前台显示」可以关掉公开面板的「延迟与回程」「解锁检测」「价格与到期」三个区块。关掉后访客的接口就不再返回这部分数据（不是只在页面上藏起来）。主机状态、资源与流量用量始终显示。
 - **整个前台需要登录**：同一处勾选后，没有登录后台的访客打开公开面板只看到登录提示，前台接口一律返回 401。适合只给自己看的部署。
 

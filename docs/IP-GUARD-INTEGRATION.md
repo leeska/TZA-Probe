@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 装过一次后，再执行安装脚本（不带 `--with-browser`）也会保留并一起升级浏览器。资源：约 300 MB 内存、
 200 MB 磁盘；服务单元限 `MemoryMax=700M`，可用 drop-in 调整。Docker 部署暂不支持浏览器。
 
-没有安装浏览器时，后台「网络探测」里的地区偏移检测弹窗只显示安装说明。
+没有安装浏览器时，后台「节点管理 → 地区偏移」弹窗只显示安装说明。
 
 ## 开通节点出口
 
@@ -91,7 +91,7 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 | 自检 `fonts: false` | 装 `fontconfig fonts-dejavu-core`；没有字体时 Chromium 遇到网页字体会卡住 |
 | 自检 `network_isolated: false` | 浏览器没在 `PrivateNetwork=yes` 下运行（只允许 down 且无地址的内核隧道设备） |
 | 节点一直「出口未连接」 | 节点上执行 `--ipguard` 命令；确认 Agent 在线 |
-| 结果 `egress_mismatch` | 节点出口变了：重新执行 `--ipguard` 并在后台重新保存 |
+| 结果 `egress_mismatch` | 节点出口变了：重新执行 `--ipguard`；出口上报后一分钟内自动换成新出口 |
 | 结果「遇到验证页面」 | 该出口被 Google 限流，等待后再测；不触发校正 |
 
 ## 验证

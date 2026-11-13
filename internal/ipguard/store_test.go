@@ -2,6 +2,7 @@ package ipguard
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"path/filepath"
 	"sync"
@@ -232,6 +233,88 @@ func TestCountriesAreComparedToSelectedTarget(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// 删除节点的地区偏移设置：策略与检测记录一起清掉，别的节点不受影响；没有设置时报 ErrNoPolicy。
+func TestDeletePolicy(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	for _, node := range []string{"first", "second"} {
+		if _, err := store.SavePolicy(ctx, node, testPolicy()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Enqueue(ctx, node, "google", "baseline", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.DeletePolicy(ctx, "first"); err != nil {
+		t.Fatal(err)
+	}
+	policies, _ := store.Policies(ctx)
+	if _, ok := policies["first"]; ok || len(policies) != 1 {
+		t.Fatalf("策略：%v", policies)
+	}
+	if jobs, _ := store.Jobs(ctx, "first"); len(jobs) != 0 {
+		t.Fatalf("检测记录要一起删：%v", jobs)
+	}
+	if jobs, _ := store.Jobs(ctx, "second"); len(jobs) != 1 {
+		t.Fatalf("别的节点不受影响：%v", jobs)
+	}
+	if err := store.DeletePolicy(ctx, "first"); !errors.Is(err, ErrNoPolicy) {
+		t.Fatalf("再删一次：%v", err)
+	}
+	if _, err := store.SavePolicy(ctx, "first", testPolicy()); err != nil {
+		t.Fatalf("删掉后可以重新添加（revision 从 0 起）：%v", err)
+	}
+}
+
+// 迁移 regiondrift/2：已有的每台节点设置拆成节点设置（目标地区、出口地址族、定位）和任务；
+// 开关与服务相同的节点合进同一个任务。
+func TestImportPolicies(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	v6 := testPolicy()
+	v6.ExpectedIP = "2606:4700:4700::1111"
+	off := testPolicy()
+	off.Enabled = false
+	off.Services = []string{"google"}
+	for node, p := range map[string]Policy{"a": testPolicy(), "b": v6, "c": off} {
+		if _, err := store.SavePolicy(ctx, node, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tx, err := store.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := importPolicies(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	settings, _ := store.NodeSettings(ctx)
+	if len(settings) != 3 || settings["b"].Family != "ipv6" || settings["a"].Family != "ipv4" || settings["a"].Country != "US" {
+		t.Fatalf("节点设置：%v", settings)
+	}
+	tasks, _ := store.Tasks(ctx)
+	if len(tasks) != 2 {
+		t.Fatalf("开关与服务相同的合并：%+v", tasks)
+	}
+	for _, task := range tasks {
+		switch len(task.NodeIDs) {
+		case 2:
+			if !task.Enabled || task.NodeIDs[0] != "a" || task.NodeIDs[1] != "b" {
+				t.Fatalf("启用的一组：%+v", task)
+			}
+		case 1:
+			if task.Enabled || task.NodeIDs[0] != "c" || task.Name != "地区偏移检测 2（已停用）" {
+				t.Fatalf("停用的一组：%+v", task)
+			}
+		default:
+			t.Fatalf("%+v", task)
 		}
 	}
 }

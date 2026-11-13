@@ -292,6 +292,13 @@ type RegionObservation struct {
 type Store interface {
 	Policies(context.Context) (map[string]Policy, error)
 	SavePolicy(context.Context, string, Policy) (Policy, error)
+	DeletePolicy(context.Context, string) error
+	Tasks(context.Context) ([]Task, error)
+	SaveTask(context.Context, Task) (Task, error)
+	DeleteTask(context.Context, string) error
+	NodeSettings(context.Context) (map[string]NodeSettings, error)
+	SaveNodeSettings(context.Context, string, NodeSettings) error
+	DeleteNodeSettings(context.Context, string) error
 	Enqueue(context.Context, string, string, string, string) (Job, error)
 	Jobs(context.Context, string) ([]Job, error)
 	Claim(context.Context) (*Job, error)

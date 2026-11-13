@@ -67,23 +67,29 @@ func TestCentralAPIAuthenticationAndLegacyRemoval(t *testing.T) {
 		t.Fatal("Agent supplied clock accepted")
 	}
 	policy := ipguard.Policy{Enabled: true, ExpectedIP: "8.8.8.8", Country: "US", Locale: "en-US", Timezone: "UTC", Services: []string{"google"}, TimeoutSeconds: 60, NetworkBytes: 1 << 20, DwellSeconds: 2}
-	path := "/admin/ipguard/nodes/" + node
+	path := "/admin/ipguard/node-settings/" + node
 	broker.Report(node, ipguard.Status{Enabled: true, AllowedIPs: []string{"8.8.8.8"}})
-	settings := ipguard.Settings{Enabled: true, Family: "ipv4", Country: policy.Country, Services: policy.Services}
+	settings := ipguard.NodeSettings{Family: "ipv4", Country: policy.Country}
 	if result := call("PUT", path, admin, "https://attacker.example", settings); result.Code != 403 {
 		t.Fatal("cross-origin mutation", result.Code)
 	}
 	if result := call("PUT", path, admin, "", settings); result.Code != 200 {
 		t.Fatal(result.Code, result.Body)
 	}
+	task := ipguard.Task{Name: "美国", Enabled: true, Services: policy.Services, NodeIDs: []string{node}}
+	if result := call("POST", "/admin/ipguard/tasks", admin, "", task); result.Code != 201 {
+		t.Fatal(result.Code, result.Body)
+	}
+	if result := call("POST", "/admin/ipguard/tasks", admin, "", ipguard.Task{Name: "未知节点", Services: policy.Services, NodeIDs: []string{"nope"}}); result.Code != 400 {
+		t.Fatal("unknown node accepted", result.Code)
+	}
 	policies, _ := guard.Policies(ctx)
-	if policies[node].Timezone != "America/New_York" || policies[node].Locale != "en-US" || policies[node].ExpectedIP != "8.8.8.8" {
+	if policies[node].Timezone != "America/New_York" || policies[node].Locale != "en-US" || policies[node].ExpectedIP != "8.8.8.8" || !policies[node].Enabled {
 		t.Fatal("environment or exit not derived", policies[node])
 	}
-	settings.Revision = policies[node].Revision
 	settings.Family = "ipv6"
-	if result := call("PUT", path, admin, "", settings); result.Code != 409 {
-		t.Fatal("unauthorized family accepted", result.Code)
+	if result := call("PUT", path, admin, "", settings); result.Code != 200 || !strings.Contains(result.Body.String(), "尚未开通") {
+		t.Fatal("unauthorized family must be reported as pending", result.Code, result.Body)
 	}
 	if result := call("POST", "/admin/ipguard/jobs", admin, "", map[string]string{"node_id": node, "service": "google"}); result.Code != 409 {
 		t.Fatal("offline browser admitted job", result.Code)
@@ -101,6 +107,11 @@ func TestCentralAPIAuthenticationAndLegacyRemoval(t *testing.T) {
 	}
 	if result := call("PUT", path, admin, "", policy); result.Code != 400 {
 		t.Fatal("resource knobs retained", result.Code)
+	}
+	for _, old := range []string{"PUT", "DELETE"} {
+		if result := call(old, "/admin/ipguard/nodes/"+node, admin, "", settings); result.Code != 404 && result.Code != 405 {
+			t.Fatal("per-node policy editing removed", old, result.Code)
+		}
 	}
 }
 

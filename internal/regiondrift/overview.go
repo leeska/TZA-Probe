@@ -83,6 +83,15 @@ func (m *Module) Overview(ctx context.Context) ([]module.Card, error) {
 			card.Note += fmt.Sprintf("，%d 项暂无结论", unknown)
 		}
 	}
+	if waiting := len(m.Pending()); waiting > 0 {
+		card.Note += fmt.Sprintf("，%d 台待设置或出口未连接", waiting)
+		if card.Tone == "good" {
+			card.Tone = ""
+		}
+		if enabled == 0 {
+			card.Value, card.Note = "待设置", fmt.Sprintf("%d 台节点待设置或出口未连接", waiting)
+		}
+	}
 	if now-m.Broker.WorkerSeen() > 45 {
 		card.Tone, card.Note = "warn", "检测浏览器未连接"
 	}
