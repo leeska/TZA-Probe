@@ -42,6 +42,8 @@ BROWSER_STATE="/var/lib/tza-browser"
 BROWSER_RUN="/run/tza-browser"
 BROWSER_USER="tza-browser"
 BROWSER_GROUP="tza-browser-control"
+NGINX="auto"
+NGINX_LOG="/etc/nginx/conf.d/tza-probe-log.conf"
 
 usage() {
   cat <<'EOF'
@@ -61,6 +63,8 @@ TZA Probe Server 一键安装（Linux amd64 / arm64）
   --no-systemd       只安装二进制与数据目录，不注册 systemd 服务
   --with-browser     同时安装地区偏移检测的隔离浏览器（约 300 MB 内存、200 MB 磁盘；需要 systemd）。
                      装过一次后，再次执行本脚本会保留并一起升级它
+  --no-nginx         本机装有 nginx 时也不写入 /etc/nginx/conf.d/tza-probe-log.conf
+                     （默认写入：定义 $tza_loggable，站点用它跳过 Agent 上报的访问日志）
   -h, --help         显示本说明
 EOF
 }
@@ -77,6 +81,7 @@ while [ $# -gt 0 ]; do
     --data) DATA="${2:?--data 需要目录}"; shift 2 ;;
     --no-systemd) SYSTEMD="no"; shift ;;
     --with-browser) BROWSER="yes"; shift ;;
+    --no-nginx) NGINX="no"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数：$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -176,17 +181,21 @@ else
   echo "已构建 Agent：tza-agent-linux-amd64、tza-agent-linux-arm64"
 fi
 
-# 升级前先用新版本核对数据目录：数据库版本不兼容时（例如 2.0 起不再升级旧库）在这里停下，
-# 旧二进制与正在运行的服务原样保留。旧版本的 tza-server 没有这条子命令，跳过。
+# 升级前先用新版本核对数据目录：库比新版本还新、或早于 v2.0.0（不再升级）时在这里停下，
+# 旧二进制与正在运行的服务原样保留。v2.0.0 起的库能原地升级，迁移在新版本启动时执行。
+# 旧版本的 tza-server 没有这条子命令，跳过。
 if [ -d "$DATA" ] && grep -q 'check-data' "${WORK}/tza-server" 2>/dev/null; then
   if ! "${WORK}/tza-server" check-data --data "$DATA"; then
     echo "!! 版本 ${VERSION} 不能使用现有数据目录 ${DATA}，已中止，现有安装与服务未做任何改动。" >&2
-    echo "   全新部署请换一个数据目录：--data /var/lib/tza-probe-v2（旧目录保留，可随时回到旧版本）；" >&2
-    echo "   继续使用旧数据请安装旧版本，例如 --release v1.9.1。" >&2
+    echo "   库比这个版本还新：请安装更新的版本。库早于 v2.0.0：换一个数据目录全新部署，" >&2
+    echo "   例如 --data /var/lib/tza-probe-v2（旧目录保留，可随时回到旧版本），或继续安装旧版本 --release v1.9.1。" >&2
     exit 1
   fi
 fi
 
+if [ -f "$BIN" ] && [ -f "${DATA}/tza-probe.db" ]; then
+  echo "提示：新版本启动时可能迁移数据库，迁移后旧版本打不开；需要回滚的话，请先备份 ${DATA}。"
+fi
 if [ -f "$BIN" ]; then
   cp -p "$BIN" "${BIN}.previous"
   echo "已保留旧二进制：${BIN}.previous"
@@ -476,6 +485,42 @@ elif [ "$BROWSER" = "yes" ]; then
   BROWSER="failed"
 fi
 
+# ---------------------------------------------------------------- nginx 访问日志过滤
+# 本机装有 nginx 时写入 conf.d/tza-probe-log.conf，只定义 $tza_loggable，不改任何站点：
+# 站点要在 server 块里写 access_log ... if=$tza_loggable 才生效（见 deploy/nginx-site.conf）。
+# nginx -t 不通过就撤回这个文件，nginx 原样不动（本机配置原本就有错时也会走到这里）。
+nginx_log() {
+  NGINX="skipped"
+  command -v nginx >/dev/null 2>&1 && [ -d /etc/nginx/conf.d ] || return 0
+  cat > "${WORK}/tza-probe-log.conf" <<'NGINX'
+# TZA Probe：Agent 周期上报的访问日志过滤（http 层，由 deploy/install.sh 装到 /etc/nginx/conf.d/）。
+# 每个节点每隔几秒就上报一次，全部记下来一天上百 MB。/api/v1/agent/* 返回 2xx / 3xx，
+# 或 499（Agent 主动断开长轮询）时 $tza_loggable 为 0；其他请求和 Agent 的 4xx / 5xx 照常记录。
+# 站点的 server 块里这样用：access_log /var/log/nginx/access.log combined if=$tza_loggable;
+map "$status $request_uri" $tza_loggable {
+    "~^([23][0-9][0-9]|499) /api/v1/agent/" 0;
+    default 1;
+}
+NGINX
+  if [ -f "$NGINX_LOG" ] && cmp -s "${WORK}/tza-probe-log.conf" "$NGINX_LOG"; then
+    NGINX="current"
+    return 0
+  fi
+  OLD_NGINX_LOG=""
+  if [ -f "$NGINX_LOG" ]; then OLD_NGINX_LOG="${WORK}/tza-probe-log.conf.old"; cp -p "$NGINX_LOG" "$OLD_NGINX_LOG"; fi
+  install -m 0644 "${WORK}/tza-probe-log.conf" "$NGINX_LOG"
+  if ! nginx -t >/dev/null 2>&1; then
+    if [ -n "$OLD_NGINX_LOG" ]; then cp -p "$OLD_NGINX_LOG" "$NGINX_LOG"; else rm -f "$NGINX_LOG"; fi
+    NGINX="failed"
+    return 0
+  fi
+  NGINX="installed"
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
+    systemctl reload nginx || NGINX="reload-failed"
+  fi
+}
+[ "$NGINX" = "no" ] || nginx_log
+
 echo
 if [ "$MODE" = "release" ]; then FROM="GitHub Release"; else FROM="源码构建 ${REF}"; fi
 echo "已安装：${BIN}（版本 ${VERSION}，来自 ${FROM}）"
@@ -506,6 +551,16 @@ if [ "$BROWSER" = "started" ]; then
 elif [ "$BROWSER" = "failed" ]; then
   echo "!! 地区偏移检测浏览器没有启用，见上方原因；修好后重新执行本脚本并加 --with-browser" >&2
 fi
+case "$NGINX" in
+  installed|current|reload-failed)
+    [ "$NGINX" = "installed" ] && echo "已写入 ${NGINX_LOG}（Agent 上报的访问日志过滤）"
+    [ "$NGINX" = "reload-failed" ] && echo "!! 已写入 ${NGINX_LOG}，但 systemctl reload nginx 失败，请手动重载" >&2
+    if ! grep -rqs 'if=\$tza_loggable' /etc/nginx/sites-enabled /etc/nginx/conf.d; then
+      echo "   站点的 server 块里加上 access_log /var/log/nginx/access.log combined if=\$tza_loggable; 才会生效"
+    fi ;;
+  failed)
+    echo "!! 写入 ${NGINX_LOG} 后 nginx -t 未通过，已撤回，nginx 未改动；用 nginx -t 查看原因" >&2 ;;
+esac
 echo
 echo "================ 后台登录信息 ================"
 echo "$CREDS"

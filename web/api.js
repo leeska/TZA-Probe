@@ -11,6 +11,7 @@ export async function api(path, options = {}) {
     } catch {}
     const error = new Error(data?.error || `请求失败 (${response.status})`);
     error.status = response.status;
+    error.data = data;
     throw error;
   }
   return response.status === 204 ? null : response.json();
@@ -74,12 +75,17 @@ export function guard(fn) {
       e.preventDefault();
       return;
     }
-    // 只禁用当时可用的提交按钮，结束后原样恢复；本来就禁用的按钮不动。
+    // 提交中的按钮只挂忙碌标记，不动 disabled：页面自己会在保存后按需禁用按钮
+    // （比如「没有改动时保存不可点」），结束时若把 disabled 改回去就会覆盖它。
+    // 重复提交由上面的 submitting 拦下。
     const buttons = form ? [...form.querySelectorAll('button[type="submit"], button:not([type])')].filter((b) => !b.disabled) : [];
     if (form) {
       submitting.add(form);
       form.setAttribute("aria-busy", "true");
-      buttons.forEach((b) => (b.disabled = true));
+      buttons.forEach((b) => {
+        b.classList.add("is-busy");
+        b.setAttribute("aria-disabled", "true");
+      });
     }
     try {
       await fn(...args);
@@ -89,7 +95,10 @@ export function guard(fn) {
       if (form) {
         submitting.delete(form);
         form.removeAttribute("aria-busy");
-        buttons.forEach((b) => (b.disabled = false));
+        buttons.forEach((b) => {
+          b.classList.remove("is-busy");
+          b.removeAttribute("aria-disabled");
+        });
       }
     }
   };

@@ -18,17 +18,18 @@ export async function renderSettings(nodesReady) {
   const view = state.settingsView;
   // 本页不用节点列表；切页时外壳传来的节点请求一起等，顶栏在线计数随之刷新。页内保存后重画不传。
   // 每个子页只取自己要的数据。
-  const [, settings, themes, acct, mcp] = await Promise.all([
+  const [, settings, themes, acct, mcp, twofa] = await Promise.all([
     nodesReady,
     view === "look" ? api("/admin/panel") : null,
     view === "look" ? api("/admin/themes").catch(() => null) : null,
     view === "account" ? api("/admin/account").catch(() => null) : null,
     view === "account" ? api("/admin/mcp-key") : null,
+    view === "account" ? api("/admin/totp").catch(() => null) : null,
   ]);
   // 主题清单以服务端为准：默认皮肤下拉只列已安装的（内置现代极简 + 已安装的主题包）。
   if (themes) registerThemes(themes);
   const tabs = `<div class="segmented settings-tabs" role="tablist" aria-label="设置分类">${VIEWS.map(([id, label]) => `<button type="button" role="tab" data-settings-view="${id}" class="${view === id ? "active" : ""}" aria-selected="${view === id}">${label}</button>`).join("")}</div>`;
-  const body = { look: () => lookView(settings), account: () => accountView(acct, mcp), data: dataView }[view]();
+  const body = { look: () => lookView(settings), account: () => accountView(acct, mcp) + totpPanel(twofa), data: dataView }[view]();
   content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">SETTINGS</div><h1>面板设置</h1><p>站点品牌与公开面板的显示选项、后台账号与各类密钥、数据备份。</p></div></section>${tabs}${body}`;
   content().querySelectorAll("[data-settings-view]").forEach((b) =>
     (b.onclick = guard(async () => {
@@ -37,7 +38,44 @@ export async function renderSettings(nodesReady) {
     })),
   );
   if (view === "look") wireLook(settings);
-  if (view === "account") wireAccountView(acct, mcp);
+  if (view === "account") {
+    wireAccountView(acct, mcp);
+    wireTotp(twofa);
+  }
+}
+
+// 两步验证：登录时在密码之后再要一个身份验证器（Google Authenticator、1Password 等）的 6 位验证码。
+function totpPanel(twofa) {
+  if (!twofa) return "";
+  return `<section data-part="panel" class="panel webhook-panel"><div><h3>两步验证</h3><p>${twofa.enabled ? "<b>已开启</b>：登录时除了密码还要输入身份验证器里的 6 位验证码。" : "未开启。"}</p><small>开启后即使密码泄露也登录不了后台。手机丢了时在服务器执行 tza-server reset-password --data 数据目录 --disable-totp 关闭。</small></div><div class="webhook-actions">${twofa.enabled ? '<button id="totp-disable">关闭两步验证</button>' : '<button id="totp-setup" class="primary">开启两步验证</button>'}</div></section>`;
+}
+
+function wireTotp(twofa) {
+  content().querySelector("#totp-setup")?.addEventListener("click", guard(async () => {
+    const offer = await send("/admin/totp/setup", "POST");
+    const d = modal("开启两步验证", `<form><p>在身份验证器里添加账号：扫码不方便时，选择「输入设置密钥」，填入下面的密钥（基于时间）。</p>
+      <p><code class="totp-secret">${esc(offer.secret.replace(/(.{4})/g, "$1 ").trim())}</code></p>
+      <details><summary>otpauth 链接（可复制到支持导入的应用）</summary><p><code class="totp-uri">${esc(offer.uri)}</code></p></details>
+      <label>验证码<input name="code" required inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" placeholder="应用里显示的 6 位数"></label>
+      <p class="hint">输入正确的验证码后才会生效；10 分钟内有效。</p><div class="form-footer"><button class="primary" type="submit">确认开启</button></div></form>`);
+    d.querySelector("form").onsubmit = guard(async (e) => {
+      e.preventDefault();
+      await send("/admin/totp/enable", "POST", { code: new FormData(e.target).get("code") });
+      d.close();
+      toast("两步验证已开启");
+      await renderSettings();
+    });
+  }));
+  content().querySelector("#totp-disable")?.addEventListener("click", () => {
+    const d = modal("关闭两步验证", `<form><label>当前验证码<input name="code" required inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code"></label><div class="form-footer"><button class="danger" type="submit">关闭</button></div></form>`);
+    d.querySelector("form").onsubmit = guard(async (e) => {
+      e.preventDefault();
+      await send("/admin/totp/disable", "POST", { code: new FormData(e.target).get("code") });
+      d.close();
+      toast("两步验证已关闭");
+      await renderSettings();
+    });
+  });
 }
 
 function lookView(settings) {

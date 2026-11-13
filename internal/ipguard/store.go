@@ -17,8 +17,22 @@ import (
 type Database struct {
 	db    *sql.DB
 	mutex sync.Mutex
+	own   bool // Open made db, so Close closes it
 }
 
+// ddl creates the region drift tables. In the server they live in the main
+// database (Migrations); Open creates them in a file of their own for tests
+// and tools.
+const ddl = `CREATE TABLE IF NOT EXISTS ipguard_policies(node_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ipguard_jobs(id TEXT PRIMARY KEY,node_id TEXT NOT NULL,service TEXT NOT NULL,phase TEXT NOT NULL,policy TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,started_at INTEGER NOT NULL DEFAULT 0,finished_at INTEGER NOT NULL DEFAULT 0,lease TEXT NOT NULL DEFAULT '',result TEXT NOT NULL DEFAULT '',dedupe TEXT NOT NULL UNIQUE);
+CREATE INDEX IF NOT EXISTS ipguard_jobs_node_time ON ipguard_jobs(node_id,created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS ipguard_jobs_one_active ON ipguard_jobs(node_id) WHERE state IN ('queued','running');`
+
+// New uses db, a database the region drift migrations have already run on
+// (the server's main database). Close leaves db open.
+func New(db *sql.DB) *Database { return &Database{db: db} }
+
+// Open opens a standalone database file holding only the region drift tables.
 func Open(path string) (*Database, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
@@ -36,22 +50,22 @@ func Open(path string) (*Database, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	_, err = db.Exec(`PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS policies(node_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,node_id TEXT NOT NULL,service TEXT NOT NULL,phase TEXT NOT NULL,policy TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,started_at INTEGER NOT NULL DEFAULT 0,finished_at INTEGER NOT NULL DEFAULT 0,lease TEXT NOT NULL DEFAULT '',result TEXT NOT NULL DEFAULT '',dedupe TEXT NOT NULL UNIQUE);
-CREATE INDEX IF NOT EXISTS jobs_node_time ON jobs(node_id,created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS jobs_one_active ON jobs(node_id) WHERE state IN ('queued','running');`)
-	if err != nil {
+	if _, err = db.Exec("PRAGMA journal_mode=WAL;\n" + ddl); err != nil {
 		db.Close()
 		return nil, err
 	}
-	return &Database{db: db}, nil
+	return &Database{db: db, own: true}, nil
 }
 
-func (store *Database) Close() error { return store.db.Close() }
+func (store *Database) Close() error {
+	if !store.own {
+		return nil
+	}
+	return store.db.Close()
+}
 
 func (store *Database) Policies(ctx context.Context) (map[string]Policy, error) {
-	rows, err := store.db.QueryContext(ctx, "SELECT node_id,value FROM policies")
+	rows, err := store.db.QueryContext(ctx, "SELECT node_id,value FROM ipguard_policies")
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +97,7 @@ func (store *Database) SavePolicy(ctx context.Context, node string, policy Polic
 	}
 	defer tx.Rollback()
 	var revision int64
-	err = tx.QueryRowContext(ctx, "SELECT revision FROM policies WHERE node_id=?", node).Scan(&revision)
+	err = tx.QueryRowContext(ctx, "SELECT revision FROM ipguard_policies WHERE node_id=?", node).Scan(&revision)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Policy{}, err
 	}
@@ -92,10 +106,10 @@ func (store *Database) SavePolicy(ctx context.Context, node string, policy Polic
 	}
 	policy.Revision++
 	raw, _ := json.Marshal(policy)
-	if _, err = tx.ExecContext(ctx, "INSERT INTO policies VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET revision=excluded.revision,value=excluded.value", node, policy.Revision, string(raw)); err != nil {
+	if _, err = tx.ExecContext(ctx, "INSERT INTO ipguard_policies VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET revision=excluded.revision,value=excluded.value", node, policy.Revision, string(raw)); err != nil {
 		return Policy{}, err
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE jobs SET state='cancelled',finished_at=? WHERE node_id=? AND state IN ('queued','running')", time.Now().Unix(), node); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE ipguard_jobs SET state='cancelled',finished_at=? WHERE node_id=? AND state IN ('queued','running')", time.Now().Unix(), node); err != nil {
 		return Policy{}, err
 	}
 	return policy, tx.Commit()
@@ -118,7 +132,7 @@ func (store *Database) Enqueue(ctx context.Context, node, service, phase, dedupe
 	defer tx.Rollback()
 	var raw string
 	var policy Policy
-	if err = tx.QueryRowContext(ctx, "SELECT value FROM policies WHERE node_id=?", node).Scan(&raw); err != nil {
+	if err = tx.QueryRowContext(ctx, "SELECT value FROM ipguard_policies WHERE node_id=?", node).Scan(&raw); err != nil {
 		return Job{}, errors.New("先设置出口节点")
 	}
 	if err = json.Unmarshal([]byte(raw), &policy); err != nil {
@@ -129,7 +143,7 @@ func (store *Database) Enqueue(ctx context.Context, node, service, phase, dedupe
 	}
 	if phase != "baseline" {
 		parentID := strings.TrimPrefix(dedupe, phase+":")
-		parent, err := scanJob(tx.QueryRowContext(ctx, "SELECT "+columns+" FROM jobs WHERE id=? AND node_id=? AND service=?", parentID, node, service))
+		parent, err := scanJob(tx.QueryRowContext(ctx, "SELECT "+columns+" FROM ipguard_jobs WHERE id=? AND node_id=? AND service=?", parentID, node, service))
 		valid := err == nil && policy.AutoRecover && parent.Policy.Revision == policy.Revision && parent.State == "completed" && parent.CurrentSignal() && time.Now().Unix()-parent.FinishedAt < 1800
 		if !valid || phase == "experiment" && (parent.Phase != "baseline" || parent.Result.Assessment != "other_region") || phase == "followup" && (parent.Phase != "experiment" || parent.Result.Assessment != "experiment_only") {
 			return Job{}, errors.New("校正或复测缺少当前授权的前置地区检测")
@@ -139,7 +153,7 @@ func (store *Database) Enqueue(ctx context.Context, node, service, phase, dedupe
 	if dedupe == "" {
 		dedupe = job.ID
 	}
-	_, err = tx.ExecContext(ctx, "INSERT INTO jobs(id,node_id,service,phase,policy,state,created_at,dedupe) VALUES(?,?,?,?,?,'queued',?,?)", job.ID, node, service, phase, raw, job.CreatedAt, dedupe)
+	_, err = tx.ExecContext(ctx, "INSERT INTO ipguard_jobs(id,node_id,service,phase,policy,state,created_at,dedupe) VALUES(?,?,?,?,?,'queued',?,?)", job.ID, node, service, phase, raw, job.CreatedAt, dedupe)
 	if err != nil {
 		return Job{}, errors.New("节点已有任务，或此时段已处理")
 	}
@@ -174,10 +188,10 @@ func scanJob(row interface{ Scan(...any) error }) (Job, error) {
 }
 
 func (store *Database) Jobs(ctx context.Context, node string) ([]Job, error) {
-	query := "SELECT " + columns + " FROM jobs WHERE node_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100"
+	query := "SELECT " + columns + " FROM ipguard_jobs WHERE node_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100"
 	arguments := []any{node}
 	if node == "" {
-		query = "SELECT " + columns + " FROM jobs WHERE id IN (SELECT id FROM (SELECT id,row_number() OVER (PARTITION BY node_id,service ORDER BY created_at DESC,rowid DESC) AS position FROM jobs) WHERE position<=3) ORDER BY created_at DESC,rowid DESC"
+		query = "SELECT " + columns + " FROM ipguard_jobs WHERE id IN (SELECT id FROM (SELECT id,row_number() OVER (PARTITION BY node_id,service ORDER BY created_at DESC,rowid DESC) AS position FROM ipguard_jobs) WHERE position<=3) ORDER BY created_at DESC,rowid DESC"
 		arguments = nil
 	}
 	rows, err := store.db.QueryContext(ctx, query, arguments...)
@@ -200,20 +214,20 @@ func (store *Database) Jobs(ctx context.Context, node string) ([]Job, error) {
 func (store *Database) Claim(ctx context.Context) (*Job, error) {
 	store.mutex.Lock()
 	defer store.mutex.Unlock()
-	if _, err := store.db.ExecContext(ctx, "UPDATE jobs SET state='expired',finished_at=? WHERE state='running' AND started_at+json_extract(policy,'$.timeout_seconds')+10<?", time.Now().Unix(), time.Now().Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, "UPDATE ipguard_jobs SET state='expired',finished_at=? WHERE state='running' AND started_at+json_extract(policy,'$.timeout_seconds')+10<?", time.Now().Unix(), time.Now().Unix()); err != nil {
 		return nil, err
 	}
-	if _, err := store.db.ExecContext(ctx, "UPDATE jobs SET state='expired',finished_at=? WHERE state='queued' AND created_at<?", time.Now().Unix(), time.Now().Add(-5*time.Minute).Unix()); err != nil {
+	if _, err := store.db.ExecContext(ctx, "UPDATE ipguard_jobs SET state='expired',finished_at=? WHERE state='queued' AND created_at<?", time.Now().Unix(), time.Now().Add(-5*time.Minute).Unix()); err != nil {
 		return nil, err
 	}
 	var running int
-	if err := store.db.QueryRowContext(ctx, "SELECT count(*) FROM jobs WHERE state='running'").Scan(&running); err != nil {
+	if err := store.db.QueryRowContext(ctx, "SELECT count(*) FROM ipguard_jobs WHERE state='running'").Scan(&running); err != nil {
 		return nil, err
 	}
 	if running > 0 {
 		return nil, nil
 	}
-	job, err := scanJob(store.db.QueryRowContext(ctx, "SELECT "+columns+" FROM jobs WHERE state='queued' ORDER BY created_at,rowid LIMIT 1"))
+	job, err := scanJob(store.db.QueryRowContext(ctx, "SELECT "+columns+" FROM ipguard_jobs WHERE state='queued' ORDER BY created_at,rowid LIMIT 1"))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -223,12 +237,12 @@ func (store *Database) Claim(ctx context.Context) (*Job, error) {
 	job.Lease = ID()
 	job.StartedAt = time.Now().Unix()
 	job.State = "running"
-	_, err = store.db.ExecContext(ctx, "UPDATE jobs SET state='running',lease=?,started_at=? WHERE id=? AND state='queued'", job.Lease, job.StartedAt, job.ID)
+	_, err = store.db.ExecContext(ctx, "UPDATE ipguard_jobs SET state='running',lease=?,started_at=? WHERE id=? AND state='queued'", job.Lease, job.StartedAt, job.ID)
 	return &job, err
 }
 
 func (store *Database) Running(ctx context.Context, id, lease string) (*Job, error) {
-	job, err := scanJob(store.db.QueryRowContext(ctx, "SELECT "+columns+" FROM jobs WHERE id=? AND lease=? AND state='running'", id, lease))
+	job, err := scanJob(store.db.QueryRowContext(ctx, "SELECT "+columns+" FROM ipguard_jobs WHERE id=? AND lease=? AND state='running'", id, lease))
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +301,7 @@ func (store *Database) Complete(ctx context.Context, id, lease string, result Re
 		}
 	}
 	raw, _ := json.Marshal(result)
-	updated, err := store.db.ExecContext(ctx, "UPDATE jobs SET state=?,finished_at=?,result=? WHERE id=? AND lease=? AND state='running'", result.Execution, time.Now().Unix(), string(raw), id, lease)
+	updated, err := store.db.ExecContext(ctx, "UPDATE ipguard_jobs SET state=?,finished_at=?,result=? WHERE id=? AND lease=? AND state='running'", result.Execution, time.Now().Unix(), string(raw), id, lease)
 	if err != nil {
 		return err
 	}
@@ -299,10 +313,10 @@ func (store *Database) Complete(ctx context.Context, id, lease string, result Re
 }
 
 func (store *Database) Cancel(ctx context.Context, id string) error {
-	_, err := store.db.ExecContext(ctx, "UPDATE jobs SET state='cancelled',finished_at=? WHERE id=? AND state IN ('queued','running')", time.Now().Unix(), id)
+	_, err := store.db.ExecContext(ctx, "UPDATE ipguard_jobs SET state='cancelled',finished_at=? WHERE id=? AND state IN ('queued','running')", time.Now().Unix(), id)
 	return err
 }
 func (store *Database) Recover(ctx context.Context) error {
-	_, err := store.db.ExecContext(ctx, "UPDATE jobs SET state='interrupted',finished_at=? WHERE state='running'", time.Now().Unix())
+	_, err := store.db.ExecContext(ctx, "UPDATE ipguard_jobs SET state='interrupted',finished_at=? WHERE state='running'", time.Now().Unix())
 	return err
 }

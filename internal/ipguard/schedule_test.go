@@ -34,7 +34,7 @@ func TestLegacyRedirectResultsNeverAuthorizeCountryRecovery(t *testing.T) {
 	job := finishScheduled(t, store, "")
 	legacy := Result{Execution: "completed", Assessment: "anomaly_observed", Page: Page{Signal: "homepage_hkredirect", Value: "CN_HKREDIRECT"}}
 	raw, _ := json.Marshal(legacy)
-	if _, err := store.db.Exec("UPDATE jobs SET result=? WHERE id=?", string(raw), job.ID); err != nil {
+	if _, err := store.db.Exec("UPDATE ipguard_jobs SET result=? WHERE id=?", string(raw), job.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Enqueue(t.Context(), "node", "google", "experiment", "experiment:"+job.ID); err == nil {

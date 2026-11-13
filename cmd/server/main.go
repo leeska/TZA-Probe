@@ -18,14 +18,19 @@ import (
 	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/brand"
+	"github.com/leeska/TZA-Probe/internal/channel"
 	"github.com/leeska/TZA-Probe/internal/httpapi"
 	"github.com/leeska/TZA-Probe/internal/ipguard"
 	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-Probe/internal/module"
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/plugin"
+	"github.com/leeska/TZA-Probe/internal/regiondrift"
+	"github.com/leeska/TZA-Probe/internal/remote"
 	"github.com/leeska/TZA-Probe/internal/service"
 	"github.com/leeska/TZA-Probe/internal/storage"
 	"github.com/leeska/TZA-Probe/internal/theme"
+	"github.com/leeska/TZA-Probe/internal/totp"
 	"github.com/leeska/TZA-Probe/web"
 )
 
@@ -103,7 +108,8 @@ func run() error {
 		slog.Warn("administrator account created; initial credentials are in admin-password.txt in the data directory, delete that file after signing in", "dir", *dir)
 	}
 	dbPath := databasePath(*dir)
-	store, err := storage.Open(dbPath)
+	modules, drift, remoteMod := shippedModules()
+	store, err := storage.OpenWith(dbPath, module.Migrations(modules))
 	if err != nil {
 		return err
 	}
@@ -121,17 +127,15 @@ func run() error {
 	plugins := &plugin.Store{Dir: filepath.Join(*dir, "plugins")}
 	// 同一个发送器给后台的「发送测试」和告警引擎用：通知插件渠道经它查已安装的插件。
 	sender := notify.Transport{Plugins: plugins}
-	guardStore, err := ipguard.Open(filepath.Join(*dir, "ipguard.db"))
-	if err != nil {
-		return err
-	}
-	defer guardStore.Close()
+	guardStore := ipguard.New(store.DB())
 	if err = guardStore.Recover(ctx); err != nil {
 		return err
 	}
 	guardBroker := ipguard.NewBroker(guardStore)
 	guardBroker.WorkerConfigured = *workerSocket != ""
-	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}, IPGuard: guardBroker}
+	drift.Broker, drift.Nodes = guardBroker, store
+	remoteMod.Hub, remoteMod.Nodes = &channel.Hub{}, store
+	api := &httpapi.API{Store: store, Notifier: sender, AdminToken: token, AccountDir: *dir, Assets: web.Handler(), Agents: agents, Themes: themes, Plugins: plugins, Logo: &brand.Store{Dir: filepath.Join(*dir, "branding")}, Modules: modules}
 	server := &http.Server{Addr: *addr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -266,7 +270,8 @@ func checkDataCommand(args []string) error {
 	if _, err := os.Stat(*dir); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	return storage.CheckDataDir(*dir)
+	mods, _, _ := shippedModules()
+	return storage.CheckDataDir(*dir, module.Migrations(mods))
 }
 
 // initCommand prepares a data directory before the first start: it makes
@@ -301,11 +306,20 @@ func initCommand(args []string) error {
 // every login, so no restart is needed.
 func resetPasswordCommand(args []string) error {
 	var username string
+	var disableTOTP bool
 	dir, err := dataDir("reset-password", args, func(fs *flag.FlagSet) {
 		fs.StringVar(&username, "username", "", "also change the username (default: keep the current one)")
+		fs.BoolVar(&disableTOTP, "disable-totp", false, "turn two-factor login off (lost authenticator); keeps the password unless combined with a reset")
 	})
 	if err != nil {
 		return err
+	}
+	if disableTOTP {
+		if err := totp.Remove(dir); err != nil {
+			return err
+		}
+		fmt.Println("两步验证已关闭；登录后可在“面板设置 → 账号与安全”重新开启。密码未改动。")
+		return nil
 	}
 	if username == "" {
 		// 账号文件不存在或已损坏也要能重置，用户名回到默认。
@@ -322,4 +336,12 @@ func resetPasswordCommand(args []string) error {
 	fmt.Printf("后台新密码：%s\n", password)
 	fmt.Println("（登录后可在“面板设置 → 后台账号”改成自己的密码；旧浏览器会话已失效，无需重启服务）")
 	return nil
+}
+
+// shippedModules is every module this binary serves, in migration order,
+// still unconfigured: check-data only needs their migrations, and run wires
+// the ones it returns separately once the database is open.
+func shippedModules() ([]module.Module, *regiondrift.Module, *remote.Module) {
+	drift, remoteMod := &regiondrift.Module{}, &remote.Module{}
+	return []module.Module{drift, remoteMod}, drift, remoteMod
 }

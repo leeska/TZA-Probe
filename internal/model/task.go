@@ -1,7 +1,6 @@
 package model
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -91,36 +90,33 @@ type Probe struct {
 	Interval int    `json:"interval"`
 }
 
-// Leaves resolves a task into its probes: checks × targets for a probe task,
-// a single catalogue round for an unlock task.
+// Leaves resolves a task into its probes through its registered kind:
+// checks × targets for a probe task, a single round for an unlock task, one
+// TCP leaf for a block task. A task without its kind's definition has none.
 func (t Task) Leaves() []Probe {
-	switch {
-	case t.Type == TaskBlock && t.Block != nil:
-		b := t.Block
-		// A changed role/interval gets a new key immediately, even while the
-		// background purger is still removing the previous definition's jobs.
-		data, _ := json.Marshal(b)
-		return []Probe{{ID: t.ID, Name: t.Name, Kind: "tcp", Host: b.Host, Port: b.Port, Family: b.Family, Interval: b.Interval, Region: "IP 被墙检测/" + Hash(string(data))[:16], Carrier: "其他"}}
-	case t.Type == TaskUnlock && t.Unlock != nil:
-		return []Probe{{ID: t.ID, Name: t.Name, Kind: UnlockKind, Family: t.Unlock.Family, Interval: t.Unlock.Interval}}
-	case t.Type == TaskProbe && t.Probe != nil:
-		out := []Probe{}
-		for _, target := range t.Probe.Targets {
-			for _, kind := range t.Probe.Checks {
-				if !target.runs(kind) {
-					continue
-				}
-				leaf := Probe{ID: t.ID, Name: t.Name, Kind: kind, Host: target.Host, Port: target.Port,
-					Family: target.Family, Region: target.Region, Carrier: target.Carrier, Interval: t.Probe.Interval}
-				if kind == RouteKind {
-					leaf.Interval = t.Probe.RouteInterval
-				}
-				out = append(out, leaf)
-			}
-		}
-		return out
+	k, ok := LookupTaskKind(t.Type)
+	if !ok || !k.HasSpec(t) {
+		return nil
 	}
-	return nil
+	return k.Leaves(t)
+}
+
+func probeLeaves(t Task) []Probe {
+	out := []Probe{}
+	for _, target := range t.Probe.Targets {
+		for _, kind := range t.Probe.Checks {
+			if !target.runs(kind) {
+				continue
+			}
+			leaf := Probe{ID: t.ID, Name: t.Name, Kind: kind, Host: target.Host, Port: target.Port,
+				Family: target.Family, Region: target.Region, Carrier: target.Carrier, Interval: t.Probe.Interval}
+			if kind == RouteKind {
+				leaf.Interval = t.Probe.RouteInterval
+			}
+			out = append(out, leaf)
+		}
+	}
+	return out
 }
 
 // ProbeKey identifies one probe of one task across leases and results; the
@@ -144,59 +140,21 @@ func (t Task) Validate() error {
 	if strings.TrimSpace(t.Name) == "" || len(t.Name) > 100 {
 		return errors.New("任务名称必填且不超过 100 字节")
 	}
-	switch t.Type {
-	case TaskProbe:
-		if t.Probe == nil || t.Unlock != nil || t.Block != nil {
-			return errors.New("网络探测任务须给 probe（检测内容与目标），不能带 unlock 或 block")
+	k, ok := LookupTaskKind(t.Type)
+	if !ok {
+		return unknownTaskType()
+	}
+	// Exactly this kind's definition: none of the others may ride along.
+	if !k.HasSpec(t) {
+		return errors.New(k.SpecError)
+	}
+	for _, other := range TaskKinds() {
+		if other.Type != k.Type && other.HasSpec(t) {
+			return errors.New(k.SpecError)
 		}
-		p := t.Probe
-		if len(p.Checks) < 1 || len(p.Checks) > 2 || len(p.Targets) < 1 || len(p.Targets) > 200 {
-			return errors.New("请选择检测内容和目标（最多 200 个地址）")
-		}
-		for _, check := range p.Checks {
-			if check != "tcp" && check != RouteKind {
-				return errors.New("检测内容须为 tcp（延迟）或 route（回程）")
-			}
-		}
-		// A target's own checks may only narrow the task's; a non-empty list
-		// therefore always keeps at least one check for that target.
-		for _, target := range p.Targets {
-			for _, check := range target.Checks {
-				in := false
-				for _, c := range p.Checks {
-					in = in || c == check
-				}
-				if !in {
-					return fmt.Errorf("目标 %s 的检测项 %q 不在任务的检测内容里", target.Host, check)
-				}
-			}
-		}
-		seen := map[string]bool{}
-		for _, leaf := range t.Leaves() {
-			if seen[leaf.ProbeKey()] {
-				return errors.New("检测内容或目标重复")
-			}
-			seen[leaf.ProbeKey()] = true
-			if err := leaf.Validate(); err != nil {
-				return err
-			}
-		}
-	case TaskUnlock:
-		if t.Unlock == nil || t.Probe != nil || t.Block != nil {
-			return errors.New("解锁检测任务须给 unlock（间隔与协议），不能带 probe 或 block")
-		}
-		if err := t.Leaves()[0].Validate(); err != nil {
-			return err
-		}
-	case TaskBlock:
-		if t.Block == nil || t.Probe != nil || t.Unlock != nil {
-			return errors.New("IP 被墙检测须给 block，不能带 probe 或 unlock")
-		}
-		if err := t.validateBlock(); err != nil {
-			return err
-		}
-	default:
-		return errors.New("任务类型须为 probe（网络探测）、unlock（解锁检测）或 block（IP 被墙检测）")
+	}
+	if err := k.Validate(t); err != nil {
+		return err
 	}
 	if len(t.NodeIDs) > 1000 {
 		return errors.New("绑定节点过多")
@@ -207,6 +165,42 @@ func (t Task) Validate() error {
 			return errors.New("节点绑定重复或为空")
 		}
 		seen[id] = true
+	}
+	return nil
+}
+
+func validateProbeTask(t Task) error {
+	p := t.Probe
+	if len(p.Checks) < 1 || len(p.Checks) > 2 || len(p.Targets) < 1 || len(p.Targets) > 200 {
+		return errors.New("请选择检测内容和目标（最多 200 个地址）")
+	}
+	for _, check := range p.Checks {
+		if check != "tcp" && check != RouteKind {
+			return errors.New("检测内容须为 tcp（延迟）或 route（回程）")
+		}
+	}
+	// A target's own checks may only narrow the task's; a non-empty list
+	// therefore always keeps at least one check for that target.
+	for _, target := range p.Targets {
+		for _, check := range target.Checks {
+			in := false
+			for _, c := range p.Checks {
+				in = in || c == check
+			}
+			if !in {
+				return fmt.Errorf("目标 %s 的检测项 %q 不在任务的检测内容里", target.Host, check)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for _, leaf := range t.Leaves() {
+		if seen[leaf.ProbeKey()] {
+			return errors.New("检测内容或目标重复")
+		}
+		seen[leaf.ProbeKey()] = true
+		if err := leaf.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

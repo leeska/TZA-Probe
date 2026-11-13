@@ -300,7 +300,7 @@ func withGroupWarning(ctx context.Context, svc *service.Service, rule model.Aler
 func taskSchema(withID bool) map[string]any {
 	properties := map[string]any{
 		"name": map[string]any{"type": "string", "description": "任务名称，必填"},
-		"type": map[string]any{"type": "string", "enum": []string{model.TaskProbe, model.TaskUnlock, model.TaskBlock}, "description": "任务类型：block 为 IP 被墙检测（填 block，指定大陆与境外检测节点）；probe 为网络探测（填 probe）；unlock 为解锁检测（填 unlock），由节点自己的出口逐项检测流媒体 / AI / 交易所（目录见 GET /api/v1/unlock-catalog）"},
+		"type": map[string]any{"type": "string", "enum": model.TaskTypes(), "description": "任务类型：block 为 IP 被墙检测（填 block，指定大陆与境外检测节点）；probe 为网络探测（填 probe）；unlock 为解锁检测（填 unlock），由节点自己的出口逐项检测流媒体 / AI / 交易所（目录见 GET /api/v1/unlock-catalog）"},
 		"probe": map[string]any{
 			"type": "object", "additionalProperties": false,
 			"description": "type=probe 时必填：每个检测项都对每个目标执行",

@@ -47,6 +47,12 @@
 | POST /agent/heartbeat | `{protocol:1,status:{state,reason?,version,os,arch,distro?,cpu_cores?,capabilities?}}`；节点令牌鉴权，通常回 204，有签名升级时与 report 相同回 200。每节点最短间隔 3 秒，只更新连接和诊断，不写指标、历史或流量。见下文 |
 | GET /agent/jobs | 获取有限租约任务：按种类分别领取，最多 8 个 TCP + 1 个回程 + 1 个解锁（Agent 须报 `parallel_jobs` 能力，否则整批最多两个） |
 | POST /agent/results | 上传与租约绑定的结果 |
+| GET /admin/remote | 远程管理：每台节点管理通道的状态 `[{id, name, connected, since, capabilities}]`；只有本机开启了远程管理（`--manage`）的 Agent 会连上 |
+| POST /admin/remote/exec | `{"node_id":…,"command":…,"timeout_seconds":60}`：经管理通道在节点上用 `/bin/sh -c` 执行一条命令（命令最多 16 KB，超时 1–3600 秒），等它结束后回 `{output, exit_code, error, truncated, duration_ms}`，输出最多 1 MB；通道未连接回 502。命令原文与退出码写入审计日志 |
+| GET /admin/remote/terminal?node=&cols=&rows= | WebSocket（须与面板同源）：节点上的交互终端（登录 shell + PTY）。浏览器发 `{"i":"按键"}` 与 `{"resize":{"cols","rows"}}`，收二进制帧的终端输出，结束时收文本帧 `{"exit":码}`。会话的开始与结束（时长、键入字节数，不记录内容）写入审计日志 |
+| GET /admin/audit?before=&limit=&node= | 审计日志，按 id 倒序分页（`limit` 默认 100、上限 500）：后台的每次写操作（路由与状态码，不含请求体）、登录与登录失败、远程命令与终端。字段 `{id, at, actor, source, action, node_id, status, detail}`，保留 365 天 |
+| GET /admin/totp、POST /admin/totp/setup、POST /admin/totp/enable、POST /admin/totp/disable | 两步验证：GET 回 `{"enabled":…}`；setup 生成新密钥回 `{secret, uri}`（10 分钟内有效）；enable `{"code":…}` 用它算出的验证码确认后生效；disable `{"code":…}` 用当前验证码关闭。开启后 `POST /login` 还要 `code`：密码正确但缺验证码或验证码错误时 401 `{"error":…,"totp":true}`，同一个验证码只能用一次 |
+| GET /agent/channel | 管理通道（协议 v2）：Agent 用节点令牌建立的 WebSocket，请求头 `X-Channel-Capabilities` 列出它提供的能力（如 `shell`），其上用 yamux 多路复用，由 Server 按需开流，见 [ARCHITECTURE.md](ARCHITECTURE.md#管理通道) |
 
 不在 /api/v1 下的两个品牌相关地址：`GET /site-logo` 公开提供已上传的 logo（没有时 404；带 `nosniff` 和自己的 `default-src 'none'; sandbox` CSP，直接打开 SVG 也跑不了脚本）；`GET /theme-default.js` 是首屏脚本，除默认外观外另写 `window.__tzaBrand={"name":…,"logo":…}`，`theme-boot.js` 据此在首屏前换掉标签页标题与 favicon。
 

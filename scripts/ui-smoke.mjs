@@ -694,7 +694,7 @@ assert(
 // 卡片集合没变时绝不能整块重绘（整块重绘会重建整个滚动子树，最容易被感知为「跳」）：
 // 必须逐张比 HTML，只替换内容真的变了的那几张。
 assert(
-  /const sameSet = shown\.length === filtered\.length && shown\.every\(\(el, i\) => el\.dataset\.node === filtered\[i\]\.id\)/.test(appSource) &&
+  /const sameSet = filtered\.length > 0 && shown\.length === filtered\.length && shown\.every\(\(el, i\) => el\.dataset\.node === filtered\[i\]\.id\)/.test(appSource) &&
     /if \(renderedHTML\.get\(el\) === wanted\[i\]\) return;/.test(appSource) &&
     /const renderedHTML = new WeakMap\(\)/.test(appSource),
   "an unchanged card list must be updated card by card, never re-rendered wholesale",
@@ -2735,6 +2735,12 @@ assert.equal(
   200,
   "creating a long-term free node must succeed: " + JSON.stringify(longNode),
 );
+// 从未接入的节点不在公开面板出现：先用它的密钥报一次指标，让它算作已接入。
+const longReport = await fetch(base + "/api/v1/agent/report", {
+  method: "POST", headers: { Authorization: "Bearer " + longNode.token, "Content-Type": "application/json" },
+  body: JSON.stringify({ protocol: 1, metrics: { cpu: 1, memory_used: 10, memory_total: 100, disk_used: 20, disk_total: 100, net_in: 0, net_out: 0, uptime: 60, os: "smoke", arch: "amd64", ip_families: ["ipv4"] } }),
+});
+assert.equal(longReport.status, 204);
 await new Promise((resolve) => setTimeout(resolve, 11500));
 publicSearch.value = longName;
 publicSearch.dispatchEvent(new publicDOM.window.Event("input"));

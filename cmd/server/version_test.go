@@ -150,3 +150,34 @@ func TestInstallerBrowserUnitMatchesDeployFile(t *testing.T) {
 		}
 	}
 }
+
+// install.sh writes deploy/nginx-tza-probe-log.conf into /etc/nginx/conf.d; the
+// copy inside the script must stay identical, and the site example must use it.
+func TestInstallerNginxLogMatchesDeployFile(t *testing.T) {
+	script, err := os.ReadFile("../../deploy/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf, err := os.ReadFile("../../deploy/nginx-tza-probe-log.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const open = "cat > \"${WORK}/tza-probe-log.conf\" <<'NGINX'\n"
+	text := string(script)
+	start := strings.Index(text, open)
+	if start < 0 {
+		t.Fatal("nginx log map not found in install.sh")
+	}
+	body := text[start+len(open):]
+	body = body[:strings.Index(body, "\nNGINX\n")]
+	if body != strings.TrimRight(string(conf), "\n") {
+		t.Fatal("install.sh's nginx log map differs from deploy/nginx-tza-probe-log.conf")
+	}
+	site, err := os.ReadFile("../../deploy/nginx-site.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(site), "if=$tza_loggable;") || strings.Contains(string(site), "map ") {
+		t.Fatal("deploy/nginx-site.conf must use $tza_loggable without defining it again")
+	}
+}

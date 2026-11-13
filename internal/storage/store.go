@@ -64,7 +64,13 @@ func (s *Store) queryRow(ctx context.Context, query string, args ...any) *sql.Ro
 	return s.read.QueryRowContext(ctx, query, args...)
 }
 
-func Open(path string) (*Store, error) {
+// Open opens the database at path with core's migrations only; the server
+// uses OpenWith to add its modules' migrations.
+func Open(path string) (*Store, error) { return OpenWith(path, CoreMigrations()) }
+
+// OpenWith opens the database at path and runs any pending migrations in list
+// (which must start with CoreMigrations).
+func OpenWith(path string, list []Migration) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
@@ -90,7 +96,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err = initializeDatabase(db); err != nil {
+	if err = migrate(db, filepath.Dir(path), list); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -103,6 +109,11 @@ func Open(path string) (*Store, error) {
 	s.startPurger()
 	return s, nil
 }
+
+// DB is the writer connection, for modules that keep their own tables in the
+// main database (created by their migrations). They must not hold a
+// transaction on it while calling back into Store.
+func (s *Store) DB() *sql.DB { return s.db }
 
 func (s *Store) Close() error {
 	// 正在删的那一批做完就停；没删完的留在 purges 里，下次 Open 接着删。

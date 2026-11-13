@@ -14,6 +14,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/leeska/TZA-Probe/internal/ipguard"
 	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-Probe/internal/module"
+	"github.com/leeska/TZA-Probe/internal/regiondrift"
 	"github.com/leeska/TZA-Probe/internal/storage"
 )
 
@@ -35,7 +37,7 @@ func TestCentralAPIAuthenticationAndLegacyRemoval(t *testing.T) {
 	}
 	admin := model.Secret()
 	broker := ipguard.NewBroker(guard)
-	handler := (&API{Store: store, AdminToken: admin, IPGuard: broker, Assets: http.NotFoundHandler()}).Handler()
+	handler := (&API{Store: store, AdminToken: admin, Modules: []module.Module{&regiondrift.Module{Broker: broker, Nodes: store}}, Assets: http.NotFoundHandler()}).Handler()
 	call := func(method, path, key, origin string, body any) *httptest.ResponseRecorder {
 		raw, _ := json.Marshal(body)
 		request := httptest.NewRequest(method, "http://localhost/api/v1"+path, bytes.NewReader(raw))
@@ -130,7 +132,7 @@ func TestCentralWebsocketSurvivesCompressionHeaders(t *testing.T) {
 	}
 	broker := ipguard.NewBroker(guard)
 	broker.Report(node, ipguard.Status{Enabled: true})
-	server := httptest.NewServer((&API{Store: store, AdminToken: model.Secret(), IPGuard: broker, Assets: http.NotFoundHandler()}).Handler())
+	server := httptest.NewServer((&API{Store: store, AdminToken: model.Secret(), Modules: []module.Module{&regiondrift.Module{Broker: broker, Nodes: store}}, Assets: http.NotFoundHandler()}).Handler())
 	defer server.Close()
 	connected := make(chan *websocket.Conn, 1)
 	go func() {

@@ -25,7 +25,7 @@ func (s *Store) DeleteTask(ctx context.Context, id string) error {
 	}
 	// 任务行与绑定、面板物化行立刻删；它的探测历史（可能上百万行）后台分批删，见 purge.go。
 	err = s.withoutCascade(ctx, func(tx *sql.Tx) error {
-		if t.Type == model.TaskUnlock {
+		if hasPerNodeResults(t) {
 			if err := clearUnlocks(ctx, tx, t.NodeIDs); err != nil {
 				return err
 			}
@@ -99,7 +99,7 @@ func (s *Store) ProbeTargets(ctx context.Context) (map[string][]model.ProbeTarge
 	plan := map[string][]model.ProbeTarget{}
 	seen := map[string]map[key]bool{}
 	for _, t := range tasks {
-		if !t.Enabled || t.Type == model.TaskBlock {
+		if k, _ := model.LookupTaskKind(t.Type); !t.Enabled || k.PrivateTargets {
 			continue
 		}
 		for _, leaf := range t.Leaves() {
@@ -195,7 +195,7 @@ func (s *Store) SaveTask(ctx context.Context, t model.Task, create bool) (string
 	}
 	// 解锁结论是从结果派生的：探测内容一变，旧结论必须跟着走，否则面板上会留着一份
 	// 没有任务在跑的解锁面板。
-	if previous.Type == model.TaskUnlock || t.Type == model.TaskUnlock {
+	if hasPerNodeResults(previous) || hasPerNodeResults(t) {
 		if err = clearUnlocks(ctx, tx, append(append([]string{}, previous.NodeIDs...), t.NodeIDs...)); err != nil {
 			return "", err
 		}
@@ -236,4 +236,11 @@ func sameKeys(a, b map[string]bool) bool {
 		}
 	}
 	return true
+}
+
+// hasPerNodeResults reports whether t's kind keeps derived per-node results
+// (today only unlock's table), which go when a node stops running the task.
+func hasPerNodeResults(t model.Task) bool {
+	k, ok := model.LookupTaskKind(t.Type)
+	return ok && k.PerNodeResults
 }

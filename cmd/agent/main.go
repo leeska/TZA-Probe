@@ -8,13 +8,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 
 	"github.com/leeska/TZA-Probe/internal/agent"
+	"github.com/leeska/TZA-Probe/internal/channel"
 	"github.com/leeska/TZA-Probe/internal/model"
 	"github.com/leeska/TZA-Probe/internal/probe"
 )
@@ -28,6 +31,52 @@ type config struct {
 	GeoProvider string   `json:"geo_provider"`
 	TraceMethod string   `json:"trace_method"`
 	AllowHTTP   bool     `json:"allow_http"`
+}
+
+// manageFile next to agent.json turns on the management capabilities (shell,
+// later docker and so on) over the management channel. The install script
+// writes it with --manage, together with a service unit that is not
+// sandboxed, and removes it with --manage-off.
+const manageFile = "manage.json"
+
+// manageConfig is manage.json. DisabledCapabilities switches single
+// capabilities off on this host whatever the Server asks: the local brake.
+type manageConfig struct {
+	Enabled              bool     `json:"enabled"`
+	DisabledCapabilities []string `json:"disabled_capabilities"`
+}
+
+// loadManage reads manage.json; a missing file means management is off. Like
+// the egress policy it must be a private regular file.
+func loadManage(path string) (manageConfig, error) {
+	var cfg manageConfig
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return cfg, nil
+	}
+	if err != nil {
+		return cfg, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		return cfg, fmt.Errorf("%s must be a private regular file (0600)", path)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, err
+	}
+	if len(raw) > 8192 {
+		return cfg, fmt.Errorf("%s is too large", path)
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return cfg, fmt.Errorf("%s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// managementCapabilities is every capability Manage can turn on, with its
+// stream handlers.
+func managementCapabilities() map[string]map[string]channel.Handler {
+	return map[string]map[string]channel.Handler{channel.CapabilityShell: agent.ShellHandlers()}
 }
 
 // errRestart ends the process with agent.ExitRestart so the service manager
@@ -100,6 +149,24 @@ func run() error {
 	defer cancel()
 	app := agent.Agent{Collector: &agent.SystemCollector{Interfaces: cfg.Interfaces, Mount: cfg.Mount}, Prober: prober, Transport: transport, Egress: &agent.Egress{Transport: transport, PolicyFile: filepath.Join(filepath.Dir(*path), "ipguard-egress.json")}}
 	app.Prober = prober.DefaultRegistry()
+	manage, err := loadManage(filepath.Join(filepath.Dir(*path), manageFile))
+	if err != nil {
+		return err
+	}
+	if manage.Enabled {
+		handlers, caps := map[string]channel.Handler{}, []string{}
+		for capability, kinds := range managementCapabilities() {
+			if slices.Contains(manage.DisabledCapabilities, capability) {
+				slog.Info("management capability disabled in the local configuration", "capability", capability)
+				continue
+			}
+			caps = append(caps, capability)
+			maps.Copy(handlers, kinds)
+		}
+		if len(handlers) > 0 {
+			app.Background = append(app.Background, &agent.Channel{Transport: transport, Handlers: handlers, Capabilities: caps})
+		}
+	}
 	restart := false
 	if *selfUpdate {
 		keys, err := agent.LoadKeys(keyPath)

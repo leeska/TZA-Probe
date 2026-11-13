@@ -1,7 +1,8 @@
 # 部署、更新、备份
 
-> 当前开发基线仅支持 [全新部署](FRESH-DEPLOYMENT.md)：Server 使用新数据目录和 schema 30，
-> Agent 重新接入，不再自动升级旧库或接管独立安装器。下文既往功能升级记录不适用于旧库原地升级。
+> v2.0.0 及以后的数据目录可以原地升级：Server 启动时按版本执行各模块的数据库迁移（见
+> [架构说明](ARCHITECTURE.md#数据库迁移)）。更早的库（schema 30 以前）仍不升级，需要按
+> [全新部署](FRESH-DEPLOYMENT.md) 换新的数据目录。
 
 ## 0. 一键安装（推荐）
 
@@ -77,7 +78,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.0.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.1.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -99,6 +100,8 @@ probe.example.com {
     reverse_proxy 127.0.0.1:25774
 }
 ```
+
+用 nginx 时参考 [`deploy/nginx-site.conf`](../deploy/nginx-site.conf)。每个 Agent 每隔几秒就上报一次，全部写进访问日志一天会有上百 MB。安装脚本检测到本机有 nginx 时，会写入 `/etc/nginx/conf.d/tza-probe-log.conf`，内容同 [`deploy/nginx-tza-probe-log.conf`](../deploy/nginx-tza-probe-log.conf)。它只定义变量 `$tza_loggable`：`/api/v1/agent/*` 返回 2xx、3xx 或 499 时取 0，其他请求取 1。站点的 server 块里写 `access_log /var/log/nginx/access.log combined if=$tza_loggable;` 才会生效，面板访问和 Agent 的报错照常记录。安装脚本不改任何站点配置；写入后 `nginx -t` 不通过会自动撤回。不需要时加 `--no-nginx`。
 
 安装脚本结束时打印后台用户名、密码（密码只在首次安装时显示一次）。访问 `https://probe.example.com/admin` 用用户名密码登录。MCP API Key 在“面板设置”中生成、重新生成或撤销，客户端配置和连接排错见 [MCP 接入指南](MCP.md)。用户名与密码在“面板设置 → 后台账号”修改。新增节点后，后台提供配置和安装脚本。
 
@@ -137,6 +140,30 @@ sudo systemctl enable --now tza-agent
 
 生产接入使用 HTTPS。`allow_http` 只适用于可信私网；从 HTTP 面板生成的配置会开启它，改用公网 HTTPS 时同时设为 false。
 
+## 远程管理（命令与终端）
+
+后台「远程管理」可以在节点上执行命令、打开终端。这项能力**默认关闭**，要在节点上逐台开启：重新执行一次接入命令并加 `--manage`，已接入的节点不用带 `--token`。
+
+```sh
+curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://probe.example.com --manage
+```
+
+- **开启时做了什么**：脚本写入 `/etc/tza-probe/manage.json`，并把服务单元换成不带沙箱的版本，去掉 `ProtectSystem`、能力限制和 `NoNewPrivileges`，`UMask` 改成 022。Agent 以 root 完整权限运行，并保持一条到 Server 的管理通道（`/api/v1/agent/channel`，WebSocket）。之后重跑安装脚本升级，这个设置会保留。
+- **关闭**：`--manage-off` 关闭远程管理并恢复沙箱。
+- **本机单独关掉某项能力**：在 `manage.json` 的 `"disabled_capabilities"` 里写 `"shell"`，再重启 Agent，就能只关掉命令与终端，不管 Server 怎么要求。
+- **反代**：nginx 需要转发 WebSocket，也就是 `Upgrade` 和 `Connection "upgrade"` 两个头（见 `deploy/nginx-site.conf`）。保活由通道自己负责。
+- **安全**：开启远程管理意味着后台账号能以 root 身份控制这些机器，建议同时在「面板设置 → 账号与安全」开启两步验证。每条命令的原文、每个终端会话都会记进「审计日志」。不要在命令里写密码。
+
+## 两步验证与审计日志
+
+- **两步验证**：在「面板设置 → 账号与安全」开启。用 Google Authenticator、1Password 等基于时间的身份验证器添加密钥，再输入一次验证码确认，确认后才生效。之后登录时先填密码，再填 6 位验证码。手机丢了的话，在服务器执行 `sudo tza-server reset-password --data /var/lib/tza-probe --disable-totp` 关闭两步验证，密码不会改。
+- **审计日志**：在后台「审计日志」里查看，记录的内容有：
+  - 后台的每次写操作：路由和结果，不含请求体
+  - 登录与登录失败
+  - 远程命令与终端会话
+  
+  记录保留 365 天，随数据库一起备份。
+
 ## 主题与插件
 
 Probe 不连接 TZA-CC 或其他市场：主题包、附加包与插件都在后台「主题」「插件」页上传 zip 安装，Server 不为此访问外部服务。
@@ -149,7 +176,7 @@ Probe 不连接 TZA-CC 或其他市场：主题包、附加包与插件都在后
 - 日志：`sudo journalctl -u tza-server -n 100 --no-pager` / `sudo journalctl -u tza-agent -n 100 --no-pager`。
 - 配置修改后：`sudo systemctl restart tza-agent`；服务不会自动重载配置。
 - 后台节点列表显示 Agent 版本、最近连接、有效指标时间和采集异常分类；在线但指标异常时，检查 Agent 的 `mount`、`interfaces` 和本机日志，修改后重启 Agent。网络任务的“执行记录”显示最近执行及失败原因。
-- 心跳功能仍要求先准备 Server 再接入 Agent。当前部署直接使用 schema 30；历史原地升级路径已移除。
+- 心跳功能仍要求先准备 Server 再接入 Agent。
 - 忘记后台密码：`sudo tza-server reset-password --data /var/lib/tza-probe` 生成新密码并打印（加 `--username 名字` 同时改用户名），不用停服，新密码即刻生效；旧浏览器会话随即失效，无需重启服务。账号保存在数据目录的 `admin-account`（密码只存 PBKDF2 摘要）。
 - 管理密钥丢失时停服，重新生成 `admin-token` 并维持服务账户所有权和 0600 权限后启动。Server 重启会使浏览器会话失效。
 
@@ -196,7 +223,9 @@ Agent 在下一次上报时拿到新版本的下载路径、SHA-256 与签名，
 
 后台的提示：「安装包未签名」表示 `agents/` 里缺 `.sig`、`.sig` 签的不是当前这个二进制，或缺公钥；「需手工升级一次」表示节点上的 Agent 较早、或还没钉公钥，按弹窗里的命令在机器上执行一次即可。没配签名时节点照常安装和运行，只是升级要在机器上重跑安装命令。换钥：生成新钥、用新钥签名、替换 `agents/upgrade-key.pub`，再在每台节点重跑一次安装命令。
 
-新版本如果改了数据库结构，Server 启动时自动升级数据库。从数据库版本 14 升上来时，Server 会在后台把已有一周的探测结果汇总进网络历史格子（10 台节点约十几秒，1 核机更久，日志 `network history buckets backfilled` 表示完成）；期间面板照常使用，只是 24 小时以上的网络历史仍按旧方式计算。升级后的数据库旧程序打不开，因此回滚必须同时还原旧二进制和升级前的数据备份。
+新版本如果改了数据库结构，Server 启动时自动执行尚未执行的迁移，每条迁移在自己的事务里完成，失败就回滚并停止启动，修好后重启即重试。安装脚本在替换二进制之前先用新版本执行 `tza-server check-data --data 数据目录`：库比新版本还新、或早于 v2.0.0 时在这里中止，现有安装原样不动。升级后的数据库旧程序打不开（v2.0.0 见到迁移后的库会拒绝启动），因此**升级前先备份数据目录**，回滚必须同时还原旧二进制和这份备份。
+
+从 v2.0.0 升上来时，地区偏移检测原来单独的 `ipguard.db` 会并入主库：策略和检测记录导入主库后，旧文件改名为 `ipguard.db.migrated`（连同 `-wal` / `-shm`）保留，确认无误后可以自行删除。之后后台的「备份」也包含地区偏移的数据。
 
 ## 备份与恢复
 

@@ -69,7 +69,7 @@ func TestManualChecksDoNotHaveDailyQuota(t *testing.T) {
 	if _, err := store.SavePolicy(ctx, "node", policy); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.db.Exec("UPDATE policies SET value=json_set(value,'$.daily_runs',1,'$.daily_network_bytes',1) WHERE node_id='node'"); err != nil {
+	if _, err := store.db.Exec("UPDATE ipguard_policies SET value=json_set(value,'$.daily_runs',1,'$.daily_network_bytes',1) WHERE node_id='node'"); err != nil {
 		t.Fatal(err)
 	}
 	job, err := store.Enqueue(ctx, "node", "google", "baseline", "")
@@ -143,7 +143,7 @@ func TestClaimConcurrentCancellationAndExpiration(t *testing.T) {
 	if _, err := store.Running(ctx, job.ID, "wrong"); err == nil {
 		t.Fatal("wrong lease accepted")
 	}
-	if _, err := store.db.Exec("UPDATE jobs SET started_at=? WHERE id=?", time.Now().Add(-time.Hour).Unix(), job.ID); err != nil {
+	if _, err := store.db.Exec("UPDATE ipguard_jobs SET started_at=? WHERE id=?", time.Now().Add(-time.Hour).Unix(), job.ID); err != nil {
 		t.Fatal(err)
 	}
 	next, err := store.Claim(ctx)

@@ -3,8 +3,10 @@ module github.com/leeska/TZA-Probe
 go 1.27.3
 
 require (
+	github.com/creack/pty v1.1.24
 	github.com/go-rod/rod v0.116.2
 	github.com/gorilla/websocket v1.5.3
+	github.com/hashicorp/yamux v0.1.2
 	github.com/nxtrace/NTrace-core v1.7.4
 	github.com/shirou/gopsutil/v4 v4.26.4
 	modernc.org/sqlite v1.44.3

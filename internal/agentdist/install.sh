@@ -14,6 +14,9 @@
 #   --ipguard [IP,IP]        开通地区偏移检测出口：允许 Server 的隔离浏览器经本机访问 Google / Meta。
 #                            不写 IP 时自动查本机的公网出口（IPv4 / IPv6），NAT 主机自动写好本机源地址
 #   --ipguard-off            关闭地区偏移检测出口
+#   --manage                 开启远程管理（后台「远程管理」里的命令与终端）：写 /etc/tza-probe/manage.json，
+#                            并换成不带沙箱的服务单元（Agent 以 root 完整权限运行）。之后重跑本脚本会保留
+#   --manage-off             关闭远程管理，恢复带沙箱的服务单元
 #   --uninstall              停止服务并删除程序、配置与服务单元（systemd / OpenRC 均可）
 #
 # 不带 --token 再次执行时保留现有 /etc/tza-probe/agent.json，只更新二进制并重启，即升级。
@@ -32,7 +35,9 @@ TRACE_METHOD=""
 ALLOW_HTTP=""
 UNINSTALL=""
 IPGUARD=""
+MANAGE=""
 CONFIG=/etc/tza-probe/agent.json
+MANAGE_FILE=/etc/tza-probe/manage.json
 KEYFILE=/etc/tza-probe/upgrade-key.pub
 BIN=/usr/local/bin/tza-agent
 UNIT=/etc/systemd/system/tza-agent.service
@@ -54,8 +59,10 @@ while [ $# -gt 0 ]; do
         *) IPGUARD="$2"; shift 2 ;;
       esac ;;
     --ipguard-off) IPGUARD=off; shift ;;
+    --manage) MANAGE=on; shift ;;
+    --manage-off) MANAGE=off; shift ;;
     --uninstall) UNINSTALL=true; shift ;;
-    -h|--help) sed -n '2,19p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done
@@ -91,6 +98,10 @@ if [ "$(id -u)" -ne 0 ]; then
     auto) quoted="$quoted --ipguard" ;;
     off) quoted="$quoted --ipguard-off" ;;
     *) quoted="$quoted --ipguard $(q "$IPGUARD")" ;;
+  esac
+  case "$MANAGE" in
+    on) quoted="$quoted --manage" ;;
+    off) quoted="$quoted --manage-off" ;;
   esac
   [ -n "$UNINSTALL" ] && quoted="$quoted --uninstall"
   if command -v curl >/dev/null 2>&1; then
@@ -293,6 +304,24 @@ write_egress() {
 }
 write_egress
 
+# 远程管理：显式开关优先；都没写时沿用这台机器现在的状态（重跑升级不会悄悄关掉它）。
+case "$MANAGE" in
+  on)
+    install -d -m 0700 /etc/tza-probe
+    if [ ! -f "$MANAGE_FILE" ]; then
+      umask 077
+      printf '{\n  "enabled": true,\n  "disabled_capabilities": []\n}\n' > "$MANAGE_FILE"
+      chmod 0600 "$MANAGE_FILE"
+    fi
+    echo "已开启远程管理：后台「远程管理」可在这台机器上执行命令、打开终端（以 root 运行）。"
+    echo "  在 $MANAGE_FILE 的 disabled_capabilities 里写 \"shell\" 并重启 Agent，可在本机单独关掉命令与终端。" ;;
+  off)
+    rm -f "$MANAGE_FILE"
+    echo "已关闭远程管理" ;;
+esac
+MANAGED=""
+[ -f "$MANAGE_FILE" ] && MANAGED=true
+
 if [ "$INIT" = systemd ]; then
   install -d -m 0755 "$(dirname "$UNIT")"
   cat > "$UNIT" <<'TZA_AGENT_SERVICE'
@@ -323,6 +352,12 @@ ProtectHome=true
 [Install]
 WantedBy=multi-user.target
 TZA_AGENT_SERVICE
+  if [ -n "$MANAGED" ]; then
+    # 远程管理要能装软件、改配置、管服务：去掉沙箱与能力限制，终端里新建文件用常规的 022。
+    sed -i -e '/^NoNewPrivileges=/d' -e '/^CapabilityBoundingSet=/d' -e '/^AmbientCapabilities=/d' \
+      -e '/^ProtectSystem=/d' -e '/^ProtectHome=/d' -e 's/^UMask=0077$/UMask=0022/' "$UNIT"
+    sed -i '/^\[Service\]$/a # 已开启远程管理（/etc/tza-probe/manage.json）：不带沙箱运行。--manage-off 恢复沙箱。' "$UNIT"
+  fi
   chmod 0644 "$UNIT"
   systemctl daemon-reload
   systemctl enable tza-agent >/dev/null 2>&1

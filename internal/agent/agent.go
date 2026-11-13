@@ -44,6 +44,9 @@ type Agent struct {
 	Prober    Prober
 	Transport Transport
 	Egress    EgressRunner
+	// Background runs alongside the report loop for the Agent's lifetime
+	// (the management channel).
+	Background []EgressRunner
 	// Upgrader is set when the Agent runs under a service unit that restarts it
 	// (--self-update); nil leaves upgrades to the install command. Restart is
 	// called once a new binary is in place and must make Run return.
@@ -77,6 +80,10 @@ func (a Agent) Run(ctx context.Context) {
 	if a.Egress != nil {
 		wg.Add(1)
 		go func() { defer wg.Done(); a.Egress.Run(ctx) }()
+	}
+	for _, runner := range a.Background {
+		wg.Add(1)
+		go func() { defer wg.Done(); runner.Run(ctx) }()
 	}
 	if transport, ok := a.Transport.(HeartbeatTransport); ok {
 		wg.Add(1)

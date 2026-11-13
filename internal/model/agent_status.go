@@ -64,13 +64,11 @@ func (s AgentStatus) Validate() error {
 	default:
 		return errors.New("invalid diagnostic reason")
 	}
-	if len(s.Version) > 40 || len(s.OS) > 100 || len(s.Arch) > 30 || len(s.Distro) > 60 || s.Cores < 0 || s.Cores > 4096 || len(s.Capabilities) > len(AllCapabilities) {
+	if len(s.Version) > 40 || len(s.OS) > 100 || len(s.Arch) > 30 || len(s.Distro) > 60 || s.Cores < 0 || s.Cores > 4096 {
 		return errors.New("invalid agent metadata")
 	}
-	for _, capability := range s.Capabilities {
-		if !KnownCapability(capability) {
-			return errors.New("invalid capability")
-		}
+	if !ValidCapabilities(s.Capabilities) {
+		return errors.New("invalid capability")
 	}
 	return nil
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/service"
 	"github.com/leeska/TZA-Probe/internal/theme"
+	"github.com/leeska/TZA-Probe/internal/totp"
 	"github.com/leeska/TZA-Probe/pkg/tzapkg"
 )
 
@@ -51,6 +52,93 @@ func themeList(store *theme.Store, options map[string]map[string]any) []themeVie
 // it to the service, which the MCP tools share; nothing here decides a rule.
 func (a *API) adminRoutes(mux *http.ServeMux) {
 	route := func(pattern string, handler http.HandlerFunc) { mux.HandleFunc(pattern, a.admin(handler)) }
+
+	// ---- 两步验证（TOTP）：setup 发一个新密钥，用它算出的验证码确认后才生效；关闭也要验证码。
+	route("GET /api/v1/admin/totp", func(w http.ResponseWriter, r *http.Request) {
+		_, enabled, err := totp.Load(a.AccountDir)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, map[string]bool{"enabled": enabled})
+	})
+	route("POST /api/v1/admin/totp/setup", func(w http.ResponseWriter, r *http.Request) {
+		if a.AccountDir == "" {
+			write(w, 400, map[string]string{"error": "未配置后台账号"})
+			return
+		}
+		secret := totp.NewSecret()
+		a.mu.Lock()
+		a.totpPending, a.totpOffered = secret, time.Now()
+		a.mu.Unlock()
+		name := "admin"
+		if acct, err := account.Load(a.AccountDir); err == nil {
+			name = acct.Username
+		}
+		issuer := "TZA Probe"
+		if panel, err := a.svc.Panel(r.Context()); err == nil && panel.SiteName != "" {
+			issuer = panel.SiteName
+		}
+		write(w, 200, map[string]string{"secret": secret, "uri": totp.URI(secret, issuer, name)})
+	})
+	route("POST /api/v1/admin/totp/enable", func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			Code string `json:"code"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		a.mu.Lock()
+		secret, offered := a.totpPending, a.totpOffered
+		a.mu.Unlock()
+		if secret == "" || time.Since(offered) > 10*time.Minute {
+			write(w, 409, map[string]string{"error": "密钥已过期，请重新开始设置"})
+			return
+		}
+		step := totp.Match(secret, v.Code, time.Now(), 0)
+		if step == 0 {
+			write(w, 400, map[string]string{"error": "验证码不对：请确认手机时间准确，并输入当前显示的 6 位数"})
+			return
+		}
+		if err := totp.Save(a.AccountDir, totp.Config{Secret: secret, LastStep: step}); err != nil {
+			fail(w, err)
+			return
+		}
+		a.mu.Lock()
+		a.totpPending = ""
+		a.mu.Unlock()
+		w.WriteHeader(204)
+	})
+	route("POST /api/v1/admin/totp/disable", func(w http.ResponseWriter, r *http.Request) {
+		var v struct {
+			Code string `json:"code"`
+		}
+		if !decode(w, r, &v) {
+			return
+		}
+		ok, err := totp.Use(a.AccountDir, v.Code, time.Now())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if !ok {
+			write(w, 400, map[string]string{"error": "验证码错误或已用过"})
+			return
+		}
+		respond(w, totp.Remove(a.AccountDir))
+	})
+
+	// ---- 审计日志：后台的每次写操作、登录，以及模块记下的特权操作（命令、终端）
+	route("GET /api/v1/admin/audit", func(w http.ResponseWriter, r *http.Request) {
+		before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		entries, err := a.Store.AuditLog(r.Context(), before, limit, r.URL.Query().Get("node"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, 200, entries)
+	})
 
 	// ---- themes：内置皮肤 + 后台上传的主题包（zip，见 docs/THEMES.md）
 	route("GET /api/v1/admin/themes", func(w http.ResponseWriter, r *http.Request) {

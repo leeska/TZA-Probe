@@ -197,6 +197,13 @@ button:disabled,
   pointer-events: none;
 }
 
+/* 表单提交中（api.js 的 guard）：看起来像禁用，但不改 disabled，免得覆盖页面自己的状态。 */
+button.is-busy {
+  opacity: 0.45;
+  cursor: progress;
+  pointer-events: none;
+}
+
 .primary,
 button.primary {
   background: var(--accent);
@@ -5792,4 +5799,53 @@ html[data-skin] [data-node-plugin-detail] .region-location details[open] { borde
 }
 .region-setup .command-block + .command-block {
   margin-top: var(--space-2);
+}
+
+/* 远程管理（admin-remote.js）：命令输出与终端窗口。 */
+.exec-output,
+.audit-detail {
+  margin: 0;
+  padding: var(--space-3, 12px);
+  max-height: 420px;
+  overflow: auto;
+  background: #0b0d10;
+  color: #d8dee9;
+  border-radius: 8px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.audit-detail {
+  max-height: 160px;
+  max-width: 520px;
+}
+
+dialog.terminal-dialog {
+  width: min(1100px, calc(100vw - 32px));
+}
+
+.terminal-box {
+  background: #0b0d10;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.terminal-host {
+  height: min(70vh, 640px);
+}
+
+.remote-hint {
+  margin: var(--space-3, 12px) var(--space-4, 16px) var(--space-4, 16px);
+}
+
+.totp-secret,
+.totp-uri {
+  word-break: break-all;
+  user-select: all;
+}
+
+.totp-secret {
+  font-size: 1.05em;
+  letter-spacing: 0.06em;
 }

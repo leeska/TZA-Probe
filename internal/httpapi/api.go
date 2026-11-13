@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -21,13 +22,15 @@ import (
 	"github.com/leeska/TZA-Probe/internal/account"
 	"github.com/leeska/TZA-Probe/internal/agentdist"
 	"github.com/leeska/TZA-Probe/internal/brand"
-	"github.com/leeska/TZA-Probe/internal/ipguard"
+	"github.com/leeska/TZA-Probe/internal/httpjson"
 	"github.com/leeska/TZA-Probe/internal/mcp"
 	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-Probe/internal/module"
 	"github.com/leeska/TZA-Probe/internal/notify"
 	"github.com/leeska/TZA-Probe/internal/plugin"
 	"github.com/leeska/TZA-Probe/internal/service"
 	"github.com/leeska/TZA-Probe/internal/theme"
+	"github.com/leeska/TZA-Probe/internal/totp"
 )
 
 // Repository is the persistence the HTTP contract needs: the management
@@ -41,6 +44,8 @@ type Repository interface {
 	Heartbeat(context.Context, string, model.AgentStatus, time.Time) error
 	Lease(context.Context, string, time.Time) ([]model.Job, error)
 	Finish(context.Context, string, model.Result, time.Time) error
+	Audit(context.Context, model.AuditEntry) error
+	AuditLog(ctx context.Context, before int64, limit int, node string) ([]model.AuditEntry, error)
 }
 type browserSession struct {
 	Expires     time.Time
@@ -48,18 +53,23 @@ type browserSession struct {
 }
 
 type API struct {
-	IPGuard       *ipguard.Broker
-	Store         Repository
-	Notifier      notify.Sender
-	AdminToken    string
-	AccountDir    string // data directory holding the panel account; "" disables password login
-	Assets        http.Handler
-	Agents        *agentdist.Dist // nil disables /install.sh and /dl/
-	Themes        *theme.Store    // uploaded theme packages; nil means built-in skins only
-	Plugins       *plugin.Store   // installed declarative plugins; nil means none
-	Logo          *brand.Store    // uploaded site logo; nil means the built-in mark only
-	mu            sync.Mutex
-	sessions      map[string]browserSession
+	// Modules mount their routes behind the API's authentication (see
+	// internal/module); cmd/server lists them.
+	Modules    []module.Module
+	Store      Repository
+	Notifier   notify.Sender
+	AdminToken string
+	AccountDir string // data directory holding the panel account; "" disables password login
+	Assets     http.Handler
+	Agents     *agentdist.Dist // nil disables /install.sh and /dl/
+	Themes     *theme.Store    // uploaded theme packages; nil means built-in skins only
+	Plugins    *plugin.Store   // installed declarative plugins; nil means none
+	Logo       *brand.Store    // uploaded site logo; nil means the built-in mark only
+	mu         sync.Mutex
+	sessions   map[string]browserSession
+	// totpPending is a secret offered by setup and not yet confirmed.
+	totpPending   string
+	totpOffered   time.Time
 	loginWindow   time.Time
 	loginFailures map[string]int       // 当前一分钟内各限流桶的失败次数，见 login_limit.go
 	loginNext     map[string]time.Time // 各桶的下一次密码校验预约时间
@@ -158,7 +168,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/latency-samples", a.latencySamples)
 	mux.HandleFunc("GET /api/v1/unlock-catalog", a.unlockCatalog)
 	a.adminRoutes(mux)
-	a.ipguardRoutes(mux)
+	module.Mount(a.Modules, moduleRoutes{a: a, mux: mux})
 	// 前台默认外观必须在样式表之前定下来，否则首屏会先按内置默认闪一下再跳到设置里的皮肤。
 	// CSP 是 script-src 'self'，index.html 里写不了内联脚本，所以这里发一份几十字节的
 	// 动态脚本，由 index.html 在 theme-boot.js 之前引用。
@@ -390,8 +400,89 @@ func (a *API) admin(next http.HandlerFunc) http.HandlerFunc {
 			write(w, 403, map[string]string{"error": "请求来源不受信任"})
 			return
 		}
-		next(w, r)
+		if r.Method == "GET" || r.Method == "HEAD" {
+			next(w, r)
+			return
+		}
+		// Every write is audited: the route pattern and the outcome, never the
+		// body. A handler that records its own, more detailed entry (through
+		// moduleRoutes.Audit) suppresses this one.
+		state := &auditState{}
+		recorder := &statusRecorder{ResponseWriter: w, status: 200}
+		next(recorder, r.WithContext(context.WithValue(r.Context(), auditKey{}, state)))
+		if !state.recorded {
+			a.audit(r, model.AuditEntry{Action: r.Pattern, NodeID: r.PathValue("id"), Status: recorder.status})
+		}
 	}
+}
+
+type auditKey struct{}
+
+type auditState struct{ recorded bool }
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	if !s.wrote {
+		s.status, s.wrote = code, true
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	s.wrote = true
+	return s.ResponseWriter.Write(b)
+}
+
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+// audit records e with the actor and source taken from r. A failure to write
+// the log is logged, not returned: the action itself already happened.
+func (a *API) audit(r *http.Request, e model.AuditEntry) {
+	if state, ok := r.Context().Value(auditKey{}).(*auditState); ok {
+		state.recorded = true
+	}
+	if e.Actor == "" {
+		e.Actor = a.actor(r)
+	}
+	e.Source = requestSource(r)
+	if err := a.Store.Audit(context.WithoutCancel(r.Context()), e); err != nil {
+		slog.Error("audit log write failed", "action", e.Action, "error", err)
+	}
+}
+
+// actor names who is signed in: the account's username for a browser
+// session, "api-key" for the admin token.
+func (a *API) actor(r *http.Request) string {
+	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		return "api-key"
+	}
+	if a.AccountDir != "" {
+		if acct, err := account.Load(a.AccountDir); err == nil {
+			return acct.Username
+		}
+	}
+	return "admin"
+}
+
+// requestSource is the peer address, followed by the forwarded-for chain a
+// reverse proxy added (recorded as given: it is evidence, not trusted).
+func requestSource(r *http.Request) string {
+	source := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(source); err == nil {
+		source = host
+	}
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		if len(forwarded) > 200 {
+			forwarded = forwarded[:200]
+		}
+		source += " (" + forwarded + ")"
+	}
+	return source
 }
 func (a *API) agent(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -420,6 +511,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	var v struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if !decode(w, r, &v) {
 		return
@@ -441,9 +533,29 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 			write(w, 429, map[string]string{"error": "登录过于频繁，请稍后重试"})
 			return
 		}
+		a.audit(r, model.AuditEntry{Actor: auditName(v.Username), Action: "login.failed", Status: 401})
 		write(w, 401, map[string]string{"error": "用户名或密码错误"})
 		return
 	}
+	// Second factor, after the password: the code prompt only appears to
+	// someone who already knows the password.
+	if _, enabled, err := totp.Load(a.AccountDir); err != nil {
+		slog.Error("two-factor configuration unreadable", "error", err)
+		write(w, 500, map[string]string{"error": "两步验证配置无法读取，请在服务器执行 tza-server reset-password --disable-totp"})
+		return
+	} else if enabled {
+		if strings.TrimSpace(v.Code) == "" {
+			write(w, 401, map[string]any{"error": "请输入两步验证码", "totp": true})
+			return
+		}
+		if ok, err := totp.Use(a.AccountDir, v.Code, now); err != nil || !ok {
+			a.loginLimited(r, now, true)
+			a.audit(r, model.AuditEntry{Actor: auditName(v.Username), Action: "login.failed", Status: 401, Detail: "两步验证码错误"})
+			write(w, 401, map[string]any{"error": "两步验证码错误或已用过", "totp": true})
+			return
+		}
+	}
+	a.audit(r, model.AuditEntry{Actor: auditName(v.Username), Action: "login", Status: 204})
 	a.startSession(w, r, time.Now(), hash)
 }
 
@@ -706,23 +818,7 @@ func jsonRequest(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	if !jsonRequest(w, r) {
-		return false
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
-	d := json.NewDecoder(r.Body)
-	d.DisallowUnknownFields()
-	if err := d.Decode(v); err != nil {
-		write(w, 400, map[string]string{"error": "请求体不是有效的 JSON"})
-		return false
-	}
-	if err := d.Decode(&struct{}{}); err != io.EOF {
-		write(w, 400, map[string]string{"error": "请求体只能包含一个 JSON 值"})
-		return false
-	}
-	return true
-}
+func decode(w http.ResponseWriter, r *http.Request, v any) bool { return httpjson.Decode(w, r, v) }
 func respond(w http.ResponseWriter, err error) {
 	if err != nil {
 		fail(w, err)
@@ -742,35 +838,16 @@ func fail(w http.ResponseWriter, err error) {
 	}
 	var sendErr service.SendError
 	switch {
-	case errors.Is(err, model.ErrInvalid):
-		write(w, 400, map[string]string{"error": message(err, model.ErrInvalid, "请求参数无效")})
-	case errors.Is(err, model.ErrNotFound):
-		write(w, 404, map[string]string{"error": message(err, model.ErrNotFound, "对象不存在")})
-	case errors.Is(err, model.ErrConflict):
-		write(w, 409, map[string]string{"error": message(err, model.ErrConflict, "操作冲突，请刷新后重试")})
 	case errors.Is(err, service.ErrNoSender):
 		write(w, 503, map[string]string{"error": err.Error()})
 	case errors.As(err, &sendErr):
 		write(w, 502, map[string]string{"error": err.Error()})
 	default:
-		slog.Error("request failed", "error", err)
-		write(w, 500, map[string]string{"error": "服务器处理失败"})
+		httpjson.Fail(w, err)
 	}
 }
 
-func message(err, sentinel error, fallback string) string {
-	if err == sentinel {
-		return fallback
-	}
-	return err.Error()
-}
-func write(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Warn("response write failed")
-	}
-}
+func write(w http.ResponseWriter, status int, v any) { httpjson.Write(w, status, v) }
 
 func (a *API) networkHistory(w http.ResponseWriter, r *http.Request) {
 	if !a.visible(r) {
@@ -784,4 +861,36 @@ func (a *API) networkHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, 200, out)
+}
+
+// moduleRoutes mounts a module's handlers with the API's own middleware.
+type moduleRoutes struct {
+	a   *API
+	mux *http.ServeMux
+}
+
+func (m moduleRoutes) Public(pattern string, h http.HandlerFunc) { m.mux.HandleFunc(pattern, h) }
+func (m moduleRoutes) Admin(pattern string, h http.HandlerFunc) {
+	m.mux.HandleFunc(pattern, m.a.admin(h))
+}
+func (m moduleRoutes) Agent(pattern string, h func(http.ResponseWriter, *http.Request, string)) {
+	m.mux.HandleFunc(pattern, m.a.agent(h))
+}
+
+// Audit lets a module record its own entry for r (the command it ran, the
+// terminal it opened) in place of the generic one.
+func (m moduleRoutes) Audit(r *http.Request, e model.AuditEntry) { m.a.audit(r, e) }
+
+// auditName keeps a typed username short and printable for the log.
+func auditName(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, name)
+	if len([]rune(name)) > 32 {
+		name = string([]rune(name)[:32]) + "…"
+	}
+	return name
 }

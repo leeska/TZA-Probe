@@ -58,13 +58,8 @@ func (m Metrics) Validate() error {
 		}
 		seen[family] = true
 	}
-	if len(m.Capabilities) > len(AllCapabilities) {
+	if !ValidCapabilities(m.Capabilities) {
 		return errors.New("invalid metrics")
-	}
-	for _, capability := range m.Capabilities {
-		if !KnownCapability(capability) {
-			return errors.New("invalid metrics")
-		}
 	}
 	return nil
 }
@@ -84,15 +79,31 @@ const CapabilityParallelJobs = "parallel_jobs"
 // report reply; an older one needs the install command run once by hand.
 const CapabilitySelfUpdate = "self_update"
 
-var AllCapabilities = []string{CapabilityUnlock, CapabilityParallelJobs, CapabilitySelfUpdate}
+// MaxCapabilities bounds how many capabilities one Agent may report.
+const MaxCapabilities = 32
 
-func KnownCapability(capability string) bool {
-	for _, known := range AllCapabilities {
-		if capability == known {
-			return true
-		}
+// ValidCapabilities checks the shape of a reported capability list, not its
+// names: each module defines its own capabilities, and a Server keeps (and
+// ignores) ones it does not know, so a newer Agent is never refused for
+// reporting more than this Server understands. Names are lower-case
+// identifiers of up to 32 bytes, without repeats.
+func ValidCapabilities(list []string) bool {
+	if len(list) > MaxCapabilities {
+		return false
 	}
-	return false
+	seen := map[string]bool{}
+	for _, c := range list {
+		if len(c) == 0 || len(c) > 32 || seen[c] || c[0] < 'a' || c[0] > 'z' {
+			return false
+		}
+		for _, r := range c {
+			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_') {
+				return false
+			}
+		}
+		seen[c] = true
+	}
+	return true
 }
 
 // AllowsUnlock reports whether this host may be handed an unlock job. Unlike

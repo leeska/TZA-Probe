@@ -12,7 +12,7 @@ import (
 
 func TestUnsupportedDatabaseIsPreserved(t *testing.T) {
 	for version := 0; version <= schemaVersion+1; version++ {
-		if version == schemaVersion {
+		if version == legacySchemaVersion {
 			continue
 		}
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
@@ -59,7 +59,7 @@ func TestDatabaseInitializationRollsBackAndRetries(t *testing.T) {
 	}
 	defer db.Close()
 	var objects, version int
-	if err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").Scan(&objects); err != nil || objects != 0 {
+	if err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE " + userObjects).Scan(&objects); err != nil || objects != 0 {
 		t.Fatal("failed initialization retained partial schema", objects, err)
 	}
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 0 {
@@ -87,7 +87,7 @@ func TestFreshDatabaseHasNoLegacyRuntimeTables(t *testing.T) {
 
 func TestCheckDataDir(t *testing.T) {
 	fresh := t.TempDir()
-	if err := CheckDataDir(fresh); err != nil {
+	if err := CheckDataDir(fresh, CoreMigrations()); err != nil {
 		t.Fatalf("empty directory: %v", err)
 	}
 	current := t.TempDir()
@@ -96,12 +96,12 @@ func TestCheckDataDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Close()
-	if err := CheckDataDir(current); err != nil {
+	if err := CheckDataDir(current, CoreMigrations()); err != nil {
 		t.Fatalf("current schema: %v", err)
 	}
 	legacy := t.TempDir()
 	os.WriteFile(filepath.Join(legacy, "tza-v2.db"), []byte("x"), 0600)
-	if err := CheckDataDir(legacy); err == nil {
+	if err := CheckDataDir(legacy, CoreMigrations()); err == nil {
 		t.Fatal("tza-v2.db accepted")
 	}
 	old := t.TempDir()
@@ -113,7 +113,7 @@ func TestCheckDataDir(t *testing.T) {
 	db.Exec("PRAGMA user_version=17")
 	db.Close()
 	before, _ := os.ReadFile(filepath.Join(old, "tza-probe.db"))
-	if err := CheckDataDir(old); err == nil || !strings.Contains(err.Error(), "schema 17") {
+	if err := CheckDataDir(old, CoreMigrations()); err == nil || !strings.Contains(err.Error(), "schema 17") {
 		t.Fatalf("schema 17: %v", err)
 	}
 	after, _ := os.ReadFile(filepath.Join(old, "tza-probe.db"))
