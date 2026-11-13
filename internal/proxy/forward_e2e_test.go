@@ -86,6 +86,8 @@ func TestForwardsOverChannel(t *testing.T) {
 	cacheDir := t.TempDir()
 	proxyMod.Store, proxyMod.Users, proxyMod.Hub, proxyMod.Nodes, proxyMod.Kernels = &proxy.Store{DB: store.DB()}, userMod.Store, hub, store, &proxy.Cache{Dir: cacheDir}
 	proxyMod.Init()
+	// 立即同步几乎马上就回 202，测试按页面的做法轮询到同步结束。
+	proxyMod.SyncWait = time.Nanosecond
 	os.WriteFile(filepath.Join(cacheDir, fmt.Sprintf("xray-%s-%s", proxy.Kernels["xray"].Version, runtime.GOARCH)), []byte("#!/bin/sh\nexit 0\n"), 0600)
 	admin := model.Secret()
 	server := httptest.NewServer((&httpapi.API{Store: store, AdminToken: admin, Assets: http.NotFoundHandler(), Modules: mods}).Handler())
@@ -140,8 +142,17 @@ func TestForwardsOverChannel(t *testing.T) {
 	}
 	jp, hk := start("jp"), start("hk")
 	sync := func() {
-		var synced struct{ Nodes []proxy.NodeView }
-		call("POST", "/admin/proxy/sync", nil, &synced)
+		var synced struct {
+			Nodes   []proxy.NodeView
+			Syncing bool
+		}
+		code := call("POST", "/admin/proxy/sync", nil, &synced)
+		for deadline := time.Now().Add(20 * time.Second); synced.Syncing; time.Sleep(20 * time.Millisecond) {
+			if code != 202 || time.Now().After(deadline) {
+				t.Fatalf("同步没有结束：%d", code)
+			}
+			call("GET", "/admin/proxy", nil, &synced)
+		}
 		for _, v := range synced.Nodes {
 			if v.Error != "" || v.Kernels["xray"].Error != "" {
 				t.Fatalf("同步出错：%+v", v)

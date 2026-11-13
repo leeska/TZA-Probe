@@ -3,6 +3,7 @@
 // 每条规则可以归属一位使用者：流量计入他的额度，他停用、过期或用完时规则自动停掉。
 import { api, send, esc, toast, modal, guard } from "./api.js";
 import { bytes } from "./format.js";
+import { syncNow } from "./admin-proxy.js";
 import { content, field, check, confirmAction, moreMenu, wireMoreMenus, render, state } from "./admin-state.js";
 
 const NETWORKS = { "tcp,udp": "TCP + UDP", tcp: "TCP", udp: "UDP" };
@@ -48,12 +49,7 @@ export async function forwardPage(nodesReady) {
   const byId = (id) => data.forwards.find((f) => f.id === id);
   wireMoreMenus(content());
   content().querySelector("#add-forward").onclick = () => forwardForm(null, data, people);
-  content().querySelector("#sync-forward").onclick = guard(async () => {
-    toast("正在同步…");
-    await send("/admin/proxy/sync", "POST");
-    await render();
-    toast("同步完成");
-  });
+  content().querySelector("#sync-forward").onclick = guard(syncNow);
   content().querySelectorAll("[data-edit-forward]").forEach((b) => (b.onclick = () => forwardForm(byId(b.dataset.editForward), data, people)));
   content().querySelectorAll("[data-toggle-forward]").forEach((b) => (b.onclick = guard(async () => {
     const f = byId(b.dataset.toggleForward);

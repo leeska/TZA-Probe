@@ -28,12 +28,7 @@ export async function proxyPage(nodesReady) {
   const byId = (id) => data.inbounds.find((i) => i.id === id);
   wireMoreMenus(content());
   content().querySelector("#add-inbound").onclick = () => inboundForm(null, data, people);
-  content().querySelector("#sync-proxy").onclick = guard(async () => {
-    toast("正在同步，首次安装内核可能需要一两分钟…");
-    await send("/admin/proxy/sync", "POST");
-    await render();
-    toast("同步完成");
-  });
+  content().querySelector("#sync-proxy").onclick = guard(syncNow);
   content().querySelectorAll("[data-edit-inbound]").forEach((b) => (b.onclick = () => inboundForm(byId(b.dataset.editInbound), data, people)));
   content().querySelectorAll("[data-links-inbound]").forEach((b) => (b.onclick = guard(() => showLinks(byId(b.dataset.linksInbound)))));
   content().querySelectorAll("[data-toggle-inbound]").forEach((b) => (b.onclick = guard(async () => {
@@ -45,6 +40,27 @@ export async function proxyPage(nodesReady) {
     const i = byId(b.dataset.deleteInbound);
     confirmAction(`删除入站 · ${i.name}`, `删除「${i.name}」，节点上对应的端口会在下一次同步时关闭，使用者的这条链接随之失效。`, async () => { await send(`/admin/proxy/inbounds/${i.id}`, "DELETE"); await render(); }, { label: "删除" });
   }));
+}
+
+// 立即同步：接口最多等 20 秒；首次给节点装内核时更久，它先回 syncing:true，
+// 这里每 3 秒查一次，做完再刷新页面（「转发」页也用它）。
+export async function syncNow() {
+  toast("正在同步…");
+  let state = await send("/admin/proxy/sync", "POST");
+  if (state.syncing) {
+    toast("正在后台同步，首次给节点安装内核可能需要几分钟…");
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (state.syncing && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 3000));
+      state = await api("/admin/proxy");
+    }
+    if (state.sync_error) {
+      await render();
+      return toast(`同步出错：${state.sync_error}`);
+    }
+  }
+  await render();
+  toast(state.syncing ? "同步仍在进行，稍后刷新页面查看" : "同步完成");
 }
 
 async function showLinks(inbound) {

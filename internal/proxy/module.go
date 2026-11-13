@@ -26,7 +26,10 @@ type Module struct {
 	Hub     Opener
 	Nodes   NodeLister
 	Kernels *Cache
-	state   syncState
+	// SyncWait is how long POST /admin/proxy/sync waits for the sync before
+	// answering 202 (tests shorten it); 0 is 20 seconds.
+	SyncWait time.Duration
+	state    syncState
 }
 
 func (*Module) ID() string                      { return "proxy" }
@@ -74,7 +77,8 @@ func (m *Module) Routes(r module.Routes) {
 			fail(w, err)
 			return
 		}
-		httpjson.Write(w, 200, map[string]any{"inbounds": inbounds, "forwards": forwards, "nodes": m.NodeViews(), "kernels": kernels})
+		syncing, syncError := m.Syncing()
+		httpjson.Write(w, 200, map[string]any{"inbounds": inbounds, "forwards": forwards, "nodes": m.NodeViews(), "kernels": kernels, "syncing": syncing, "sync_error": syncError})
 	})
 	save := func(w http.ResponseWriter, req *http.Request, id string, code int) {
 		var in Inbound
@@ -186,15 +190,30 @@ func (m *Module) Routes(r module.Routes) {
 	})
 	// 订阅：只凭使用者的 token，不需要登录（前台需要登录时也照常可用）。
 	r.Public("GET /api/v1/sub/{token}", m.subscription)
-	// 立即同步：等这一轮做完再回，后台据此刷新状态。
+	// 立即同步：在后台跑，最多等 SyncWait 再回。首次给节点装内核要传几十 MB，可能比前面
+	// 反向代理的超时还长；没做完时回 202 和 syncing:true，页面再轮询 GET /admin/proxy。
 	r.Admin("POST /api/v1/admin/proxy/sync", func(w http.ResponseWriter, req *http.Request) {
-		ctx, cancel := context.WithTimeout(req.Context(), 10*time.Minute)
-		defer cancel()
-		if err := m.Sync(ctx); err != nil {
-			fail(w, err)
-			return
+		done := make(chan error, 1)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			done <- m.Sync(ctx)
+		}()
+		wait := m.SyncWait
+		if wait == 0 {
+			wait = 20 * time.Second
 		}
-		httpjson.Write(w, 200, map[string]any{"nodes": m.NodeViews()})
+		select {
+		case err := <-done:
+			if err != nil {
+				fail(w, err)
+				return
+			}
+			httpjson.Write(w, 200, map[string]any{"nodes": m.NodeViews(), "syncing": false})
+		case <-time.After(wait):
+			httpjson.Write(w, 202, map[string]any{"nodes": m.NodeViews(), "syncing": true})
+		case <-req.Context().Done():
+		}
 	})
 }
 

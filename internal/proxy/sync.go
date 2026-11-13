@@ -53,10 +53,14 @@ type NodeView struct {
 }
 
 type syncState struct {
-	mu    sync.Mutex
-	run   sync.Mutex
-	nodes map[string]NodeView
-	kick  chan struct{}
+	mu  sync.Mutex
+	run sync.Mutex
+	// syncing counts Sync calls under way or waiting; lastError is the
+	// error of the last finished one (both under mu).
+	syncing   int
+	lastError string
+	nodes     map[string]NodeView
+	kick      chan struct{}
 }
 
 // members are the users allowed on any inbound right now: active ones only,
@@ -173,7 +177,19 @@ func (m *Module) Run(ctx context.Context) {
 // Sync brings every node with the proxy capability in line with the
 // inbounds: installs the pinned kernel where missing, applies changed
 // configurations and removes kernels a node no longer needs.
-func (m *Module) Sync(ctx context.Context) error {
+func (m *Module) Sync(ctx context.Context) (err error) {
+	m.state.mu.Lock()
+	m.state.syncing++
+	m.state.mu.Unlock()
+	defer func() {
+		m.state.mu.Lock()
+		m.state.syncing--
+		m.state.lastError = ""
+		if err != nil {
+			m.state.lastError = err.Error()
+		}
+		m.state.mu.Unlock()
+	}()
 	m.state.run.Lock()
 	defer m.state.run.Unlock()
 	want, forwards, err := m.desired(ctx)
@@ -266,6 +282,13 @@ func (m *Module) collect(ctx context.Context, node, kernel string, usage, byInbo
 		byInbound[tag] = u
 	}
 	return ""
+}
+
+// Syncing reports whether a sync is under way, and the last one's error.
+func (m *Module) Syncing() (bool, string) {
+	m.state.mu.Lock()
+	defer m.state.mu.Unlock()
+	return m.state.syncing > 0, m.state.lastError
 }
 
 // Nodes is every node's state after the last sync.
