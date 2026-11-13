@@ -20,7 +20,7 @@ func (m *Module) Overview(ctx context.Context) ([]module.Card, error) {
 	if m.Broker == nil {
 		return nil, nil
 	}
-	card := module.Card{ID: "regiondrift", Title: "地区偏移检测", Page: "ipguard"}
+	card := module.Card{ID: "regiondrift", Title: "地区偏移检测", Page: "tasks"}
 	if !m.Broker.WorkerConfigured {
 		card.Value, card.Note = "未安装", "检测浏览器尚未安装"
 		return []module.Card{card}, nil

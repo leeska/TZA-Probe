@@ -1,7 +1,6 @@
 // 后台的页面清单：侧栏、面包屑和页面分发都从这里来。新功能模块在这里加一项即可，
 // 不必再改 admin.js。顺序即侧栏顺序；id 存在 state.tab 里，也用作 data-tab。
 import { renderAlerts } from "./admin-alerts.js";
-import { renderRegionPage } from "./admin-node-plugin-detail.js";
 import { nodesPage } from "./admin-nodes.js";
 import { renderPlugins } from "./admin-plugins.js";
 import { renderSettings } from "./admin-settings.js";
@@ -14,7 +13,6 @@ export const adminPages = [
   { id: "overview", label: "总览", page: overviewPage, icon: '<svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="8" rx="1.5"/><rect x="11" y="3" width="6" height="5" rx="1.5"/><rect x="11" y="10" width="6" height="7" rx="1.5"/><rect x="3" y="13" width="6" height="4" rx="1.5"/></svg>' },
   { id: "nodes", label: "节点管理", page: nodesPage, icon: '<svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg>' },
   { id: "tasks", label: "网络探测", page: tasksPage, icon: '<svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3"/><circle cx="10" cy="10" r="0.8" fill="currentColor"/></svg>' },
-  { id: "ipguard", label: "地区偏移检测", page: renderRegionPage, icon: '<svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 8c0 4.5-6 9-6 9S4 12.5 4 8a6 6 0 1 1 12 0Z"/><circle cx="10" cy="8" r="2"/></svg>' },
   { id: "remote", label: "远程管理", page: remotePage, icon: '<svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><polyline points="6 8 8.5 10 6 12"/><line x1="10.5" y1="12" x2="14" y2="12"/></svg>' },
   { id: "alerts", label: "告警与通知", page: renderAlerts, icon: '<svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><polyline points="10 6 10 10 13 12"/></svg>' },
   { id: "audit", label: "审计日志", page: auditPage, icon: '<svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5h-10.5z"/><polyline points="12 2.5 12 6 15.5 6"/><line x1="7.5" y1="10" x2="12.5" y2="10"/><line x1="7.5" y1="13" x2="12.5" y2="13"/></svg>' },

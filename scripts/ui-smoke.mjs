@@ -118,6 +118,7 @@ submit($("#login"));
 await until(() => $(".overview-cards"), "admin home (overview)");
 for (const id of ["nodes", "billing", "tasks", "alerts"])
   assert($(`[data-card="${id}"]`), `总览要有 ${id} 卡片`);
+assert(!$('[data-tab="ipguard"]'), "地区偏移检测在网络探测里，不再单独占一栏");
 $('[data-card="nodes"]').click();
 await until(() => $("#add-node"), "node list from the overview card");
 $("#add-node").click();

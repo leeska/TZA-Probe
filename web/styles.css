@@ -5900,3 +5900,5 @@ button.overview-card:focus-visible { border-color: rgba(var(--accent-rgb), 0.45)
 .public-actions { flex-wrap: wrap; align-items: center; }
 .public-sections { display: flex; flex-wrap: wrap; gap: var(--space-3); border: 0; padding: 0; margin: 0; }
 .public-sections legend { font-size: var(--text-sm); color: var(--muted); margin-bottom: var(--space-2); }
+dialog.region-dialog { max-width: calc(100vw - 32px); }
+dialog.region-dialog .region-intro { margin: 0 0 var(--space-4); }
