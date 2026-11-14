@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/account"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/internal/totp"
+	"github.com/leeska/TZA-ControlCenter/internal/account"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/totp"
 )
 
 func TestLoginWithTwoFactor(t *testing.T) {

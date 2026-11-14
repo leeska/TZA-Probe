@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/agentsig"
+	"github.com/leeska/TZA-ControlCenter/internal/agentsig"
 )
 
 //go:embed bin install.sh

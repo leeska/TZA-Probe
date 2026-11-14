@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // Store only a digest; the secret is returned once when generated.

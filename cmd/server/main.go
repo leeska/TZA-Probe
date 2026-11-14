@@ -15,28 +15,29 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/account"
-	"github.com/leeska/TZA-Probe/internal/agentdist"
-	"github.com/leeska/TZA-Probe/internal/backup"
-	"github.com/leeska/TZA-Probe/internal/brand"
-	"github.com/leeska/TZA-Probe/internal/certs"
-	"github.com/leeska/TZA-Probe/internal/channel"
-	"github.com/leeska/TZA-Probe/internal/docker"
-	"github.com/leeska/TZA-Probe/internal/httpapi"
-	"github.com/leeska/TZA-Probe/internal/ipguard"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/notify"
-	"github.com/leeska/TZA-Probe/internal/plugin"
-	"github.com/leeska/TZA-Probe/internal/proxy"
-	"github.com/leeska/TZA-Probe/internal/regiondrift"
-	"github.com/leeska/TZA-Probe/internal/remote"
-	"github.com/leeska/TZA-Probe/internal/service"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/internal/theme"
-	"github.com/leeska/TZA-Probe/internal/totp"
-	"github.com/leeska/TZA-Probe/internal/users"
-	"github.com/leeska/TZA-Probe/web"
+	"github.com/leeska/TZA-ControlCenter/internal/account"
+	"github.com/leeska/TZA-ControlCenter/internal/agentdist"
+	"github.com/leeska/TZA-ControlCenter/internal/backup"
+	"github.com/leeska/TZA-ControlCenter/internal/brand"
+	"github.com/leeska/TZA-ControlCenter/internal/certs"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/docker"
+	"github.com/leeska/TZA-ControlCenter/internal/httpapi"
+	"github.com/leeska/TZA-ControlCenter/internal/ipguard"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/internal/plugin"
+	"github.com/leeska/TZA-ControlCenter/internal/proxy"
+	"github.com/leeska/TZA-ControlCenter/internal/regiondrift"
+	"github.com/leeska/TZA-ControlCenter/internal/remote"
+	"github.com/leeska/TZA-ControlCenter/internal/service"
+	"github.com/leeska/TZA-ControlCenter/internal/sites"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/theme"
+	"github.com/leeska/TZA-ControlCenter/internal/totp"
+	"github.com/leeska/TZA-ControlCenter/internal/users"
+	"github.com/leeska/TZA-ControlCenter/web"
 )
 
 func main() {
@@ -145,6 +146,7 @@ func run() error {
 	remoteMod.Hub, remoteMod.Nodes = hub, store
 	var certsMod *certs.Module
 	var backupMod *backup.Module
+	var sitesMod *sites.Module
 	for _, m := range modules {
 		switch m := m.(type) {
 		case *docker.Module:
@@ -153,6 +155,10 @@ func run() error {
 			m.Store, m.Hub, m.Nodes, m.Events = &certs.Store{DB: store.DB()}, hub, store, store
 			m.Init()
 			certsMod = m
+		case *sites.Module:
+			m.Store, m.Hub, m.Nodes = &sites.Store{DB: store.DB()}, hub, store
+			m.Init()
+			sitesMod = m
 		case *backup.Module:
 			m.DB, m.DataDir, m.Hub, m.Nodes, m.Events = store.DB(), *dir, hub, store, store
 			backupMod = m
@@ -188,10 +194,14 @@ func run() error {
 	go func() { defer wg.Done(); proxyMod.Run(ctx) }()
 	wg.Add(1)
 	go func() { defer wg.Done(); proxyMod.RunSources(ctx) }()
+	// 网站要用证书模块：TLS 站点自动加证书下发目标，证书到位后立即重新同步网站。
+	sitesMod.Certs, sitesMod.CertsKick, certsMod.OnDeploy = certsMod.Store, certsMod.Kick, sitesMod.Kick
 	wg.Add(1)
 	go func() { defer wg.Done(); certsMod.Run(ctx) }()
 	wg.Add(1)
 	go func() { defer wg.Done(); backupMod.Run(ctx) }()
+	wg.Add(1)
+	go func() { defer wg.Done(); sitesMod.Run(ctx) }()
 	go func() {
 		defer wg.Done()
 		channels := &service.Service{Store: store, Plugins: plugins}
@@ -214,7 +224,7 @@ func run() error {
 	}()
 	done := make(chan error, 1)
 	go func() {
-		slog.Info("TZA Probe listening", "address", *addr, "version", model.Version)
+		slog.Info("TZA ControlCenter listening", "address", *addr, "version", model.Version)
 		done <- server.ListenAndServe()
 	}()
 	select {
@@ -387,5 +397,5 @@ func shippedModules() ([]module.Module, *regiondrift.Module, *remote.Module, *us
 	drift, remoteMod, usersMod, proxyMod := &regiondrift.Module{}, &remote.Module{}, &users.Module{}, &proxy.Module{}
 	// Docker 不建表，复用远程管理的通道与转接。
 	dockerMod := &docker.Module{Remote: remoteMod}
-	return []module.Module{drift, remoteMod, usersMod, proxyMod, dockerMod, &certs.Module{}, &backup.Module{}}, drift, remoteMod, usersMod, proxyMod
+	return []module.Module{drift, remoteMod, usersMod, proxyMod, dockerMod, &certs.Module{}, &backup.Module{}, &sites.Module{}}, drift, remoteMod, usersMod, proxyMod
 }

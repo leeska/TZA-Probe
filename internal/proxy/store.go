@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/internal/users"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/users"
 )
 
 const ddl = `CREATE TABLE IF NOT EXISTS proxy_inbounds(id TEXT PRIMARY KEY, node_id TEXT NOT NULL, value TEXT NOT NULL, created_at INTEGER NOT NULL)`

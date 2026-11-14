@@ -16,10 +16,10 @@ import (
 	"slices"
 	"syscall"
 
-	"github.com/leeska/TZA-Probe/internal/agent"
-	"github.com/leeska/TZA-Probe/internal/channel"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/probe"
+	"github.com/leeska/TZA-ControlCenter/internal/agent"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/probe"
 )
 
 type config struct {
@@ -86,6 +86,8 @@ func managementCapabilities() map[string]map[string]channel.Handler {
 		channel.CapabilityCerts: agent.CertHandlers(),
 		// 备份：主控加密好的备份写到指定目录，只保留最近几份。
 		channel.CapabilityBackup: agent.BackupHandlers(),
+		// 网站：面板管理的 nginx 站点写进 conf.d，nginx -t 通过才重载。
+		channel.CapabilitySites: agent.NewNginxHost().Handlers(),
 	}
 }
 
@@ -196,7 +198,7 @@ func run() error {
 			app.Restart = func() { restart = true; cancel() }
 		}
 	}
-	slog.Info("TZA Probe Agent started", "version", model.Version, "self_update", *selfUpdate)
+	slog.Info("TZA ControlCenter Agent started", "version", model.Version, "self_update", *selfUpdate)
 	app.Run(ctx)
 	if restart {
 		return errRestart

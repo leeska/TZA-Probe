@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/leeska/TZA-Probe/internal/channel"
-	"github.com/leeska/TZA-Probe/internal/httpjson"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/httpjson"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
 )
 
 // NodeLister is the part of the core store the module reads.

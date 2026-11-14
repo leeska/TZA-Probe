@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/internal/theme"
-	"github.com/leeska/TZA-Probe/web"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/theme"
+	"github.com/leeska/TZA-ControlCenter/web"
 )
 
 // 主题设置：主题在 theme.json 里声明的菜单（附加包开关、一个 toggle）由后台保存，随首屏清单发给访客；

@@ -3,7 +3,7 @@ import { customThemeDialog } from "./admin-theme-dialog.js";
 import { registerThemes } from "./skins.js";
 import { state, content, confirmAction } from "./admin-state.js";
 import { pager, paint, swatch } from "./admin-packages.js";
-const THEME_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/THEMES.md";
+const THEME_DOC_URL = "https://github.com/leeska/TZA-ControlCenter/blob/main/docs/THEMES.md";
 // 主题：内置的现代极简 + 上传的主题包。官方的其它外观也是主题包，和别人做的主题一样上传 zip 安装。
 // CSS 主题沿用核心组件；独立前台主题在隔离文档里运行自己的 HTML / JavaScript。
 //

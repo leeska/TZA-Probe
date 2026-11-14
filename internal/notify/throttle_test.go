@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 // 按额度降速的告警文案要写清楚「是额度用满、之后限速多少」，不能套用窗口均值的句子

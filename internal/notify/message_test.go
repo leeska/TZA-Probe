@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 // 告警文字会原样发到 Telegram / Webhook，所以要说清楚：从没接入不是「已离线」，

@@ -13,7 +13,7 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 // BackupHandlers serves the backup capability: store the Server's encrypted

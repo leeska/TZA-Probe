@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TZA-Probe 的检查与构建流水线（不依赖 GitHub Actions，任意 Linux 机器可跑）：
+# TZA ControlCenter 的检查与构建流水线（不依赖 GitHub Actions，任意 Linux 机器可跑）：
 #   check  gofmt / go vet / go test（有 gcc 时加 -race）/ web/*.js 语法 /
 #          presentation-test.mjs / 角色包生成器自检（有 Pillow 时）/ 一次性 Server 上的 ui-smoke.mjs
 #   build  构建 linux amd64 / arm64 的 Server（内含两个架构的 Agent）+ 两个发行包与 sha256 + 官方主题包 zip
@@ -198,7 +198,7 @@ version() {
 run_build() {
   local V LDFLAGS arch t0 t1 stage
   V=$(version)
-  LDFLAGS="-s -w -X github.com/leeska/TZA-Probe/internal/model.Version=$V"
+  LDFLAGS="-s -w -X github.com/leeska/TZA-ControlCenter/internal/model.Version=$V"
   say "构建（版本 ${V}，短 sha ${SHA}）"
   rm -rf "$OUT" "$TMP/stage"; mkdir -p "$OUT" "$TMP/stage"
 

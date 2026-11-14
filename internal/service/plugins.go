@@ -8,9 +8,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/leeska/TZA-Probe/internal/catalog"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/internal/catalog"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // Plugins is the installed-plugin port (internal/plugin.Store). Plugin

@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 func eventTime(at int64) string {
@@ -177,7 +177,7 @@ func messageText(e model.Event, channel string, limit int) string {
 	if e.Kind == "test" {
 		state = "🧪 连接测试"
 	}
-	lines := []string{"TZA Probe · " + state}
+	lines := []string{"TZA ControlCenter · " + state}
 	if e.Kind != "test" {
 		lines = append(lines, "类型："+kindName(e.Kind))
 	} else if channel != "" {

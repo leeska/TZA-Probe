@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/leeska/TZA-Probe/internal/ipguard"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/regiondrift"
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/ipguard"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/regiondrift"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 func TestCentralAPIAuthenticationAndLegacyRemoval(t *testing.T) {

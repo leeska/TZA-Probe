@@ -23,10 +23,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/notify"
-	"github.com/leeska/TZA-Probe/internal/plugin"
-	"github.com/leeska/TZA-Probe/internal/service"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/internal/plugin"
+	"github.com/leeska/TZA-ControlCenter/internal/service"
 )
 
 const (
@@ -49,7 +49,7 @@ var versions = []string{Modern, legacyLatest, legacyEarly}
 
 // DefaultInstructions tells a client's model what this endpoint is for when the
 // composition root does not override it.
-const DefaultInstructions = "TZA Probe 探针面板的管理通道：节点状态、主机历史、TCP 延迟与回程线路标签。回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / CTG / 4837 / 9929 / 10099 / CMIN2 / CMI），跳地址已脱敏，标签未知时不猜。本通道持有 MCP API Key，除只读查询外还能新增、修改、删除节点与任务，轮换节点密钥，修改通知设置；这些写操作立即生效，删除不可撤销，执行前请向用户确认。"
+const DefaultInstructions = "TZA ControlCenter 探针面板的管理通道：节点状态、主机历史、TCP 延迟与回程线路标签。回程标签按实际经过的骨干命名（163 / CN2GIA / CN2GT / CTG / 4837 / 9929 / 10099 / CMIN2 / CMI），跳地址已脱敏，标签未知时不猜。本通道持有 MCP API Key，除只读查询外还能新增、修改、删除节点与任务，轮换节点密钥，修改通知设置；这些写操作立即生效，删除不可撤销，执行前请向用户确认。"
 
 // JSON-RPC codes plus the two the 2026-07-28 revision allocates inside the
 // implementation-defined range for header validation and version negotiation.

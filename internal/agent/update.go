@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/agentsig"
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/agentsig"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // 一键升级：面板点「升级 Agent」后，Server 在下一次上报的回复里带上新版本的 /dl/ 路径与

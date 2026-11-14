@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/brand"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/web"
+	"github.com/leeska/TZA-ControlCenter/internal/brand"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/web"
 )
 
 // 站点名称与 logo：后台存进去、读回来、在首屏脚本里交给浏览器（/theme-default.js 的
@@ -79,7 +79,7 @@ func TestSiteBrand(t *testing.T) {
 		return code
 	}
 
-	// 没配过：两项都空，首屏也是空（前端显示内置的 TZA Probe）。
+	// 没配过：两项都空，首屏也是空（前端显示内置的 TZA ControlCenter）。
 	if p := panel(); p.SiteName != "" || p.SiteLogo != "" {
 		t.Fatalf("未配置: %+v", p)
 	}

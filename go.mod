@@ -1,4 +1,4 @@
-module github.com/leeska/TZA-Probe
+module github.com/leeska/TZA-ControlCenter
 
 go 1.27.3
 

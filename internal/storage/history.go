@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 func (s *Store) History(ctx context.Context, id string, hours int, now time.Time) ([]model.Sample, error) {

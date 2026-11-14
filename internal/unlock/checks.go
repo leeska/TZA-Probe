@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // check is one service's verdict function. It must never return a raw transport

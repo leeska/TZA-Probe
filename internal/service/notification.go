@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/notify"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // notificationKey is the settings row holding the channel as JSON. Before it

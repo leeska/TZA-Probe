@@ -1,19 +1,19 @@
 #!/bin/sh
-# TZA Probe Server 一键安装（Linux amd64 / arm64）。
+# TZA ControlCenter Server 一键安装（Linux amd64 / arm64）。
 #
 # 两种安装方式，二选一：
 #
 # 从 GitHub Release 安装（默认，推荐）：下载预编译发布包，免 Go 与 git，发布包内嵌两种架构的
 # Agent（签过名的发布可以在后台一键升级 Agent）。
 # 安装最新发布：
-#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
+#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh
 # 安装指定版本：
-#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
+#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
 #
 # 从源码构建（需要 git 与 Go）：拉取 main（或 --ref 指定的分支 / tag）在本机编译 Server 与两种
 # 架构的 Agent。本机编出的 Agent 没有签名，节点只能重跑接入命令升级。
 # 构建 main（指定分支或 tag 把 --source 换成 --ref REF）：
-#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
+#   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --source
 #
 # 用本机已有的发布包安装（离线、未发布的版本、迁移到新主机时）：
 #   sudo sh install.sh --package /root/tza-probe-linux-amd64.tar.gz
@@ -27,7 +27,7 @@
 # 后台初始密码只在首次安装时显示一次；忘记密码执行 sudo tza-server reset-password --data 数据目录。
 set -eu
 
-REPO="leeska/TZA-Probe"
+REPO="leeska/TZA-ControlCenter"
 RAW="https://raw.githubusercontent.com/${REPO}/main"
 MODE="release"
 VERSION=""
@@ -51,9 +51,9 @@ NGINX_LOG="/etc/nginx/conf.d/tza-probe-log.conf"
 
 usage() {
   cat <<'EOF'
-TZA Probe Server 一键安装（Linux amd64 / arm64）
+TZA ControlCenter Server 一键安装（Linux amd64 / arm64）
 
-  curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- [选项]
+  curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- [选项]
 
 安装方式（二选一，默认 --release）
   --release [vX.Y.Z] 从 GitHub Release 下载预编译发布包，免 git 与 Go；不写版本装最新发布
@@ -338,7 +338,7 @@ browser_userns() {
   if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
     command -v apparmor_parser >/dev/null 2>&1 || { echo "AppArmor 限制了用户命名空间，但找不到 apparmor_parser" >&2; exit 1; }
     cat > /etc/apparmor.d/tza-browser-chromium <<'APPARMOR'
-# TZA Probe：地区偏移检测的隔离浏览器。只放行 Chromium 沙箱需要的用户命名空间。
+# TZA ControlCenter：地区偏移检测的隔离浏览器。只放行 Chromium 沙箱需要的用户命名空间。
 abi <abi/4.0>,
 include <tunables/global>
 
@@ -363,8 +363,8 @@ browser_unit() {
   # 与 deploy/tza-browser.service 保持一致（cmd/server 的测试会核对），取不到时的兜底。
   cat > "$BROWSER_UNIT" <<'UNIT'
 [Unit]
-Description=TZA Probe browser worker (region drift check)
-Documentation=https://github.com/leeska/TZA-Probe/blob/main/docs/IP-GUARD-INTEGRATION.md
+Description=TZA ControlCenter browser worker (region drift check)
+Documentation=https://github.com/leeska/TZA-ControlCenter/blob/main/docs/IP-GUARD-INTEGRATION.md
 After=tza-server.service
 
 [Service]
@@ -456,7 +456,7 @@ if [ "$SYSTEMD" != "no" ] && [ -d /run/systemd/system ] && command -v systemctl 
       # 与 deploy/tza-server.service 保持一致，取不到远端单元文件时的兜底。
       cat > "$UNIT_SRC" <<'UNIT'
 [Unit]
-Description=TZA Probe Server
+Description=TZA ControlCenter Server
 After=network.target
 
 [Service]
@@ -515,7 +515,7 @@ nginx_log() {
   NGINX="skipped"
   command -v nginx >/dev/null 2>&1 && [ -d /etc/nginx/conf.d ] || return 0
   cat > "${WORK}/tza-probe-log.conf" <<'NGINX'
-# TZA Probe：Agent 周期上报的访问日志过滤（http 层，由 deploy/install.sh 装到 /etc/nginx/conf.d/）。
+# TZA ControlCenter：Agent 周期上报的访问日志过滤（http 层，由 deploy/install.sh 装到 /etc/nginx/conf.d/）。
 # 每个节点每隔几秒就上报一次，全部记下来一天上百 MB。/api/v1/agent/* 返回 2xx / 3xx，
 # 或 499（Agent 主动断开长轮询）时 $tza_loggable 为 0；其他请求和 Agent 的 4xx / 5xx 照常记录。
 # 站点的 server 块里这样用：access_log /var/log/nginx/access.log combined if=$tza_loggable;

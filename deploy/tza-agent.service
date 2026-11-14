@@ -1,5 +1,5 @@
 [Unit]
-Description=TZA Probe Agent
+Description=TZA ControlCenter Agent
 After=network-online.target
 Wants=network-online.target
 

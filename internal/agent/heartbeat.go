@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // Optional so adapters written for the original report/jobs protocol keep

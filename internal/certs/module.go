@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
-	"github.com/leeska/TZA-Probe/internal/httpjson"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/httpjson"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 // NodeLister is the part of the core store the module reads.
@@ -43,6 +43,9 @@ type Module struct {
 	// replace them); nil are Let's Encrypt and Cloudflare.
 	NewIssuer func(directory string) Issuer
 	NewDNS    func(token string) DNSProvider
+	// OnDeploy runs after a certificate reached a node (the sites module
+	// resyncs so a site waiting for it starts at once).
+	OnDeploy func()
 	// Events records alerts for the notification channels (nil: none).
 	Events interface {
 		RecordEvent(context.Context, model.Event) error
@@ -272,6 +275,9 @@ func (m *Module) deploy(ctx context.Context, c Cert) {
 			}
 			tt.Error, tt.Deployed, tt.DeployedAt = "", serial, time.Now().Unix()
 		})
+		if err == nil && m.OnDeploy != nil {
+			m.OnDeploy()
+		}
 	}
 }
 

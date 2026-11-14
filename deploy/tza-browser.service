@@ -1,6 +1,6 @@
 [Unit]
-Description=TZA Probe browser worker (region drift check)
-Documentation=https://github.com/leeska/TZA-Probe/blob/main/docs/IP-GUARD-INTEGRATION.md
+Description=TZA ControlCenter browser worker (region drift check)
+Documentation=https://github.com/leeska/TZA-ControlCenter/blob/main/docs/IP-GUARD-INTEGRATION.md
 After=tza-server.service
 
 [Service]

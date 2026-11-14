@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 // CertHandlers serves the certs capability: write a certificate where the

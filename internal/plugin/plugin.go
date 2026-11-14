@@ -15,7 +15,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // ErrNotFound means no plugin is installed under the id; it matches

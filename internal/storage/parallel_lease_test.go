@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // parallelSetup binds one node to an unlock task and a combined task with

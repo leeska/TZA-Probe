@@ -17,15 +17,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/agent"
-	"github.com/leeska/TZA-Probe/internal/channel"
-	"github.com/leeska/TZA-Probe/internal/httpapi"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/proxy"
-	"github.com/leeska/TZA-Probe/internal/remote"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/internal/users"
+	"github.com/leeska/TZA-ControlCenter/internal/agent"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/httpapi"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/proxy"
+	"github.com/leeska/TZA-ControlCenter/internal/remote"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/users"
 )
 
 // 主控经管理通道把内核与配置下发到节点：首次安装内核并应用配置；没有变化不重发；停用的使用者

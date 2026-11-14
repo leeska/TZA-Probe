@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // 回程探针出一条「未知」时，正常周期（本机 1 小时）才重测，面板上于是挂着整整一轮的未知。

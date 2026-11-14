@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/ipguard"
+	"github.com/leeska/TZA-ControlCenter/internal/ipguard"
 )
 
 var identity = regexp.MustCompile(`^[a-f0-9]{48}$`)

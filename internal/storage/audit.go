@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 const auditTable = `CREATE TABLE audit_log(id INTEGER PRIMARY KEY, at INTEGER NOT NULL, actor TEXT NOT NULL, source TEXT NOT NULL, action TEXT NOT NULL, node_id TEXT NOT NULL DEFAULT '', status INTEGER NOT NULL DEFAULT 0, detail TEXT NOT NULL DEFAULT '');

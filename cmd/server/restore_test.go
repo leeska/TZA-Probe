@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/backup"
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/backup"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 // backup-restore 用口令解开备份并解到新目录；口令错、目录非空都拒绝。

@@ -16,15 +16,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/agent"
-	"github.com/leeska/TZA-Probe/internal/channel"
-	"github.com/leeska/TZA-Probe/internal/httpapi"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/proxy"
-	"github.com/leeska/TZA-Probe/internal/remote"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/internal/users"
+	"github.com/leeska/TZA-ControlCenter/internal/agent"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/httpapi"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/proxy"
+	"github.com/leeska/TZA-ControlCenter/internal/remote"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/users"
 )
 
 // fakeNode is a node on the management channel with fake systemd and kernel.

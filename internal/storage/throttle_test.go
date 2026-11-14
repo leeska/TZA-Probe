@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // 达量降速：窗口平均带宽必须来自小时桶（Report 每次上报把网卡计数增量累加到整点桶），

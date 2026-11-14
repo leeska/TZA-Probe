@@ -18,12 +18,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/agentdist"
-	"github.com/leeska/TZA-Probe/internal/agentsig"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
-	"github.com/leeska/TZA-Probe/web"
+	"github.com/leeska/TZA-ControlCenter/internal/agentdist"
+	"github.com/leeska/TZA-ControlCenter/internal/agentsig"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/web"
 )
 
 type fleetEnv struct {

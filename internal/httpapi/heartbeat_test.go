@@ -3,9 +3,9 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/web"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/web"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"

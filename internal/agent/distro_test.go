@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 func TestDistroLabel(t *testing.T) {

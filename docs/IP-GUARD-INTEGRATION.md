@@ -27,7 +27,7 @@ Server（排期、判定、存档）── 私有 Unix socket ── tza-browser
 ## 安装（Server 主机）
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --with-browser
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --with-browser
 ```
 
 脚本在正常安装 / 升级 Server 之外：

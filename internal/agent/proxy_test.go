@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 // 代理内核：校验后安装、配置先过内核检查再写入并重启服务、状态读回、移除只删配置与服务。

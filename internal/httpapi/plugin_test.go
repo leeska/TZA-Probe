@@ -10,12 +10,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/notify"
-	"github.com/leeska/TZA-Probe/internal/pkgtest"
-	"github.com/leeska/TZA-Probe/internal/plugin"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/web"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/internal/pkgtest"
+	"github.com/leeska/TZA-ControlCenter/internal/plugin"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/web"
 )
 
 // 插件从上传到当通知渠道：先预览权限、再装；配置出口选它（密钥不回显）；发送测试真的打到接收端；
@@ -97,7 +97,7 @@ func TestPluginRoutesAndChannel(t *testing.T) {
 		t.Fatalf("test notification: %d %s", w.Code, w.Body)
 	}
 	mu.Lock()
-	if len(received) != 1 || received[0]["topic"] != "probe" || received[0]["title"] != "TZA Probe · 连接测试" || auth != "Bearer tk_secret" {
+	if len(received) != 1 || received[0]["topic"] != "probe" || received[0]["title"] != "TZA ControlCenter · 连接测试" || auth != "Bearer tk_secret" {
 		t.Fatalf("receiver got %v (auth %q)", received, auth)
 	}
 	mu.Unlock()

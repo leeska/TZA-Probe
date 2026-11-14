@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/notify"
-	"github.com/leeska/TZA-Probe/internal/pkgtest"
-	"github.com/leeska/TZA-Probe/internal/plugin"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/internal/pkgtest"
+	"github.com/leeska/TZA-ControlCenter/internal/plugin"
 )
 
 func withPlugins(t *testing.T, ids ...string) (*Service, *plugin.Store) {

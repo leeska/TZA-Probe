@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/httpjson"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/storage"
-	"github.com/leeska/TZA-Probe/internal/users"
+	"github.com/leeska/TZA-ControlCenter/internal/httpjson"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/users"
 )
 
 // Module serves 代理. Fields are nil until the database is open (only

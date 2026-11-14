@@ -16,13 +16,13 @@ Linux 主机（amd64 / arm64），一条命令装成 systemd 服务。按来源�
 **从 Release 安装最新发布：**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh
 ```
 
 **从 Release 安装指定版本**（把 `v1.0.0` 换成要装的版本）：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
 ```
 
 **用本机已有的发布包安装**（`scripts/pipeline.sh build` 产出的 `tza-probe-linux-<架构>.tar.gz`，适合离线、未发布的版本或迁移到新主机；旁边有同名 `.sha256` 时先校验）：
@@ -34,13 +34,13 @@ sudo sh install.sh --package /root/tza-probe-linux-amd64.tar.gz --with-browser
 **从源码构建 `main` 分支：**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --source
 ```
 
 **从源码构建指定分支或 tag**（把 `dev` 换成要构建的分支或 tag）：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --ref dev
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --ref dev
 ```
 
 - Release 方式不写版本时装最新发布（`/releases/latest`），下载后按 `.sha256` 校验；`--version vX.Y.Z` 与 `--release vX.Y.Z` 等价。
@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 Docker 部署用 `deploy/docker-compose.yml`（数据放命名卷）：
 
 ```sh
-git clone --depth 1 https://github.com/leeska/TZA-Probe && cd TZA-Probe
+git clone --depth 1 https://github.com/leeska/TZA-ControlCenter && cd TZA-ControlCenter
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
@@ -84,7 +84,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.11.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-ControlCenter/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.12.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -248,6 +248,15 @@ sudo chown -R tza-probe:tza-probe /var/lib/tza-probe-restored
 - **总览**：卡片显示最近一次成功的时间；超过 2 天没有成功备份、或者最近一次失败时会提示。
 - **通知**：开启了每日备份时，最近一次失败或有节点没存下、或者超过 2 天没有成功备份，会经告警渠道发一条通知，恢复后再发一条。
 
+## 网站
+
+后台「网站」管理节点上的 nginx 站点。节点要装好 nginx（Debian/Ubuntu：`apt install nginx`），并用 `--manage` 接入。
+
+- **类型**：反向代理（填上游地址，如 `http://127.0.0.1:3000`，可开 WebSocket）、静态网站（填节点上的目录）、跳转（填目标地址，可保留路径）。
+- **HTTPS**：可以直接选「证书」页的证书，主控会把它下发到这台节点并在续期后重载 nginx，证书到位后站点才生效；也可以填节点上已有的证书文件路径。可选 HTTP 自动跳 HTTPS。
+- **安全**：面板只管自己写的 `/etc/nginx/conf.d/tza-site-*.conf`。每次改动先 `nginx -t` 检查，不通过就恢复原来的文件，并把 nginx 的报错显示在页面上；节点上已有的其他站点只读显示，不会被改动或删除。
+- **Cloudflare**：站点经过 Cloudflare 代理时勾上「Cloudflare 真实 IP」，后端看到的才是访客的地址。
+
 ## 主题与插件
 
 Probe 不连接 TZA-CC 或其他市场：主题包、附加包与插件都在后台「主题」「插件」页上传 zip 安装，Server 不为此访问外部服务。
@@ -295,7 +304,7 @@ sudo systemctl start tza-server
 
    同目录会写出公钥 `upgrade-key.pub`。
 
-2. 每次发版，用带版本号的 ldflags（`-X github.com/leeska/TZA-Probe/internal/model.Version=X.Y.Z`）编好 Agent 后签名；版本须是 `X.Y.Z`，不带 `-dev` 之类后缀：
+2. 每次发版，用带版本号的 ldflags（`-X github.com/leeska/TZA-ControlCenter/internal/model.Version=X.Y.Z`）编好 Agent 后签名；版本须是 `X.Y.Z`，不带 `-dev` 之类后缀：
 
    ```sh
    tza-server agent-sign --key ~/tza-agent-signing/agent.key --version X.Y.Z tza-agent-linux-amd64 tza-agent-linux-arm64

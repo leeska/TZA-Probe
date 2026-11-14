@@ -15,14 +15,14 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/leeska/TZA-Probe/internal/agent"
-	"github.com/leeska/TZA-Probe/internal/channel"
-	"github.com/leeska/TZA-Probe/internal/docker"
-	"github.com/leeska/TZA-Probe/internal/httpapi"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/remote"
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/agent"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/docker"
+	"github.com/leeska/TZA-ControlCenter/internal/httpapi"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/remote"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 // 后台经管理通道操作节点上的 Docker：列出容器、镜像与 Compose 项目，启停容器，保存 compose

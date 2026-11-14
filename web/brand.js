@@ -2,8 +2,8 @@ import { esc } from "./api.js";
 
 // 站点品牌：后台「面板设置」里改的站点名称与 logo。首屏值由 /theme-default.js 写在
 // window.__tzaBrand 上（theme-boot.js 已据此换好标签页标题与 favicon），这里只负责拼品牌区。
-// 两项都空就是内置的 TZA Probe 品牌：t·z·a 字标 + PROBE。
-export const DEFAULT_NAME = "TZA Probe";
+// 两项都空就是内置的 TZA ControlCenter 品牌：t·z·a 字标 + CONTROL CENTER。
+export const DEFAULT_NAME = "TZA ControlCenter";
 
 export function currentBrand() {
   const b = window.__tzaBrand || {};
@@ -13,7 +13,7 @@ export function currentBrand() {
 export function brandHTML() {
   const { name, logo } = currentBrand();
   const mark = logo ? `<img class="brand-logo" src="${esc(logo)}" alt="">` : `<span class="brand-mark">t<span>z</span>a</span>`;
-  const text = name ? `<span class="brand-name">${esc(name)}<small>基础设施观测</small></span>` : `<span>PROBE<small>基础设施观测</small></span>`;
+  const text = name ? `<span class="brand-name">${esc(name)}<small>服务器管理中心</small></span>` : `<span class="brand-default">CONTROL CENTER<small>服务器管理中心</small></span>`;
   return `<a class="brand" href="/" aria-label="${esc(name || DEFAULT_NAME)} 首页">${mark}${text}</a>`;
 }
 

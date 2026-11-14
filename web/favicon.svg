@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="TZA Probe">
-  <title>TZA Probe</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="TZA ControlCenter">
+  <title>TZA ControlCenter</title>
   <!-- 与页头一致的 tza 字标；透明底，细浅色轮廓保证深浅标签栏都可辨认。 -->
   <text x="30" y="46" text-anchor="middle" textLength="58" lengthAdjust="spacingAndGlyphs"
         font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="900" letter-spacing="-4"

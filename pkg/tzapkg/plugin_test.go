@@ -59,7 +59,7 @@ func TestNotifyRender(t *testing.T) {
 		t.Fatalf("settings normalisation: %v", settings)
 	}
 	now := time.Unix(1700000000, 0)
-	req, err := p.RenderNotify(settings, map[string]string{"title": "TZA Probe · 告警触发", "message": "CPU 使用率超过阈值很久了"}, now)
+	req, err := p.RenderNotify(settings, map[string]string{"title": "TZA ControlCenter · 告警触发", "message": "CPU 使用率超过阈值很久了"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestNotifyRender(t *testing.T) {
 	if body["sign"] != wantSign || req.Headers.Get("X-Sign") != wantSign || body["prio"] != float64(4) || body["fixed"] != float64(7) {
 		t.Fatalf("body %s", req.Body)
 	}
-	if text := body["content"].(map[string]any)["text"]; text != "TZA Probe · 告警触发\nCPU 使用率超过…" {
+	if text := body["content"].(map[string]any)["text"]; text != "TZA ControlCenter · 告警触发\nCPU 使用率超过…" {
 		t.Fatalf("text %q", text)
 	}
 

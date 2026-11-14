@@ -13,14 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/agent"
-	"github.com/leeska/TZA-Probe/internal/backup"
-	"github.com/leeska/TZA-Probe/internal/channel"
-	"github.com/leeska/TZA-Probe/internal/httpapi"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/remote"
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/agent"
+	"github.com/leeska/TZA-ControlCenter/internal/backup"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/httpapi"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/remote"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 type recorder struct {

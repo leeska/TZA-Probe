@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // Transport delivers to the configured channel. Plugins resolves a "plugin"

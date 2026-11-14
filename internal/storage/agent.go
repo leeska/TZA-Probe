@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 func (s *Store) Authenticate(ctx context.Context, token string) (string, error) {

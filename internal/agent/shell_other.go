@@ -8,7 +8,7 @@ import (
 	"net"
 	"os/exec"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 func setProcessGroup(*exec.Cmd) {}

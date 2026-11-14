@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // Signature is the operator's statement that a binary is release Version of

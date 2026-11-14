@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 // Channel keeps the management channel (protocol v2) open: it redials with

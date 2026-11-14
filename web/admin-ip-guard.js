@@ -4,7 +4,7 @@ const active = job => ["queued", "running"].includes(job.state);
 const fresh = timestamp => timestamp && Date.now() / 1000 - timestamp < 45;
 const sameEnvironment = (first, second) => first && second && ["expected_ip", "country", "locale", "timezone"].every(key => first[key] === second[key]) && ["latitude", "longitude", "country", "timezone"].every(key => first.position?.[key] === second.position?.[key]);
 const reasons = { http_denied: "服务拒绝访问，未取得地区信息", http_forbidden: "服务拒绝此出口访问（403），未取得地区信息", challenge_detected: "遇到验证页面，暂时无法判断", origin_not_allowed: "页面跳转到未批准的地址", egress_mismatch: "出口 IP 与设置不一致", local_permission_required: "此节点尚未开通检测出口" };
-export const serverInstall = "curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --with-browser";
+export const serverInstall = "curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --with-browser";
 export const nodeEnable = () => `curl -fsSL ${location.origin}/install.sh | sh -s -- --endpoint ${location.origin} --ipguard`;
 
 const countryLabel = code => {

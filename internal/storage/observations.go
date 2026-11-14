@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // ProbeWindow bounds how far back the panel looks for each target's newest

@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/agentdist"
-	"github.com/leeska/TZA-Probe/internal/agentsig"
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/agentdist"
+	"github.com/leeska/TZA-ControlCenter/internal/agentsig"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // 一键升级 Agent：后台把节点排进队列，Agent 下一次上报（约 5 秒一次）时在回复里拿到新版本的

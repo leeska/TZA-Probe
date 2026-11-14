@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // unlockTask is the shape the panel creates for the unlock check: a kind of its

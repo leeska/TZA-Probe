@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/ipguard"
-	"github.com/leeska/TZA-Probe/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/ipguard"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
 )
 
 var serviceNames = map[string]string{"google": "Google", "meta": "Meta"}

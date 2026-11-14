@@ -5,7 +5,7 @@ import { api, send, toast, guard, modal, esc } from "./api.js";
 import { state, content, field, confirmAction } from "./admin-state.js";
 import { applyBrand, DEFAULT_NAME } from "./brand.js";
 import { CURRENCIES } from "./admin-nodes.js";
-const MCP_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/MCP.md";
+const MCP_DOC_URL = "https://github.com/leeska/TZA-ControlCenter/blob/main/docs/MCP.md";
 const mcpDocs = () => `<p class="hint mcp-doc">接入文档：<a href="${MCP_DOC_URL}" target="_blank" rel="noopener noreferrer">${MCP_DOC_URL}</a></p>`;
 // 面板设置分三个子页：外观与品牌（站点品牌、默认外观、延迟色带）/ 账号与安全（后台账号、MCP Key）
 // / 数据（备份）。主题与插件各有自己的一栏，不在这里。显示项都走 /admin/panel 保存（见下方注释）。
@@ -180,7 +180,7 @@ function wireAccountView(acct, mcp) {
   content().querySelector("#edit-account")?.addEventListener("click", () => accountForm(acct));
 }
 // 站点品牌：名称换掉标签页标题与品牌区的 PROBE，logo 换掉 t·z·a 字标与 favicon。两项各自保存、
-// 各自清除；都清掉就回到内置的 TZA Probe 品牌。保存后 applyBrand 当场换上本页的标题、图标与侧栏，
+// 各自清除；都清掉就回到内置的 TZA ControlCenter 品牌。保存后 applyBrand 当场换上本页的标题、图标与侧栏，
 // 公开面板与别的访客下一次打开时由 /theme-default.js 在首屏前带上。
 const LOGO_TYPES = "image/png,image/jpeg,image/gif,image/webp,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,.ico,.svg";
 function brandPanel(settings) {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/pkgtest"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/internal/pkgtest"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 func TestInstallListRemove(t *testing.T) {

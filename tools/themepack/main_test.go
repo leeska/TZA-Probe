@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/theme"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/internal/theme"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // 仓库里的官方主题包（复古印刷 / 二次元；现代极简已编进二进制）是随发行包发布的源码：每个都要能被

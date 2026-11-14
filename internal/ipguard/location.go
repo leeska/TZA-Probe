@@ -62,7 +62,7 @@ func (locator *Locator) get(ctx context.Context, destination string, result any)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("User-Agent", "TZA-Probe-region-location/1.0 (https://github.com/leeska/TZA-Probe)")
+	request.Header.Set("User-Agent", "TZA-ControlCenter-region-location/1.0 (https://github.com/leeska/TZA-ControlCenter)")
 	response, err := locator.Client.Do(request)
 	if err != nil {
 		return errors.New("定位服务暂不可用，请稍后重试或手动选择地区")

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/account"
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/account"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // 密码校验前按桶限制实际尝试速度，匿名桶允许 30 次突发、每 2 秒补充一次，

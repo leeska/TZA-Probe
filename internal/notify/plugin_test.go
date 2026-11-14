@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/pkgtest"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/pkgtest"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 type memPlugins map[string]tzapkg.Plugin
@@ -47,14 +47,14 @@ func (r toServer) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestEventVars(t *testing.T) {
 	v := EventVars(model.Event{ID: 42, Kind: model.AlertCPU, NodeName: "东京\n1", NodeID: "n1", Active: true, At: 1760533200, Message: "当前 CPU：97.0%"})
-	if v["title"] != "TZA Probe · 告警触发 · CPU 使用率 · 东京 1" || v["urgent"] != "1" || v["priority"] != "4" || v["active"] != "true" || v["id"] != "42" || v["timestamp"] != "1760533200" {
+	if v["title"] != "TZA ControlCenter · 告警触发 · CPU 使用率 · 东京 1" || v["urgent"] != "1" || v["priority"] != "4" || v["active"] != "true" || v["id"] != "42" || v["timestamp"] != "1760533200" {
 		t.Fatalf("firing vars: %v", v)
 	}
 	if !strings.Contains(v["text"], "类型：CPU 使用率") || strings.Contains(v["text"], "通道") || v["kind_name"] != "CPU 使用率" || v["time"] != "2025-10-15 13:00:00 UTC" {
 		t.Fatalf("text: %q", v["text"])
 	}
 	test := EventVars(model.Event{Kind: "test", Message: "测试", At: 1})
-	if test["status"] != "连接测试" || test["urgent"] != "" || test["priority"] != "2" || test["title"] != "TZA Probe · 连接测试" || test["id"] != "" || strings.Contains(test["text"], "通道") {
+	if test["status"] != "连接测试" || test["urgent"] != "" || test["priority"] != "2" || test["title"] != "TZA ControlCenter · 连接测试" || test["id"] != "" || strings.Contains(test["text"], "通道") {
 		t.Fatalf("test vars: %v", test)
 	}
 	if rec := EventVars(model.Event{Kind: model.AlertOffline}); rec["status"] != "告警解除" || rec["priority"] != "3" || rec["active"] != "false" || rec["urgent"] != "" {
@@ -83,7 +83,7 @@ func TestPluginChannelDelivers(t *testing.T) {
 	if err := tr.Send(context.Background(), c, model.Event{ID: 7, Kind: model.AlertOffline, Active: true, NodeName: "东京", Message: "离线"}); err != nil {
 		t.Fatal(err)
 	}
-	if got.auth != "Bearer tk_secret" || got.body["topic"] != "probe" || got.body["priority"] != float64(4) || got.body["title"] != "TZA Probe · 告警触发 · 节点离线 · 东京" {
+	if got.auth != "Bearer tk_secret" || got.body["topic"] != "probe" || got.body["priority"] != float64(4) || got.body["title"] != "TZA ControlCenter · 告警触发 · 节点离线 · 东京" {
 		t.Fatalf("request: %+v", got)
 	}
 }

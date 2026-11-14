@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/notify"
-	"github.com/leeska/TZA-Probe/internal/service"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/internal/service"
 )
 
 // adminTools are the ones that change the fleet: they mirror what the panel
@@ -157,7 +157,7 @@ var adminTools = []tool{
 	},
 	{
 		Name:        "get_settings",
-		Description: "查看通知渠道状态（Telegram / Webhook / 通知插件 / 关闭）与公开面板显示项（延迟色带时间窗、访客默认明暗与皮肤、站点名称 site_name 与 logo 地址 site_logo；两者空值表示内置的 TZA Probe 品牌、计费汇总单位 price_unit、前台关掉的区块 public_hidden 与整个前台是否需要登录 public_login）。通知插件渠道另回 plugin、plugin_name、非密钥设置 plugin_settings 与 plugin_secrets（哪些密钥已保存）；插件失效时回 plugin_error。不返回任何凭据。",
+		Description: "查看通知渠道状态（Telegram / Webhook / 通知插件 / 关闭）与公开面板显示项（延迟色带时间窗、访客默认明暗与皮肤、站点名称 site_name 与 logo 地址 site_logo；两者空值表示内置的 TZA ControlCenter 品牌、计费汇总单位 price_unit、前台关掉的区块 public_hidden 与整个前台是否需要登录 public_login）。通知插件渠道另回 plugin、plugin_name、非密钥设置 plugin_settings 与 plugin_secrets（哪些密钥已保存）；插件失效时回 plugin_error。不返回任何凭据。",
 		InputSchema: schema(map[string]any{}),
 		Annotations: annotations("Settings", true, false, true),
 	},
@@ -174,7 +174,7 @@ var adminTools = []tool{
 			"latency_window_minutes": map[string]any{"type": "integer", "description": "公开卡片延迟色带最早显示多久以前的探测（分钟）：色带固定画最近 10 次，早于这个范围的不画"},
 			"default_theme":          map[string]any{"type": "string", "enum": model.PanelThemes, "description": "访客默认明暗"},
 			"default_skin":           map[string]any{"type": "string", "description": "访客默认皮肤：内置的 " + strings.Join(model.PanelSkins, " / ") + "，或后台已安装的主题包 id"},
-			"site_name":              map[string]any{"type": "string", "maxLength": model.MaxSiteNameLen, "description": "站点名称：浏览器标签页标题与公开面板、后台品牌区显示的名字；空串恢复默认的 TZA Probe"},
+			"site_name":              map[string]any{"type": "string", "maxLength": model.MaxSiteNameLen, "description": "站点名称：浏览器标签页标题与公开面板、后台品牌区显示的名字；空串恢复默认的 TZA ControlCenter"},
 			"price_unit":             map[string]any{"type": "string", "enum": model.PriceUnits, "description": "公开面板顶部「每月成本 / 剩余价值汇总」统一折算成的货币"},
 			"public_hidden":          map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"network", "unlock", "billing"}}, "description": "前台关掉的区块，访客接口不再返回这些数据"},
 			"public_login":           map[string]any{"type": "boolean", "description": "true 时整个前台需要登录后查看"},

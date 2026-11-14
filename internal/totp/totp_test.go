@@ -48,8 +48,8 @@ func TestUseRejectsReplayAndDrift(t *testing.T) {
 	if ok, _ := Use(dir, far, now); ok {
 		t.Fatal("code outside the window accepted")
 	}
-	if !strings.HasPrefix(URI(secret, "TZA Probe", "admin"), "otpauth://totp/TZA%20Probe:admin?") {
-		t.Fatal(URI(secret, "TZA Probe", "admin"))
+	if !strings.HasPrefix(URI(secret, "TZA ControlCenter", "admin"), "otpauth://totp/TZA%20ControlCenter:admin?") {
+		t.Fatal(URI(secret, "TZA ControlCenter", "admin"))
 	}
 	Remove(dir)
 	if _, ok, _ := Load(dir); ok {

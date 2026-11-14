@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 // A v2.0.0 data directory: main database at schema 30 plus ipguard.db with

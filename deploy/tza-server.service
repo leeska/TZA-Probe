@@ -1,5 +1,5 @@
 [Unit]
-Description=TZA Probe Server
+Description=TZA ControlCenter Server
 After=network.target
 
 [Service]

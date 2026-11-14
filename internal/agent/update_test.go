@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/agentsig"
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/agentsig"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 func digest(b []byte) string {

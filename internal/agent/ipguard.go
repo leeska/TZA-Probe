@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/leeska/TZA-Probe/internal/ipguard"
+	"github.com/leeska/TZA-ControlCenter/internal/ipguard"
 )
 
 type EgressPolicy struct {

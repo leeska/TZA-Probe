@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/catalog"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/internal/catalog"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
 )
 
 // Store is the persistence port the management operations need.

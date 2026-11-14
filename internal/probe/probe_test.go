@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 func TestRawTraceMasksAndUsesASN(t *testing.T) {

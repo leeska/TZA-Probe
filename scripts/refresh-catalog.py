@@ -22,7 +22,7 @@ def main():
         with args.input.open('rb') as source:
             data = source.read(1_000_001)
     else:
-        request = urllib.request.Request(SOURCE, headers={'User-Agent': 'TZA-Probe-Catalog/2'})
+        request = urllib.request.Request(SOURCE, headers={'User-Agent': 'TZA-ControlCenter-Catalog/2'})
         with urllib.request.urlopen(request, timeout=30) as response:
             data = response.read(1_000_001)
     if len(data) > 1_000_000:

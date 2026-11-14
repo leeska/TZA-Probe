@@ -51,7 +51,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
   - `Router`：通过 `module.Routes` 挂路由，有 `Public`、`Admin`、`Agent` 三种；鉴权和同源检查用的是 httpapi 自己那一套
   - `Overviewer`：给后台总览提供卡片（`module.Card`：标题、结论、语气、最多 6 条待处理项、点开去哪一页）。总览页 `GET /admin/overview` 先放核心的四张（节点、到期与流量、网络探测、告警），再按模块顺序放各模块的；某个模块读数出错只把它那张卡标成「读取失败」，不影响整页
   
-  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）、`proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站与转发，见下面「代理」一节）、`docker`（节点上的容器、镜像与 Compose 项目，见「Docker」一节）、`certs`（Let's Encrypt 证书的签发、续期与下发，见「证书」一节）和 `backup`（加密备份到节点，见「备份」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
+  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）、`proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站与转发，见下面「代理」一节）、`docker`（节点上的容器、镜像与 Compose 项目，见「Docker」一节）、`certs`（Let's Encrypt 证书的签发、续期与下发，见「证书」一节）、`backup`（加密备份到节点，见「备份」一节）和 `sites`（nginx 网站与反向代理，见「网站」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
 - **任务类型**：`model.RegisterTaskKind` 登记每种 `Task.Type`。登记的内容包括：
   - 定义从哪个字段读、怎么校验、怎么展开成探测
   - `FixedBindings`：节点带角色，只能编辑任务来改绑定，不能批量绑定或解绑
@@ -115,6 +115,15 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 - **写到节点**：加密结果先写到数据目录的临时文件，算出大小和 SHA-256，再经管理通道发 `backup.write`（请求行后跟原始字节）。Agent 校验目录（和证书相同的规则）、长度和校验和，原子落盘（0600），按文件名 `tza-probe-YYYYMMDD-HHMMSS.tzabk` 只保留最新 Keep 份，目录里的其他文件不动。
 - **计划**：`Module.Run` 每 5 分钟看一次，每天过了设定的 UTC 小时就跑一次；当天先记下再跑，失败等第二天或手动「立即备份」。保留最近 90 条运行记录。
 - **恢复**：`tza-server backup-restore --in 文件 --data 新目录`。口令取自 `TZA_BACKUP_PASSPHRASE`，或在终端不回显地输入。只解到不存在或空的目录，解完读到最后一块再确认完整。
+
+### 网站
+
+`internal/sites` 在主控上（迁移 sites/1：表 `sites`），`internal/agent/sites.go` 在节点上，能力名 `sites`。
+
+- **站点**：反向代理（`proxy_pass`，可选 WebSocket）、静态目录、跳转（301/302/307/308，可保留路径）。HTTPS 三种：不用；用证书模块的证书；节点上已有的证书文件。可选强制 HTTPS、Cloudflare 真实 IP（写在这个站点自己的 server 块里）、上传大小上限。所有写进配置的值都先校验（不能含空格、引号、分号、花括号、`$`），防止拼出别的指令。
+- **配置**：`Site.Config` 按节点的 nginx 版本生成：1.25.1 起 `http2 on;`，更老的 `listen 443 ssl http2;`。文件名 `tza-site-<id>.conf`，放在 `/etc/nginx/conf.d`（Debian 和 RHEL 系默认都会加载）。
+- **下发**：`Module.Sync` 每分钟和每次改动后按节点比对：`sites.status` 回 nginx 是否安装、版本、是否运行、受管文件的 SHA-256 和 `nginx -T` 里所有站点的 `server_name`；内容不同就发 `sites.apply`（请求行后跟 JSON：受管文件的完整集合）。Agent 整组替换、跑 `nginx -t`，不通过就把原来的文件全部恢复并带回输出，通过才 `systemctl reload nginx`（失败再试 `nginx -s reload`）。不是 `tza-site-` 开头的文件从不改动。
+- **证书联动**：TLS 方式为证书时，保存站点会检查证书域名覆盖站点全部域名（通配符只覆盖一层），并调 `certs.Store.EnsureTarget` 给证书加上这台节点的下发目标（`/etc/tza-certs/<域名>`，重载命令是重载 nginx）。证书到位前站点处于「等待」，不写进 nginx（不然 `nginx -t` 会因为找不到证书文件失败）；证书模块下发成功后调 `OnDeploy` 让网站模块立即重新同步。
 
 ### 模块告警
 

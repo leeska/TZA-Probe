@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // 后台「前台默认外观」的可选值有两份清单：服务端的 model.PanelThemes / PanelSkins 管校验，

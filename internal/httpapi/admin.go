@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/account"
-	"github.com/leeska/TZA-Probe/internal/brand"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/notify"
-	"github.com/leeska/TZA-Probe/internal/service"
-	"github.com/leeska/TZA-Probe/internal/theme"
-	"github.com/leeska/TZA-Probe/internal/totp"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/internal/account"
+	"github.com/leeska/TZA-ControlCenter/internal/brand"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/internal/service"
+	"github.com/leeska/TZA-ControlCenter/internal/theme"
+	"github.com/leeska/TZA-ControlCenter/internal/totp"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // themeView is one skin as the browser needs it: installed packages carry the
@@ -75,7 +75,7 @@ func (a *API) adminRoutes(mux *http.ServeMux) {
 		if acct, err := account.Load(a.AccountDir); err == nil {
 			name = acct.Username
 		}
-		issuer := "TZA Probe"
+		issuer := "TZA ControlCenter"
 		if panel, err := a.svc.Panel(r.Context()); err == nil && panel.SiteName != "" {
 			issuer = panel.SiteName
 		}

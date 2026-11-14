@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // purgeFixture 是一台有历史的节点：一个已完成过几轮的 TCP 任务、分钟样本、流量桶、告警状态。

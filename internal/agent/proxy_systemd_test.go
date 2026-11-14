@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 // 真实 systemd 下的验收（只在带 systemd 的 Linux 容器里跑）：

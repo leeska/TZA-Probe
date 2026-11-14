@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // queryPlan 返回 EXPLAIN QUERY PLAN 的 detail 列，拼成一行。

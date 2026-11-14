@@ -20,19 +20,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/account"
-	"github.com/leeska/TZA-Probe/internal/agentdist"
-	"github.com/leeska/TZA-Probe/internal/brand"
-	"github.com/leeska/TZA-Probe/internal/httpjson"
-	"github.com/leeska/TZA-Probe/internal/ipguard"
-	"github.com/leeska/TZA-Probe/internal/mcp"
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/internal/module"
-	"github.com/leeska/TZA-Probe/internal/notify"
-	"github.com/leeska/TZA-Probe/internal/plugin"
-	"github.com/leeska/TZA-Probe/internal/service"
-	"github.com/leeska/TZA-Probe/internal/theme"
-	"github.com/leeska/TZA-Probe/internal/totp"
+	"github.com/leeska/TZA-ControlCenter/internal/account"
+	"github.com/leeska/TZA-ControlCenter/internal/agentdist"
+	"github.com/leeska/TZA-ControlCenter/internal/brand"
+	"github.com/leeska/TZA-ControlCenter/internal/httpjson"
+	"github.com/leeska/TZA-ControlCenter/internal/ipguard"
+	"github.com/leeska/TZA-ControlCenter/internal/mcp"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/module"
+	"github.com/leeska/TZA-ControlCenter/internal/notify"
+	"github.com/leeska/TZA-ControlCenter/internal/plugin"
+	"github.com/leeska/TZA-ControlCenter/internal/service"
+	"github.com/leeska/TZA-ControlCenter/internal/theme"
+	"github.com/leeska/TZA-ControlCenter/internal/totp"
 )
 
 // Repository is the persistence the HTTP contract needs: the management
@@ -203,7 +203,7 @@ func (a *API) Handler() http.Handler {
 			list, _ := json.Marshal(themeList(a.Themes, options))
 			fmt.Fprintf(w, "window.__tzaThemes=%s;\n", list)
 			// 站点名称与 logo 也要在首屏前就位：theme-boot.js 据此换掉标签页标题与 favicon，
-			// app.js 拼品牌区时直接用，不先闪一下内置的 TZA Probe。空值即内置品牌。
+			// app.js 拼品牌区时直接用，不先闪一下内置的 TZA ControlCenter。空值即内置品牌。
 			brandJS, _ := json.Marshal(site)
 			fmt.Fprintf(w, "window.__tzaBrand=%s;\n", brandJS)
 			// 计费汇总单位：公开面板顶部「每月成本 / 剩余价值汇总」用它统一折算（web/format.js

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 	_ "modernc.org/sqlite"
 )
 

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 // DockerHost serves the docker capability: Engine API calls on an allow list,

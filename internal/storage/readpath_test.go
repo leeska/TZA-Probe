@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // oldRecentLatencySQL 是改写前的延迟样本读路径：窗口内全部 TCP 结果按

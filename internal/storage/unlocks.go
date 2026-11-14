@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"sort"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // clearUnlocks drops the stored verdicts of the named nodes.

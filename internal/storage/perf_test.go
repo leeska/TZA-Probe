@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // TestPerfProfile 在一份接近线上规模的数据上量各条热路径的耗时，只在 TZA_PERF=1 时跑：

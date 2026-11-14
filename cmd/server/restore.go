@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/leeska/TZA-Probe/internal/backup"
+	"github.com/leeska/TZA-ControlCenter/internal/backup"
 )
 
 // restoreCommand decrypts a backup and unpacks it into a new data directory:

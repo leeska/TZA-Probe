@@ -12,7 +12,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/leeska/TZA-Probe/internal/browserworker"
+	"github.com/leeska/TZA-ControlCenter/internal/browserworker"
 )
 
 // browserWorkerCommand runs the isolated browser for the region drift check.

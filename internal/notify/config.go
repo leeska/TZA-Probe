@@ -4,7 +4,7 @@ import (
 	"errors"
 	"regexp"
 
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // Config is the one notification channel in use. Where it is stored is not

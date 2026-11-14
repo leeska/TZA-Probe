@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/leeska/TZA-Probe/internal/agentdist"
-	"github.com/leeska/TZA-Probe/internal/agentsig"
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/agentdist"
+	"github.com/leeska/TZA-ControlCenter/internal/agentsig"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // 这两个子命令在运维者自己的电脑上用：私钥不该出现在 Server 上，Server 只拿到签好的

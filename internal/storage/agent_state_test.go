@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 func TestAgentStateRejectsDelayedHeartbeatsAcrossRecoveryAndRestart(t *testing.T) {

@@ -2,7 +2,7 @@ import { api, send, toast, guard, esc } from "./api.js";
 import { state, content, confirmAction } from "./admin-state.js";
 import { openDeclarativePlugin } from "./admin-declarative-plugin.js";
 import { confirmPlugin, glyph, kindName, pager, pluginToast } from "./admin-packages.js";
-const PLUGIN_DOC_URL = "https://github.com/leeska/TZA-Probe/blob/main/docs/PLUGINS.md";
+const PLUGIN_DOC_URL = "https://github.com/leeska/TZA-ControlCenter/blob/main/docs/PLUGINS.md";
 // 插件：声明式的通知渠道与探测目标集，本地上传 zip 安装。插件只含配置与模板，由 Probe 解释执行，
 // 装之前先列出它能做的事请管理员确认。
 export async function renderPlugins(nodesReady) {

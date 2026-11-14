@@ -21,7 +21,7 @@ set -euo pipefail
 
 TAG=${1:?用法: bash scripts/release.sh <tag> <dist 目录> [目标 sha]}
 DIST=${2:?缺少 dist 目录}
-REPO=${REPO:-leeska/TZA-Probe}
+REPO=${REPO:-leeska/TZA-ControlCenter}
 TOKEN=${GITHUB_TOKEN:-}
 if [ -z "$TOKEN" ] && command -v gh >/dev/null; then TOKEN=$(gh auth token 2>/dev/null || true); fi
 [ -n "$TOKEN" ] || { echo "!! 需要 GITHUB_TOKEN（或先 gh auth login）" >&2; exit 1; }

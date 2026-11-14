@@ -1,5 +1,5 @@
 #!/bin/sh
-# TZA Probe Agent 一键安装 / 升级脚本。由 Server 的 /install.sh 提供，后台“接入”弹窗会给出完整命令：
+# TZA ControlCenter Agent 一键安装 / 升级脚本。由 Server 的 /install.sh 提供，后台“接入”弹窗会给出完整命令：
 #
 #   curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://probe.example.com --token <节点密钥>
 #
@@ -138,7 +138,7 @@ if [ -n "$UNINSTALL" ]; then
   rm -f "$PLUGIN_DROPIN"
   rm -rf /etc/tza-probe /var/lib/tza-agent
   [ "$INIT" = systemd ] && systemctl daemon-reload
-  echo "已卸载 TZA Probe Agent"
+  echo "已卸载 TZA ControlCenter Agent"
   exit 0
 fi
 
@@ -326,7 +326,7 @@ if [ "$INIT" = systemd ]; then
   install -d -m 0755 "$(dirname "$UNIT")"
   cat > "$UNIT" <<'TZA_AGENT_SERVICE'
 [Unit]
-Description=TZA Probe Agent
+Description=TZA ControlCenter Agent
 After=network-online.target
 Wants=network-online.target
 
@@ -367,7 +367,7 @@ else
   # 二进制统一放 /usr/local/bin，旧布局（/opt/tza-probe/tza-agent）留档后让位。
   cat > "$INITD" <<'TZA_AGENT_INIT'
 #!/sbin/openrc-run
-name="TZA Probe Agent"
+name="TZA ControlCenter Agent"
 command="/usr/local/bin/tza-agent"
 command_args="--config /etc/tza-probe/agent.json --self-update"
 supervisor="supervise-daemon"

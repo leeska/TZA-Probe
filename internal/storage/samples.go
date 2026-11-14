@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // RecentLatencySamples returns the last perGroup finished TCP probes for every

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // legacyDatabase writes what v2.0.0 left behind: schema.sql at user_version 30.

@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 // fakeEngine is a Docker Engine API on a unix socket that records requests.

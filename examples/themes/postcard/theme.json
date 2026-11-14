@@ -3,7 +3,7 @@
   "name": "明信片",
   "hint": "示例主题包 · 航空信封 · 邮戳名牌",
   "version": "1.0.0",
-  "author": "TZA Probe",
+  "author": "TZA ControlCenter",
   "chrome": { "light": "#f4efe4", "dark": "#16171c" },
   "swatch": ["#f4efe4", "#fffdf8", "#c8372d"],
   "base": "plain",

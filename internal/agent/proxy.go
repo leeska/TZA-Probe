@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/channel"
+	"github.com/leeska/TZA-ControlCenter/internal/channel"
 )
 
 // ProxyHost runs proxy kernels on this machine for the Server: it installs
@@ -313,7 +313,7 @@ func unit(kernel, binary, config string) string {
 	}
 	return fmt.Sprintf(`# Managed by tza-agent: the Server's 代理 module writes this file.
 [Unit]
-Description=TZA Probe proxy (%[1]s)
+Description=TZA ControlCenter proxy (%[1]s)
 After=network-online.target
 Wants=network-online.target
 

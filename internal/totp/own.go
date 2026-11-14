@@ -1,6 +1,6 @@
 package totp
 
-import "github.com/leeska/TZA-Probe/internal/account"
+import "github.com/leeska/TZA-ControlCenter/internal/account"
 
 // ownLikeDir hands the file to the data directory's owner when run as root
 // (the terminal reset), like the account file.

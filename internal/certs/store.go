@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 func Migrations() []storage.Migration {
@@ -381,4 +381,23 @@ func (s *Store) State(ctx context.Context, key string) (string, error) {
 func (s *Store) SetState(ctx context.Context, key, value string) error {
 	_, err := s.DB.ExecContext(ctx, "INSERT INTO certs_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value)
 	return err
+}
+
+// EnsureTarget makes sure the certificate is deployed to dir on node,
+// adding a target (with reload) when there is none for that node and
+// directory. It reports whether a target was added.
+func (s *Store) EnsureTarget(ctx context.Context, id, node, dir, reload string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.cert(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	for _, t := range c.Targets {
+		if t.NodeID == node && t.Dir == dir {
+			return false, nil
+		}
+	}
+	c.Targets = append(c.Targets, Target{NodeID: node, Dir: dir, Reload: reload})
+	return true, s.put(ctx, "certs", c.ID, c.Created, c)
 }

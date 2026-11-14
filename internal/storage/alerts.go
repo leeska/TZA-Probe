@@ -8,7 +8,7 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // AlertRules lists every rule in the order they were created.

@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // MaxBody bounds a JSON request body.

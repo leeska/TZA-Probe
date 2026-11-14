@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // Plugins finds an installed notify plugin by id (internal/plugin.Store).
@@ -36,7 +36,7 @@ func EventVars(e model.Event) map[string]string {
 	case e.Active:
 		status, priority, urgent, active = "告警触发", "4", "1", "true"
 	}
-	title := []string{"TZA Probe", status}
+	title := []string{"TZA ControlCenter", status}
 	if e.Kind != "test" {
 		title = append(title, kindName(e.Kind))
 	}
@@ -103,7 +103,7 @@ func (s Transport) sendPlugin(ctx context.Context, c Config, e model.Event) erro
 	}
 	hr.Header = req.Headers
 	if hr.Header.Get("User-Agent") == "" {
-		hr.Header.Set("User-Agent", "TZA-Probe/"+model.Version)
+		hr.Header.Set("User-Agent", "TZA-ControlCenter/"+model.Version)
 	}
 	client := http.Client{Timeout: 5 * time.Second, Transport: s.RoundTripper, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(hr)

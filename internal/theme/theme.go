@@ -18,7 +18,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/leeska/TZA-Probe/pkg/tzapkg"
+	"github.com/leeska/TZA-ControlCenter/pkg/tzapkg"
 )
 
 // MaxUpload caps one uploaded archive.

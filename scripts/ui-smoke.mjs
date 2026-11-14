@@ -1174,7 +1174,7 @@ const saveLook = async (theme, skin) => {
 await saveLook("dark", "press");
 await saveLook("auto", "shadcn");
 // 站点品牌：改名称后本页的标签页标题与侧栏品牌当场换掉，首屏脚本也跟上；logo 上传后侧栏、
-// favicon 与设置页预览都用它；两项清掉回到内置的 TZA Probe（t·z·a 字标 + PROBE）。
+// favicon 与设置页预览都用它；两项清掉回到内置的 TZA ControlCenter（t·z·a 字标 + CONTROL CENTER）。
 const brandBoot = async () => {
   const js = await (await fetch(base + "/theme-default.js")).text();
   return JSON.parse(js.match(/^window\.__tzaBrand=(.*);$/m)[1]);
@@ -1206,8 +1206,8 @@ assert.equal((await brandBoot()).logo, "", "移除后首屏没有 logo");
 assert.equal(w.document.querySelector('link[rel="icon"]')?.getAttribute("href") ?? "/favicon.svg", "/favicon.svg", "favicon 回到默认");
 $("#site-name").value = "";
 $("#save-site-name").click();
-await until(() => w.document.title === "TZA Probe", "清空站点名称后标题回到默认");
-assert($(".sidebar .brand .brand-mark") && $(".sidebar .brand").textContent.startsWith("tzaPROBE"), "侧栏回到内置品牌");
+await until(() => w.document.title === "TZA ControlCenter", "清空站点名称后标题回到默认");
+assert($(".sidebar .brand .brand-mark") && $(".sidebar .brand").textContent.startsWith("tzaCONTROL CENTER"), "侧栏回到内置品牌");
 assert.deepEqual(await brandBoot(), { name: "", logo: "" }, "清除后首屏品牌为空");
 // 设置页分子标签：MCP Key 与后台账号在「账号与安全」，备份在「数据」。
 assert.deepEqual(

@@ -1,4 +1,4 @@
-# TZA Probe
+# TZA ControlCenter
 
 一个主机与网络探针：**一个仓库、Server / Agent 两个程序、一个 SQLite 数据库**。后台与公开页随 Server 嵌入发布，没有 Node 构建依赖。
 
@@ -32,13 +32,13 @@ Linux 主机（amd64 / arm64），一条命令装成 systemd 服务。两种方�
 安装最新发布：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh
 ```
 
 安装指定版本（把 `v1.0.0` 换成要装的版本）：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
 ```
 
 **从源码构建**：在本机编译 Server 与 amd64 / arm64 两个 Agent，需要 Go 1.27 与 git。本机编出的 Agent 没有签名，不能在后台一键升级。
@@ -46,13 +46,13 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 构建 `main` 分支：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --source
 ```
 
 构建指定分支或 tag（把 `dev` 换成要构建的分支或 tag）：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --ref dev
+curl -fsSL https://raw.githubusercontent.com/leeska/TZA-ControlCenter/main/deploy/install.sh | sudo sh -s -- --ref dev
 ```
 
 两种方式都安装 `/usr/local/bin/tza-server` 与 systemd 单元、建好 `/var/lib/tza-probe`。重复执行即升级（可以在两种方式之间切换）：旧二进制保留为 `tza-server.previous`，服务自动重启并核对运行的是新版本。其他参数：`--listen ADDR`、`--data DIR`、`--no-systemd`。
@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 Docker 部署（镜像本地构建，数据放命名卷）：
 
 ```sh
-git clone --depth 1 https://github.com/leeska/TZA-Probe && cd TZA-Probe
+git clone --depth 1 https://github.com/leeska/TZA-ControlCenter && cd TZA-ControlCenter
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 

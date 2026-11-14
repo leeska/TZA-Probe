@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/storage"
+	"github.com/leeska/TZA-ControlCenter/internal/storage"
 )
 
 const ddl = `CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, value TEXT NOT NULL, created_at INTEGER NOT NULL)`

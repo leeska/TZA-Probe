@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/leeska/TZA-Probe/internal/model"
+	"github.com/leeska/TZA-ControlCenter/internal/model"
 )
 
 // The task controls change management state without touching the probe

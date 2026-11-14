@@ -19,7 +19,7 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
-	"github.com/leeska/TZA-Probe/internal/ipguard"
+	"github.com/leeska/TZA-ControlCenter/internal/ipguard"
 )
 
 //go:embed region.js

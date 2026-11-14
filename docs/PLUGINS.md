@@ -91,7 +91,7 @@ feishu.zip
 
 | 变量 | 内容 |
 | --- | --- |
-| `event.title` | 一行标题，如 `TZA Probe · 告警触发 · CPU 使用率 · 东京` |
+| `event.title` | 一行标题，如 `TZA ControlCenter · 告警触发 · CPU 使用率 · 东京` |
 | `event.text` | 完整的多行正文（状态、类型、节点、读数、时间、事件编号），与 Telegram 消息内容一致（测试消息不带「通道」一行；超过约 8000 字时截断读数部分） |
 | `event.message` | 只有读数与条件那一段 |
 | `event.status` | `告警触发` / `告警解除` / `连接测试` |
