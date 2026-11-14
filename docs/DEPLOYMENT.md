@@ -25,6 +25,12 @@ curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/instal
 curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --release v1.0.0
 ```
 
+**用本机已有的发布包安装**（`scripts/pipeline.sh build` 产出的 `tza-probe-linux-<架构>.tar.gz`，适合离线、未发布的版本或迁移到新主机；旁边有同名 `.sha256` 时先校验）：
+
+```sh
+sudo sh install.sh --package /root/tza-probe-linux-amd64.tar.gz --with-browser
+```
+
 **从源码构建 `main` 分支：**
 
 ```sh
@@ -78,7 +84,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.9.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.9.1-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -226,6 +232,10 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 Probe 不连接 TZA-CC 或其他市场：主题包、附加包与插件都在后台「主题」「插件」页上传 zip 安装，Server 不为此访问外部服务。
 旧版本的 `--cc-url` / `--cc-key` 参数与 `TZA_CC_URL` / `TZA_CC_KEYS` 环境变量仍被接受但会被忽略，启动日志给出提示；可以从单元文件或 compose 中删掉。
 旧数据目录里的 `cc-instance`、`themes/.market/`、`plugins/.market/` 与 `plugin-managers/` 不再使用，可以删除。
+
+## 后台登录
+
+后台的登录会话保存在数据目录的 `admin-sessions`（0600，只存会话令牌的哈希），主控重启或升级后不用重新登录。会话 12 小时过期；改密码或在终端 `reset-password` 后，其他浏览器的会话一律失效。
 
 ## 日常操作
 

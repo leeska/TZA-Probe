@@ -15,6 +15,10 @@
 # 构建 main（指定分支或 tag 把 --source 换成 --ref REF）：
 #   curl -fsSL https://raw.githubusercontent.com/leeska/TZA-Probe/main/deploy/install.sh | sudo sh -s -- --source
 #
+# 用本机已有的发布包安装（离线、未发布的版本、迁移到新主机时）：
+#   sudo sh install.sh --package /root/tza-probe-linux-amd64.tar.gz
+# 旁边有同名的 .sha256 时先校验。
+#
 # 脚本只做五件事：取到 tza-server、装到 /usr/local/bin、建好数据目录、生成管理密钥与
 # 后台账号、装 systemd 服务。加 --with-browser 时再装地区偏移检测用的隔离浏览器
 # （固定版本的 Chromium、独立用户与无网络的 tza-browser 服务，见 docs/IP-GUARD-INTEGRATION.md）。
@@ -56,6 +60,7 @@ TZA Probe Server 一键安装（Linux amd64 / arm64）
   --source           从源码构建（需要 git 与 Go），默认 main 分支
   --ref REF          源码构建用的分支或 tag，默认 main（隐含 --source）
   --version vX.Y.Z   同 --release vX.Y.Z
+  --package FILE     用本机的发布包 tza-probe-linux-<架构>.tar.gz 安装（旁边有 FILE.sha256 时先校验）
 
 其他选项
   --listen ADDR      监听地址，默认 127.0.0.1:25774（跨主机接入请配置 HTTPS 反代）
@@ -75,6 +80,7 @@ while [ $# -gt 0 ]; do
       MODE="release"; PICKED="${PICKED}r"; shift
       case "${1:-}" in v[0-9]*) VERSION="$1"; shift ;; esac ;;
     --version) MODE="release"; PICKED="${PICKED}r"; VERSION="${2:?--version 需要 vX.Y.Z}"; shift 2 ;;
+    --package) MODE="package"; PICKED="${PICKED}p"; PACKAGE="${2:?--package 需要发布包路径}"; shift 2 ;;
     --source) MODE="source"; PICKED="${PICKED}s"; shift ;;
     --ref) MODE="source"; PICKED="${PICKED}s"; REF="${2:?--ref 需要分支或 tag}"; shift 2 ;;
     --listen) LISTEN="${2:?--listen 需要地址}"; shift 2 ;;
@@ -86,9 +92,9 @@ while [ $# -gt 0 ]; do
     *) echo "未知参数：$1" >&2; usage >&2; exit 2 ;;
   esac
 done
-case "$PICKED" in *r*s*|*s*r*) PICKED="both" ;; esac
+case "$PICKED" in *r*s*|*s*r*|*p*[rs]*|*[rs]*p*) PICKED="both" ;; esac
 if [ "$PICKED" = "both" ]; then
-  echo "从源码构建（--source/--ref）与从 Release 安装（--release/--version）只能选一种" >&2; exit 2
+  echo "从源码构建（--source/--ref）、从 Release 安装（--release/--version）与本地发布包（--package）只能选一种" >&2; exit 2
 fi
 case "$VERSION" in ""|v*) ;; *) echo "版本号要以 v 开头，例如 v1.0.0：$VERSION" >&2; exit 2 ;; esac
 # 装过浏览器的主机：升级时不带 --with-browser 也保留它。
@@ -120,7 +126,23 @@ trap 'rm -rf "$WORK"' EXIT
 UNIT_SRC=""
 BROWSER_UNIT_SRC=""
 
-if [ "$MODE" = "release" ]; then
+if [ "$MODE" = "package" ]; then
+  [ -f "$PACKAGE" ] || { echo "找不到发布包：$PACKAGE" >&2; exit 1; }
+  echo "安装方式：本地发布包 ${PACKAGE}"
+  if [ -f "${PACKAGE}.sha256" ]; then
+    need sha256sum
+    want="$(cut -d' ' -f1 "${PACKAGE}.sha256")"
+    got="$(sha256sum "$PACKAGE" | cut -d' ' -f1)"
+    [ "$want" = "$got" ] || { echo "校验和不匹配，已中止安装" >&2; exit 1; }
+    echo "校验和一致"
+  fi
+  tar -xzf "$PACKAGE" -C "$WORK"
+  [ -f "${WORK}/tza-server" ] || { echo "发布包里没有 tza-server" >&2; exit 1; }
+  # --version 打一行日志「日期 时间 INFO vX.Y.Z」，取最后一段。
+  VERSION="$("${WORK}/tza-server" --version 2>&1 | tail -n 1 | awk '{print $NF}' || true)"
+  [ -f "${WORK}/deploy/tza-server.service" ] && UNIT_SRC="${WORK}/deploy/tza-server.service"
+  [ -f "${WORK}/deploy/tza-browser.service" ] && BROWSER_UNIT_SRC="${WORK}/deploy/tza-browser.service"
+elif [ "$MODE" = "release" ]; then
   need curl
   need sha256sum
   echo "安装方式：GitHub Release 预编译发布包"
@@ -522,7 +544,7 @@ NGINX
 [ "$NGINX" = "no" ] || nginx_log
 
 echo
-if [ "$MODE" = "release" ]; then FROM="GitHub Release"; else FROM="源码构建 ${REF}"; fi
+case "$MODE" in release) FROM="GitHub Release" ;; package) FROM="本地发布包 ${PACKAGE}" ;; *) FROM="源码构建 ${REF}" ;; esac
 echo "已安装：${BIN}（版本 ${VERSION}，来自 ${FROM}）"
 echo "数据目录：${DATA}"
 if [ "$started" = "yes" ]; then

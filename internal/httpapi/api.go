@@ -147,6 +147,7 @@ func (a *API) panelNodes(r *http.Request, admin bool) ([]model.NodeView, error) 
 
 func (a *API) Handler() http.Handler {
 	a.sessions = map[string]browserSession{}
+	a.loadSessions()
 	a.deviceKey = deviceSigningKey(a.AdminToken)
 	a.svc = &service.Service{Store: a.Store, Notifier: a.Notifier, Themes: a.Themes, Plugins: a.Plugins, Logo: a.Logo}
 	mux := http.NewServeMux()
@@ -158,6 +159,7 @@ func (a *API) Handler() http.Handler {
 		if c, err := r.Cookie("tza_session"); err == nil {
 			a.mu.Lock()
 			delete(a.sessions, model.Hash(c.Value))
+			a.saveSessionsLocked()
 			a.mu.Unlock()
 		}
 		http.SetCookie(w, &http.Cookie{Name: "tza_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
@@ -394,6 +396,7 @@ func (a *API) isAdmin(r *http.Request) bool {
 	}
 	a.mu.Lock()
 	delete(a.sessions, key)
+	a.saveSessionsLocked()
 	a.mu.Unlock()
 	return false
 }
@@ -615,6 +618,7 @@ func (a *API) startSession(w http.ResponseWriter, r *http.Request, now time.Time
 		delete(a.sessions, oldest)
 	}
 	a.sessions[model.Hash(token)] = browserSession{Expires: now.Add(12 * time.Hour), AccountHash: accountHash}
+	a.saveSessionsLocked()
 	a.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: "tza_session", Value: token, Path: "/", HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode, MaxAge: 43200})
 	a.setDeviceCookie(w, r, now, accountHash)

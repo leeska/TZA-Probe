@@ -796,4 +796,5 @@ func (a *API) dropOtherSessions(r *http.Request, accountHash string) {
 			a.sessions[key] = session
 		}
 	}
+	a.saveSessionsLocked()
 }
