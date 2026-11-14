@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -105,20 +106,58 @@ func SingBoxCompatible(entries []Entry) []Entry {
 	return out
 }
 
+// Options are what a subscription is made of besides the user's own
+// inbounds: the rules (nil is the built-in 国内直连) and nodes from external
+// subscriptions.
+type Options struct {
+	Rules []Rule
+	Extra []ExtNode
+}
+
+// uniqueExtra renames external nodes whose names clash with the user's
+// inbounds or each other.
+func uniqueExtra(entries []Entry, extra []ExtNode) []ExtNode {
+	seen := map[string]bool{}
+	for _, e := range entries {
+		seen[e.Name] = true
+	}
+	out := make([]ExtNode, 0, len(extra))
+	for _, n := range extra {
+		name := n.Name
+		for i := 2; seen[name]; i++ {
+			name = fmt.Sprintf("%s %d", n.Name, i)
+		}
+		seen[name] = true
+		n = rename(n, name)
+		out = append(out, n)
+	}
+	return out
+}
+
 // Subscription renders what a client imports. It returns the body and its
 // content type.
-func Subscription(format, mode string, entries []Entry, m Member) ([]byte, string, error) {
+func Subscription(format string, opt Options, entries []Entry, m Member) ([]byte, string, error) {
+	rules := opt.Rules
+	if rules == nil {
+		rules, _ = ParseRules(BuiltInTemplates[0].Rules)
+	}
+	extra := uniqueExtra(entries, opt.Extra)
 	switch format {
 	case FormatBase64:
 		lines := []string{}
 		for _, e := range entries {
 			lines = append(lines, e.Inbound.NamedLink(m, e.Name))
 		}
+		for _, n := range extra {
+			if n.Link != "" {
+				lines = append(lines, n.Link)
+			}
+		}
 		return []byte(base64.StdEncoding.EncodeToString([]byte(strings.Join(lines, "\n")))), "text/plain; charset=utf-8", nil
 	case FormatClash:
-		return clashConfig(mode, entries, m), "text/yaml; charset=utf-8", nil
+		return clashConfig(rules, entries, extra, m), "text/yaml; charset=utf-8", nil
 	case FormatSingBox:
-		raw, err := json.MarshalIndent(singBoxClient(mode, SingBoxCompatible(entries), m), "", "  ")
+		raw, err := json.MarshalIndent(singBoxClient(rules, SingBoxCompatible(entries), extra, m), "", "  ")
 		return raw, "application/json; charset=utf-8", err
 	}
 	return nil, "", fmt.Errorf("未知订阅格式 %q", format)
@@ -143,33 +182,48 @@ func clashProxy(e Entry, m Member) string {
 	}
 }
 
-func clashConfig(mode string, entries []Entry, m Member) []byte {
+func clashConfig(rules []Rule, entries []Entry, extra []ExtNode, m Member) []byte {
 	var b strings.Builder
 	b.WriteString("# TZA Probe 订阅：" + strings.ReplaceAll(m.Name, "\n", " ") + "\n")
 	b.WriteString("mixed-port: 7890\nallow-lan: false\nmode: rule\nlog-level: warning\nipv6: true\nunified-delay: true\n")
 	b.WriteString("dns:\n  enable: true\n  ipv6: true\n  enhanced-mode: fake-ip\n  fake-ip-filter:\n    - \"+.lan\"\n    - \"+.local\"\n  default-nameserver:\n    - 223.5.5.5\n    - 119.29.29.29\n  nameserver:\n    - https://223.5.5.5/dns-query\n    - https://doh.pub/dns-query\n")
-	if mode != ModeGlobal {
+	if usesChina(rules) {
 		b.WriteString("  nameserver-policy:\n    \"geosite:geolocation-!cn\":\n      - https://1.1.1.1/dns-query\n      - https://dns.google/dns-query\n")
 	}
-	b.WriteString("proxies:\n")
+	var proxies strings.Builder
 	names := []string{}
 	for _, e := range entries {
-		b.WriteString(clashProxy(e, m))
+		proxies.WriteString(clashProxy(e, m))
 		names = append(names, q(e.Name))
 	}
-	if len(entries) == 0 {
-		// A group needs at least one member; with no usable inbound the
-		// client still loads and simply goes direct.
+	for _, n := range extra {
+		// A JSON object is a valid YAML flow mapping: the external proxy
+		// goes in exactly as its source wrote it.
+		raw, _ := json.Marshal(n.Clash)
+		proxies.WriteString("  - " + string(raw) + "\n")
+		names = append(names, q(n.Name))
+	}
+	if len(names) == 0 {
+		// A group needs at least one member; with no usable node the client
+		// still loads and simply goes direct.
 		names = []string{"DIRECT"}
+		b.WriteString("proxies: []\n")
+	} else {
+		b.WriteString("proxies:\n" + proxies.String())
 	}
 	b.WriteString("proxy-groups:\n")
-	fmt.Fprintf(&b, "  - name: %s\n    type: select\n    proxies: [%s, %s, DIRECT]\n", q(GroupSelect), q(GroupAuto), strings.Join(names, ", "))
+	choices := append([]string{q(GroupAuto)}, names...)
+	if names[0] != "DIRECT" {
+		choices = append(choices, "DIRECT")
+	}
+	fmt.Fprintf(&b, "  - name: %s\n    type: select\n    proxies: [%s]\n", q(GroupSelect), strings.Join(choices, ", "))
 	fmt.Fprintf(&b, "  - name: %s\n    type: url-test\n    url: https://www.gstatic.com/generate_204\n    interval: 300\n    tolerance: 50\n    proxies: [%s]\n", q(GroupAuto), strings.Join(names, ", "))
 	b.WriteString("rules:\n")
-	if mode != ModeGlobal {
-		b.WriteString("  - GEOSITE,private,DIRECT\n  - GEOIP,private,DIRECT,no-resolve\n  - GEOSITE,cn,DIRECT\n  - GEOIP,CN,DIRECT\n")
+	// The whole rule is one quoted scalar: "MATCH,节点选择", not
+	// MATCH,"节点选择" (which YAML reads with the quotes in the name).
+	for _, r := range clashRules(rules) {
+		b.WriteString("  - " + q(r) + "\n")
 	}
-	fmt.Fprintf(&b, "  - MATCH,%s\n", q(GroupSelect))
 	return []byte(b.String())
 }
 
@@ -196,12 +250,18 @@ func ruleSet(tag, repo string) obj {
 	return obj{"type": "remote", "tag": tag, "format": "binary", "url": "https://raw.githubusercontent.com/SagerNet/" + repo + "/rule-set/" + tag + ".srs", "download_detour": GroupSelect}
 }
 
-func singBoxClient(mode string, entries []Entry, m Member) obj {
+func singBoxClient(rules []Rule, entries []Entry, extra []ExtNode, m Member) obj {
 	names := []string{}
 	outbounds := []any{}
 	for _, e := range entries {
 		names = append(names, e.Name)
 		outbounds = append(outbounds, singBoxOutbound(e, m))
+	}
+	for _, n := range extra {
+		if n.SingBox != nil {
+			names = append(names, n.Name)
+			outbounds = append(outbounds, n.SingBox)
+		}
 	}
 	auto := append([]string{}, names...)
 	if len(auto) == 0 {
@@ -220,18 +280,18 @@ func singBoxClient(mode string, entries []Entry, m Member) obj {
 		"final":    "remote",
 		"strategy": "prefer_ipv4",
 	}
-	rules := []any{
-		obj{"action": "sniff"},
-		obj{"protocol": "dns", "action": "hijack-dns"},
-		obj{"ip_is_private": true, "outbound": "direct"},
+	routeRules, sets, final := singBoxRoute(rules)
+	all := append([]any{obj{"action": "sniff"}, obj{"protocol": "dns", "action": "hijack-dns"}}, routeRules...)
+	route := obj{"auto_detect_interface": true, "final": final, "default_domain_resolver": "local", "rules": all}
+	if len(sets) > 0 {
+		route["rule_set"] = sets
 	}
-	route := obj{"auto_detect_interface": true, "final": GroupSelect, "default_domain_resolver": "local"}
-	if mode != ModeGlobal {
+	if usesChina(rules) {
+		if !slices.ContainsFunc(sets, func(s any) bool { return s.(obj)["tag"] == "geosite-cn" }) {
+			route["rule_set"] = append(sets, ruleSet("geosite-cn", "sing-geosite"))
+		}
 		dns["rules"] = []any{obj{"rule_set": []string{"geosite-cn"}, "server": "local"}}
-		rules = append(rules, obj{"rule_set": []string{"geosite-cn", "geoip-cn"}, "outbound": "direct"})
-		route["rule_set"] = []any{ruleSet("geoip-cn", "sing-geoip"), ruleSet("geosite-cn", "sing-geosite")}
 	}
-	route["rules"] = rules
 	return obj{
 		"log": obj{"level": "warn"},
 		"dns": dns,

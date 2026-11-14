@@ -183,11 +183,18 @@ func messageText(e model.Event, channel string, limit int) string {
 	} else if channel != "" {
 		lines = append(lines, "通道："+channel)
 	}
-	if e.NodeName != "" {
-		lines = append(lines, "节点："+singleLine(e.NodeName))
-	}
-	if e.NodeID != "" {
-		lines = append(lines, "节点 ID："+singleLine(e.NodeID))
+	switch {
+	case !e.IsNodeEvent():
+		if e.NodeName != "" {
+			lines = append(lines, "对象："+singleLine(e.NodeName))
+		}
+	default:
+		if e.NodeName != "" {
+			lines = append(lines, "节点："+singleLine(e.NodeName))
+		}
+		if e.NodeID != "" {
+			lines = append(lines, "节点 ID："+singleLine(e.NodeID))
+		}
 	}
 	footer := []string{"", "事件时间：" + eventTime(e.At)}
 	if e.ID > 0 {

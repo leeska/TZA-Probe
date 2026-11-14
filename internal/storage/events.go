@@ -85,6 +85,20 @@ func (s *Store) Transition(ctx context.Context, n model.Node, kind string, descr
 	return tx.Commit()
 }
 
+// RecordEvent writes an event that is not tied to a node's alert rules (a
+// module's own alert: certificates, backups). NodeID names the object; the
+// module keeps its own firing state and calls this only on a change. The
+// usual delivery loop sends it.
+func (s *Store) RecordEvent(ctx context.Context, e model.Event) error {
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	if e.At == 0 {
+		e.At = time.Now().Unix()
+	}
+	_, err := s.db.ExecContext(ctx, "INSERT INTO events(node_id,node_name,kind,message,active,at) VALUES(?,?,?,?,?,?)", e.NodeID, e.NodeName, e.Kind, e.Message, e.Active, e.At)
+	return err
+}
+
 // PauseResourceAlert records unavailable data without emitting a recovery or
 // repeat. since=0 restarts an incomplete hold on the next valid observation;
 // active is preserved until a valid normal reading or a disabled rule clears

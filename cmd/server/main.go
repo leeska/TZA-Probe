@@ -150,11 +150,11 @@ func run() error {
 		case *docker.Module:
 			m.Nodes = store
 		case *certs.Module:
-			m.Store, m.Hub, m.Nodes = &certs.Store{DB: store.DB()}, hub, store
+			m.Store, m.Hub, m.Nodes, m.Events = &certs.Store{DB: store.DB()}, hub, store, store
 			m.Init()
 			certsMod = m
 		case *backup.Module:
-			m.DB, m.DataDir, m.Hub, m.Nodes = store.DB(), *dir, hub, store
+			m.DB, m.DataDir, m.Hub, m.Nodes, m.Events = store.DB(), *dir, hub, store, store
 			backupMod = m
 		}
 	}
@@ -186,6 +186,8 @@ func run() error {
 	go func() { defer wg.Done(); usersMod.Run(ctx) }()
 	wg.Add(1)
 	go func() { defer wg.Done(); proxyMod.Run(ctx) }()
+	wg.Add(1)
+	go func() { defer wg.Done(); proxyMod.RunSources(ctx) }()
 	wg.Add(1)
 	go func() { defer wg.Done(); certsMod.Run(ctx) }()
 	wg.Add(1)

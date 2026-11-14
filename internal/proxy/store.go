@@ -24,6 +24,17 @@ func Migrations() []storage.Migration {
 	}}, {Module: "proxy", Version: 2, Name: "forwards", Up: func(c *storage.MigrationContext) error {
 		_, err := c.Tx.Exec(forwardsDDL)
 		return err
+	}}, {Module: "proxy", Version: 3, Name: "rule templates, external subscriptions", Up: func(c *storage.MigrationContext) error {
+		for _, ddl := range []string{
+			`CREATE TABLE IF NOT EXISTS proxy_templates(id TEXT PRIMARY KEY, value TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+			`CREATE TABLE IF NOT EXISTS proxy_sources(id TEXT PRIMARY KEY, value TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+			`CREATE TABLE IF NOT EXISTS proxy_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		} {
+			if _, err := c.Tx.Exec(ddl); err != nil {
+				return err
+			}
+		}
+		return nil
 	}}}
 }
 
@@ -238,4 +249,176 @@ func (s *Store) AddForwardTraffic(ctx context.Context, usage map[string]users.Us
 		}
 	}
 	return nil
+}
+
+// rows reads the JSON values of a table, oldest first.
+func rows[T any](ctx context.Context, db *sql.DB, table string) ([]T, error) {
+	r, err := db.QueryContext(ctx, "SELECT value FROM "+table+" ORDER BY created_at, id")
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	out := []T{}
+	for r.Next() {
+		var raw string
+		var v T
+		if err := r.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, r.Err()
+}
+
+func (s *Store) putRow(ctx context.Context, table, id string, created int64, v any) error {
+	raw, _ := json.Marshal(v)
+	_, err := s.DB.ExecContext(ctx, "INSERT INTO "+table+" VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value", id, string(raw), created)
+	return err
+}
+
+func (s *Store) deleteRow(ctx context.Context, table, id string, missing error) error {
+	res, err := s.DB.ExecContext(ctx, "DELETE FROM "+table+" WHERE id=?", id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return missing
+	}
+	return nil
+}
+
+var (
+	ErrTemplateNotFound = errors.New("规则模板不存在")
+	ErrSourceNotFound   = errors.New("外部订阅不存在")
+)
+
+// Templates lists the built-in templates, then the custom ones.
+func (s *Store) Templates(ctx context.Context) ([]Template, error) {
+	custom, err := rows[Template](ctx, s.DB, "proxy_templates")
+	if err != nil {
+		return nil, err
+	}
+	return append(append([]Template{}, BuiltInTemplates...), custom...), nil
+}
+
+// Template finds a template by id (built-in or custom).
+func (s *Store) Template(ctx context.Context, id string) (Template, error) {
+	all, err := s.Templates(ctx)
+	if err != nil {
+		return Template{}, err
+	}
+	for _, t := range all {
+		if t.ID == id {
+			return t, nil
+		}
+	}
+	return Template{}, ErrTemplateNotFound
+}
+
+func (s *Store) SaveTemplate(ctx context.Context, t Template) (Template, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := t.Validate(); err != nil {
+		return Template{}, err
+	}
+	t.BuiltIn = false
+	if t.ID == "" {
+		t.ID, t.Created = newID(), time.Now().Unix()
+	} else {
+		old, err := s.Template(ctx, t.ID)
+		if err != nil {
+			return Template{}, err
+		}
+		if old.BuiltIn {
+			return Template{}, errors.New("内置模板不能修改，可以照着它新建一个")
+		}
+		t.Created = old.Created
+	}
+	return t, s.putRow(ctx, "proxy_templates", t.ID, t.Created, t)
+}
+
+func (s *Store) DeleteTemplate(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if def, _ := s.State(ctx, "default_template"); def == id {
+		s.SetState(ctx, "default_template", "")
+	}
+	return s.deleteRow(ctx, "proxy_templates", id, ErrTemplateNotFound)
+}
+
+func (s *Store) Sources(ctx context.Context) ([]Source, error) {
+	return rows[Source](ctx, s.DB, "proxy_sources")
+}
+
+func (s *Store) Source(ctx context.Context, id string) (Source, error) {
+	all, err := s.Sources(ctx)
+	if err != nil {
+		return Source{}, err
+	}
+	for _, src := range all {
+		if src.ID == id {
+			return src, nil
+		}
+	}
+	return Source{}, ErrSourceNotFound
+}
+
+// SaveSource creates or edits what the administrator sets; the fetched
+// nodes are kept unless the URL changed.
+func (s *Store) SaveSource(ctx context.Context, src Source) (Source, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := src.Validate(); err != nil {
+		return Source{}, err
+	}
+	if src.ID == "" {
+		src.ID, src.Created = newID(), time.Now().Unix()
+		src.Nodes, src.Skipped, src.FetchedAt, src.Error = nil, 0, 0, ""
+	} else {
+		old, err := s.Source(ctx, src.ID)
+		if err != nil {
+			return Source{}, err
+		}
+		src.Created = old.Created
+		if old.URL == src.URL {
+			src.Nodes, src.Skipped, src.FetchedAt, src.Error = old.Nodes, old.Skipped, old.FetchedAt, old.Error
+		}
+	}
+	return src, s.putRow(ctx, "proxy_sources", src.ID, src.Created, src)
+}
+
+// UpdateSource applies fn to the stored source under the lock.
+func (s *Store) UpdateSource(ctx context.Context, id string, fn func(*Source)) (Source, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	src, err := s.Source(ctx, id)
+	if err != nil {
+		return Source{}, err
+	}
+	fn(&src)
+	return src, s.putRow(ctx, "proxy_sources", src.ID, src.Created, src)
+}
+
+func (s *Store) DeleteSource(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deleteRow(ctx, "proxy_sources", id, ErrSourceNotFound)
+}
+
+// State reads a proxy setting ("" when unset).
+func (s *Store) State(ctx context.Context, key string) (string, error) {
+	var v string
+	err := s.DB.QueryRowContext(ctx, "SELECT value FROM proxy_state WHERE key=?", key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
+}
+
+func (s *Store) SetState(ctx context.Context, key, value string) error {
+	_, err := s.DB.ExecContext(ctx, "INSERT INTO proxy_state VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value)
+	return err
 }

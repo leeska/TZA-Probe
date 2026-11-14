@@ -116,3 +116,11 @@ func TestDescribe(t *testing.T) {
 		t.Fatal("没有城市时用省级名称")
 	}
 }
+
+func TestSimplified(t *testing.T) {
+	for in, want := range map[string]string{"美茵河畔法蘭克福": "美茵河畔法兰克福", "洛杉磯": "洛杉矶", "紐約": "纽约", "倫敦": "伦敦", "臺北市": "台北市", "東京": "东京", "上海": "上海", "Frankfurt": "Frankfurt"} {
+		if got := Simplified(in); got != want {
+			t.Errorf("%s → %s, want %s", in, got, want)
+		}
+	}
+}

@@ -250,7 +250,7 @@ func (locator *Locator) Describe(ctx context.Context, ip string) (IPPlace, error
 	if !result.Success || result.IP != ip || len(result.CountryCode) != 2 {
 		return IPPlace{}, errors.New("未取得这个 IP 的定位")
 	}
-	place := IPPlace{IP: ip, CountryCode: strings.ToUpper(result.CountryCode), Country: result.Country, Province: result.Region, City: result.City, Latitude: result.Latitude, Longitude: result.Longitude, Timezone: result.Timezone.ID}
+	place := IPPlace{IP: ip, CountryCode: strings.ToUpper(result.CountryCode), Country: Simplified(result.Country), Province: Simplified(result.Region), City: Simplified(result.City), Latitude: result.Latitude, Longitude: result.Longitude, Timezone: result.Timezone.ID}
 	place.Region = RegionName(place)
 	_, place.Supported = Environments[place.CountryCode]
 	if locator.places == nil || len(locator.places) >= 512 {

@@ -48,3 +48,13 @@ func (q EventQuery) Normalize() EventQuery {
 	q.Before = max(q.Before, 0)
 	return q
 }
+
+// Kinds of module events (RecordEvent): their NodeID is "cert:<id>" or
+// "backup", not a node.
+const (
+	EventCert   = "cert"
+	EventBackup = "backup"
+)
+
+// IsNodeEvent reports whether e belongs to a node (and not to a module).
+func (e Event) IsNodeEvent() bool { return e.Kind != EventCert && e.Kind != EventBackup }

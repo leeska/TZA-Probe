@@ -116,6 +116,10 @@ type Module struct {
 	running string
 	// KeyParams overrides the scrypt cost (tests).
 	KeyParams *Params
+	// Events records alerts for the notification channels (nil: none).
+	Events interface {
+		RecordEvent(context.Context, model.Event) error
+	}
 }
 
 func (*Module) ID() string                      { return "backup" }
@@ -219,6 +223,7 @@ func (m *Module) Backup(ctx context.Context, trigger string) (Run, error) {
 	fail := func(err error) (Run, error) {
 		r.Status, r.Error, r.Finished = RunFailed, err.Error(), m.now().Unix()
 		m.saveRun(context.WithoutCancel(ctx), r)
+		m.alert(context.WithoutCancel(ctx))
 		slog.Warn("backup failed", "error", err)
 		return r, err
 	}
@@ -285,6 +290,7 @@ func (m *Module) Backup(ctx context.Context, trigger string) (Run, error) {
 		r.Status = RunPartial
 	}
 	m.saveRun(context.WithoutCancel(ctx), r)
+	m.alert(context.WithoutCancel(ctx))
 	slog.Info("backup", "status", r.Status, "size", r.Size, "targets", ok)
 	if r.Status == RunFailed {
 		return r, errors.New(r.Error)
@@ -340,6 +346,7 @@ func (m *Module) Run(ctx context.Context) {
 }
 
 func (m *Module) scheduled(ctx context.Context) {
+	m.alert(ctx)
 	cfg, err := m.Config(ctx)
 	if err != nil || !cfg.Enabled || cfg.Key == nil || len(cfg.Targets) == 0 {
 		return
@@ -353,6 +360,69 @@ func (m *Module) scheduled(ctx context.Context) {
 	// instead of running every five minutes.
 	m.setState(ctx, "last_scheduled", day)
 	m.Backup(ctx, "schedule")
+}
+
+// Problem is what is wrong with the backups now ("" when nothing, or when the
+// daily backup is off): the latest run failed or only partly stored, or no
+// backup succeeded for two days.
+func (m *Module) Problem(ctx context.Context) (string, error) {
+	cfg, err := m.Config(ctx)
+	if err != nil || !cfg.Enabled || cfg.Key == nil || len(cfg.Targets) == 0 {
+		return "", err
+	}
+	runs, err := m.Runs(ctx, 30)
+	if err != nil || len(runs) == 0 {
+		return "", err
+	}
+	latest := runs[0]
+	switch latest.Status {
+	case RunFailed:
+		return "最近一次备份失败：" + latest.Error, nil
+	case RunPartial:
+		for _, t := range latest.Targets {
+			if t.Error != "" {
+				return "最近一次备份有节点没存下：" + t.Error, nil
+			}
+		}
+	}
+	for _, r := range runs {
+		if r.Status == RunOK || r.Status == RunPartial {
+			if age := m.now().Sub(time.Unix(r.Finished, 0)); age > 48*time.Hour {
+				return fmt.Sprintf("已经 %d 天没有成功的备份", int(age.Hours()/24)), nil
+			}
+			return "", nil
+		}
+	}
+	return "", nil
+}
+
+// alert sends a firing event when the backups turn bad and a recovery when
+// they are good again (the state lives in backup_state "alerted").
+func (m *Module) alert(ctx context.Context) {
+	if m.Events == nil {
+		return
+	}
+	problem, err := m.Problem(ctx)
+	if err != nil {
+		return
+	}
+	was, _ := m.state(ctx, "alerted")
+	if (problem != "") == (was == "1") {
+		return
+	}
+	message := problem
+	if problem == "" {
+		message = "备份已恢复正常"
+	}
+	if err := m.Events.RecordEvent(ctx, model.Event{NodeID: "backup", NodeName: "主控备份", Kind: model.EventBackup, Message: message, Active: problem != ""}); err != nil {
+		slog.Warn("backup: alert not recorded", "error", err)
+		return
+	}
+	flag := "0"
+	if problem != "" {
+		flag = "1"
+	}
+	m.setState(ctx, "alerted", flag)
 }
 
 // View is the setup as the panel sees it.

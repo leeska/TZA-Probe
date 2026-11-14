@@ -9,6 +9,7 @@ require (
 	github.com/hashicorp/yamux v0.1.2
 	github.com/nxtrace/NTrace-core v1.7.4
 	github.com/shirou/gopsutil/v4 v4.26.4
+	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.59.0
 	modernc.org/sqlite v1.44.3
 )
@@ -52,7 +53,6 @@ require (
 	github.com/ysmood/gson v0.7.3 // indirect
 	github.com/ysmood/leakless v0.9.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260812173653-3d80eb74bc5b // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect

@@ -261,3 +261,16 @@ func TestTelegramMessageFitsLimit(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// 证书、备份这类模块事件没有节点：通知里写「对象」，不写节点 ID。
+func TestModuleEventMessage(t *testing.T) {
+	text := messageText(model.Event{ID: 7, NodeID: "cert:abc", NodeName: "证书 example.com", Kind: model.EventCert, Message: "签发失败：rate limited", Active: true, At: 1}, "", telegramLimit)
+	for _, want := range []string{"类型：证书", "对象：证书 example.com", "签发失败"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("缺 %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "节点 ID") || strings.Contains(text, "cert:abc") {
+		t.Errorf("模块事件不写节点 ID:\n%s", text)
+	}
+}

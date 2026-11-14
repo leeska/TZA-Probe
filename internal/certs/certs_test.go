@@ -130,6 +130,25 @@ func (f *fakeIssuer) Issue(_ context.Context, domains []string, dns certs.DNSPro
 	}, nil
 }
 
+// recorder keeps module events.
+type recorder struct {
+	mu     sync.Mutex
+	events []model.Event
+}
+
+func (r *recorder) RecordEvent(_ context.Context, e model.Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+	return nil
+}
+
+func (r *recorder) list() []model.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]model.Event{}, r.events...)
+}
+
 type noDNS struct{}
 
 func (noDNS) Zone(context.Context, string) (certs.Zone, error)               { return certs.Zone{}, nil }
@@ -159,6 +178,8 @@ func TestCertsOverChannel(t *testing.T) {
 	certsMod.Store, certsMod.Hub, certsMod.Nodes = &certs.Store{DB: store.DB()}, hub, store
 	certsMod.NewIssuer = func(string) certs.Issuer { return issuer }
 	certsMod.NewDNS = func(string) certs.DNSProvider { return noDNS{} }
+	events := &recorder{}
+	certsMod.Events = events
 	certsMod.Init()
 	admin := model.Secret()
 	server := httptest.NewServer((&httpapi.API{Store: store, AdminToken: admin, Assets: http.NotFoundHandler(), Modules: mods}).Handler())
@@ -255,6 +276,10 @@ func TestCertsOverChannel(t *testing.T) {
 	if issuer.calls != 2 {
 		t.Fatal("退避期间不能再试", issuer.calls)
 	}
+	// 告警：变坏时发一条触发通知（其中一个下发目标本来就失败了），状态不变不重复发。
+	if ev := events.list(); len(ev) != 1 || !ev[0].Active || ev[0].Kind != model.EventCert || !strings.HasPrefix(ev[0].NodeID, "cert:") {
+		t.Fatalf("告警事件：%+v", ev)
+	}
 	var cards []module.Card
 	cards, _ = certsMod.Overview(ctx)
 	if cards[0].Tone != "warn" || len(cards[0].Items) != 1 || !strings.Contains(cards[0].Items[0].Note, "签发失败") {
@@ -272,6 +297,12 @@ func TestCertsOverChannel(t *testing.T) {
 	}
 	if logged, _ := os.ReadFile(filepath.Join(dir, "reload.log")); string(logged) != "reloaded\nreloaded\n" {
 		t.Fatalf("新证书要再下发并重载：%q", logged)
+	}
+	// 下发不到的目标去掉后恢复：发一条解除通知。
+	call("PUT", "/admin/certs/"+got.ID, map[string]any{"domains": []string{"example.com", "*.example.com"}, "dns_id": dns.ID, "targets": []map[string]string{{"node_id": node, "dir": dir, "reload": "echo reloaded >> reload.log"}}}, nil)
+	certsMod.Process(ctx)
+	if ev := events.list(); len(ev) != 2 || ev[1].Active || !strings.Contains(ev[1].Message, "恢复") {
+		t.Fatalf("恢复事件：%+v", ev)
 	}
 
 	// 下载私钥要写审计日志。

@@ -26,6 +26,8 @@ type Module struct {
 	Hub     Opener
 	Nodes   NodeLister
 	Kernels *Cache
+	// SourceClient fetches external subscriptions (nil: the default client).
+	SourceClient *http.Client
 	// SyncWait is how long POST /admin/proxy/sync waits for the sync before
 	// answering 202 (tests shorten it); 0 is 20 seconds.
 	SyncWait time.Duration
@@ -78,7 +80,26 @@ func (m *Module) Routes(r module.Routes) {
 			return
 		}
 		syncing, syncError := m.Syncing()
-		httpjson.Write(w, 200, map[string]any{"inbounds": inbounds, "forwards": forwards, "nodes": m.NodeViews(), "kernels": kernels, "syncing": syncing, "sync_error": syncError})
+		templates, err := m.Store.Templates(req.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		sources, err := m.Store.Sources(req.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		views := []SourceView{}
+		for _, src := range sources {
+			views = append(views, sourceView(src))
+		}
+		def, _ := m.Store.State(req.Context(), "default_template")
+		if def == "" {
+			def = ModeRule
+		}
+		httpjson.Write(w, 200, map[string]any{"inbounds": inbounds, "forwards": forwards, "nodes": m.NodeViews(), "kernels": kernels, "syncing": syncing, "sync_error": syncError,
+			"templates": templates, "default_template": def, "sources": views})
 	})
 	save := func(w http.ResponseWriter, req *http.Request, id string, code int) {
 		var in Inbound
@@ -187,6 +208,95 @@ func (m *Module) Routes(r module.Routes) {
 		}
 		m.Kick()
 		w.WriteHeader(204)
+	})
+	// 规则模板
+	saveTemplate := func(w http.ResponseWriter, req *http.Request, id string, code int) {
+		var t Template
+		if !httpjson.Decode(w, req, &t) {
+			return
+		}
+		t.ID = id
+		saved, err := m.Store.SaveTemplate(req.Context(), t)
+		if errors.Is(err, ErrTemplateNotFound) {
+			httpjson.Error(w, 404, err.Error())
+			return
+		} else if err != nil {
+			httpjson.Error(w, 400, err.Error())
+			return
+		}
+		httpjson.Write(w, code, saved)
+	}
+	r.Admin("POST /api/v1/admin/proxy/templates", func(w http.ResponseWriter, req *http.Request) { saveTemplate(w, req, "", 201) })
+	r.Admin("PUT /api/v1/admin/proxy/templates/{id}", func(w http.ResponseWriter, req *http.Request) {
+		saveTemplate(w, req, req.PathValue("id"), 200)
+	})
+	r.Admin("DELETE /api/v1/admin/proxy/templates/{id}", func(w http.ResponseWriter, req *http.Request) {
+		if err := m.Store.DeleteTemplate(req.Context(), req.PathValue("id")); err != nil {
+			httpjson.Error(w, 404, err.Error())
+			return
+		}
+		w.WriteHeader(204)
+	})
+	r.Admin("PUT /api/v1/admin/proxy/settings", func(w http.ResponseWriter, req *http.Request) {
+		var in struct {
+			DefaultTemplate string `json:"default_template"`
+		}
+		if !httpjson.Decode(w, req, &in) {
+			return
+		}
+		if _, err := m.Store.Template(req.Context(), in.DefaultTemplate); err != nil {
+			httpjson.Error(w, 400, err.Error())
+			return
+		}
+		if err := m.Store.SetState(req.Context(), "default_template", in.DefaultTemplate); err != nil {
+			fail(w, err)
+			return
+		}
+		httpjson.Write(w, 200, in)
+	})
+	// 外部订阅：保存后立即拉一次。
+	saveSource := func(w http.ResponseWriter, req *http.Request, id string, code int) {
+		var src Source
+		if !httpjson.Decode(w, req, &src) {
+			return
+		}
+		src.ID = id
+		saved, err := m.Store.SaveSource(req.Context(), src)
+		if errors.Is(err, ErrSourceNotFound) {
+			httpjson.Error(w, 404, err.Error())
+			return
+		} else if err != nil {
+			httpjson.Error(w, 400, err.Error())
+			return
+		}
+		if saved.Enabled && saved.FetchedAt == 0 {
+			if refreshed, err := m.RefreshSource(req.Context(), saved.ID); err == nil {
+				saved = refreshed
+			}
+		}
+		httpjson.Write(w, code, sourceView(saved))
+	}
+	r.Admin("POST /api/v1/admin/proxy/sources", func(w http.ResponseWriter, req *http.Request) { saveSource(w, req, "", 201) })
+	r.Admin("PUT /api/v1/admin/proxy/sources/{id}", func(w http.ResponseWriter, req *http.Request) {
+		saveSource(w, req, req.PathValue("id"), 200)
+	})
+	r.Admin("DELETE /api/v1/admin/proxy/sources/{id}", func(w http.ResponseWriter, req *http.Request) {
+		if err := m.Store.DeleteSource(req.Context(), req.PathValue("id")); err != nil {
+			httpjson.Error(w, 404, err.Error())
+			return
+		}
+		w.WriteHeader(204)
+	})
+	r.Admin("POST /api/v1/admin/proxy/sources/{id}/refresh", func(w http.ResponseWriter, req *http.Request) {
+		src, err := m.RefreshSource(req.Context(), req.PathValue("id"))
+		if errors.Is(err, ErrSourceNotFound) {
+			httpjson.Error(w, 404, err.Error())
+			return
+		} else if err != nil {
+			fail(w, err)
+			return
+		}
+		httpjson.Write(w, 200, sourceView(src))
 	})
 	// 订阅：只凭使用者的 token，不需要登录（前台需要登录时也照常可用）。
 	r.Public("GET /api/v1/sub/{token}", m.subscription)
@@ -310,11 +420,26 @@ func (m *Module) subscription(w http.ResponseWriter, req *http.Request) {
 	}
 	member := MemberOf(u)
 	format := FormatFor(req.URL.Query().Get("format"), req.UserAgent())
-	mode := ModeRule
-	if req.URL.Query().Get("mode") == ModeGlobal {
-		mode = ModeGlobal
+	// 规则：?template= 指定的模板，其次是默认模板，再其次是内置的国内直连；旧的 ?mode=global
+	// 等于全局代理模板。
+	want := req.URL.Query().Get("template")
+	if want == "" && req.URL.Query().Get("mode") == ModeGlobal {
+		want = ModeGlobal
 	}
-	body, contentType, err := Subscription(format, mode, Entries(inbounds, member), member)
+	if want == "" {
+		want, _ = m.Store.State(req.Context(), "default_template")
+	}
+	opt := Options{}
+	if t, err := m.Store.Template(req.Context(), want); err == nil {
+		opt.Rules, _ = ParseRules(t.Rules)
+	}
+	sources, err := m.Store.Sources(req.Context())
+	if err != nil {
+		http.Error(w, "读取失败", 500)
+		return
+	}
+	opt.Extra = Extra(sources, u.ID)
+	body, contentType, err := Subscription(format, opt, Entries(inbounds, member), member)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -331,4 +456,27 @@ func (m *Module) subscription(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(title+ext))
 	w.Header().Set("Content-Type", contentType)
 	w.Write(body)
+}
+
+// SourceView is a source as the panel lists it: the node names and types,
+// not their credentials.
+type SourceView struct {
+	Source
+	NodeCount int      `json:"node_count"`
+	Sample    []string `json:"sample"`
+	Types     []string `json:"types"`
+}
+
+func sourceView(s Source) SourceView {
+	v := SourceView{Source: s, NodeCount: len(s.Nodes), Sample: []string{}, Types: []string{}}
+	for i, n := range s.Nodes {
+		if i < 8 {
+			v.Sample = append(v.Sample, n.Name)
+		}
+		if !slices.Contains(v.Types, n.Type) {
+			v.Types = append(v.Types, n.Type)
+		}
+	}
+	v.Nodes = nil
+	return v
 }

@@ -113,6 +113,8 @@ export const statusName = {
   failed: "检测失败",
 };
 export const kindName = {
+  cert: "证书",
+  backup: "备份",
   offline: "离线提醒",
   renewal: "续费提醒",
   traffic: "流量警告",

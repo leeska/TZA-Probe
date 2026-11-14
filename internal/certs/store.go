@@ -85,7 +85,10 @@ type Cert struct {
 	NextAttempt int64 `json:"next_attempt,omitempty"`
 	Failures    int   `json:"failures,omitempty"`
 	// Force asks for a new certificate on the next round (续期).
-	Force   bool  `json:"force,omitempty"`
+	Force bool `json:"force,omitempty"`
+	// Alerted is whether a firing alert was sent for this certificate (the
+	// recovery goes out when the problem clears).
+	Alerted bool  `json:"alerted,omitempty"`
 	Created int64 `json:"created_at"`
 }
 

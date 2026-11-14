@@ -197,6 +197,45 @@ func TestProxyOverChannel(t *testing.T) {
 	if res, _ = sub("", "SFA/1.12"); res.Header.Get("Content-Type") != "application/json; charset=utf-8" {
 		t.Fatal("sing-box 客户端要拿到 JSON", res.Header)
 	}
+	// 规则模板：新建后设为默认，订阅里用它的规则；?template= 可以临时换成内置的全局代理。
+	var tpl proxy.Template
+	if code := call("POST", "/admin/proxy/templates", map[string]any{"name": "AI 走代理", "rules": "DOMAIN-SUFFIX,openai.com,代理\nGEOSITE,cn,DIRECT\nMATCH,DIRECT"}, &tpl); code != 201 {
+		t.Fatal(code)
+	}
+	if code := call("POST", "/admin/proxy/templates", map[string]any{"name": "坏的", "rules": "FOO,bar,DIRECT"}, nil); code != 400 {
+		t.Fatal("规则有错要拒绝", code)
+	}
+	if code := call("PUT", "/admin/proxy/templates/rule", map[string]any{"name": "改内置", "rules": "MATCH,代理"}, nil); code != 400 {
+		t.Fatal("内置模板不能改", code)
+	}
+	call("PUT", "/admin/proxy/settings", map[string]any{"default_template": tpl.ID}, nil)
+	if _, body = sub("?format=clash", ""); !strings.Contains(body, `- "DOMAIN-SUFFIX,openai.com,节点选择"`) || !strings.Contains(body, `- "MATCH,DIRECT"`) {
+		t.Fatalf("默认模板：%s", body)
+	}
+	if _, body = sub("?format=clash&template=global", ""); strings.Contains(body, "openai") || !strings.Contains(body, `- "MATCH,节点选择"`) {
+		t.Fatalf("指定模板：%s", body)
+	}
+	// 外部订阅：保存时立即拉取，节点带前缀并入订阅；只给指定的使用者。
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(base64.StdEncoding.EncodeToString([]byte("trojan://pw@x.example.com:443?sni=x.example.com#X1\ntuic://a@b:1#no"))))
+	}))
+	defer upstream.Close()
+	var src struct {
+		ID        string `json:"id"`
+		NodeCount int    `json:"node_count"`
+		Skipped   int    `json:"skipped"`
+		Error     string `json:"error"`
+	}
+	if code := call("POST", "/admin/proxy/sources", map[string]any{"name": "机场", "url": upstream.URL, "enabled": true, "prefix": "外"}, &src); code != 201 || src.NodeCount != 1 || src.Skipped != 1 || src.Error != "" {
+		t.Fatalf("外部订阅：%d %+v", code, src)
+	}
+	if _, body = sub("?format=clash", ""); !strings.Contains(body, `"name":"外 X1"`) {
+		t.Fatalf("合并外部节点：%s", body)
+	}
+	call("PUT", "/admin/proxy/sources/"+src.ID, map[string]any{"name": "机场", "url": upstream.URL, "enabled": true, "prefix": "外", "user_ids": []string{b.ID}}, nil)
+	if _, body = sub("?format=clash", ""); strings.Contains(body, "外 X1") {
+		t.Fatal("没给这位使用者的外部节点不能出现")
+	}
 	// 用完额度的人在下一轮被移出配置；订阅照常能取，客户端据此显示用量。
 	call("PUT", "/admin/users/"+a.ID, map[string]any{"name": "甲", "enabled": true, "traffic_limit": 4000}, nil)
 	call("POST", "/admin/proxy/sync", nil, &synced)

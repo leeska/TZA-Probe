@@ -46,7 +46,7 @@ func TestEntries(t *testing.T) {
 
 func TestSubscriptionFormats(t *testing.T) {
 	entries, m := subscriptionFixture()
-	body, _, err := Subscription(FormatBase64, ModeRule, entries, m)
+	body, _, err := Subscription(FormatBase64, Options{}, entries, m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,17 +55,17 @@ func TestSubscriptionFormats(t *testing.T) {
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "vless://"+m.UUID+"@jp.example.com:443?") || !strings.HasPrefix(lines[1], "ss://"+SSMethod+":") || !strings.Contains(lines[1], "@[2001:db8::1]:8443#") {
 		t.Fatalf("%q", lines)
 	}
-	body, _, _ = Subscription(FormatClash, ModeRule, entries, m)
-	for _, want := range []string{`name: "日本 2"`, "type: ss", "cipher: " + SSMethod, `password: "MTIzNDU2Nzg5MDEyMzQ1Ng==:` + m.Key + `"`, "reality-opts:", "GEOIP,CN,DIRECT", `MATCH,"节点选择"`} {
+	body, _, _ = Subscription(FormatClash, Options{}, entries, m)
+	for _, want := range []string{`name: "日本 2"`, "type: ss", "cipher: " + SSMethod, `password: "MTIzNDU2Nzg5MDEyMzQ1Ng==:` + m.Key + `"`, "reality-opts:", "GEOIP,CN,DIRECT", `- "MATCH,节点选择"`} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("Clash 缺 %q:\n%s", want, body)
 		}
 	}
-	body, _, _ = Subscription(FormatClash, ModeGlobal, entries, m)
+	body, _, _ = Subscription(FormatClash, Options{Rules: mustRules(t, BuiltInTemplates[1].Rules)}, entries, m)
 	if strings.Contains(string(body), "GEOIP,CN") {
 		t.Error("全局模式不分流")
 	}
-	body, _, _ = Subscription(FormatSingBox, ModeRule, entries, m)
+	body, _, _ = Subscription(FormatSingBox, Options{}, entries, m)
 	var doc struct {
 		Outbounds []map[string]any `json:"outbounds"`
 	}
@@ -74,12 +74,21 @@ func TestSubscriptionFormats(t *testing.T) {
 	}
 	// xray 的 REALITY 入站 sing-box 客户端连不上，不放进 sing-box 订阅。
 	entries[0].Inbound.Kernel = KernelXray
-	body, _, _ = Subscription(FormatSingBox, ModeRule, entries, m)
+	body, _, _ = Subscription(FormatSingBox, Options{}, entries, m)
 	if strings.Contains(string(body), m.UUID) || !strings.Contains(string(body), `"日本 2"`) {
 		t.Fatalf("%s", body)
 	}
 	// 没有能用的入站时也要是能加载的配置。
-	if body, _, _ = Subscription(FormatClash, ModeRule, nil, m); !strings.Contains(string(body), "proxies: [DIRECT]") {
+	if body, _, _ = Subscription(FormatClash, Options{}, nil, m); !strings.Contains(string(body), "proxies: [DIRECT]") {
 		t.Fatalf("%s", body)
 	}
+}
+
+func mustRules(t *testing.T, text string) []Rule {
+	t.Helper()
+	r, err := ParseRules(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }

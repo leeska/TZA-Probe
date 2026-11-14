@@ -2,6 +2,7 @@
 // 主控下载固定版本的内核并校验，经管理通道下发到节点，用 systemd 托管；入站里的使用者来自「使用者」页，
 // 停用、过期或流量用完的使用者在下一次同步时从配置里去掉。
 import { api, send, esc, toast, modal, guard } from "./api.js";
+import { subscriptionPanels, wireSubscriptionPanels } from "./proxy-subscriptions.js";
 import { content, field, check, confirmAction, moreMenu, wireMoreMenus, render, state } from "./admin-state.js";
 
 const PROTOCOLS = { "vless-reality": "VLESS Reality", ss2022: "Shadowsocks 2022" };
@@ -24,7 +25,8 @@ export async function proxyPage(nodesReady) {
   const nodeName = (id) => state.nodes.find((n) => n.id === id)?.name || id;
   const rows = data.inbounds.map((i) => `<tr data-inbound="${esc(i.id)}"><td data-label="入站">${esc(i.name)}<small>${esc(nodeName(i.node_id))}</small></td><td data-label="协议">${PROTOCOLS[i.protocol] || esc(i.protocol)}<small>${esc(i.kernel)}</small></td><td data-label="端口">${i.port}<small>${esc(i.address || "未填连接地址")}</small></td><td data-label="使用者">${i.user_ids.length ? `${i.user_ids.length} 位` : "全部"}</td><td data-label="状态">${statusCell(i, views.get(i.node_id))}</td><td data-label="操作"><div class="row-actions"><button data-edit-inbound="${esc(i.id)}">编辑</button><button data-links-inbound="${esc(i.id)}">链接</button>${moreMenu(`<button data-toggle-inbound="${esc(i.id)}">${i.enabled ? "停用" : "启用"}</button><button class="menu-danger" data-delete-inbound="${esc(i.id)}">删除</button>`)}</div></td></tr>`).join("");
   const kernels = data.kernels.map((k) => `${esc(k.name)} ${esc(k.version)}`).join(" · ");
-  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PROXY</div><h1>代理<span>${data.inbounds.length}</span></h1><p>在开启了管理通道的节点上开入站，分给「使用者」用。内核：${kernels}（主控下载并校验后分发，节点不用访问 GitHub）。</p></div><div class="heading-actions"><button id="sync-proxy">↻ 立即同步</button><button id="add-inbound" class="primary">＋ 添加入站</button></div></section><section data-part="panel" class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th>入站</th><th>协议</th><th>端口</th><th>使用者</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-cell">还没有入站。节点要先用 --manage 开启管理通道。</td></tr>'}</tbody></table></div></section>`;
+  content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PROXY</div><h1>代理<span>${data.inbounds.length}</span></h1><p>在开启了管理通道的节点上开入站，分给「使用者」用。内核：${kernels}（主控下载并校验后分发，节点不用访问 GitHub）。</p></div><div class="heading-actions"><button id="sync-proxy">↻ 立即同步</button><button id="add-inbound" class="primary">＋ 添加入站</button></div></section><section data-part="panel" class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th>入站</th><th>协议</th><th>端口</th><th>使用者</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-cell">还没有入站。节点要先用 --manage 开启管理通道。</td></tr>'}</tbody></table></div></section>${subscriptionPanels(data, people)}`;
+  wireSubscriptionPanels(content(), data, people);
   const byId = (id) => data.inbounds.find((i) => i.id === id);
   wireMoreMenus(content());
   content().querySelector("#add-inbound").onclick = () => inboundForm(null, data, people);

@@ -23,6 +23,24 @@ import (
 	"github.com/leeska/TZA-Probe/internal/storage"
 )
 
+type recorder struct {
+	mu     sync.Mutex
+	events []model.Event
+}
+
+func (r *recorder) RecordEvent(_ context.Context, e model.Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+	return nil
+}
+
+func (r *recorder) list() []model.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]model.Event{}, r.events...)
+}
+
 // 备份：在线快照数据库与数据目录，用口令加密后经管理通道写到节点，只留最近几份；没开备份
 // 能力的节点记为失败（部分成功）；拿备份文件和口令能恢复出一个可用的数据目录。
 func TestBackupToNodeAndRestore(t *testing.T) {
@@ -54,6 +72,8 @@ func TestBackupToNodeAndRestore(t *testing.T) {
 	remoteMod.Hub, remoteMod.Nodes = hub, store
 	backupMod.DB, backupMod.DataDir, backupMod.Hub, backupMod.Nodes = store.DB(), dataDir, hub, store
 	backupMod.KeyParams = &backup.Params{LogN: 10, R: 8, P: 1}
+	events := &recorder{}
+	backupMod.Events = events
 	backupMod.Now = func() time.Time { clock.Lock(); defer clock.Unlock(); now = now.Add(time.Minute); return now }
 	admin := model.Secret()
 	server := httptest.NewServer((&httpapi.API{Store: store, AdminToken: admin, Assets: http.NotFoundHandler(), Modules: mods}).Handler())
@@ -118,6 +138,10 @@ func TestBackupToNodeAndRestore(t *testing.T) {
 			t.Fatalf("第 %d 次：%v %+v", i, err, run)
 		}
 	}
+	// 告警：有节点没存下 → 一条触发通知，连续几次不重复。
+	if ev := events.list(); len(ev) != 1 || !ev[0].Active || ev[0].Kind != model.EventBackup || !strings.Contains(ev[0].Message, "没存下") {
+		t.Fatalf("备份告警：%+v", ev)
+	}
 	files, _ := filepath.Glob(filepath.Join(vault, "*.tzabk"))
 	if len(files) != 2 {
 		t.Fatalf("只保留 2 份：%v", files)
@@ -176,8 +200,16 @@ func TestBackupToNodeAndRestore(t *testing.T) {
 	if cards[0].Tone != "warn" || !strings.Contains(cards[0].Note, "部分节点") {
 		t.Fatalf("部分成功：%+v", cards)
 	}
+	// 去掉连不上的节点后再备份一次：恢复，发一条解除通知。
+	call("PUT", "/admin/backups", map[string]any{"enabled": true, "hour": 3, "keep": 2, "targets": []map[string]string{{"node_id": node, "dir": vault}}}, nil)
+	if run, err := backupMod.Backup(ctx, "manual"); err != nil || run.Status != backup.RunOK {
+		t.Fatal(run, err)
+	}
+	if ev := events.list(); len(ev) != 2 || ev[1].Active {
+		t.Fatalf("备份恢复：%+v", ev)
+	}
 	call("GET", "/admin/backups", nil, &view)
-	if len(view.Runs) != 3 || view.Runs[0].Size == 0 || view.Runs[0].SHA256 == "" {
+	if len(view.Runs) != 4 || view.Runs[0].Size == 0 || view.Runs[0].SHA256 == "" {
 		t.Fatalf("记录：%+v", view.Runs)
 	}
 }

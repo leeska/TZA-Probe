@@ -43,10 +43,14 @@ type Module struct {
 	// replace them); nil are Let's Encrypt and Cloudflare.
 	NewIssuer func(directory string) Issuer
 	NewDNS    func(token string) DNSProvider
-	kick      chan struct{}
-	run       sync.Mutex
-	mu        sync.Mutex
-	working   string // the certificate being issued now
+	// Events records alerts for the notification channels (nil: none).
+	Events interface {
+		RecordEvent(context.Context, model.Event) error
+	}
+	kick    chan struct{}
+	run     sync.Mutex
+	mu      sync.Mutex
+	working string // the certificate being issued now
 }
 
 func (*Module) ID() string                      { return "certs" }
@@ -128,8 +132,69 @@ func (m *Module) Process(ctx context.Context) error {
 		if c, err = m.Store.Cert(ctx, c.ID); err == nil && c.CertPEM != "" {
 			m.deploy(ctx, c)
 		}
+		if c, err = m.Store.Cert(ctx, c.ID); err == nil {
+			m.alert(ctx, c)
+		}
 	}
 	return nil
+}
+
+// Problem is what is wrong with c now ("" when nothing): a failed issuance,
+// an expired or soon expiring certificate, a failed deployment.
+func (m *Module) Problem(ctx context.Context, c Cert, now time.Time) string {
+	left := time.Unix(c.NotAfter, 0).Sub(now)
+	switch {
+	case c.Status == StatusError:
+		return "签发失败：" + c.Error
+	case c.CertPEM != "" && left <= 0:
+		return "证书已过期，自动续期没有成功"
+	case c.CertPEM != "" && left < 14*24*time.Hour:
+		return fmt.Sprintf("证书 %d 天后到期，自动续期还没有成功", int(left.Hours()/24))
+	}
+	for _, t := range c.Targets {
+		if t.Error != "" {
+			return "下发到节点 " + m.nodeName(ctx, t.NodeID) + " 失败：" + t.Error
+		}
+	}
+	return ""
+}
+
+func (m *Module) nodeName(ctx context.Context, id string) string {
+	if m.Nodes != nil {
+		if nodes, err := m.Nodes.Nodes(ctx, time.Now()); err == nil {
+			for _, n := range nodes {
+				if n.ID == id {
+					return n.Name
+				}
+			}
+		}
+	}
+	return id
+}
+
+// alert sends a firing event when c turns bad and a recovery when it is
+// good again; nothing while the state holds.
+func (m *Module) alert(ctx context.Context, c Cert) {
+	if m.Events == nil {
+		return
+	}
+	problem := m.Problem(ctx, c, time.Now())
+	if (problem != "") == c.Alerted {
+		return
+	}
+	message := problem
+	if problem == "" {
+		message = "已恢复正常"
+		if c.NotAfter > 0 {
+			message += "，证书有效期到 " + time.Unix(c.NotAfter, 0).Local().Format("2006-01-02")
+		}
+	}
+	e := model.Event{NodeID: "cert:" + c.ID, NodeName: "证书 " + strings.Join(c.Domains, "、"), Kind: model.EventCert, Message: message, Active: problem != ""}
+	if err := m.Events.RecordEvent(ctx, e); err != nil {
+		slog.Warn("certs: alert not recorded", "error", err)
+		return
+	}
+	m.Store.Update(ctx, c.ID, func(c *Cert) { c.Alerted = problem != "" })
 }
 
 func (m *Module) issue(ctx context.Context, c Cert) {

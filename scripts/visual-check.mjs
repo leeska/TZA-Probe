@@ -73,7 +73,21 @@ async function shot(page, name, fullPage = true) {
   await page.fill("#login [name=password]", password);
   await page.click("#login button");
   await page.waitForSelector(".admin-layout");
+  // 登录后的首页是总览；节点列表在「节点管理」。
+  await page.waitForSelector(".overview-cards");
+  await shot(page, "admin-overview");
+  await page.click("[data-tab=nodes]");
+  await page.waitForSelector("[data-edit]");
   await shot(page, "admin-nodes");
+  // 后来加的模块页：只打开截图，不改任何东西。
+  for (const tab of ["users", "proxy", "forward", "docker", "certs", "backup"]) {
+    await page.click(`[data-tab=${tab}]`);
+    await page.waitForSelector(".page-heading");
+    await page.waitForTimeout(500);
+    await shot(page, `admin-${tab}`);
+  }
+  await page.click("[data-tab=nodes]");
+  await page.waitForSelector("[data-edit]");
   // 弹窗：只打开并截图，随后按 Esc 关闭，不提交任何表单。
   const dialog = async (opener, name) => {
     await page.click(opener);
@@ -142,7 +156,10 @@ async function shot(page, name, fullPage = true) {
   await page.fill("#login [name=username]", username);
   await page.fill("#login [name=password]", password);
   await page.click("#login button");
-  await page.waitForSelector(".admin-layout");
+  await page.waitForSelector(".overview-cards");
+  await shot(page, "admin-overview-dark");
+  await page.click("[data-tab=nodes]");
+  await page.waitForSelector("[data-edit]");
   await shot(page, "admin-nodes-dark");
   await page.click(".node-card, [data-inspect]");
   await page.waitForTimeout(1000);

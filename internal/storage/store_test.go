@@ -616,3 +616,19 @@ func TestCreatedNodeGoesLast(t *testing.T) {
 		}
 	}
 }
+
+// 模块事件（证书、备份）不属于节点，照样进待发送队列和事件记录。
+func TestRecordModuleEvent(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	if err := s.RecordEvent(ctx, model.Event{NodeID: "backup", NodeName: "主控备份", Kind: model.EventBackup, Message: "最近一次备份失败", Active: true}); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.PendingEvents(ctx, time.Now())
+	if err != nil || len(pending) != 1 || pending[0].Kind != model.EventBackup || pending[0].IsNodeEvent() {
+		t.Fatalf("%+v %v", pending, err)
+	}
+	if list, _ := s.Events(ctx, model.EventQuery{Kind: model.EventBackup}); len(list) != 1 {
+		t.Fatal(list)
+	}
+}
