@@ -51,7 +51,7 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
   - `Router`：通过 `module.Routes` 挂路由，有 `Public`、`Admin`、`Agent` 三种；鉴权和同源检查用的是 httpapi 自己那一套
   - `Overviewer`：给后台总览提供卡片（`module.Card`：标题、结论、语气、最多 6 条待处理项、点开去哪一页）。总览页 `GET /admin/overview` 先放核心的四张（节点、到期与流量、网络探测、告警），再按模块顺序放各模块的；某个模块读数出错只把它那张卡标成「读取失败」，不影响整页
   
-  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）、`proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站与转发，见下面「代理」一节）、`docker`（节点上的容器、镜像与 Compose 项目，见「Docker」一节）和 `certs`（Let's Encrypt 证书的签发、续期与下发，见「证书」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
+  `cmd/server` 的 `shippedModules()` 列出本二进制带的全部模块，顺序就是迁移的执行顺序。现有四个模块：`regiondrift`（地区偏移检测）、`remote`（远程管理：管理通道、命令、终端）和 `users`（使用者：分给朋友的账号，流量额度按月重置、到期时间、订阅 token 与只读用量页 `/u/{token}`）、`proxy`（代理：节点上的 VLESS Reality / Shadowsocks 2022 入站与转发，见下面「代理」一节）、`docker`（节点上的容器、镜像与 Compose 项目，见「Docker」一节）、`certs`（Let's Encrypt 证书的签发、续期与下发，见「证书」一节）和 `backup`（加密备份到节点，见「备份」一节）。模块用 `internal/httpjson` 读写 JSON、把错误翻成状态码，和 httpapi 用的是同一套规则。第一个独立出来的模块是 `internal/regiondrift`（地区偏移检测），检测逻辑本身仍在 `internal/ipguard` 和 `internal/browserworker`。
 - **任务类型**：`model.RegisterTaskKind` 登记每种 `Task.Type`。登记的内容包括：
   - 定义从哪个字段读、怎么校验、怎么展开成探测
   - `FixedBindings`：节点带角色，只能编辑任务来改绑定，不能批量绑定或解绑
@@ -103,6 +103,16 @@ Server 的发布产物包含网页，Agent 单独编译，只链接其依赖图�
 - **续期**：`Module.Run` 每小时和每次 Kick 跑一轮 `Process`。有效期剩不到三分之一（最多提前 30 天，`Cert.RenewAt`）、改了域名或点了「立即续期」时重签；失败保留旧证书，状态记 error，按 1、3、6、12、24 小时退避（Let's Encrypt 对失败验证有次数限制）。
 - **下发**：每个目标是 节点 + 目录 + 重载命令。目标记着已下发的序列号，和当前证书不同就经管理通道发 `certs.deploy`：Agent 校验目录（规范的绝对路径，不能是 /etc、/usr 这类系统目录本身，不能在 /proc、/sys、/dev 下），先原子写 `privkey.pem`（0600）再写 `fullchain.pem`（0644），然后在该目录下用 `/bin/sh -c` 跑重载命令（1 分钟超时）。重载失败时文件已写入，记错误但不反复重试。
 - **API 里不出私钥**：列表不带 PEM；私钥只能从 `download?part=key` 下载，写审计日志。Cloudflare 令牌只回末四位，保存时先调 `/user/tokens/verify` 校验。
+
+### 备份
+
+`internal/backup` 在主控上（迁移 backup/1：表 `backup_state`、`backup_runs`），`internal/agent/backup.go` 在节点上，能力名 `backup`。
+
+- **快照**：`backup.Snapshot` 用 `VACUUM INTO` 在线拍一份一致的数据库副本（不停服），再把数据目录里其余文件打进 tar.gz。不备份的：正在用的库文件本身（-wal、-shm）、`kernels/`（代理内核，主控需要时重新下载）、`admin-sessions`、`*.migrated` 和模块自己的 `.backup-*` 临时文件。
+- **加密**：口令经 scrypt（N=2^15、r=8、p=1，盐 16 字节）派生 AES-256 密钥。主控只存密钥和盐，不存口令。文件格式是 `TZABK1` 头（参数、盐、8 字节 nonce 前缀）加上若干块：每块 4 字节长度（最高位标记最后一块），后面是最多 64 KiB 明文的 AES-GCM 密文，nonce 为前缀加块序号，「是否最后一块」也写进附加数据，所以截断或改动过的文件都解不开。解密时先解第一块，口令错立刻报错。
+- **写到节点**：加密结果先写到数据目录的临时文件，算出大小和 SHA-256，再经管理通道发 `backup.write`（请求行后跟原始字节）。Agent 校验目录（和证书相同的规则）、长度和校验和，原子落盘（0600），按文件名 `tza-probe-YYYYMMDD-HHMMSS.tzabk` 只保留最新 Keep 份，目录里的其他文件不动。
+- **计划**：`Module.Run` 每 5 分钟看一次，每天过了设定的 UTC 小时就跑一次；当天先记下再跑，失败等第二天或手动「立即备份」。保留最近 90 条运行记录。
+- **恢复**：`tza-server backup-restore --in 文件 --data 新目录`。口令取自 `TZA_BACKUP_PASSPHRASE`，或在终端不回显地输入。只解到不存在或空的目录，解完读到最后一块再确认完整。
 
 ### 审计日志与两步验证
 

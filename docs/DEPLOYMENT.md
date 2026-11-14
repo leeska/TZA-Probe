@@ -84,7 +84,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bin/linux-amd64/tza-
 
 ARM 主机将两条命令的 `GOARCH` 和输出目录改为 arm64。将产物复制到目标主机；以下安装步骤假设二进制位于目标主机的 `bin/`。
 
-要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.9.1-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
+要让 Server 提供一键安装，先把两种架构的 Agent 放到 `internal/agentdist/bin/` 再编译 Server（见该目录的 README）；`scripts/pipeline.sh build` 的发行包和 Docker 镜像已包含。版本号通过 `-ldflags "-X github.com/leeska/TZA-Probe/internal/model.Version=v1.0.0"` 注入，不注入时为当前源码声明的开发版本（目前 `2.10.0-dev`）。发布 GitHub Release 用 `scripts/release.sh`（见 README）。
 
 ## 2. 安装 Server
 
@@ -226,6 +226,23 @@ curl -fsSL https://probe.example.com/install.sh | sh -s -- --endpoint https://pr
 - **续期**：有效期剩不到三分之一时（90 天的证书即剩 30 天时）自动续期，续期后自动重新下发。失败时旧证书继续可用，隔 1 到 24 小时再试，总览卡片会提示。
 - **测试环境**：页面底部可切到 Let's Encrypt 测试环境，不受签发次数限制，但证书不被浏览器信任，用来试流程。
 - **下载**：每张证书可以下载证书链和私钥，下载私钥会写审计日志。
+
+## 备份
+
+后台「备份」每天把主控的数据用口令加密后写到你选的节点，存放的节点读不到内容。
+
+- **设置**：设一个至少 12 个字符的备份口令，选存放的节点（要用 `--manage` 接入，建议和主控不在同一机房）、目录（默认 `/var/backups/tza-probe`）、每天的时间和保留份数，勾上「每天自动备份」。也可以随时点「立即备份」。
+- **口令**：主控只保存由口令派生的密钥，不保存口令本身。**口令丢了，备份就打不开**，请另外记好。换口令后，之前的备份仍然只能用旧口令打开。
+- **内容**：数据库在线快照（不用停服），加上账号、管理密钥、两步验证、Agent 签名相关文件、主题、插件和站点 logo。代理内核缓存不在里面，恢复后主控会重新下载。
+- **恢复**：把 `.tzabk` 文件拷到装好 tza-server 的机器上，然后：
+
+```sh
+sudo tza-server backup-restore --in tza-probe-20261114-030000.tzabk --data /var/lib/tza-probe-restored
+sudo chown -R tza-probe:tza-probe /var/lib/tza-probe-restored
+```
+
+  输入口令后数据解到新目录；停掉服务，把它换成数据目录（或在服务里用 `--data` 指向它），再启动。
+- **总览**：卡片显示最近一次成功的时间；超过 2 天没有成功备份、或者最近一次失败时会提示。
 
 ## 主题与插件
 

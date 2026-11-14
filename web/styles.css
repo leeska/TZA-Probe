@@ -5926,6 +5926,8 @@ dialog.region-dialog .region-intro { margin: 0 0 var(--space-4); }
 .cert-target small { display: block; }
 .cert-target-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(140px, 1.4fr) minmax(160px, 1.6fr) auto; gap: var(--space-2); margin-bottom: var(--space-2); }
 @media (max-width: 720px) { .cert-target-row { grid-template-columns: 1fr; } }
+.backup-target-row { grid-template-columns: minmax(140px, 1fr) minmax(180px, 2fr) auto; }
+@media (max-width: 720px) { .backup-target-row { grid-template-columns: 1fr; } }
 .cert-staging { margin-top: var(--space-4); }
 .inline-select { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--muted); }
 .inline-select select { min-width: 180px; }

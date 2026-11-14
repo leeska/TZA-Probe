@@ -120,7 +120,7 @@ function accountView(acct, mcp) {
 }
 
 function dataView() {
-  return `<section data-part="panel" class="panel webhook-panel"><div><h3>数据备份</h3><p>下载整个数据库的一份快照：节点、任务、历史与设置都在里面。不用停服，面板和 Agent 上报照常。</p><small>升级到会改数据库结构的版本之前先下载一份。恢复时先停服，把它放进数据目录、命名为 tza-probe.db（替换原文件），并删掉同目录的 tza-probe.db-wal 与 tza-probe.db-shm，再启动。站点 logo（branding/）、主题包（themes/）与插件（plugins/）是数据目录里的文件，不在这份快照里，要一起备份就连同数据目录整个拷走。</small></div><div class="webhook-actions"><a id="download-backup" class="button primary" href="/api/v1/admin/backup" download>下载备份</a></div></section>`;
+  return `<section data-part="panel" class="panel webhook-panel"><div><h3>数据备份</h3><p>下载整个数据库的一份快照：节点、任务、历史与设置都在里面。不用停服，面板和 Agent 上报照常。</p><small>要每天自动、加密地把整个数据目录存到别的节点，用左侧的「备份」页。升级到会改数据库结构的版本之前先下载一份。恢复时先停服，把它放进数据目录、命名为 tza-probe.db（替换原文件），并删掉同目录的 tza-probe.db-wal 与 tza-probe.db-shm，再启动。站点 logo（branding/）、主题包（themes/）与插件（plugins/）是数据目录里的文件，不在这份快照里，要一起备份就连同数据目录整个拷走。</small></div><div class="webhook-actions"><a id="download-backup" class="button primary" href="/api/v1/admin/backup" download>下载备份</a></div></section>`;
 }
 
 function wireLook(settings) {

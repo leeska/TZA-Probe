@@ -84,6 +84,8 @@ func managementCapabilities() map[string]map[string]channel.Handler {
 		channel.CapabilityDocker: agent.NewDockerHost().Handlers(),
 		// 证书：主控签发的证书写到指定目录，再执行重载命令。
 		channel.CapabilityCerts: agent.CertHandlers(),
+		// 备份：主控加密好的备份写到指定目录，只保留最近几份。
+		channel.CapabilityBackup: agent.BackupHandlers(),
 	}
 }
 
