@@ -160,6 +160,7 @@ button.danger,
 .panel-head button:not(.quiet),
 .webhook-actions button,
 .catalog-toolbar button,
+.form-section > button,
 details > button {
   cursor: pointer;
   border: 1px solid var(--line);
@@ -342,9 +343,14 @@ input[type="checkbox"] {
 
 /* 内置品牌字：CONTROL CENTER 比原来的 PROBE 长，字距收一点，保持一行。 */
 .brand > span.brand-default {
-  font-size: var(--text-xs);
-  letter-spacing: 0.8px;
+  font-size: var(--text-sm);
+  letter-spacing: 1.6px;
+  line-height: 1.15;
   white-space: nowrap;
+}
+
+.brand-default > span {
+  display: block;
 }
 
 .brand > span.brand-name {
@@ -1555,10 +1561,33 @@ html .segmented.card-family button:only-child:hover {
   margin: var(--space-8) 0 var(--space-2-5);
 }
 
+/* 入口按组排，组名是小标题；矮屏时导航区自己滚动，底部的公开面板 / 主题 / 退出一直看得到。 */
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
+  gap: 2px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: var(--space-5);
+  scrollbar-width: thin;
+}
+
+.nav-caption {
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  font-weight: 700;
+  color: var(--muted);
+  opacity: 0.75;
+  padding: var(--space-3-5) var(--space-3-5) var(--space-1);
+}
+
+.nav-caption:first-child {
+  padding-top: 0;
+}
+
+.nav-toggle {
+  display: none;
 }
 
 .sidebar nav button {
@@ -1572,7 +1601,7 @@ html .segmented.card-family button:only-child:hover {
   color: var(--muted);
   font-weight: 500;
   border-radius: calc(14px * var(--radius-scale));
-  padding: var(--space-2-5) var(--space-3-5);
+  padding: 8px var(--space-3-5);
   font-size: 13.5px;
   cursor: pointer;
   transition: all 0.16s ease;
@@ -1596,8 +1625,9 @@ html .segmented.card-family button:only-child:hover {
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3-5);
-  padding: var(--space-5) var(--space-3-5) var(--space-1);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3-5) var(--space-1);
+  border-top: 1px solid var(--line);
   align-items: flex-start;
 }
 
@@ -3357,16 +3387,37 @@ pre,
   .sidebar-bottom small {
     display: none;
   }
-  /* 入口排成两列：一行排四五个时每格只剩 ~80px，「告警与通知」会被拆成一字一行。
-     五个入口时最后一个独占一行，不在右边留个空格。 */
+  /* 手机上导航收成一个「菜单 · 当前页」按钮，点开才排出全部入口（两列，按组），不再每页先占半屏。 */
+  .nav-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    justify-content: center;
+    padding: 10px var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--ink);
+    font-size: var(--text-base);
+  }
   .sidebar nav {
-    display: grid;
+    display: none;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
     gap: var(--space-1);
+    margin-top: 0;
+    overflow: visible;
   }
-  .sidebar nav button:last-child:nth-child(odd) {
+  .sidebar.nav-open nav {
+    display: grid;
+  }
+  .sidebar:not(.nav-open) .sidebar-bottom {
+    display: none;
+  }
+  .nav-caption {
     grid-column: 1 / -1;
+    padding: var(--space-2) var(--space-1) 0;
   }
   .sidebar nav button {
     justify-content: center;
@@ -3378,6 +3429,7 @@ pre,
   .sidebar-bottom {
     width: 100%;
     margin: 0;
+    border-top: 0;
     padding: 0 var(--space-1-5);
     flex-direction: row;
     align-items: center;
@@ -5935,12 +5987,26 @@ dialog.region-dialog .region-intro { margin: 0 0 var(--space-4); }
 @media (max-width: 720px) { .cert-target-row { grid-template-columns: 1fr; } }
 .site-nodes { display: grid; gap: var(--space-3); padding: 0 var(--space-6) var(--space-5); }
 .site-node small { display: block; margin-top: var(--space-1); color: var(--muted); }
+/* 面板本身不留边（表格靠单元格留边）；直接放进面板的表单、说明和勾选项包在 .panel-body 里。 */
+.panel-body {
+  padding: var(--space-5) var(--space-6);
+}
+
+.panel-body > .form-section:first-child h3 {
+  margin-top: 0;
+}
+
 .panel-note { margin: 0; padding: 0 var(--space-6) var(--space-3); }
 .backup-target-row { grid-template-columns: minmax(140px, 1fr) minmax(180px, 2fr) auto; }
 @media (max-width: 720px) { .backup-target-row { grid-template-columns: 1fr; } }
-.cert-staging { margin-top: var(--space-4); }
-.inline-select { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--muted); }
-.inline-select select { min-width: 180px; }
+.cert-staging { margin: 0; padding: var(--space-3) var(--space-6) var(--space-5); }
+.page-heading .inline-select { display: inline-flex; flex-direction: row; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
+.page-heading .inline-select select { min-width: 160px; width: auto; margin: 0; }
+/* 页内切换（如「代理」页的 入站 / 规则模板 / 外部订阅）。 */
+.view-tabs { display: flex; gap: var(--space-1); margin: 0 0 var(--space-4); border-bottom: 1px solid var(--line); overflow-x: auto; }
+.view-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: var(--space-2) var(--space-3-5); color: var(--muted); font-weight: 550; cursor: pointer; white-space: nowrap; }
+.view-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.view-tabs button .count { margin-left: var(--space-1); color: var(--muted); font-weight: 500; }
 .code-input { font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.5; width: 100%; tab-size: 2; white-space: pre; }
 .danger-text { color: var(--bad, #d14343); }
 .docker-error { border-left: 3px solid var(--bad, #d14343); }

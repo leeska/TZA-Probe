@@ -27,6 +27,24 @@ export async function proxyPage(nodesReady) {
   const kernels = data.kernels.map((k) => `${esc(k.name)} ${esc(k.version)}`).join(" · ");
   content().innerHTML = `<section data-part="page-heading" class="page-heading"><div><div class="eyebrow">PROXY</div><h1>代理<span>${data.inbounds.length}</span></h1><p>在开启了管理通道的节点上开入站，分给「使用者」用。内核：${kernels}（主控下载并校验后分发，节点不用访问 GitHub）。</p></div><div class="heading-actions"><button id="sync-proxy">↻ 立即同步</button><button id="add-inbound" class="primary">＋ 添加入站</button></div></section><section data-part="panel" class="panel"><div class="table-scroll"><table class="stack"><thead><tr><th>入站</th><th>协议</th><th>端口</th><th>使用者</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty-cell">还没有入站。节点要先用 --manage 开启管理通道。</td></tr>'}</tbody></table></div></section>${subscriptionPanels(data, people)}`;
   wireSubscriptionPanels(content(), data, people);
+  // 页内切换：入站 / 规则模板 / 外部订阅，一次只看一块。
+  const panels = [...content().querySelectorAll("[data-part=panel]")];
+  const sections = [["inbounds", "入站", data.inbounds.length], ["templates", "规则模板", (data.templates || []).length], ["sources", "外部订阅", (data.sources || []).length]];
+  panels.forEach((p, i) => (p.dataset.view = sections[i]?.[0] || "inbounds"));
+  const tabs = document.createElement("div");
+  tabs.className = "view-tabs";
+  tabs.setAttribute("role", "tablist");
+  tabs.innerHTML = sections.map(([id, label, n]) => `<button type="button" role="tab" data-view-tab="${id}">${label}<span class="count">${n}</span></button>`).join("");
+  content().querySelector("[data-part=page-heading]").after(tabs);
+  const show = (view) => {
+    state.proxyView = view;
+    panels.forEach((p) => (p.hidden = p.dataset.view !== view));
+    tabs.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.viewTab === view)));
+    content().querySelector("#add-inbound").hidden = view !== "inbounds";
+    content().querySelector("#sync-proxy").hidden = view !== "inbounds";
+  };
+  tabs.querySelectorAll("button").forEach((b) => (b.onclick = () => show(b.dataset.viewTab)));
+  show(state.proxyView || "inbounds");
   const byId = (id) => data.inbounds.find((i) => i.id === id);
   wireMoreMenus(content());
   content().querySelector("#add-inbound").onclick = () => inboundForm(null, data, people);

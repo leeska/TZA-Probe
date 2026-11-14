@@ -50,18 +50,27 @@ function login() {
   });
 }
 function shell() {
-  state.container.innerHTML = `<div class="admin-layout"><aside data-part="sidebar" class="sidebar">${brandHTML()}<div class="sidebar-caption">WORKSPACE</div><nav>${navHTML()}</nav><div class="sidebar-bottom"><a href="/">公开面板 ↗</a>${skinButton("sidebar-skin")}${themeButton("sidebar-theme")}<button id="logout">退出登录</button><small>独立运行 · TZA PROBE</small></div></aside><main class="admin-main"><header data-part="admin-top" class="admin-top"><span>控制台 <span class="muted">/</span> <b id="breadcrumb"></b></span><span class="pill" id="fleet-status" aria-live="polite"></span></header><div id="admin-content"></div></main></div>`;
+  state.container.innerHTML = `<div class="admin-layout"><aside data-part="sidebar" class="sidebar">${brandHTML()}<button type="button" id="nav-toggle" class="nav-toggle" aria-expanded="false" aria-controls="admin-nav"><span aria-hidden="true">☰</span> 菜单 · <b id="nav-current"></b></button><nav id="admin-nav">${navHTML()}</nav><div class="sidebar-bottom"><a href="/">公开面板 ↗</a>${skinButton("sidebar-skin")}${themeButton("sidebar-theme")}<button id="logout">退出登录</button><small>TZA ControlCenter</small></div></aside><main class="admin-main"><header data-part="admin-top" class="admin-top"><span>控制台 <span class="muted">/</span> <b id="breadcrumb"></b></span><span class="pill" id="fleet-status" aria-live="polite"></span></header><div id="admin-content"></div></main></div>`;
   state.container.querySelectorAll("[data-tab]").forEach(
     (b) =>
       (b.onclick = guard(async () => {
         state.tab = b.dataset.tab;
+        setNavOpen(false);
         await render();
       })),
   );
+  state.container.querySelector("#nav-toggle").onclick = () => setNavOpen(!state.container.querySelector(".sidebar").classList.contains("nav-open"));
   state.container.querySelector("#logout").onclick = guard(async () => {
     await send("/logout", "POST");
     login();
   });
+}
+// 手机上导航收起成一个「菜单」按钮（桌面上这个按钮不显示，导航一直展开）。
+function setNavOpen(open) {
+  const side = state.container.querySelector(".sidebar");
+  if (!side) return;
+  side.classList.toggle("nav-open", open);
+  side.querySelector("#nav-toggle")?.setAttribute("aria-expanded", String(open));
 }
 async function render() {
   // 切页时面包屑与侧栏高亮立刻换，内容要等接口回来：中间这半秒把旧内容调暗并标成忙，
@@ -92,5 +101,7 @@ async function renderTab() {
     });
   const page = adminPage(state.tab);
   state.container.querySelector("#breadcrumb").textContent = page.label;
+  const current = state.container.querySelector("#nav-current");
+  if (current) current.textContent = page.label;
   await page.page(loadNodes());
 }
